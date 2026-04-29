@@ -33,6 +33,10 @@ const messages: Messages = {
     'breadcrumb.mode.inspect': 'Inspect',
     'breadcrumb.mode.chunks': 'Chunks',
 
+    // Feature flags (0.6.0 — #210)
+    'flags.allModesDisabled':
+      "Aucun mode (Ask / Inspect / Chunks) n'est activé pour ce déploiement. Contactez votre administrateur.",
+
     // Coming-soon placeholders (0.6.0 doc-centric routes — #207)
     'comingSoon.title': 'Bientôt disponible',
     'comingSoon.subtitle.docsLibrary':
@@ -332,6 +336,10 @@ const messages: Messages = {
     'breadcrumb.mode.ask': 'Ask',
     'breadcrumb.mode.inspect': 'Inspect',
     'breadcrumb.mode.chunks': 'Chunks',
+
+    // Feature flags (0.6.0 — #210)
+    'flags.allModesDisabled':
+      'No doc workspace mode (Ask / Inspect / Chunks) is enabled for this deployment. Contact your administrator.',
 
     // Coming-soon placeholders (0.6.0 doc-centric routes — #207)
     'comingSoon.title': 'Coming soon',

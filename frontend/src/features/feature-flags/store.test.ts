@@ -155,4 +155,42 @@ describe('useFeatureFlagStore', () => {
     expect(store.isEnabled('chunking')).toBe(false)
     expect(store.isEnabled('disclaimer')).toBe(false)
   })
+
+  // 0.6.0 — Doc workspace mode flags (#210).
+  it('exposes inspectMode / chunksMode / askMode flags from /api/health', async () => {
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      inspectModeEnabled: false,
+      chunksModeEnabled: true,
+      askModeEnabled: true,
+    })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('inspectMode')).toBe(false)
+    expect(store.isEnabled('chunksMode')).toBe(true)
+    expect(store.isEnabled('askMode')).toBe(true)
+  })
+
+  it('falls back to all-modes-enabled when /api/health omits the new fields', async () => {
+    mockApiFetch.mockResolvedValue({ status: 'ok', engine: 'local' })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('inspectMode')).toBe(true)
+    expect(store.isEnabled('chunksMode')).toBe(true)
+    expect(store.isEnabled('askMode')).toBe(true)
+  })
+
+  it('modeFlags() returns the three flags in a Record<DocMode, boolean>', async () => {
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      inspectModeEnabled: true,
+      chunksModeEnabled: false,
+      askModeEnabled: true,
+    })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.modeFlags()).toEqual({ ask: true, chunks: false, inspect: true })
+  })
 })

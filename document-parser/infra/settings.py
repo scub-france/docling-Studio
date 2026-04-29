@@ -55,6 +55,12 @@ class Settings:
     cors_origins: list[str] = field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
     )
+    # 0.6.0 — Doc workspace mode flags (#210). All on by default to preserve
+    # existing behaviour; operators flip a flag off to hide a mode tab + redirect
+    # deep links. Per-tenant gating is out of scope for 0.6.0.
+    inspect_mode_enabled: bool = True
+    chunks_mode_enabled: bool = True
+    ask_mode_enabled: bool = True
 
     def __post_init__(self) -> None:
         errors: list[str] = []
@@ -153,6 +159,13 @@ class Settings:
             max_paste_image_size_mb=int(os.environ.get("MAX_PASTE_IMAGE_SIZE_MB", "10")),
             paste_allowed_image_types=[t.strip() for t in paste_types_raw.split(",") if t.strip()],
             cors_origins=[o.strip() for o in cors_raw.split(",")],
+            # 0.6.0 — Doc workspace mode flags (#210). Defaults: enabled.
+            inspect_mode_enabled=os.environ.get("INSPECT_MODE_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            chunks_mode_enabled=os.environ.get("CHUNKS_MODE_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            ask_mode_enabled=os.environ.get("ASK_MODE_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
         )
 
 

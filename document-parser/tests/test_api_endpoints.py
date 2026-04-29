@@ -68,6 +68,18 @@ class TestHealthEndpoint:
         data = resp.json()
         assert data["ingestionAvailable"] is True
 
+    def test_health_exposes_doc_mode_flags(self, client):
+        """0.6.0 (#210): /api/health surfaces inspect/chunks/ask mode flags."""
+        resp = client.get("/api/health")
+        data = resp.json()
+        assert "inspectModeEnabled" in data
+        assert "chunksModeEnabled" in data
+        assert "askModeEnabled" in data
+        # Defaults preserve current behaviour (all enabled).
+        assert data["inspectModeEnabled"] is True
+        assert data["chunksModeEnabled"] is True
+        assert data["askModeEnabled"] is True
+
 
 class TestDocumentEndpoints:
     def test_list_documents(self, client, mock_document_service):

@@ -46,6 +46,12 @@ class HealthResponse(_CamelModel):
     # available: REASONING_ENABLED=true AND deps importable. Doesn't imply
     # Ollama itself is reachable — that's checked per-call.
     reasoning_available: bool = False
+    # 0.6.0 — Doc workspace mode flags (#210). Default true so existing
+    # frontends without the new keys (legacy backend image rolling forward)
+    # see the same behaviour they had.
+    inspect_mode_enabled: bool = True
+    chunks_mode_enabled: bool = True
+    ask_mode_enabled: bool = True
 
 
 class DocumentResponse(_CamelModel):
