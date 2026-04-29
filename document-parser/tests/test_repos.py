@@ -1,10 +1,11 @@
 """Tests for persistence repositories using a temporary SQLite database."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
 from domain.models import AnalysisJob, AnalysisStatus, Document
+from domain.value_objects import DocumentLifecycleState
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
@@ -80,6 +81,46 @@ class TestDocumentRepo:
     async def test_delete_nonexistent(self, document_repo):
         deleted = await document_repo.delete("nonexistent")
         assert deleted is False
+
+    async def test_default_lifecycle_state_is_uploaded(self, document_repo):
+        """Fresh document round-trip preserves the default Uploaded state."""
+        doc = Document(id="doc-1", filename="t.pdf", storage_path="/tmp/t.pdf")
+        await document_repo.insert(doc)
+
+        found = await document_repo.find_by_id("doc-1")
+        assert found is not None
+        assert found.lifecycle_state == DocumentLifecycleState.UPLOADED
+        assert found.lifecycle_state_at is None
+
+    async def test_update_lifecycle_persists_state_and_timestamp(self, document_repo):
+        doc = Document(id="doc-1", filename="t.pdf", storage_path="/tmp/t.pdf")
+        await document_repo.insert(doc)
+
+        when = datetime(2026, 4, 29, 12, 0, tzinfo=UTC)
+        await document_repo.update_lifecycle("doc-1", DocumentLifecycleState.PARSED, when)
+
+        found = await document_repo.find_by_id("doc-1")
+        assert found is not None
+        assert found.lifecycle_state == DocumentLifecycleState.PARSED
+        assert found.lifecycle_state_at is not None
+        assert found.lifecycle_state_at == when
+
+    async def test_lifecycle_state_round_trips_for_each_value(self, document_repo):
+        """Every enum value must serialize cleanly into and out of SQLite."""
+        when = datetime(2026, 4, 29, 12, 0, tzinfo=UTC)
+        for value in DocumentLifecycleState:
+            doc = Document(
+                id=f"doc-{value.value}",
+                filename="t.pdf",
+                storage_path="/tmp/t.pdf",
+                lifecycle_state=value,
+                lifecycle_state_at=when,
+            )
+            await document_repo.insert(doc)
+
+            found = await document_repo.find_by_id(f"doc-{value.value}")
+            assert found is not None
+            assert found.lifecycle_state == value
 
 
 class TestAnalysisRepo:

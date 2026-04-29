@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.schemas import ChunkBboxResponse, ChunkingOptionsRequest, ChunkResponse, RechunkRequest
-from domain.models import AnalysisJob, AnalysisStatus
+from domain.models import AnalysisJob, AnalysisStatus, Document
 from domain.value_objects import ChunkBbox, ChunkingOptions, ChunkResult
 from main import app
 
@@ -529,6 +529,13 @@ class TestRemoteChunkingPath:
         )
         analysis_repo.find_by_id = AsyncMock(return_value=job)
         analysis_repo.update_chunks = AsyncMock(return_value=True)
+        # rechunk() now drives a Document lifecycle transition (#202), so
+        # the document_repo must return a real Document and accept the
+        # update_lifecycle write.
+        document_repo.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="test.pdf", storage_path="/tmp/test.pdf")
+        )
+        document_repo.update_lifecycle = AsyncMock()
 
         chunks = await service.rechunk(
             "j-remote",

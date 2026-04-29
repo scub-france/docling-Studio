@@ -1,3 +1,22 @@
+/**
+ * Canonical document lifecycle state — mirrors the backend enum
+ * `DocumentLifecycleState` (see `domain/value_objects.py`).
+ *
+ * - `Uploaded` raw file persisted, no parse yet
+ * - `Parsed`   conversion produced a document tree
+ * - `Chunked`  chunker produced a draft chunkset
+ * - `Ingested` chunkset has been embedded into at least one store
+ * - `Stale`    chunkset edited after a successful push (per-store concept)
+ * - `Failed`   a pipeline step failed; recoverable by retry
+ */
+export type DocumentLifecycleState =
+  | 'Uploaded'
+  | 'Parsed'
+  | 'Chunked'
+  | 'Ingested'
+  | 'Stale'
+  | 'Failed'
+
 export interface Document {
   id: string
   filename: string
@@ -5,6 +24,10 @@ export interface Document {
   fileSize: number | null
   pageCount: number | null
   createdAt: string
+  /** Canonical lifecycle state. Drives the status badge in `/docs`. */
+  lifecycleState: DocumentLifecycleState
+  /** ISO timestamp of the last lifecycle transition (UTC). */
+  lifecycleStateAt: string | null
 }
 
 export interface PipelineOptions {

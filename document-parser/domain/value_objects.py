@@ -14,6 +14,31 @@ DEFAULT_PAGE_WIDTH: float = 612.0
 DEFAULT_PAGE_HEIGHT: float = 792.0
 
 
+class DocumentLifecycleState(StrEnum):
+    """Canonical lifecycle of a Document in Docling Studio.
+
+    Distinct from `AnalysisStatus` (which describes a single conversion
+    attempt). The lifecycle describes the document as a whole:
+
+      Uploaded   raw file persisted, no parse yet
+      Parsed     conversion produced a document tree
+      Chunked    chunker produced a draft chunkset (pre-store)
+      Ingested   chunkset has been embedded into at least one store
+      Stale      a chunkset was edited after a successful push and the
+                 corresponding store no longer matches (#204)
+      Failed     a pipeline step failed; recoverable by retry
+
+    Allowed transitions live in `domain.lifecycle._TRANSITIONS`.
+    """
+
+    UPLOADED = "Uploaded"
+    PARSED = "Parsed"
+    CHUNKED = "Chunked"
+    INGESTED = "Ingested"
+    STALE = "Stale"
+    FAILED = "Failed"
+
+
 @dataclass(frozen=True)
 class PageElement:
     type: str

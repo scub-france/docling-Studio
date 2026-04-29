@@ -9,12 +9,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from domain.models import AnalysisJob, Document
     from domain.value_objects import (
         ChunkingOptions,
         ChunkResult,
         ConversionOptions,
         ConversionResult,
+        DocumentLifecycleState,
         LLMProviderType,
         ReasoningResult,
     )
@@ -84,6 +87,13 @@ class DocumentRepository(Protocol):
     async def find_by_id(self, doc_id: str) -> Document | None: ...
 
     async def update_page_count(self, doc_id: str, page_count: int) -> None: ...
+
+    async def update_lifecycle(
+        self,
+        doc_id: str,
+        state: DocumentLifecycleState,
+        at: datetime,
+    ) -> None: ...
 
     async def delete(self, doc_id: str) -> bool: ...
 

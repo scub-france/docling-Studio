@@ -7,6 +7,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from domain.events import DocumentLifecycleChanged
+from domain.lifecycle import assert_transition
+from domain.value_objects import DocumentLifecycleState
+
 
 class AnalysisStatus(enum.StrEnum):
     PENDING = "PENDING"
@@ -32,6 +36,36 @@ class Document:
     page_count: int | None = None
     storage_path: str = ""
     created_at: datetime = field(default_factory=_utcnow)
+    lifecycle_state: DocumentLifecycleState = DocumentLifecycleState.UPLOADED
+    lifecycle_state_at: datetime | None = None
+
+    def transition_to(
+        self,
+        target: DocumentLifecycleState,
+        *,
+        now: datetime | None = None,
+    ) -> DocumentLifecycleChanged:
+        """Move the document to `target`, validating the transition.
+
+        Returns the corresponding `DocumentLifecycleChanged` event so the
+        caller (typically a service) can log / persist / publish it. The
+        event is pure data — no event bus is wired in 0.6.0.
+
+        Raises:
+            InvalidLifecycleTransitionError: if (current → target) is not in
+                the allowed transition table.
+        """
+        previous = self.lifecycle_state
+        assert_transition(previous, target)
+        at = now or _utcnow()
+        self.lifecycle_state = target
+        self.lifecycle_state_at = at
+        return DocumentLifecycleChanged(
+            document_id=self.id,
+            previous=previous,
+            current=target,
+            at=at,
+        )
 
 
 @dataclass

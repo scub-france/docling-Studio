@@ -56,6 +56,11 @@ class DocumentResponse(_CamelModel):
     file_size: int | None = None
     page_count: int | None = None
     created_at: str | datetime
+    # 0.6.0 — Document lifecycle state machine (#202). The lifecycle
+    # describes the document as a whole; `status` above is kept for
+    # backwards compat and currently still maps to `DOCUMENT_STATUS_UPLOADED`.
+    lifecycle_state: str = "Uploaded"
+    lifecycle_state_at: str | datetime | None = None
 
 
 class AnalysisResponse(_CamelModel):

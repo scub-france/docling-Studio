@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 import pypdfium2 as pdfium
 
+from domain.exceptions import InvalidLifecycleTransitionError
 from domain.models import AnalysisJob, AnalysisStatus
 from domain.services import classify_error, merge_results
 from domain.value_objects import (
@@ -23,6 +24,7 @@ from domain.value_objects import (
     ChunkResult,
     ConversionOptions,
     ConversionResult,
+    DocumentLifecycleState,
 )
 
 if TYPE_CHECKING:
@@ -162,6 +164,10 @@ class AnalysisService:
         chunks_json = json.dumps([_chunk_to_dict(c) for c in chunks])
         await self._analysis_repo.update_chunks(job_id, chunks_json)
 
+        # Re-chunk drives the document into Chunked (idempotent if already
+        # Chunked; #204 will mark per-store links Stale separately).
+        await self._transition_document(job.document_id, DocumentLifecycleState.CHUNKED)
+
         return chunks
 
     async def update_chunk_text(self, job_id: str, chunk_index: int, text: str) -> list[dict]:
@@ -292,10 +298,46 @@ class AnalysisService:
             if job:
                 job.mark_failed(error)
                 await self._analysis_repo.update_status(job)
+                await self._transition_document(job.document_id, DocumentLifecycleState.FAILED)
         except OSError:
             logger.exception("Database I/O error marking job %s as failed", job_id)
         except Exception:
             logger.exception("Unexpected error marking job %s as failed", job_id)
+
+    async def _transition_document(
+        self,
+        document_id: str,
+        target: DocumentLifecycleState,
+    ) -> None:
+        """Drive a Document lifecycle transition (#202).
+
+        Idempotent on the target — if the document is already in the
+        requested state, no write happens. Invalid transitions are
+        logged at WARNING and swallowed so a lifecycle hiccup does not
+        crash an otherwise-successful pipeline run.
+        """
+        doc = await self._document_repo.find_by_id(document_id)
+        if doc is None:
+            return
+        if doc.lifecycle_state == target:
+            return
+        try:
+            event = doc.transition_to(target)
+        except InvalidLifecycleTransitionError:
+            logger.warning(
+                "Skipped invalid lifecycle transition for doc %s: %s -> %s",
+                document_id,
+                doc.lifecycle_state.value,
+                target.value,
+            )
+            return
+        await self._document_repo.update_lifecycle(document_id, event.current, event.at)
+        logger.info(
+            "lifecycle_changed doc_id=%s from=%s to=%s",
+            document_id,
+            event.previous.value,
+            event.current.value,
+        )
 
     async def _run_analysis(
         self,
@@ -378,6 +420,15 @@ class AnalysisService:
 
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)
+
+        # Drive the document lifecycle (#202): chunks present → Chunked,
+        # otherwise → Parsed.
+        target_state = (
+            DocumentLifecycleState.CHUNKED
+            if chunks_json is not None
+            else DocumentLifecycleState.PARSED
+        )
+        await self._transition_document(job.document_id, target_state)
 
         await self._write_tree_to_neo4j(job, result.document_json)
 

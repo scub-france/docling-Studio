@@ -34,6 +34,8 @@ def _to_response(doc) -> DocumentResponse:
         file_size=doc.file_size,
         page_count=doc.page_count,
         created_at=str(doc.created_at),
+        lifecycle_state=doc.lifecycle_state.value,
+        lifecycle_state_at=(str(doc.lifecycle_state_at) if doc.lifecycle_state_at else None),
     )
 
 

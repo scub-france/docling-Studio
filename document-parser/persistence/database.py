@@ -45,22 +45,59 @@ CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at);
 """
 
 
-_MIGRATIONS = [
-    ("document_json", "ALTER TABLE analysis_jobs ADD COLUMN document_json TEXT"),
-    ("chunks_json", "ALTER TABLE analysis_jobs ADD COLUMN chunks_json TEXT"),
-    ("progress_current", "ALTER TABLE analysis_jobs ADD COLUMN progress_current INTEGER"),
-    ("progress_total", "ALTER TABLE analysis_jobs ADD COLUMN progress_total INTEGER"),
+# Column migrations: (table, column_name, ddl). Idempotent — applied only
+# when the column is missing from the live schema. Order matters when a
+# later migration depends on an earlier one (none today).
+_COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
+    ("analysis_jobs", "document_json", "ALTER TABLE analysis_jobs ADD COLUMN document_json TEXT"),
+    ("analysis_jobs", "chunks_json", "ALTER TABLE analysis_jobs ADD COLUMN chunks_json TEXT"),
+    (
+        "analysis_jobs",
+        "progress_current",
+        "ALTER TABLE analysis_jobs ADD COLUMN progress_current INTEGER",
+    ),
+    (
+        "analysis_jobs",
+        "progress_total",
+        "ALTER TABLE analysis_jobs ADD COLUMN progress_total INTEGER",
+    ),
+    # 0.6.0 — Document lifecycle state machine (#202).
+    (
+        "documents",
+        "lifecycle_state",
+        "ALTER TABLE documents ADD COLUMN lifecycle_state TEXT NOT NULL DEFAULT 'Uploaded'",
+    ),
+    (
+        "documents",
+        "lifecycle_state_at",
+        "ALTER TABLE documents ADD COLUMN lifecycle_state_at TEXT",
+    ),
+]
+
+# DDL statements run after column migrations — typically CREATE INDEX
+# IF NOT EXISTS for indexes on freshly-added columns.
+_POST_MIGRATION_DDL: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_documents_lifecycle_state ON documents(lifecycle_state)",
 ]
 
 
 async def _run_migrations(db: aiosqlite.Connection) -> None:
-    """Add columns that may be missing in older databases."""
-    cursor = await db.execute("PRAGMA table_info(analysis_jobs)")
-    existing = {row[1] for row in await cursor.fetchall()}
-    for col_name, ddl in _MIGRATIONS:
-        if col_name not in existing:
+    """Apply additive column migrations, then any post-migration DDL.
+
+    Existing columns are detected via PRAGMA `table_info`, so re-running
+    the migration on an already-up-to-date DB is a no-op.
+    """
+    columns_by_table: dict[str, set[str]] = {}
+    for table, col_name, ddl in _COLUMN_MIGRATIONS:
+        if table not in columns_by_table:
+            cursor = await db.execute(f"PRAGMA table_info({table})")
+            columns_by_table[table] = {row[1] for row in await cursor.fetchall()}
+        if col_name not in columns_by_table[table]:
             await db.execute(ddl)
-            logger.info("Migration: added column %s to analysis_jobs", col_name)
+            columns_by_table[table].add(col_name)
+            logger.info("Migration: added column %s to %s", col_name, table)
+    for ddl in _POST_MIGRATION_DDL:
+        await db.execute(ddl)
     await db.commit()
 
 
