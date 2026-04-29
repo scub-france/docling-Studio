@@ -6,15 +6,22 @@ type Messages = Record<Locale, MessageMap>
 
 const messages: Messages = {
   fr: {
-    // Sidebar
+    // Sidebar — 0.6.0 doc-centric nav (#209)
     'nav.home': 'Accueil',
+    'nav.docs': 'Documents',
+    'nav.stores': 'Stores',
+    'nav.runs': 'Runs',
+    'nav.settings': 'Paramètres',
+    'nav.collapse': 'Réduire la barre latérale',
+    'nav.expand': 'Développer la barre latérale',
+    // Legacy nav labels — kept because the legacy pages (/studio, /documents,
+    // /history, /search, /reasoning) still render headings using them. They
+    // are no longer surfaced in the sidebar.
     'nav.studio': 'Studio',
     'nav.documents': 'Documents',
     'nav.history': 'Historique',
     'nav.reasoning': 'Raisonnement',
-    'nav.settings': 'Paramètres',
-    'nav.collapse': 'Réduire la barre latérale',
-    'nav.expand': 'Développer la barre latérale',
+    'nav.search': 'Recherche',
 
     // Top bar
     'topbar.newAnalysis': 'Nouvelle analyse',
@@ -251,8 +258,7 @@ const messages: Messages = {
     'chunking.batchNotice':
       'Le chunking n\u2019est pas disponible pour cette analyse. Les documents volumineux trait\u00e9s par batch ne g\u00e9n\u00e8rent pas la structure interne n\u00e9cessaire au d\u00e9coupage. Coming soon !',
 
-    // Search
-    'nav.search': 'Recherche',
+    // Search (legacy nav label moved to the top with the other legacy keys)
     'search.hint': 'Saisissez un terme pour rechercher dans les chunks indexés.',
 
     // Ingestion / My Documents
@@ -303,14 +309,20 @@ const messages: Messages = {
       'Instance de d\u00e9monstration \u2014 les documents upload\u00e9s sont partag\u00e9s et temporaires (max {n} Mo). Ne pas envoyer de fichiers confidentiels.',
   },
   en: {
+    // Sidebar — 0.6.0 doc-centric nav (#209)
     'nav.home': 'Home',
+    'nav.docs': 'Docs',
+    'nav.stores': 'Stores',
+    'nav.runs': 'Runs',
+    'nav.settings': 'Settings',
+    'nav.collapse': 'Collapse sidebar',
+    'nav.expand': 'Expand sidebar',
+    // Legacy nav labels — kept because legacy pages still use them.
     'nav.studio': 'Studio',
     'nav.documents': 'Documents',
     'nav.history': 'History',
     'nav.reasoning': 'Reasoning',
-    'nav.settings': 'Settings',
-    'nav.collapse': 'Collapse sidebar',
-    'nav.expand': 'Expand sidebar',
+    'nav.search': 'Search',
 
     'topbar.newAnalysis': 'New analysis',
 
@@ -537,7 +549,6 @@ const messages: Messages = {
     'chunking.batchNotice':
       'Chunking is not available for this analysis. Large documents processed in batch mode do not generate the internal structure required for chunking. Coming soon!',
 
-    'nav.search': 'Search',
     'search.hint': 'Enter a term to search through indexed chunks.',
 
     'ingestion.ingest': 'Ingest',

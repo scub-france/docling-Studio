@@ -2,113 +2,15 @@
   <aside class="sidebar" data-e2e="sidebar" :class="{ open }">
     <nav class="sidebar-nav">
       <RouterLink
-        to="/"
+        v-for="item in items"
+        :key="item.key"
+        :to="item.to"
         class="nav-item"
-        data-e2e="nav-home"
-        :class="{ active: route.name === 'home' }"
+        :class="{ active: isActive(item), 'nav-item--primary': item.primary }"
+        :data-e2e="`nav-${item.key}`"
       >
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-          <path
-            d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"
-          />
-        </svg>
-        <span class="nav-label">{{ t('nav.home') }}</span>
-      </RouterLink>
-
-      <RouterLink
-        to="/studio"
-        class="nav-item"
-        data-e2e="nav-studio"
-        :class="{ active: route.name === 'studio' }"
-      >
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-          <path
-            d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838l-2.727 1.17 1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zm5.99 7.176A9.026 9.026 0 007 15.96v-4.5l.61.26a2.5 2.5 0 001.98 0l.61-.26v4.5a9.026 9.026 0 00-1.7.613z"
-          />
-        </svg>
-        <span class="nav-label">{{ t('nav.studio') }}</span>
-      </RouterLink>
-
-      <RouterLink
-        to="/documents"
-        class="nav-item"
-        data-e2e="nav-documents"
-        :class="{ active: route.name === 'documents' }"
-      >
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-          <path
-            fill-rule="evenodd"
-            d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-            clip-rule="evenodd"
-          />
-        </svg>
-        <span class="nav-label">{{ t('nav.documents') }}</span>
-      </RouterLink>
-
-      <RouterLink
-        v-if="ingestionEnabled"
-        to="/search"
-        class="nav-item"
-        data-e2e="nav-search"
-        :class="{ active: route.name === 'search' }"
-      >
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-          <path
-            fill-rule="evenodd"
-            d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-            clip-rule="evenodd"
-          />
-        </svg>
-        <span class="nav-label">{{ t('nav.search') }}</span>
-      </RouterLink>
-
-      <RouterLink
-        v-if="reasoningEnabled"
-        to="/reasoning"
-        class="nav-item"
-        data-e2e="nav-reasoning"
-        :class="{
-          active: route.name === 'reasoning' || route.name === 'reasoning-doc',
-        }"
-      >
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-          <path
-            d="M10 2a5 5 0 00-5 5c0 1.72.87 3.24 2.2 4.14.47.32.8.84.8 1.4V14a1 1 0 001 1h2a1 1 0 001-1v-1.46c0-.56.33-1.08.8-1.4A5 5 0 0010 2zM8 17a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"
-          />
-        </svg>
-        <span class="nav-label">{{ t('nav.reasoning') }}</span>
-      </RouterLink>
-
-      <RouterLink
-        to="/history"
-        class="nav-item"
-        data-e2e="nav-history"
-        :class="{ active: route.name === 'history' }"
-      >
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-          <path
-            fill-rule="evenodd"
-            d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
-            clip-rule="evenodd"
-          />
-        </svg>
-        <span class="nav-label">{{ t('nav.history') }}</span>
-      </RouterLink>
-
-      <RouterLink
-        to="/settings"
-        class="nav-item"
-        data-e2e="nav-settings"
-        :class="{ active: route.name === 'settings' }"
-      >
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
-          <path
-            fill-rule="evenodd"
-            d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
-            clip-rule="evenodd"
-          />
-        </svg>
-        <span class="nav-label">{{ t('nav.settings') }}</span>
+        <component :is="item.icon" class="nav-icon" />
+        <span class="nav-label">{{ t(item.labelKey) }}</span>
       </RouterLink>
     </nav>
 
@@ -146,16 +48,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, h, onMounted, onBeforeUnmount, type Component } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { useI18n } from '../i18n'
+import type { RouteLocationRaw } from 'vue-router'
+
 import { useFeatureFlagStore } from '../../features/feature-flags/store'
 import { useIngestionStore } from '../../features/ingestion/store'
+import { useI18n } from '../i18n'
+import { ROUTES } from '../routing/names'
+import { matchesActive } from './navActive'
 
 const featureStore = useFeatureFlagStore()
 const ingestionStore = useIngestionStore()
 const ingestionEnabled = computed(() => featureStore.isEnabled('ingestion'))
-const reasoningEnabled = computed(() => featureStore.isEnabled('reasoning'))
 const version = computed(() => featureStore.appVersion)
 const route = useRoute()
 const { t } = useI18n()
@@ -163,6 +68,103 @@ const { t } = useI18n()
 defineProps({
   open: { type: Boolean, default: false },
 })
+
+// Inline SVG icon components — keeping them here avoids dragging in an
+// icon lib and keeps the visual weight close to the previous sidebar.
+const HomeIcon: Component = () =>
+  h('svg', { viewBox: '0 0 20 20', fill: 'currentColor' }, [
+    h('path', {
+      d: 'M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z',
+    }),
+  ])
+
+const DocsIcon: Component = () =>
+  h('svg', { viewBox: '0 0 20 20', fill: 'currentColor' }, [
+    h('path', {
+      'fill-rule': 'evenodd',
+      'clip-rule': 'evenodd',
+      d: 'M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z',
+    }),
+  ])
+
+const StoresIcon: Component = () =>
+  h('svg', { viewBox: '0 0 20 20', fill: 'currentColor' }, [
+    h('path', {
+      'fill-rule': 'evenodd',
+      'clip-rule': 'evenodd',
+      d: 'M4 3a1 1 0 011-1h10a1 1 0 011 1v3a1 1 0 01-.293.707l-1.414 1.414a1 1 0 010 1.414l1.414 1.414A1 1 0 0116 11.5V14a1 1 0 01-1 1H5a1 1 0 01-1-1v-2.5a1 1 0 01.293-.707L5.707 9.5 4.293 8.086A1 1 0 014 7.379V3zm2 1v2.879l1.414 1.414a1 1 0 010 1.414L6 11.121V13h8v-1.879l-1.414-1.414a1 1 0 010-1.414L14 6.879V4H6z',
+    }),
+  ])
+
+const RunsIcon: Component = () =>
+  h('svg', { viewBox: '0 0 20 20', fill: 'currentColor' }, [
+    h('path', {
+      'fill-rule': 'evenodd',
+      'clip-rule': 'evenodd',
+      d: 'M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z',
+    }),
+  ])
+
+const SettingsIcon: Component = () =>
+  h('svg', { viewBox: '0 0 20 20', fill: 'currentColor' }, [
+    h('path', {
+      'fill-rule': 'evenodd',
+      'clip-rule': 'evenodd',
+      d: 'M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z',
+    }),
+  ])
+
+type NavItem = {
+  key: string
+  to: RouteLocationRaw
+  labelKey: string
+  icon: Component
+  primary?: boolean
+  matchPrefixes: readonly string[]
+}
+
+const items: NavItem[] = [
+  {
+    key: 'home',
+    to: { name: ROUTES.HOME },
+    labelKey: 'nav.home',
+    icon: HomeIcon,
+    matchPrefixes: ['/'],
+  },
+  {
+    key: 'docs',
+    to: { name: ROUTES.DOCS_LIBRARY },
+    labelKey: 'nav.docs',
+    icon: DocsIcon,
+    primary: true,
+    matchPrefixes: ['/docs'],
+  },
+  {
+    key: 'stores',
+    to: { name: ROUTES.STORES_LIST },
+    labelKey: 'nav.stores',
+    icon: StoresIcon,
+    matchPrefixes: ['/index'],
+  },
+  {
+    key: 'runs',
+    to: { name: ROUTES.RUNS },
+    labelKey: 'nav.runs',
+    icon: RunsIcon,
+    matchPrefixes: ['/runs'],
+  },
+  {
+    key: 'settings',
+    to: { name: ROUTES.SETTINGS },
+    labelKey: 'nav.settings',
+    icon: SettingsIcon,
+    matchPrefixes: ['/settings'],
+  },
+]
+
+function isActive(item: NavItem): boolean {
+  return matchesActive(route.path, item.matchPrefixes)
+}
 
 onMounted(() => {
   if (ingestionEnabled.value) {
@@ -228,6 +230,14 @@ onBeforeUnmount(() => {
 .nav-item.active {
   background: var(--accent-muted);
   color: var(--accent);
+}
+
+.nav-item--primary .nav-label {
+  font-weight: 600;
+}
+
+.nav-item--primary:not(.active) {
+  color: var(--text);
 }
 
 .nav-icon {
