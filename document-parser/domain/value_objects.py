@@ -39,6 +39,28 @@ class DocumentLifecycleState(StrEnum):
     FAILED = "Failed"
 
 
+class StoreKind(StrEnum):
+    """Backing technology of a Store. Today only OpenSearch is implemented;
+    the enum is here so future backends (Pinecone, Qdrant, pgvector) can be
+    added without touching the persistence schema."""
+
+    OPENSEARCH = "opensearch"
+
+
+class DocumentStoreLinkState(StrEnum):
+    """State of a (document, store) ingestion link.
+
+    Distinct from `DocumentLifecycleState` — the document lifecycle is the
+    aggregate over all per-store links. A link is `Ingested` when its
+    chunkset hash matches the source; `Stale` when the source has drifted
+    after the last push; `Failed` when the last push attempt errored.
+    """
+
+    INGESTED = "Ingested"
+    STALE = "Stale"
+    FAILED = "Failed"
+
+
 @dataclass(frozen=True)
 class PageElement:
     type: str

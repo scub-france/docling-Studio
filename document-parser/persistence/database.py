@@ -42,6 +42,34 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status ON analysis_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_created_at ON analysis_jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at);
+
+-- 0.6.0 — Per (document, store) ingestion state (#203).
+CREATE TABLE IF NOT EXISTS stores (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE,
+    slug        TEXT NOT NULL UNIQUE,
+    kind        TEXT NOT NULL,
+    embedder    TEXT NOT NULL,
+    config      TEXT NOT NULL DEFAULT '{}',
+    is_default  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS document_store_links (
+    id              TEXT PRIMARY KEY,
+    document_id     TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    store_id        TEXT NOT NULL REFERENCES stores(id)    ON DELETE CASCADE,
+    state           TEXT NOT NULL,
+    chunkset_hash   TEXT,
+    last_push_at    TEXT,
+    last_run_id     TEXT,
+    error_message   TEXT,
+    UNIQUE (document_id, store_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dsl_doc   ON document_store_links(document_id);
+CREATE INDEX IF NOT EXISTS idx_dsl_store ON document_store_links(store_id);
+CREATE INDEX IF NOT EXISTS idx_dsl_state ON document_store_links(state);
 """
 
 
@@ -107,8 +135,25 @@ async def init_db() -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(_SCHEMA)
         await _run_migrations(db)
+        await _seed_default_store(db)
         await db.commit()
     logger.info("Database initialized at %s", DB_PATH)
+
+
+async def _seed_default_store(db: aiosqlite.Connection) -> None:
+    """Insert the canonical `default` store on first boot.
+
+    Idempotent — uses INSERT OR IGNORE keyed on the unique slug. The
+    embedder is read from the DEFAULT_EMBEDDER env var with a sensible
+    fallback so existing single-index deployments keep working.
+    """
+    embedder = os.environ.get("DEFAULT_EMBEDDER", "bge-m3")
+    await db.execute(
+        """INSERT OR IGNORE INTO stores
+           (id, name, slug, kind, embedder, config, is_default, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+        ("default", "default", "default", "opensearch", embedder, "{}", 1),
+    )
 
 
 async def get_db() -> aiosqlite.Connection:

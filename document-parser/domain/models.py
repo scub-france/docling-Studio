@@ -9,7 +9,11 @@ from datetime import UTC, datetime
 
 from domain.events import DocumentLifecycleChanged
 from domain.lifecycle import assert_transition
-from domain.value_objects import DocumentLifecycleState
+from domain.value_objects import (
+    DocumentLifecycleState,
+    DocumentStoreLinkState,
+    StoreKind,
+)
 
 
 class AnalysisStatus(enum.StrEnum):
@@ -130,3 +134,70 @@ class AnalysisJob:
         self.status = AnalysisStatus.FAILED
         self.error_message = error
         self.completed_at = _utcnow()
+
+
+@dataclass
+class Store:
+    """A logical destination for ingested chunks.
+
+    A `Store` represents a named, configurable target for ingestion (e.g.
+    `rh-corpus-v3`, `legal-v1`). It is decoupled from the underlying
+    `VectorStore` adapter (which represents the *technology*, like
+    OpenSearch). One adapter can serve many stores by namespacing the
+    physical index name on `slug`.
+
+    See design doc `docs/design/203-per-store-ingestion-state.md`.
+    """
+
+    id: str = field(default_factory=_new_id)
+    name: str = ""
+    slug: str = ""
+    kind: StoreKind = StoreKind.OPENSEARCH
+    embedder: str = ""
+    config: dict = field(default_factory=dict)
+    is_default: bool = False
+    created_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
+class DocumentStoreLink:
+    """A live record of a document's presence in a single store.
+
+    The link carries the per-pair state (Ingested / Stale / Failed) plus
+    metadata used by the auto-stale detection (#204) and the chunks
+    editor (#205). One row per (document, store) pair — enforced by a
+    UNIQUE constraint at the persistence layer.
+    """
+
+    id: str = field(default_factory=_new_id)
+    document_id: str = ""
+    store_id: str = ""
+    state: DocumentStoreLinkState = DocumentStoreLinkState.INGESTED
+    chunkset_hash: str | None = None
+    last_push_at: datetime | None = None
+    last_run_id: str | None = None
+    error_message: str | None = None
+
+    def mark_ingested(
+        self,
+        *,
+        hash_: str,
+        at: datetime,
+        run_id: str | None = None,
+    ) -> None:
+        """Record a successful push: chunkset hash + timestamp + run id."""
+        self.state = DocumentStoreLinkState.INGESTED
+        self.chunkset_hash = hash_
+        self.last_push_at = at
+        self.last_run_id = run_id
+        self.error_message = None
+
+    def mark_stale(self) -> None:
+        """Mark the link as stale (source chunkset drifted from pushed)."""
+        self.state = DocumentStoreLinkState.STALE
+        self.error_message = None
+
+    def mark_failed(self, *, error: str) -> None:
+        """Record a failed push attempt."""
+        self.state = DocumentStoreLinkState.FAILED
+        self.error_message = error

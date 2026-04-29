@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from domain.models import AnalysisJob, Document
+    from domain.models import AnalysisJob, Document, DocumentStoreLink, Store
     from domain.value_objects import (
         ChunkingOptions,
         ChunkResult,
@@ -96,6 +96,36 @@ class DocumentRepository(Protocol):
     ) -> None: ...
 
     async def delete(self, doc_id: str) -> bool: ...
+
+
+class StoreRepository(Protocol):
+    """Port for `Store` persistence (introduced by #203)."""
+
+    async def insert(self, store: Store) -> None: ...
+
+    async def find_all(self) -> list[Store]: ...
+
+    async def find_by_slug(self, slug: str) -> Store | None: ...
+
+    async def find_by_id(self, store_id: str) -> Store | None: ...
+
+    async def get_default(self) -> Store | None: ...
+
+
+class DocumentStoreLinkRepository(Protocol):
+    """Port for `DocumentStoreLink` persistence (introduced by #203)."""
+
+    async def upsert(self, link: DocumentStoreLink) -> None:
+        """Insert or update by (document_id, store_id)."""
+        ...
+
+    async def find_for_document(self, document_id: str) -> list[DocumentStoreLink]: ...
+
+    async def find_for_store(self, store_id: str) -> list[DocumentStoreLink]: ...
+
+    async def find_one(self, document_id: str, store_id: str) -> DocumentStoreLink | None: ...
+
+    async def delete(self, document_id: str, store_id: str) -> bool: ...
 
 
 class AnalysisRepository(Protocol):
