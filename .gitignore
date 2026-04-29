@@ -49,3 +49,10 @@ profiles/
 
 # E2E tests — Maven build outputs & Chrome user data
 e2e/**/target/
+
+# Local-only artifacts (release/0.6.0 bootstrap)
+.github/ISSUE_TEMPLATE/issue.md
+docs/claude-code-commands.md
+docs/design/TEMPLATE.md
+document-parser/tests/test_local_converter.py
+
