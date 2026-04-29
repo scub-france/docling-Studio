@@ -19,6 +19,13 @@ const messages: Messages = {
     // Top bar
     'topbar.newAnalysis': 'Nouvelle analyse',
 
+    // Breadcrumb (0.6.0 doc workspace — #208)
+    'breadcrumb.aria': "Fil d'Ariane",
+    'breadcrumb.studio': 'Studio',
+    'breadcrumb.mode.ask': 'Ask',
+    'breadcrumb.mode.inspect': 'Inspect',
+    'breadcrumb.mode.chunks': 'Chunks',
+
     // Coming-soon placeholders (0.6.0 doc-centric routes — #207)
     'comingSoon.title': 'Bientôt disponible',
     'comingSoon.subtitle.docsLibrary':
@@ -306,6 +313,13 @@ const messages: Messages = {
     'nav.expand': 'Expand sidebar',
 
     'topbar.newAnalysis': 'New analysis',
+
+    // Breadcrumb (0.6.0 doc workspace — #208)
+    'breadcrumb.aria': 'Breadcrumb',
+    'breadcrumb.studio': 'Studio',
+    'breadcrumb.mode.ask': 'Ask',
+    'breadcrumb.mode.inspect': 'Inspect',
+    'breadcrumb.mode.chunks': 'Chunks',
 
     // Coming-soon placeholders (0.6.0 doc-centric routes — #207)
     'comingSoon.title': 'Coming soon',

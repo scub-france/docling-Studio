@@ -40,6 +40,7 @@
     <div class="app-body">
       <AppSidebar :open="sidebarOpen" />
       <main class="main">
+        <AppBreadcrumb :crumbs="breadcrumbStore.crumbs" />
         <RouterView />
       </main>
     </div>
@@ -50,6 +51,8 @@
 import { ref, computed } from 'vue'
 import { RouterView, useRouter } from 'vue-router'
 import { AppSidebar } from '../shared/ui/index'
+import AppBreadcrumb from '../shared/breadcrumb/AppBreadcrumb.vue'
+import { useBreadcrumbStore } from '../shared/breadcrumb/store'
 import { useSettingsStore } from '../features/settings/store'
 import { useDocumentStore } from '../features/document/store'
 import { useFeatureFlag } from '../features/feature-flags'
@@ -58,6 +61,7 @@ import { useI18n } from '../shared/i18n'
 
 useSettingsStore()
 const flagStore = useFeatureFlagStore()
+const breadcrumbStore = useBreadcrumbStore()
 const { t } = useI18n()
 const router = useRouter()
 const documentStore = useDocumentStore()
