@@ -70,6 +70,50 @@ CREATE TABLE IF NOT EXISTS document_store_links (
 CREATE INDEX IF NOT EXISTS idx_dsl_doc   ON document_store_links(document_id);
 CREATE INDEX IF NOT EXISTS idx_dsl_store ON document_store_links(store_id);
 CREATE INDEX IF NOT EXISTS idx_dsl_state ON document_store_links(state);
+
+-- 0.6.0 — Chunks promoted to first-class entities + audit trail (#205).
+CREATE TABLE IF NOT EXISTS chunks (
+    id            TEXT PRIMARY KEY,
+    document_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    sequence      INTEGER NOT NULL,
+    text          TEXT NOT NULL,
+    headings      TEXT NOT NULL DEFAULT '[]',
+    source_page   INTEGER,
+    bboxes        TEXT NOT NULL DEFAULT '[]',
+    doc_items     TEXT NOT NULL DEFAULT '[]',
+    token_count   INTEGER,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    deleted_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc     ON chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc_seq ON chunks(document_id, sequence);
+
+CREATE TABLE IF NOT EXISTS chunk_edits (
+    id            TEXT PRIMARY KEY,
+    document_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id      TEXT,
+    action        TEXT NOT NULL,
+    actor         TEXT NOT NULL DEFAULT 'system',
+    at            TEXT NOT NULL,
+    before_json   TEXT,
+    after_json    TEXT,
+    parents_json  TEXT NOT NULL DEFAULT '[]',
+    children_json TEXT NOT NULL DEFAULT '[]',
+    reason        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_chunk_edits_doc_at ON chunk_edits(document_id, at);
+CREATE INDEX IF NOT EXISTS idx_chunk_edits_chunk  ON chunk_edits(chunk_id);
+
+CREATE TABLE IF NOT EXISTS chunk_pushes (
+    id            TEXT PRIMARY KEY,
+    document_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    store_id      TEXT NOT NULL REFERENCES stores(id)    ON DELETE CASCADE,
+    chunkset_hash TEXT NOT NULL,
+    chunk_ids     TEXT NOT NULL,
+    pushed_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chunk_pushes_doc_store ON chunk_pushes(document_id, store_id);
 """
 
 

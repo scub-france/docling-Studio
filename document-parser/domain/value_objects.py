@@ -61,6 +61,20 @@ class DocumentStoreLinkState(StrEnum):
     FAILED = "Failed"
 
 
+class ChunkEditAction(StrEnum):
+    """The five mutating operations the chunks editor supports.
+
+    Recorded on every `ChunkEdit` row so the audit trail can answer "who
+    did what, when, and why" without resorting to JSON-path matching.
+    """
+
+    INSERT = "insert"
+    UPDATE = "update"
+    DELETE = "delete"
+    MERGE = "merge"
+    SPLIT = "split"
+
+
 @dataclass(frozen=True)
 class PageElement:
     type: str

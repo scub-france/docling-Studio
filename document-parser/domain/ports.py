@@ -11,7 +11,15 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from domain.models import AnalysisJob, Document, DocumentStoreLink, Store
+    from domain.models import (
+        AnalysisJob,
+        Chunk,
+        ChunkEdit,
+        ChunkPush,
+        Document,
+        DocumentStoreLink,
+        Store,
+    )
     from domain.value_objects import (
         ChunkingOptions,
         ChunkResult,
@@ -126,6 +134,53 @@ class DocumentStoreLinkRepository(Protocol):
     async def find_one(self, document_id: str, store_id: str) -> DocumentStoreLink | None: ...
 
     async def delete(self, document_id: str, store_id: str) -> bool: ...
+
+
+class ChunkRepository(Protocol):
+    """Port for first-class chunk persistence (introduced by #205)."""
+
+    async def insert(self, chunk: Chunk) -> None: ...
+
+    async def insert_many(self, chunks: list[Chunk]) -> None: ...
+
+    async def update(self, chunk: Chunk) -> None: ...
+
+    async def soft_delete(self, chunk_id: str, *, at: datetime) -> bool: ...
+
+    async def find_for_document(
+        self,
+        document_id: str,
+        *,
+        include_deleted: bool = False,
+    ) -> list[Chunk]: ...
+
+    async def find_by_id(self, chunk_id: str) -> Chunk | None: ...
+
+
+class ChunkEditRepository(Protocol):
+    """Port for the immutable chunk_edits audit log (introduced by #205)."""
+
+    async def insert(self, edit: ChunkEdit) -> None: ...
+
+    async def find_for_document(
+        self,
+        document_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[ChunkEdit]: ...
+
+    async def find_for_chunk(self, chunk_id: str) -> list[ChunkEdit]: ...
+
+
+class ChunkPushRepository(Protocol):
+    """Port for chunk_pushes snapshots (introduced by #205)."""
+
+    async def insert(self, push: ChunkPush) -> None: ...
+
+    async def find_by_id(self, push_id: str) -> ChunkPush | None: ...
+
+    async def find_latest(self, document_id: str, store_id: str) -> ChunkPush | None: ...
 
 
 class AnalysisRepository(Protocol):
