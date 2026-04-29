@@ -8,9 +8,13 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useI18n } from '../shared/i18n'
 
+import { useCrumbs } from '../shared/breadcrumb/store'
+import { truncate } from '../shared/breadcrumb/text'
+import type { Crumb } from '../shared/breadcrumb/types'
+import { useI18n } from '../shared/i18n'
 import { type DocMode } from '../shared/routing/modes'
+import { ROUTES } from '../shared/routing/names'
 import ComingSoonShell from '../shared/ui/ComingSoonShell.vue'
 
 /**
@@ -24,4 +28,18 @@ const props = defineProps<{ id: string; mode: DocMode }>()
 const { t } = useI18n()
 
 const hint = computed(() => t('comingSoon.hint.docWorkspace', { id: props.id, mode: props.mode }))
+
+// Provide the breadcrumb segments. Once the doc is fetched (E4 / #216),
+// `truncate(doc.filename, 40)` will replace the id; for now we render
+// the id itself so the user can still see what they are looking at.
+const crumbs = computed<Crumb[]>(() => [
+  { kind: 'link', label: t('breadcrumb.studio'), to: { name: ROUTES.HOME } },
+  {
+    kind: 'link',
+    label: truncate(props.id, 40),
+    to: { name: ROUTES.DOC_WORKSPACE, params: { id: props.id } },
+  },
+  { kind: 'leaf', label: t(`breadcrumb.mode.${props.mode}`) },
+])
+useCrumbs(crumbs)
 </script>
