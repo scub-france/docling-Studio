@@ -372,6 +372,18 @@ const messages: Messages = {
     'inspect.noElements':
       'Aucun \u00e9l\u00e9ment \u2014 lancez une analyse pour g\u00e9n\u00e9rer la structure.',
 
+    // Ask tab (#242)
+    'ask.questionLabel': 'Question',
+    'ask.questionPlaceholder': 'Ex\u00a0: Quelles sont les obligations du fournisseur\u00a0?',
+    'ask.modelConfig': 'Mod\u00e8le (optionnel)',
+    'ask.modelPlaceholder': 'gpt-oss:20b',
+    'ask.modelHint': 'Mod\u00e8le Ollama. Laisser vide pour le d\u00e9faut serveur.',
+    'ask.run': 'Lancer',
+    'ask.running': 'Reasoning en cours\u2026',
+    'ask.answerLabel': 'R\u00e9ponse',
+    'ask.noAnalysis': 'Aucune analyse disponible',
+    'ask.noAnalysisSub': 'Analysez ce document dans le Studio avant de poser une question.',
+
     // Doc workspace (#216, #218)
     'workspace.tabs.ask': 'Ask',
     'workspace.tabs.inspect': 'Inspect',
@@ -778,6 +790,18 @@ const messages: Messages = {
     'inspect.goToStudio': 'Go to Studio',
     'inspect.retry': 'Retry',
     'inspect.noElements': 'No elements — run an analysis to generate structure.',
+
+    // Ask tab (#242)
+    'ask.questionLabel': 'Question',
+    'ask.questionPlaceholder': 'e.g. What are the supplier obligations?',
+    'ask.modelConfig': 'Model (optional)',
+    'ask.modelPlaceholder': 'gpt-oss:20b',
+    'ask.modelHint': 'Ollama model name. Leave empty to use the server default.',
+    'ask.run': 'Run',
+    'ask.running': 'Reasoning…',
+    'ask.answerLabel': 'Answer',
+    'ask.noAnalysis': 'No analysis available',
+    'ask.noAnalysisSub': 'Analyze this document in Studio before asking a question.',
 
     // Doc workspace (#216, #218)
     'workspace.tabs.ask': 'Ask',
