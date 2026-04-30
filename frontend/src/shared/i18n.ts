@@ -437,6 +437,47 @@ const messages: Messages = {
     'chunks.bulkMerge': 'Fusionner la s\u00e9lection',
     'chunks.bulkCancel': 'Annuler',
 
+    // Stores list (#243)
+    'stores.title': 'Stores',
+    'stores.empty': 'Aucun store configur\u00e9.',
+    'stores.colName': 'Nom',
+    'stores.colType': 'Type',
+    'stores.colStatus': 'Statut',
+    'stores.colDocs': 'Documents',
+    'stores.colChunks': 'Chunks',
+    'stores.connected': 'Connect\u00e9',
+    'stores.disconnected': 'D\u00e9connect\u00e9',
+    'stores.error': 'Erreur',
+
+    // Store detail (#244)
+    'storeDetail.back': 'Stores',
+    'storeDetail.query': 'Requ\u00eater',
+    'storeDetail.empty': 'Aucun document dans ce store.',
+    'storeDetail.colDoc': 'Document',
+    'storeDetail.colState': '\u00c9tat',
+    'storeDetail.colChunks': 'Chunks',
+    'storeDetail.colIngested': 'Ing\u00e9r\u00e9 le',
+    'storeDetail.remove': 'Retirer',
+    'storeDetail.removeConfirm': 'Retirer \u00ab\u00a0{doc}\u00a0\u00bb du store\u00a0?',
+    'storeDetail.selected': '{n} s\u00e9lectionn\u00e9(s)',
+    'storeDetail.bulkRemove': 'Retirer du store',
+    'storeDetail.bulkCancel': 'Annuler',
+    'storeDetail.bulkConfirm': 'Retirer {n} document(s) du store\u00a0?',
+
+    // Store query (#245)
+    'storeQuery.back': 'D\u00e9tail du store',
+    'storeQuery.queryLabel': 'Question',
+    'storeQuery.queryPlaceholder': 'Votre question\u2026',
+    'storeQuery.topKLabel': 'R\u00e9sultats (top-k)',
+    'storeQuery.run': 'Rechercher',
+    'storeQuery.running': 'Recherche\u2026',
+    'storeQuery.empty': 'Aucun r\u00e9sultat.',
+    'storeQuery.colScore': 'Score',
+    'storeQuery.colDoc': 'Document',
+    'storeQuery.colText': 'Extrait',
+    'storeQuery.colPage': 'Pages',
+    'storeQuery.viewDoc': 'Voir',
+
     // Disclaimer
     'disclaimer.banner':
       'Instance de d\u00e9monstration \u2014 les documents upload\u00e9s sont partag\u00e9s et temporaires (max {n} Mo). Ne pas envoyer de fichiers confidentiels.',
@@ -854,6 +895,47 @@ const messages: Messages = {
     'chunks.bulkDrop': 'Drop selected',
     'chunks.bulkMerge': 'Merge selected',
     'chunks.bulkCancel': 'Cancel',
+
+    // Stores list (#243)
+    'stores.title': 'Stores',
+    'stores.empty': 'No stores configured.',
+    'stores.colName': 'Name',
+    'stores.colType': 'Type',
+    'stores.colStatus': 'Status',
+    'stores.colDocs': 'Documents',
+    'stores.colChunks': 'Chunks',
+    'stores.connected': 'Connected',
+    'stores.disconnected': 'Disconnected',
+    'stores.error': 'Error',
+
+    // Store detail (#244)
+    'storeDetail.back': 'Stores',
+    'storeDetail.query': 'Query',
+    'storeDetail.empty': 'No documents in this store.',
+    'storeDetail.colDoc': 'Document',
+    'storeDetail.colState': 'State',
+    'storeDetail.colChunks': 'Chunks',
+    'storeDetail.colIngested': 'Ingested',
+    'storeDetail.remove': 'Remove',
+    'storeDetail.removeConfirm': 'Remove \u00ab{doc}\u00bb from store?',
+    'storeDetail.selected': '{n} selected',
+    'storeDetail.bulkRemove': 'Remove from store',
+    'storeDetail.bulkCancel': 'Cancel',
+    'storeDetail.bulkConfirm': 'Remove {n} document(s) from store?',
+
+    // Store query (#245)
+    'storeQuery.back': 'Store detail',
+    'storeQuery.queryLabel': 'Question',
+    'storeQuery.queryPlaceholder': 'Your question\u2026',
+    'storeQuery.topKLabel': 'Results (top-k)',
+    'storeQuery.run': 'Search',
+    'storeQuery.running': 'Searching\u2026',
+    'storeQuery.empty': 'No results.',
+    'storeQuery.colScore': 'Score',
+    'storeQuery.colDoc': 'Document',
+    'storeQuery.colText': 'Excerpt',
+    'storeQuery.colPage': 'Pages',
+    'storeQuery.viewDoc': 'View',
 
     // Disclaimer
     'disclaimer.banner':
