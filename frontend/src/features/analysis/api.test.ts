@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createAnalysis, fetchAnalyses, fetchAnalysis, deleteAnalysis } from './api'
+import {
+  createAnalysis,
+  fetchAnalyses,
+  fetchAnalysis,
+  deleteAnalysis,
+  fetchDocumentAnalyses,
+} from './api'
 
 vi.mock('../../shared/api/http', () => ({
   apiFetch: vi.fn(),
@@ -65,5 +71,15 @@ describe('analysis API', () => {
     await deleteAnalysis('42')
 
     expect(apiFetch).toHaveBeenCalledWith('/api/analyses/42', { method: 'DELETE' })
+  })
+
+  it('fetchDocumentAnalyses calls GET /api/analyses?documentId=:id', async () => {
+    const analyses = [{ id: '1', documentId: 'doc-42', status: 'COMPLETED' }]
+    apiFetch.mockResolvedValue(analyses)
+
+    const result = await fetchDocumentAnalyses('doc-42')
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/analyses?documentId=doc-42')
+    expect(result).toEqual(analyses)
   })
 })

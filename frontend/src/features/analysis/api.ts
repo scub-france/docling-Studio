@@ -37,3 +37,7 @@ export function fetchAnalysis(id: string): Promise<Analysis> {
 export function deleteAnalysis(id: string): Promise<unknown> {
   return apiFetch(`/api/analyses/${id}`, { method: 'DELETE' })
 }
+
+export function fetchDocumentAnalyses(docId: string): Promise<Analysis[]> {
+  return apiFetch<Analysis[]>(`/api/analyses?documentId=${encodeURIComponent(docId)}`)
+}

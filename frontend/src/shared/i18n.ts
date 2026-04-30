@@ -361,6 +361,17 @@ const messages: Messages = {
     'settings.about': '\u00C0 propos',
     'settings.designArticle': 'Comment Docling Studio a \u00e9t\u00e9 con\u00e7u',
 
+    // Inspect tab (#240, #241)
+    'inspect.tabMarkdown': 'Markdown',
+    'inspect.tabElements': '\u00c9l\u00e9ments',
+    'inspect.tabImages': 'Images',
+    'inspect.noAnalysis': 'Aucune analyse disponible',
+    'inspect.noAnalysisSub': 'Analysez ce document dans le Studio pour voir sa structure.',
+    'inspect.goToStudio': 'Aller dans le Studio',
+    'inspect.retry': 'R\u00e9essayer',
+    'inspect.noElements':
+      'Aucun \u00e9l\u00e9ment \u2014 lancez une analyse pour g\u00e9n\u00e9rer la structure.',
+
     // Doc workspace (#216, #218)
     'workspace.tabs.ask': 'Ask',
     'workspace.tabs.inspect': 'Inspect',
@@ -757,6 +768,16 @@ const messages: Messages = {
     'settings.language': 'Language',
     'settings.about': 'About',
     'settings.designArticle': 'How Docling Studio was designed',
+
+    // Inspect tab (#240, #241)
+    'inspect.tabMarkdown': 'Markdown',
+    'inspect.tabElements': 'Elements',
+    'inspect.tabImages': 'Images',
+    'inspect.noAnalysis': 'No analysis available',
+    'inspect.noAnalysisSub': 'Analyze this document in Studio to see its structure.',
+    'inspect.goToStudio': 'Go to Studio',
+    'inspect.retry': 'Retry',
+    'inspect.noElements': 'No elements — run an analysis to generate structure.',
 
     // Doc workspace (#216, #218)
     'workspace.tabs.ask': 'Ask',
