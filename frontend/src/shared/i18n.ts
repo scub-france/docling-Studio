@@ -361,6 +361,53 @@ const messages: Messages = {
     'settings.about': '\u00C0 propos',
     'settings.designArticle': 'Comment Docling Studio a \u00e9t\u00e9 con\u00e7u',
 
+    // Doc workspace (#216, #218)
+    'workspace.tabs.ask': 'Ask',
+    'workspace.tabs.inspect': 'Inspect',
+    'workspace.tabs.chunks': 'Chunks',
+    'workspace.backToLibrary': 'Retour \u00e0 la biblioth\u00e8que',
+    'workspace.modeDisabled': 'Mode d\u00e9sactiv\u00e9 pour ce d\u00e9ploiement',
+    'workspace.inspectComingSoon': 'Inspect \u2014 disponible en 0.7.0',
+    'workspace.inspectComingSoonHint': 'La vue arborescence + bbox arrive prochainement.',
+    'workspace.askComingSoon': 'Ask \u2014 disponible en 0.7.0',
+    'workspace.askComingSoonHint':
+      'Le raisonnement agentique sur le document arrive prochainement.',
+
+    // Doc tree rail (#217)
+    'tree.empty': "Aucun n\u0153ud dans l'arbre.",
+    'tree.expand': 'D\u00e9velopper',
+    'tree.collapse': 'R\u00e9duire',
+
+    // Chunks editor (#219, #220, #221, #222)
+    'chunks.count': '{n} chunk(s)',
+    'chunks.empty': "Aucun chunk \u2014 parsez le document d'abord.",
+    'chunks.saving': 'Sauvegarde\u2026',
+    'chunks.noTitle': '(sans titre)',
+    'chunks.editPlaceholder': 'Texte du chunk\u2026',
+    'chunks.mergePrev': 'Fusionner avec le pr\u00e9c\u00e9dent',
+    'chunks.mergeNext': 'Fusionner avec le suivant',
+    'chunks.split': 'Scinder au curseur',
+    'chunks.drop': 'Supprimer',
+    'chunks.add': 'Ajouter un chunk',
+    'chunks.retitle': 'Renommer',
+    'chunks.diffToggle': 'Afficher le diff',
+    'chunks.diffClose': 'Fermer le diff',
+    'chunks.diffRef': 'R\u00e9f\u00e9rence',
+    'chunks.diffAdded': 'ajout\u00e9(s)',
+    'chunks.diffModified': 'modifi\u00e9(s)',
+    'chunks.diffRemoved': 'supprim\u00e9(s)',
+    'chunks.pushTitle': 'Pousser vers un store',
+    'chunks.pushStore': 'Store cible',
+    'chunks.pushPlaceholder': 'Nom du store\u2026',
+    'chunks.pushSummary': '{embeds} chunks \u00b7 ~{tokens} tokens',
+    'chunks.pushConfirm': 'Pousser',
+    'chunks.pushCancel': 'Annuler',
+    'chunks.pushedJob': 'Job lanc\u00e9 : {jobId}',
+    'chunks.selected': '{n} s\u00e9lectionn\u00e9(s)',
+    'chunks.bulkDrop': 'Supprimer la s\u00e9lection',
+    'chunks.bulkMerge': 'Fusionner la s\u00e9lection',
+    'chunks.bulkCancel': 'Annuler',
+
     // Disclaimer
     'disclaimer.banner':
       'Instance de d\u00e9monstration \u2014 les documents upload\u00e9s sont partag\u00e9s et temporaires (max {n} Mo). Ne pas envoyer de fichiers confidentiels.',
@@ -704,6 +751,52 @@ const messages: Messages = {
     'settings.language': 'Language',
     'settings.about': 'About',
     'settings.designArticle': 'How Docling Studio was designed',
+
+    // Doc workspace (#216, #218)
+    'workspace.tabs.ask': 'Ask',
+    'workspace.tabs.inspect': 'Inspect',
+    'workspace.tabs.chunks': 'Chunks',
+    'workspace.backToLibrary': 'Back to library',
+    'workspace.modeDisabled': 'Mode disabled for this deployment',
+    'workspace.inspectComingSoon': 'Inspect \u2014 coming in 0.7.0',
+    'workspace.inspectComingSoonHint': 'Tree + bbox view coming soon.',
+    'workspace.askComingSoon': 'Ask \u2014 coming in 0.7.0',
+    'workspace.askComingSoonHint': 'Agentic reasoning over the document coming soon.',
+
+    // Doc tree rail (#217)
+    'tree.empty': 'No nodes in tree.',
+    'tree.expand': 'Expand',
+    'tree.collapse': 'Collapse',
+
+    // Chunks editor (#219, #220, #221, #222)
+    'chunks.count': '{n} chunk(s)',
+    'chunks.empty': 'No chunks yet \u2014 parse the document first.',
+    'chunks.saving': 'Saving\u2026',
+    'chunks.noTitle': '(untitled)',
+    'chunks.editPlaceholder': 'Chunk text\u2026',
+    'chunks.mergePrev': 'Merge with previous',
+    'chunks.mergeNext': 'Merge with next',
+    'chunks.split': 'Split at cursor',
+    'chunks.drop': 'Drop',
+    'chunks.add': 'Add chunk',
+    'chunks.retitle': 'Rename',
+    'chunks.diffToggle': 'Show diff',
+    'chunks.diffClose': 'Close diff',
+    'chunks.diffRef': 'Reference',
+    'chunks.diffAdded': 'added',
+    'chunks.diffModified': 'modified',
+    'chunks.diffRemoved': 'removed',
+    'chunks.pushTitle': 'Push to store',
+    'chunks.pushStore': 'Target store',
+    'chunks.pushPlaceholder': 'Store name\u2026',
+    'chunks.pushSummary': '{embeds} chunks \u00b7 ~{tokens} tokens',
+    'chunks.pushConfirm': 'Push',
+    'chunks.pushCancel': 'Cancel',
+    'chunks.pushedJob': 'Job dispatched: {jobId}',
+    'chunks.selected': '{n} selected',
+    'chunks.bulkDrop': 'Drop selected',
+    'chunks.bulkMerge': 'Merge selected',
+    'chunks.bulkCancel': 'Cancel',
 
     // Disclaimer
     'disclaimer.banner':

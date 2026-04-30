@@ -7,6 +7,7 @@ import {
   getPreviewUrl,
   rechunkDocument,
   pushDocumentToStore,
+  fetchDocumentTree,
 } from './api'
 
 vi.mock('../../shared/api/http', () => ({
@@ -90,5 +91,15 @@ describe('document API', () => {
       body: JSON.stringify({ store: 'my-store' }),
     })
     expect(result).toEqual({ jobId: 'job-2' })
+  })
+
+  it('fetchDocumentTree calls GET /api/documents/:id/tree', async () => {
+    const tree = [{ ref: '#/body', type: 'body', label: 'Body', children: [] }]
+    apiFetch.mockResolvedValue(tree)
+
+    const result = await fetchDocumentTree('42')
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/documents/42/tree')
+    expect(result).toEqual(tree)
   })
 })

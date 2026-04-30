@@ -132,3 +132,41 @@ export interface Rect {
 
 export type Locale = 'fr' | 'en'
 export type Theme = 'dark' | 'light'
+
+// ---------------------------------------------------------------------------
+// E4/E5 — Doc workspace tree + chunks (#216–#222)
+// ---------------------------------------------------------------------------
+
+/** Node in the parsed document tree returned by GET /api/documents/:id/tree */
+export interface DocTreeNode {
+  ref: string
+  type: string
+  label: string
+  children: DocTreeNode[]
+}
+
+/** Doc-centric chunk (distinct from legacy analysis Chunk). */
+export interface DocChunk {
+  id: string
+  docId: string
+  text: string
+  title?: string
+  sourceNodeRef?: string
+  pageRange?: [number, number]
+  tokenCount?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ChunkDiffStatus = 'added' | 'modified' | 'removed' | 'unchanged'
+
+export interface ChunkDiff {
+  chunkId: string
+  status: ChunkDiffStatus
+  textDiff?: string
+}
+
+export interface PushSummary {
+  embeds: number
+  tokens: number
+}

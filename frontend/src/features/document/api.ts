@@ -1,4 +1,4 @@
-import type { Document } from '../../shared/types'
+import type { Document, DocTreeNode } from '../../shared/types'
 import { apiFetch } from '../../shared/api/http'
 
 export function fetchDocuments(): Promise<Document[]> {
@@ -36,4 +36,8 @@ export function pushDocumentToStore(id: string, store: string): Promise<{ jobId:
     method: 'POST',
     body: JSON.stringify({ store }),
   })
+}
+
+export function fetchDocumentTree(id: string): Promise<DocTreeNode[]> {
+  return apiFetch<DocTreeNode[]>(`/api/documents/${id}/tree`)
 }
