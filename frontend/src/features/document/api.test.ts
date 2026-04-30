@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fetchDocuments, fetchDocument, uploadDocument, deleteDocument, getPreviewUrl } from './api'
+import {
+  fetchDocuments,
+  fetchDocument,
+  uploadDocument,
+  deleteDocument,
+  getPreviewUrl,
+  rechunkDocument,
+  pushDocumentToStore,
+} from './api'
 
 vi.mock('../../shared/api/http', () => ({
   apiFetch: vi.fn(),
@@ -61,5 +69,26 @@ describe('document API', () => {
 
   it('getPreviewUrl accepts custom page and dpi', () => {
     expect(getPreviewUrl('abc', 3, 300)).toBe('/api/documents/abc/preview?page=3&dpi=300')
+  })
+
+  it('rechunkDocument calls POST /api/documents/:id/rechunk', async () => {
+    apiFetch.mockResolvedValue({ jobId: 'job-1' })
+
+    const result = await rechunkDocument('42')
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/documents/42/rechunk', { method: 'POST' })
+    expect(result).toEqual({ jobId: 'job-1' })
+  })
+
+  it('pushDocumentToStore calls POST /api/documents/:id/push with store', async () => {
+    apiFetch.mockResolvedValue({ jobId: 'job-2' })
+
+    const result = await pushDocumentToStore('42', 'my-store')
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/documents/42/push', {
+      method: 'POST',
+      body: JSON.stringify({ store: 'my-store' }),
+    })
+    expect(result).toEqual({ jobId: 'job-2' })
   })
 })

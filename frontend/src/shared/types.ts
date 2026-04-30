@@ -28,6 +28,8 @@ export interface Document {
   lifecycleState: DocumentLifecycleState
   /** ISO timestamp of the last lifecycle transition (UTC). */
   lifecycleStateAt: string | null
+  /** Stores this document has been pushed to (added in E1 #203). */
+  stores?: string[]
 }
 
 export interface PipelineOptions {

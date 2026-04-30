@@ -6,6 +6,8 @@ vi.mock('./api', () => ({
   fetchDocuments: vi.fn(),
   uploadDocument: vi.fn(),
   deleteDocument: vi.fn(),
+  rechunkDocument: vi.fn(),
+  pushDocumentToStore: vi.fn(),
 }))
 
 import * as api from './api'
@@ -119,5 +121,52 @@ describe('useDocumentStore', () => {
     const store = useDocumentStore()
     store.select('42')
     expect(store.selectedId).toBe('42')
+  })
+
+  it('load() sets loading to false after success', async () => {
+    api.fetchDocuments.mockResolvedValue([])
+    const store = useDocumentStore()
+    await store.load()
+    expect(store.loading).toBe(false)
+  })
+
+  it('load() sets loading to false after error', async () => {
+    api.fetchDocuments.mockRejectedValue(new Error('fail'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useDocumentStore()
+    await store.load()
+    expect(store.loading).toBe(false)
+  })
+
+  it('rechunk() returns jobId on success', async () => {
+    api.rechunkDocument.mockResolvedValue({ jobId: 'j1' })
+    const store = useDocumentStore()
+    const result = await store.rechunk('42')
+    expect(api.rechunkDocument).toHaveBeenCalledWith('42')
+    expect(result).toBe('j1')
+  })
+
+  it('rechunk() returns null on error', async () => {
+    api.rechunkDocument.mockRejectedValue(new Error('fail'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useDocumentStore()
+    const result = await store.rechunk('42')
+    expect(result).toBeNull()
+  })
+
+  it('pushToStore() returns jobId on success', async () => {
+    api.pushDocumentToStore.mockResolvedValue({ jobId: 'j2' })
+    const store = useDocumentStore()
+    const result = await store.pushToStore('42', 'my-store')
+    expect(api.pushDocumentToStore).toHaveBeenCalledWith('42', 'my-store')
+    expect(result).toBe('j2')
+  })
+
+  it('pushToStore() returns null on error', async () => {
+    api.pushDocumentToStore.mockRejectedValue(new Error('fail'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useDocumentStore()
+    const result = await store.pushToStore('42', 'my-store')
+    expect(result).toBeNull()
   })
 })
