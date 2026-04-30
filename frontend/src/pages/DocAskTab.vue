@@ -79,7 +79,10 @@ async function loadAnalysis(): Promise<void> {
   try {
     const analyses = await fetchDocumentAnalyses(requestedId)
     if (requestedId !== props.docId) return
-    analysis.value = analyses.find((a) => a.status === 'COMPLETED') ?? null
+    // Defensive: filter by documentId because the backend currently ignores
+    // the ?documentId= query param and returns all analyses.
+    analysis.value =
+      analyses.find((a) => a.documentId === requestedId && a.status === 'COMPLETED') ?? null
   } catch (e) {
     if (requestedId !== props.docId) return
     error.value = (e as Error).message || 'Failed to load analysis'

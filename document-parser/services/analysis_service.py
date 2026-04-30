@@ -149,6 +149,10 @@ class AnalysisService:
         """Return all analysis jobs, newest first."""
         return await self._analysis_repo.find_all()
 
+    async def find_by_document(self, document_id: str) -> list[AnalysisJob]:
+        """Return analysis jobs for a given document, newest first."""
+        return await self._analysis_repo.find_by_document(document_id)
+
     async def find_by_id(self, job_id: str) -> AnalysisJob | None:
         """Find an analysis job by ID, or return None."""
         return await self._analysis_repo.find_by_id(job_id)

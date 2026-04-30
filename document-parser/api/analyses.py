@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.schemas import (
     AnalysisResponse,
@@ -75,9 +75,15 @@ async def create_analysis(body: CreateAnalysisRequest, service: ServiceDep) -> A
 
 
 @router.get("", response_model=list[AnalysisResponse])
-async def list_analyses(service: ServiceDep) -> list[AnalysisResponse]:
-    """List all analysis jobs."""
-    jobs = await service.find_all()
+async def list_analyses(
+    service: ServiceDep,
+    document_id: str | None = Query(default=None, alias="documentId"),
+) -> list[AnalysisResponse]:
+    """List analysis jobs, optionally filtered by documentId."""
+    if document_id:
+        jobs = await service.find_by_document(document_id)
+    else:
+        jobs = await service.find_all()
     return [_to_response(j) for j in jobs]
 
 

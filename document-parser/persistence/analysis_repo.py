@@ -66,6 +66,19 @@ class SqliteAnalysisRepository:
             rows = await cursor.fetchall()
             return [_row_to_job(r) for r in rows]
 
+    async def find_by_document(
+        self, document_id: str, *, limit: int = 200, offset: int = 0
+    ) -> list[AnalysisJob]:
+        """Return analysis jobs for a given document, newest first."""
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"{_SELECT_WITH_DOC} WHERE aj.document_id = ? "
+                "ORDER BY aj.created_at DESC LIMIT ? OFFSET ?",
+                (document_id, limit, offset),
+            )
+            rows = await cursor.fetchall()
+            return [_row_to_job(r) for r in rows]
+
     async def find_by_id(self, job_id: str) -> AnalysisJob | None:
         """Find an analysis job by ID (with document filename), or return None."""
         async with get_connection() as db:

@@ -199,6 +199,22 @@ class TestAnalysisEndpoints:
         assert data[0]["documentFilename"] == "test.pdf"
         assert data[0]["status"] == "PENDING"
 
+    def test_list_analyses_filtered_by_document(self, client, mock_analysis_service):
+        mock_analysis_service.find_all = AsyncMock(return_value=[])
+        mock_analysis_service.find_by_document = AsyncMock(
+            return_value=[
+                AnalysisJob(id="j2", document_id="d42", document_filename="paper.pdf"),
+            ]
+        )
+
+        resp = client.get("/api/analyses?documentId=d42")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["documentId"] == "d42"
+        mock_analysis_service.find_by_document.assert_awaited_once_with("d42")
+        mock_analysis_service.find_all.assert_not_awaited()
+
     def test_get_analysis(self, client, mock_analysis_service):
         job = AnalysisJob(id="j1", document_id="d1", document_filename="test.pdf")
         job.mark_running()
