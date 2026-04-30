@@ -25,6 +25,11 @@
 
     <!-- Chunks editor -->
     <div class="editor-pane">
+      <StaleStoresStrip
+        v-if="storeLinks && storeLinks.length > 0"
+        :doc-id="docId"
+        :store-links="storeLinks"
+      />
       <ChunksEditor
         :doc-id="docId"
         :available-stores="availableStores"
@@ -36,15 +41,17 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import type { DocTreeNode } from '../shared/types'
+import type { DocTreeNode, DocStoreLink } from '../shared/types'
 import { fetchDocumentTree } from '../features/document/api'
 import DocTreeRail from '../features/document/ui/DocTreeRail.vue'
 import ChunksEditor from '../features/chunks/ui/ChunksEditor.vue'
+import StaleStoresStrip from '../features/chunks/ui/StaleStoresStrip.vue'
 import { useI18n } from '../shared/i18n'
 
 const props = defineProps<{
   docId: string
   availableStores: string[]
+  storeLinks?: DocStoreLink[]
 }>()
 
 const { t } = useI18n()

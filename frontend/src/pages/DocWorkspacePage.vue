@@ -41,6 +41,7 @@
             v-if="activeMode === 'chunks'"
             :doc-id="id"
             :available-stores="doc.stores ?? []"
+            :store-links="doc.storeLinks"
           />
           <DocInspectTab v-else-if="activeMode === 'inspect'" :doc-id="id" />
           <DocAskTab v-else-if="activeMode === 'ask'" :doc-id="id" />

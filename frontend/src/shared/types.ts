@@ -17,6 +17,13 @@ export type DocumentLifecycleState =
   | 'Stale'
   | 'Failed'
 
+/** Per-store ingestion state for a document (#224). */
+export interface DocStoreLink {
+  store: string
+  state: DocumentLifecycleState
+  pushedAt: string | null
+}
+
 export interface Document {
   id: string
   filename: string
@@ -30,6 +37,8 @@ export interface Document {
   lifecycleStateAt: string | null
   /** Stores this document has been pushed to (added in E1 #203). */
   stores?: string[]
+  /** Per-store state detail (#224). Present when backend returns storeLinks. */
+  storeLinks?: DocStoreLink[]
 }
 
 export interface PipelineOptions {
