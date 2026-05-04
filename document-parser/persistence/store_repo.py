@@ -73,6 +73,12 @@ class SqliteStoreRepository:
             row = await cursor.fetchone()
             return _row_to_store(row) if row else None
 
+    async def find_by_name(self, name: str) -> Store | None:
+        async with get_connection() as db:
+            cursor = await db.execute("SELECT * FROM stores WHERE name = ?", (name,))
+            row = await cursor.fetchone()
+            return _row_to_store(row) if row else None
+
     async def get_default(self) -> Store | None:
         """Return the seeded `default` store, if any."""
         async with get_connection() as db:
@@ -81,3 +87,40 @@ class SqliteStoreRepository:
             )
             row = await cursor.fetchone()
             return _row_to_store(row) if row else None
+
+    async def update(self, store: Store) -> None:
+        """Replace all mutable fields of an existing store. `id` and `created_at`
+        are not touched."""
+        async with get_connection() as db:
+            await db.execute(
+                """UPDATE stores
+                   SET name = ?, slug = ?, kind = ?, embedder = ?,
+                       config = ?, is_default = ?
+                   WHERE id = ?""",
+                (
+                    store.name,
+                    store.slug,
+                    store.kind.value,
+                    store.embedder,
+                    json.dumps(store.config),
+                    1 if store.is_default else 0,
+                    store.id,
+                ),
+            )
+            await db.commit()
+
+    async def clear_default_except(self, store_id: str) -> None:
+        """Reset `is_default = 0` on every store except the given id. Used to
+        enforce single-default invariant when promoting a new default."""
+        async with get_connection() as db:
+            await db.execute(
+                "UPDATE stores SET is_default = 0 WHERE id != ?",
+                (store_id,),
+            )
+            await db.commit()
+
+    async def delete(self, store_id: str) -> bool:
+        async with get_connection() as db:
+            cursor = await db.execute("DELETE FROM stores WHERE id = ?", (store_id,))
+            await db.commit()
+            return cursor.rowcount > 0

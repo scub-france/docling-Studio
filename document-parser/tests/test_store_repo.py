@@ -92,6 +92,76 @@ class TestStoreRepo:
         all_stores = await store_repo.find_all()
         assert all_stores[0].slug == "default"  # seeded default comes first
 
+    async def test_find_by_name(self, store_repo):
+        await store_repo.insert(
+            Store(
+                id="s-rh",
+                name="rh-corpus",
+                slug="rh-corpus",
+                kind=StoreKind.OPENSEARCH,
+                embedder="bge-m3",
+            )
+        )
+        found = await store_repo.find_by_name("rh-corpus")
+        assert found is not None
+        assert found.slug == "rh-corpus"
+        assert await store_repo.find_by_name("missing") is None
+
+    async def test_update_replaces_mutable_fields(self, store_repo):
+        await store_repo.insert(
+            Store(
+                id="s-rh",
+                name="rh",
+                slug="rh",
+                kind=StoreKind.OPENSEARCH,
+                embedder="bge-m3",
+                config={"index_name": "rh"},
+            )
+        )
+        store = await store_repo.find_by_id("s-rh")
+        assert store is not None
+        store.embedder = "bge-large"
+        store.config = {"index_name": "rh-v2"}
+        store.name = "rh-v2"
+        await store_repo.update(store)
+
+        reloaded = await store_repo.find_by_id("s-rh")
+        assert reloaded is not None
+        assert reloaded.embedder == "bge-large"
+        assert reloaded.config == {"index_name": "rh-v2"}
+        assert reloaded.name == "rh-v2"
+
+    async def test_clear_default_except_promotes_single_winner(self, store_repo):
+        # Seeded default is the original; insert another candidate as default.
+        await store_repo.insert(
+            Store(
+                id="s-new",
+                name="new",
+                slug="new",
+                kind=StoreKind.OPENSEARCH,
+                embedder="bge-m3",
+                is_default=True,
+            )
+        )
+        await store_repo.clear_default_except("s-new")
+        defaults = [s for s in await store_repo.find_all() if s.is_default]
+        assert len(defaults) == 1
+        assert defaults[0].id == "s-new"
+
+    async def test_delete_returns_true_when_removed(self, store_repo):
+        await store_repo.insert(
+            Store(
+                id="s-tmp",
+                name="tmp",
+                slug="tmp",
+                kind=StoreKind.OPENSEARCH,
+                embedder="bge-m3",
+            )
+        )
+        assert await store_repo.delete("s-tmp") is True
+        assert await store_repo.find_by_id("s-tmp") is None
+        assert await store_repo.delete("s-tmp") is False
+
 
 class TestDocumentStoreLinkRepo:
     async def _seed_doc(self, document_repo, doc_id: str = "doc-1") -> Document:
