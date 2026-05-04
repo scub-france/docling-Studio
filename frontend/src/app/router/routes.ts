@@ -91,9 +91,20 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../../pages/StoresListPage.vue'),
   },
   {
+    path: '/index/new',
+    name: ROUTES.STORE_CREATE,
+    component: () => import('../../pages/StoreCreatePage.vue'),
+  },
+  {
     path: '/index/:store',
     name: ROUTES.STORE_DETAIL,
     component: () => import('../../pages/StoreDetailPage.vue'),
+    props: true,
+  },
+  {
+    path: '/index/:store/edit',
+    name: ROUTES.STORE_EDIT,
+    component: () => import('../../pages/StoreEditPage.vue'),
     props: true,
   },
   {
