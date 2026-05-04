@@ -55,4 +55,6 @@ e2e/**/target/
 docs/claude-code-commands.md
 docs/design/TEMPLATE.md
 document-parser/tests/test_local_converter.py
+docs/git-workflow/autonomy-mode.md
+frontend/package-lock.json
 
