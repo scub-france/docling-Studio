@@ -233,3 +233,63 @@ class SearchResponse(_CamelModel):
     results: list[SearchResultItem]
     total: int
     query: str
+
+
+# ---------------------------------------------------------------------------
+# Stores (#251)
+# ---------------------------------------------------------------------------
+
+
+class StoreInfoResponse(_CamelModel):
+    """Read model for `GET /api/stores`."""
+
+    name: str
+    slug: str
+    type: str
+    embedder: str
+    is_default: bool
+    document_count: int
+    chunk_count: int
+    connected: bool
+    error_message: str | None = None
+
+
+class StoreResponse(_CamelModel):
+    """Detailed read model for `GET /api/stores/{slug}`."""
+
+    id: str
+    name: str
+    slug: str
+    kind: str
+    embedder: str
+    is_default: bool
+    config: dict
+    created_at: str | datetime
+
+
+class StoreCreateRequest(_CamelModel):
+    name: str
+    slug: str
+    kind: str
+    embedder: str
+    config: dict = Field(default_factory=dict)
+    is_default: bool = False
+
+
+class StoreUpdateRequest(_CamelModel):
+    """Partial update — every field is optional. Use `slug` to rename."""
+
+    name: str | None = None
+    slug: str | None = None
+    kind: str | None = None
+    embedder: str | None = None
+    config: dict | None = None
+    is_default: bool | None = None
+
+
+class StoreDocEntryResponse(_CamelModel):
+    doc_id: str
+    filename: str
+    state: str
+    chunk_count: int
+    pushed_at: str | None = None

@@ -22,14 +22,18 @@ from api.analyses import router as analyses_router
 from api.documents import router as documents_router
 from api.ingestion import router as ingestion_router
 from api.schemas import HealthResponse
+from api.stores import router as stores_router
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.database import get_connection, init_db
 from persistence.document_repo import SqliteDocumentRepository
+from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
+from persistence.store_repo import SqliteStoreRepository
 from services.analysis_service import AnalysisConfig, AnalysisService
 from services.document_service import DocumentConfig, DocumentService
 from services.ingestion_service import IngestionConfig, IngestionService
+from services.store_service import StoreService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -187,6 +191,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         document_repo, analysis_repo, neo4j_driver=app.state.neo4j
     )
     app.state.document_service = _build_document_service(document_repo, analysis_repo)
+    store_repo = SqliteStoreRepository()
+    link_repo = SqliteDocumentStoreLinkRepository()
+    app.state.store_repo = store_repo
+    app.state.document_store_link_repo = link_repo
+    app.state.store_service = StoreService(
+        store_repo=store_repo,
+        link_repo=link_repo,
+        document_repo=document_repo,
+    )
     ingestion_service = _build_ingestion_service(neo4j_driver=app.state.neo4j)
     app.state.ingestion_service = ingestion_service
     if ingestion_service is not None:
@@ -224,6 +237,7 @@ if settings.rate_limit_rpm > 0:
 
 app.include_router(documents_router)
 app.include_router(analyses_router)
+app.include_router(stores_router)
 
 # Graph view — mounted regardless; individual requests 503 if Neo4j is absent.
 from api.graph import router as graph_router  # noqa: E402

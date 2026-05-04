@@ -20,6 +20,7 @@ from domain.models import Store
 from domain.value_objects import StoreKind
 
 if TYPE_CHECKING:
+    from persistence.document_repo import SqliteDocumentRepository
     from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
     from persistence.store_repo import SqliteStoreRepository
 
@@ -67,6 +68,17 @@ class StoreInfoView:
     error_message: str | None = None
 
 
+@dataclass
+class StoreDocEntryView:
+    """Read model for `GET /api/stores/{slug}/documents`."""
+
+    doc_id: str
+    filename: str
+    state: str
+    chunk_count: int
+    pushed_at: str | None
+
+
 def _validate_slug(slug: str) -> None:
     if not slug or not _SLUG_PATTERN.match(slug):
         raise StoreValidationError(
@@ -91,9 +103,11 @@ class StoreService:
         self,
         store_repo: SqliteStoreRepository,
         link_repo: SqliteDocumentStoreLinkRepository,
+        document_repo: SqliteDocumentRepository | None = None,
     ):
         self._stores = store_repo
         self._links = link_repo
+        self._documents = document_repo
 
     async def list_stores(self) -> list[StoreInfoView]:
         stores = await self._stores.find_all()
@@ -216,6 +230,40 @@ class StoreService:
         if promote_default:
             await self._stores.clear_default_except(store.id)
         return store
+
+    async def list_documents(self, slug: str) -> list[StoreDocEntryView]:
+        store = await self.get_by_slug(slug)
+        links = await self._links.find_for_store(store.id)
+        if self._documents is None:
+            return [
+                StoreDocEntryView(
+                    doc_id=link.document_id,
+                    filename=link.document_id,
+                    state=link.state.value,
+                    chunk_count=0,
+                    pushed_at=str(link.last_push_at) if link.last_push_at else None,
+                )
+                for link in links
+            ]
+        entries: list[StoreDocEntryView] = []
+        for link in links:
+            doc = await self._documents.find_by_id(link.document_id)
+            entries.append(
+                StoreDocEntryView(
+                    doc_id=link.document_id,
+                    filename=doc.filename if doc else link.document_id,
+                    state=link.state.value,
+                    chunk_count=0,
+                    pushed_at=str(link.last_push_at) if link.last_push_at else None,
+                )
+            )
+        return entries
+
+    async def remove_document(self, slug: str, doc_id: str) -> None:
+        store = await self.get_by_slug(slug)
+        removed = await self._links.delete(doc_id, store.id)
+        if not removed:
+            raise StoreNotFoundError(f"document '{doc_id}' is not linked to store '{slug}'")
 
     async def delete_store(self, slug: str) -> None:
         store = await self.get_by_slug(slug)
