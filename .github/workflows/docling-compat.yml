@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: document-parser/requirements.txt
+          cache-dependency-path: document-parser/requirements-test.txt
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
@@ -35,8 +35,8 @@ jobs:
       - name: Install pinned dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
+          pip install -r requirements-test.txt
+          pip install httpx
 
       - name: Upgrade docling to latest
         id: versions
