@@ -326,7 +326,14 @@ export REASONING_MODEL_ID=gpt-oss:20b           # any model already pulled in Ol
 export LLM_PROVIDER_TYPE=ollama
 ```
 
-Then `pip install docling-agent mellea` (or use the `local` Docker image which bundles them) and restart the backend. The frontend reads `reasoningAvailable` from `/api/health` and hides the **Reasoning** sidebar entry when the runner isn't wired — so users never click through to a 503.
+Then `pip install docling-agent mellea` (or rebuild the `local` Docker image with `--build-arg WITH_REASONING=true` to bundle them) and restart the backend. The frontend reads `reasoningAvailable` from `/api/health` and hides the **Reasoning** sidebar entry when the runner isn't wired — so users never click through to a 503.
+
+> **Note** — since #254, the standard `latest-local` image no longer ships `docling-agent` / `mellea`. Build a separate variant when you need them:
+> ```bash
+> docker build --target local --build-arg WITH_REASONING=true \
+>   -t docling-studio-backend:local-reasoning ./document-parser
+> ```
+> Or with compose: `WITH_REASONING=true docker compose up --build`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
