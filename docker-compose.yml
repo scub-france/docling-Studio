@@ -89,11 +89,19 @@ services:
     build:
       context: ./document-parser
       target: ${CONVERSION_MODE:-local}
+      args:
+        # Opt in to the R&D reasoning-trace deps (docling-agent + mellea).
+        # Off by default — keeps the standard `local` image lean. See
+        # docs/design/254-optim-taille-image-latest-local.md.
+        WITH_REASONING: ${WITH_REASONING:-false}
     expose:
       - "8000"
     volumes:
       - uploads_data:/app/uploads
       - db_data:/app/data
+      # Persists Docling / HF model checkpoints across container restarts so
+      # the first conversion does not re-download every cold start.
+      - hf_cache:/home/appuser/.cache/huggingface
     environment:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
       DOCLING_SERVE_URL: ${DOCLING_SERVE_URL:-}
@@ -128,3 +136,4 @@ volumes:
   neo4j_logs:
   uploads_data:
   db_data:
+  hf_cache:
