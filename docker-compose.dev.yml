@@ -93,9 +93,6 @@ services:
       - ./document-parser:/app
       - uploads_data:/app/uploads
       - db_data:/app/data
-      # Persists Docling / HF model checkpoints across container restarts so
-      # the first conversion does not re-download every cold start.
-      - hf_cache:/home/appuser/.cache/huggingface
     environment:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
       DOCLING_SERVE_URL: ${DOCLING_SERVE_URL:-}
@@ -143,4 +140,3 @@ volumes:
   uploads_data:
   db_data:
   frontend_node_modules:
-  hf_cache:

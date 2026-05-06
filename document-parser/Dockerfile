@@ -97,5 +97,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 USER appuser
 
 COPY --from=builder-local --chown=appuser:appuser /opt/venv /opt/venv
+
+# Pre-fetch Docling model checkpoints into the appuser HF cache so the very
+# first conversion does not pay the ~400 MB cold-start download. Opt out
+# with --build-arg BAKE_MODELS=false for an even smaller image (will then
+# download on first request).
+ARG BAKE_MODELS=true
+RUN if [ "$BAKE_MODELS" = "true" ]; then \
+        docling-tools models download; \
+    fi
+
 COPY --chown=appuser:appuser . /app
 ENV CONVERSION_ENGINE=local
