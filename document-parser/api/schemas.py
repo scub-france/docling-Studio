@@ -293,3 +293,79 @@ class StoreDocEntryResponse(_CamelModel):
     state: str
     chunk_count: int
     pushed_at: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Doc-centric chunks (#256) — canonical chunkset, distinct from analysis chunks
+# ---------------------------------------------------------------------------
+
+
+class DocChunkResponse(_CamelModel):
+    """Canonical doc chunk — wire shape consumed by `features/chunks` on the front."""
+
+    id: str
+    doc_id: str
+    sequence: int
+    text: str
+    headings: list[str] = []
+    source_page: int | None = None
+    token_count: int | None = None
+    created_at: str | datetime
+    updated_at: str | datetime
+
+
+class AddChunkRequest(_CamelModel):
+    text: str
+    after_id: str | None = None
+
+
+class UpdateChunkRequest(_CamelModel):
+    """Either or both fields. Empty body is a 400 — handled in the router."""
+
+    text: str | None = None
+    title: str | None = None  # surfaced as first heading; future: dedicated field
+
+
+class SplitChunkRequest(_CamelModel):
+    cursor_offset: int
+
+
+class MergeChunksRequest(_CamelModel):
+    ids: list[str]
+
+
+class DocRechunkRequest(_CamelModel):
+    """Optional chunking options. Empty body uses defaults."""
+
+    chunking_options: ChunkingOptionsRequest | None = None
+
+
+class DocTreeNodeResponse(_CamelModel):
+    ref: str
+    type: str
+    label: str
+    children: list[DocTreeNodeResponse] = []
+
+
+# Forward-ref resolution (children references the same class).
+DocTreeNodeResponse.model_rebuild()
+
+
+class ChunkDiffResponse(_CamelModel):
+    chunk_id: str
+    status: str  # 'added' | 'modified' | 'removed' | 'unchanged'
+    text_diff: str | None = None
+
+
+class PushSummaryResponse(_CamelModel):
+    embeds: int
+    tokens: int
+
+
+class PushChunksResponse(_CamelModel):
+    job_id: str
+    summary: PushSummaryResponse
+
+
+class PushChunksRequest(_CamelModel):
+    store: str

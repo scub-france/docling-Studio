@@ -132,3 +132,12 @@ class SqliteChunkRepository:
             cursor = await db.execute("SELECT * FROM chunks WHERE id = ?", (chunk_id,))
             row = await cursor.fetchone()
             return _row_to_chunk(row) if row else None
+
+    async def count_for_document(self, document_id: str) -> int:
+        async with get_connection() as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS n FROM chunks WHERE document_id = ? AND deleted_at IS NULL",
+                (document_id,),
+            )
+            row = await cursor.fetchone()
+            return int(row["n"]) if row else 0

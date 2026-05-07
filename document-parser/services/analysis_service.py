@@ -99,6 +99,21 @@ class AnalysisService:
         self._background_tasks: set[asyncio.Task] = set()
         self._config = config or AnalysisConfig()
         self._neo4j = neo4j_driver
+        # Duck-typed callable injected at startup. Wired in main.py to
+        # `ChunkService.promote_from_analysis_if_empty` so the canonical
+        # chunkset (#205) is populated on the first successful analysis,
+        # making the Doc workspace tab functional immediately (#256).
+        # Optional: when None, analysis behaviour is unchanged.
+        self._chunk_promoter = None
+
+    def set_chunk_promoter(self, chunk_service) -> None:
+        """Inject the canonical-chunk promoter (post-construction wiring).
+
+        Kept loosely typed to avoid an import cycle between
+        `analysis_service` and `chunk_service`. The contract is a
+        coroutine `(document_id: str, chunks_json: str) -> int`.
+        """
+        self._chunk_promoter = chunk_service
 
     async def create(
         self,
@@ -420,6 +435,20 @@ class AnalysisService:
 
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)
+
+        # Promote chunks into the canonical doc-centric chunkset on the
+        # first analysis (#256). Idempotent: a doc that already has
+        # canonical chunks is left untouched, so subsequent ad-hoc
+        # analyses (Studio / OCR Debug) never overwrite hand-edited state.
+        if chunks_json is not None and self._chunk_promoter is not None:
+            try:
+                await self._chunk_promoter.promote_from_analysis_if_empty(
+                    job.document_id, chunks_json
+                )
+            except Exception:
+                # Promotion is a best-effort hook — never fail an analysis
+                # because the canonical promotion hit a snag.
+                logger.exception("Canonical chunk promotion failed for doc %s", job.document_id)
 
         # Drive the document lifecycle (#202): chunks present → Chunked,
         # otherwise → Parsed.

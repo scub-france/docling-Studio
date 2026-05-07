@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.analyses import router as analyses_router
+from api.document_chunks import router as document_chunks_router
 from api.documents import router as documents_router
 from api.ingestion import router as ingestion_router
 from api.schemas import HealthResponse
@@ -26,11 +27,14 @@ from api.stores import router as stores_router
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.analysis_repo import SqliteAnalysisRepository
+from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
+from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import get_connection, init_db
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.store_repo import SqliteStoreRepository
 from services.analysis_service import AnalysisConfig, AnalysisService
+from services.chunk_service import ChunkService
 from services.document_service import DocumentConfig, DocumentService
 from services.ingestion_service import IngestionConfig, IngestionService
 from services.store_service import StoreService
@@ -205,6 +209,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if ingestion_service is not None:
         app.include_router(ingestion_router)
         logger.info("Ingestion router mounted")
+
+    # Doc-centric chunks (#256). Wires the canonical chunkset CRUD on top
+    # of the chunk / chunk_edit / chunk_push repos introduced by #205.
+    chunk_repo = SqliteChunkRepository()
+    chunk_edit_repo = SqliteChunkEditRepository()
+    chunk_push_repo = SqliteChunkPushRepository()
+    app.state.chunk_repo = chunk_repo
+    app.state.chunk_service = ChunkService(
+        chunk_repo=chunk_repo,
+        chunk_edit_repo=chunk_edit_repo,
+        chunk_push_repo=chunk_push_repo,
+        document_repo=document_repo,
+        analysis_repo=analysis_repo,
+        chunker=_build_chunker(),
+        ingestion_service=ingestion_service,
+    )
+    # The analysis service promotes the first analysis's chunks into the
+    # canonical chunkset (idempotent), so the doc workspace lights up the
+    # moment a doc is parsed for the first time.
+    app.state.analysis_service.set_chunk_promoter(app.state.chunk_service)
     logger.info("Docling Studio backend ready (engine=%s)", settings.conversion_engine)
     try:
         yield
@@ -236,6 +260,7 @@ if settings.rate_limit_rpm > 0:
     )
 
 app.include_router(documents_router)
+app.include_router(document_chunks_router)
 app.include_router(analyses_router)
 app.include_router(stores_router)
 
