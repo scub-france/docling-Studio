@@ -15,40 +15,45 @@
 
     <template v-else-if="doc">
       <!-- Sticky header (#218) -->
-      <DocWorkspaceHeader :doc="doc" />
+      <DocWorkspaceHeader :doc="doc">
+        <template #actions>
+          <!-- View switcher (#263) — Linked / Inspect / Compare. Compare is
+               rendered as a disabled placeholder until #270 (0.9.0). -->
+          <div class="view-switcher" role="tablist" data-e2e="view-switcher">
+            <button
+              v-for="view in VIEWS"
+              :key="view.key"
+              class="view-btn"
+              :class="{
+                active: !view.disabled && activeMode === view.key,
+                disabled: view.disabled || !isModeEnabled(view.key),
+              }"
+              role="tab"
+              :aria-selected="!view.disabled && activeMode === view.key"
+              :disabled="view.disabled || !isModeEnabled(view.key)"
+              :title="viewTooltip(view)"
+              :data-e2e="`view-${view.key}`"
+              @click="onViewClick(view)"
+            >
+              {{ t(`workspace.tabs.${view.key}`) }}
+            </button>
+          </div>
+        </template>
+      </DocWorkspaceHeader>
 
-      <!-- Tab strip (#216) -->
-      <div class="tab-strip" role="tablist" data-e2e="tab-strip">
-        <button
-          v-for="m in ALL_MODES"
-          :key="m"
-          class="tab-btn"
-          :class="{ active: activeMode === m, disabled: !modeEnabled(m) }"
-          role="tab"
-          :aria-selected="activeMode === m"
-          :disabled="!modeEnabled(m)"
-          :title="!modeEnabled(m) ? t('workspace.modeDisabled') : undefined"
-          :data-e2e="`tab-${m}`"
-          @click="switchMode(m)"
-        >
-          {{ t(`workspace.tabs.${m}`) }}
-        </button>
-      </div>
-
-      <!-- Tab content — lazy loaded (#216) -->
-      <!-- :key on docId forces a clean remount when navigating to a different doc,
-           preventing stale state (bbox, selectedPage, etc.) from leaking. -->
+      <!-- View content — lazy loaded (#216). :key on docId forces a clean
+           remount when navigating to a different doc, preventing stale state
+           (bbox, selectedPage, etc.) from leaking. -->
       <div class="tab-content" role="tabpanel" data-e2e="tab-content">
         <Suspense>
           <DocChunksTab
-            v-if="activeMode === 'chunks'"
+            v-if="activeMode === 'linked'"
             :key="id"
             :doc-id="id"
             :available-stores="doc.stores ?? []"
             :store-links="doc.storeLinks"
           />
           <DocInspectTab v-else-if="activeMode === 'inspect'" :key="id" :doc-id="id" />
-          <DocAskTab v-else-if="activeMode === 'ask'" :key="id" :doc-id="id" />
         </Suspense>
       </div>
     </template>
@@ -61,7 +66,7 @@ import { RouterLink, useRouter, useRoute } from 'vue-router'
 import type { Document } from '../shared/types'
 import { fetchDocument } from '../features/document/api'
 import { useFeatureFlagStore } from '../features/feature-flags/store'
-import { ALL_MODES, type DocMode } from '../shared/routing/modes'
+import { type DocMode } from '../shared/routing/modes'
 import { resolveMode } from '../shared/routing/resolveMode'
 import { useCrumbs } from '../shared/breadcrumb/store'
 import { truncate } from '../shared/breadcrumb/text'
@@ -71,7 +76,6 @@ import { ROUTES } from '../shared/routing/names'
 import DocWorkspaceHeader from '../features/document/ui/DocWorkspaceHeader.vue'
 import DocChunksTab from './DocChunksTab.vue'
 import DocInspectTab from './DocInspectTab.vue'
-import DocAskTab from './DocAskTab.vue'
 
 const props = defineProps<{ id: string; mode: DocMode }>()
 
@@ -86,6 +90,18 @@ const docError = ref<string | null>(null)
 
 const activeMode = ref<DocMode>(props.mode)
 
+// Switcher entries. Compare is intentionally disabled — the view ships
+// in 0.9.0; the button is kept visible so users can see the roadmap.
+interface ViewEntry {
+  key: DocMode | 'compare'
+  disabled: boolean
+}
+const VIEWS: readonly ViewEntry[] = [
+  { key: 'linked', disabled: false },
+  { key: 'inspect', disabled: false },
+  { key: 'compare', disabled: true },
+]
+
 const crumbs = computed<Crumb[]>(() => [
   { kind: 'link', label: t('breadcrumb.studio'), to: { name: ROUTES.HOME } },
   {
@@ -97,12 +113,24 @@ const crumbs = computed<Crumb[]>(() => [
 ])
 useCrumbs(crumbs)
 
-function modeEnabled(m: DocMode): boolean {
-  return flagStore.modeFlags()[m]
+function isModeEnabled(key: DocMode | 'compare'): boolean {
+  if (key === 'compare') return false
+  return flagStore.modeFlags()[key]
+}
+
+function viewTooltip(view: ViewEntry): string | undefined {
+  if (view.disabled) return t('workspace.compareSoon')
+  if (!isModeEnabled(view.key)) return t('workspace.modeDisabled')
+  return undefined
+}
+
+function onViewClick(view: ViewEntry): void {
+  if (view.disabled || view.key === 'compare') return
+  switchMode(view.key)
 }
 
 function switchMode(m: DocMode): void {
-  if (!modeEnabled(m)) return
+  if (!isModeEnabled(m)) return
   activeMode.value = m
   router.replace({ query: { ...route.query, mode: m } })
 }
@@ -192,39 +220,42 @@ watch(
   color: var(--text);
 }
 
-.tab-strip {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
+.view-switcher {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
   background: var(--bg-surface);
-  padding: 0 20px;
-  flex-shrink: 0;
 }
 
-.tab-btn {
-  padding: 8px 16px;
+.view-btn {
+  padding: 6px 12px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-right: 1px solid var(--border);
   cursor: pointer;
   transition: all var(--transition);
-  margin-bottom: -1px;
 }
 
-.tab-btn:hover:not(.disabled) {
+.view-btn:last-child {
+  border-right: none;
+}
+
+.view-btn:hover:not(.disabled) {
   color: var(--text);
+  background: var(--bg-hover);
 }
 
-.tab-btn.active {
+.view-btn.active {
   color: var(--accent);
-  border-bottom-color: var(--accent);
+  background: var(--bg-active);
 }
 
-.tab-btn.disabled {
-  opacity: 0.35;
+.view-btn.disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 

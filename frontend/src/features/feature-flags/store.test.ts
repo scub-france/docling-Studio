@@ -220,16 +220,15 @@ describe('useFeatureFlagStore', () => {
     expect(store.isEnabled('askMode')).toBe(true)
   })
 
-  it('modeFlags() returns the three flags in a Record<DocMode, boolean>', async () => {
+  it('modeFlags() returns the two workspace flags in a Record<DocMode, boolean>', async () => {
     mockApiFetch.mockResolvedValue({
       status: 'ok',
       engine: 'local',
       inspectModeEnabled: true,
       linkedModeEnabled: false,
-      askModeEnabled: true,
     })
     const store = useFeatureFlagStore()
     await store.load()
-    expect(store.modeFlags()).toEqual({ ask: true, chunks: false, inspect: true })
+    expect(store.modeFlags()).toEqual({ inspect: true, linked: false })
   })
 })

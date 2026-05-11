@@ -10,6 +10,9 @@
       </svg>
       <h1 class="workspace-title" :title="doc.filename">{{ doc.filename }}</h1>
       <StatusBadge :state="doc.lifecycleState" />
+      <div class="workspace-header-actions">
+        <slot name="actions" />
+      </div>
     </div>
     <div class="workspace-header-meta">
       <div v-if="doc.stores?.length" class="workspace-stores">
@@ -77,6 +80,14 @@ defineProps<{
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+.workspace-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .workspace-header-meta {

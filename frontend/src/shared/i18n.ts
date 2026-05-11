@@ -29,9 +29,8 @@ const messages: Messages = {
     // Breadcrumb (0.6.0 doc workspace — #208)
     'breadcrumb.aria': "Fil d'Ariane",
     'breadcrumb.studio': 'Studio',
-    'breadcrumb.mode.ask': 'Ask',
+    'breadcrumb.mode.linked': 'Linked',
     'breadcrumb.mode.inspect': 'Inspect',
-    'breadcrumb.mode.chunks': 'Chunks',
 
     // Feature flags (0.6.0 — #210)
     'flags.allModesDisabled':
@@ -385,17 +384,13 @@ const messages: Messages = {
     'ask.noAnalysis': 'Aucune analyse disponible',
     'ask.noAnalysisSub': 'Analysez ce document dans le Studio avant de poser une question.',
 
-    // Doc workspace (#216, #218)
-    'workspace.tabs.ask': 'Ask',
+    // Doc workspace (#216, #218 \u2014 switcher refactored in #263)
+    'workspace.tabs.linked': 'Linked',
     'workspace.tabs.inspect': 'Inspect',
-    'workspace.tabs.chunks': 'Chunks',
+    'workspace.tabs.compare': 'Compare',
     'workspace.backToLibrary': 'Retour \u00e0 la biblioth\u00e8que',
     'workspace.modeDisabled': 'Mode d\u00e9sactiv\u00e9 pour ce d\u00e9ploiement',
-    'workspace.inspectComingSoon': 'Inspect \u2014 disponible en 0.7.0',
-    'workspace.inspectComingSoonHint': 'La vue arborescence + bbox arrive prochainement.',
-    'workspace.askComingSoon': 'Ask \u2014 disponible en 0.7.0',
-    'workspace.askComingSoonHint':
-      'Le raisonnement agentique sur le document arrive prochainement.',
+    'workspace.compareSoon': 'Compare \u2014 disponible en 0.9.0',
 
     // Doc tree rail (#217)
     'tree.empty': "Aucun n\u0153ud dans l'arbre.",
@@ -541,9 +536,8 @@ const messages: Messages = {
     // Breadcrumb (0.6.0 doc workspace — #208)
     'breadcrumb.aria': 'Breadcrumb',
     'breadcrumb.studio': 'Studio',
-    'breadcrumb.mode.ask': 'Ask',
+    'breadcrumb.mode.linked': 'Linked',
     'breadcrumb.mode.inspect': 'Inspect',
-    'breadcrumb.mode.chunks': 'Chunks',
 
     // Feature flags (0.6.0 — #210)
     'flags.allModesDisabled':
@@ -883,16 +877,13 @@ const messages: Messages = {
     'ask.noAnalysis': 'No analysis available',
     'ask.noAnalysisSub': 'Analyze this document in Studio before asking a question.',
 
-    // Doc workspace (#216, #218)
-    'workspace.tabs.ask': 'Ask',
+    // Doc workspace (#216, #218 — switcher refactored in #263)
+    'workspace.tabs.linked': 'Linked',
     'workspace.tabs.inspect': 'Inspect',
-    'workspace.tabs.chunks': 'Chunks',
+    'workspace.tabs.compare': 'Compare',
     'workspace.backToLibrary': 'Back to library',
     'workspace.modeDisabled': 'Mode disabled for this deployment',
-    'workspace.inspectComingSoon': 'Inspect \u2014 coming in 0.7.0',
-    'workspace.inspectComingSoonHint': 'Tree + bbox view coming soon.',
-    'workspace.askComingSoon': 'Ask \u2014 coming in 0.7.0',
-    'workspace.askComingSoonHint': 'Agentic reasoning over the document coming soon.',
+    'workspace.compareSoon': 'Compare — coming in 0.9.0',
 
     // Doc tree rail (#217)
     'tree.empty': 'No nodes in tree.',

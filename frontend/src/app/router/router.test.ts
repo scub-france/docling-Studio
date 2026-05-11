@@ -49,17 +49,17 @@ describe('router', () => {
     const route = router.resolve({
       name: ROUTES.DOC_WORKSPACE,
       params: { id: 'abc' },
-      query: { mode: 'chunks' },
+      query: { mode: 'inspect' },
     })
     const propsFn = route.matched[0]?.props as
       | { default?: (r: typeof route) => unknown }
       | undefined
     const computed = (propsFn?.default ?? (() => null))(route) as { id: string; mode: string }
     expect(computed.id).toBe('abc')
-    expect(computed.mode).toBe('chunks')
+    expect(computed.mode).toBe('inspect')
   })
 
-  it('falls back to ask when mode is unknown', () => {
+  it('falls back to linked when mode is unknown', () => {
     const router = buildRouter()
     const route = router.resolve({
       name: ROUTES.DOC_WORKSPACE,
@@ -70,7 +70,21 @@ describe('router', () => {
       | { default?: (r: typeof route) => unknown }
       | undefined
     const computed = (propsFn?.default ?? (() => null))(route) as { mode: string }
-    expect(computed.mode).toBe('ask')
+    expect(computed.mode).toBe('linked')
+  })
+
+  it('maps the legacy ?mode=chunks alias to linked', () => {
+    const router = buildRouter()
+    const route = router.resolve({
+      name: ROUTES.DOC_WORKSPACE,
+      params: { id: 'abc' },
+      query: { mode: 'chunks' },
+    })
+    const propsFn = route.matched[0]?.props as
+      | { default?: (r: typeof route) => unknown }
+      | undefined
+    const computed = (propsFn?.default ?? (() => null))(route) as { mode: string }
+    expect(computed.mode).toBe('linked')
   })
 
   it('redirects unknown paths to /', () => {

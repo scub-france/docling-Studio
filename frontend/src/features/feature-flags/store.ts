@@ -175,13 +175,10 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
    * workspace mode flags as a `Record<DocMode, boolean>` so the routing
    * guard does not need to know about the FeatureFlag union.
    */
-  function modeFlags(): { ask: boolean; inspect: boolean; chunks: boolean } {
-    // Mode key 'chunks' is kept until T3 (Linked view) renames the DocMode
-    // union and route segment. The flag is already linkedModeEnabled.
+  function modeFlags(): { inspect: boolean; linked: boolean } {
     return {
-      ask: askModeEnabled.value,
       inspect: inspectModeEnabled.value,
-      chunks: linkedModeEnabled.value,
+      linked: linkedModeEnabled.value,
     }
   }
 
