@@ -15,10 +15,14 @@ interface HealthResponse {
   maxFileSizeMb?: number
   ingestionAvailable?: boolean
   reasoningAvailable?: boolean
-  // 0.6.0 — Doc workspace mode flags (#210). Optional so an older backend
-  // image without these fields keeps working: missing → fall back to true.
+  // 0.6.1 — Surface master flags (#257). Optional for backward compat:
+  // studio defaults to false (production target), rag pipeline to true.
+  studioModeEnabled?: boolean
+  ragPipelineEnabled?: boolean
+  // 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257). Optional so an
+  // older backend image without these fields keeps working: missing → true.
   inspectModeEnabled?: boolean
-  chunksModeEnabled?: boolean
+  linkedModeEnabled?: boolean
   askModeEnabled?: boolean
 }
 
@@ -27,8 +31,10 @@ export type FeatureFlag =
   | 'disclaimer'
   | 'ingestion'
   | 'reasoning'
+  | 'studioMode'
+  | 'ragPipeline'
   | 'inspectMode'
-  | 'chunksMode'
+  | 'linkedMode'
   | 'askMode'
 
 interface FeatureFlagDef {
@@ -41,8 +47,10 @@ interface FeatureFlagContext {
   deploymentMode: DeploymentMode | null
   ingestionAvailable: boolean
   reasoningAvailable: boolean
+  studioModeEnabled: boolean
+  ragPipelineEnabled: boolean
   inspectModeEnabled: boolean
-  chunksModeEnabled: boolean
+  linkedModeEnabled: boolean
   askModeEnabled: boolean
 }
 
@@ -67,20 +75,31 @@ const featureRegistry: Record<FeatureFlag, FeatureFlagDef> = {
     description: 'Reasoning trace tunnel (docling-agent ReasoningResult viewer)',
     isEnabled: (ctx) => ctx.reasoningAvailable,
   },
-  // 0.6.0 — Doc workspace mode flags (#210). Each one gates a tab in the
-  // doc workspace (#216 / E4) and triggers a router-level redirect when a
-  // disabled mode is requested via deep link. Defaults: enabled.
+  // 0.6.1 — Surface master flags (#257). Select which UI surface(s) are
+  // exposed; at least one must be on (validated server-side too).
+  studioMode: {
+    description: 'Legacy Studio surface (OCR debug, original 0.5.x UI)',
+    isEnabled: (ctx) => ctx.studioModeEnabled,
+  },
+  ragPipeline: {
+    description: 'New doc-centric RAG ingestion + visualization pipeline',
+    isEnabled: (ctx) => ctx.ragPipelineEnabled,
+  },
+  // 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257). Each gates a
+  // mode inside the doc workspace and triggers a router-level redirect
+  // when a disabled mode is requested via deep link. Effective only when
+  // ragPipeline is enabled.
   inspectMode: {
     description: 'Doc workspace Inspect mode (tree + bbox debug view)',
-    isEnabled: (ctx) => ctx.inspectModeEnabled,
+    isEnabled: (ctx) => ctx.ragPipelineEnabled && ctx.inspectModeEnabled,
   },
-  chunksMode: {
-    description: 'Doc workspace Chunks mode (editable chunkset + push to store)',
-    isEnabled: (ctx) => ctx.chunksModeEnabled,
+  linkedMode: {
+    description: 'Doc workspace Linked mode (preview + aligned chunks panel)',
+    isEnabled: (ctx) => ctx.ragPipelineEnabled && ctx.linkedModeEnabled,
   },
   askMode: {
     description: 'Doc workspace Ask mode (agentic reasoning over the doc)',
-    isEnabled: (ctx) => ctx.askModeEnabled,
+    isEnabled: (ctx) => ctx.ragPipelineEnabled && ctx.askModeEnabled,
   },
 }
 
@@ -91,10 +110,14 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
   const maxFileSizeMb = ref<number>(0)
   const ingestionAvailable = ref(false)
   const reasoningAvailable = ref(false)
-  // 0.6.0 — Doc workspace mode flags (#210). Default true so a backend
-  // that hasn't shipped the new fields yet behaves like the legacy one.
+  // 0.6.1 — Surface master flags (#257). Defaults match production target:
+  // legacy Studio off, new RAG pipeline on.
+  const studioModeEnabled = ref(false)
+  const ragPipelineEnabled = ref(true)
+  // 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257). Default true
+  // so a backend without these fields behaves like the legacy one.
   const inspectModeEnabled = ref(true)
-  const chunksModeEnabled = ref(true)
+  const linkedModeEnabled = ref(true)
   const askModeEnabled = ref(true)
   const appVersion = ref<string>(__APP_VERSION__)
   const loaded = ref(false)
@@ -105,8 +128,10 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
     deploymentMode: deploymentMode.value,
     ingestionAvailable: ingestionAvailable.value,
     reasoningAvailable: reasoningAvailable.value,
+    studioModeEnabled: studioModeEnabled.value,
+    ragPipelineEnabled: ragPipelineEnabled.value,
     inspectModeEnabled: inspectModeEnabled.value,
-    chunksModeEnabled: chunksModeEnabled.value,
+    linkedModeEnabled: linkedModeEnabled.value,
     askModeEnabled: askModeEnabled.value,
   }))
 
@@ -125,10 +150,14 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
       maxFileSizeMb.value = data.maxFileSizeMb ?? 0
       ingestionAvailable.value = data.ingestionAvailable ?? false
       reasoningAvailable.value = data.reasoningAvailable ?? false
-      // 0.6.0 — fall back to true when the field is missing so a frontend
-      // pointed at an older backend keeps every mode visible.
+      // 0.6.1 — surface flags. Backward compat: missing studio → false
+      // (production target), missing rag pipeline → true (legacy behaviour).
+      studioModeEnabled.value = data.studioModeEnabled ?? false
+      ragPipelineEnabled.value = data.ragPipelineEnabled ?? true
+      // Sub-flags: fall back to true so an older backend keeps every mode
+      // visible.
       inspectModeEnabled.value = data.inspectModeEnabled ?? true
-      chunksModeEnabled.value = data.chunksModeEnabled ?? true
+      linkedModeEnabled.value = data.linkedModeEnabled ?? true
       askModeEnabled.value = data.askModeEnabled ?? true
       appMaxFileSizeMb.value = maxFileSizeMb.value
       appMaxPageCount.value = maxPageCount.value
@@ -147,10 +176,12 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
    * guard does not need to know about the FeatureFlag union.
    */
   function modeFlags(): { ask: boolean; inspect: boolean; chunks: boolean } {
+    // Mode key 'chunks' is kept until T3 (Linked view) renames the DocMode
+    // union and route segment. The flag is already linkedModeEnabled.
     return {
       ask: askModeEnabled.value,
       inspect: inspectModeEnabled.value,
-      chunks: chunksModeEnabled.value,
+      chunks: linkedModeEnabled.value,
     }
   }
 
@@ -161,8 +192,10 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
     maxFileSizeMb,
     ingestionAvailable,
     reasoningAvailable,
+    studioModeEnabled,
+    ragPipelineEnabled,
     inspectModeEnabled,
-    chunksModeEnabled,
+    linkedModeEnabled,
     askModeEnabled,
     appVersion,
     loaded,

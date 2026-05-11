@@ -108,7 +108,7 @@ const props = defineProps<{
   /**
    * The live Cytoscape instance from the GraphView. May be `null` while the
    * graph is loading or if Maintain hasn't been run for this document.
-   * Passed down from StudioPage via `graphViewRef.cy`.
+   * Passed down by the host page via `graphViewRef.cy`.
    */
   cy: Core | null
 }>()

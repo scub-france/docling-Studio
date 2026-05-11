@@ -4,6 +4,7 @@ import { useFeatureFlagStore } from '../../features/feature-flags/store'
 import { isDocMode } from '../../shared/routing/modes'
 import { ROUTES } from '../../shared/routing/names'
 import { resolveMode } from '../../shared/routing/resolveMode'
+import { resolveSurface } from '../../shared/routing/resolveSurface'
 import { routes } from './routes'
 
 export { routes }
@@ -14,20 +15,29 @@ export const router = createRouter({
 })
 
 /**
- * Doc workspace mode guard (#210).
+ * Surface gating (#257) + mode gating (#210).
  *
- * - `/docs/:id?mode=<disabled>` → redirect with the same id but the
- *   first enabled mode (ask > chunks > inspect priority).
- * - All three modes off → redirect to `/docs?reason=no-mode-enabled`.
- * - Any other route is left untouched.
+ * Surface: two master flags select which UI surface is exposed. When a
+ * route from a disabled surface is requested, redirect to the other
+ * surface's landing page — or to `/` if both are off (defensive net;
+ * backend refuses to start in that state).
  *
- * Pure resolution lives in `resolveMode`; the guard is just the
- * router-level wiring.
+ * Mode: inside the doc workspace, the requested mode falls back to the
+ * first enabled mode when the deep-linked one is off.
  */
 router.beforeEach((to) => {
+  const flagStore = useFeatureFlagStore()
+  const name = String(to.name ?? '')
+
+  const surfaceRedirect = resolveSurface(name, {
+    studio: flagStore.studioModeEnabled,
+    rag: flagStore.ragPipelineEnabled,
+  })
+  if (surfaceRedirect !== null) return { name: surfaceRedirect }
+
   if (to.name !== ROUTES.DOC_WORKSPACE) return true
 
-  const flags = useFeatureFlagStore().modeFlags()
+  const flags = flagStore.modeFlags()
   const requestedRaw = Array.isArray(to.query.mode) ? to.query.mode[0] : to.query.mode
   const requested = isDocMode(requestedRaw) ? requestedRaw : undefined
   const resolved = resolveMode(requested, flags)

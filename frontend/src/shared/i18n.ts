@@ -207,8 +207,8 @@ const messages: Messages = {
     'history.title': 'Historique',
     'history.tabAnalyses': 'Analyses',
     'history.tabDocuments': 'Documents',
-    'history.empty': 'Aucune analyse. Allez dans Studio pour analyser votre premier document.',
-    'history.emptyDocs': 'Aucun document. Importez un document depuis le Studio.',
+    'history.empty': 'Aucune analyse. Analysez votre premier document pour commencer.',
+    'history.emptyDocs': 'Aucun document. Importez un document depuis la bibliothèque.',
     'history.open': 'Ouvrir',
 
     // Chunking
@@ -264,7 +264,7 @@ const messages: Messages = {
     'reasoning.uploading': 'Import du document...',
     'reasoning.existingDocs': 'Documents déjà analysés',
     'reasoning.noAnalyzedDocs':
-      'Aucun des documents existants n\u2019a encore été analysé — lance-en un depuis Studio, ou dépose un nouveau PDF ci-dessus.',
+      'Aucun des documents existants n\u2019a encore été analysé — lance-en un depuis la bibliothèque, ou dépose un nouveau PDF ci-dessus.',
     'reasoning.pagesCount': '{n} pages',
     'reasoning.changeDoc': 'Changer de document',
     'reasoning.modeSwitchLabel': 'Mode d\u2019affichage',
@@ -712,8 +712,8 @@ const messages: Messages = {
     'history.title': 'History',
     'history.tabAnalyses': 'Analyses',
     'history.tabDocuments': 'Documents',
-    'history.empty': 'No analyses yet. Go to Studio to analyze your first document.',
-    'history.emptyDocs': 'No documents yet. Upload a document from the Studio.',
+    'history.empty': 'No analyses yet. Analyze your first document to get started.',
+    'history.emptyDocs': 'No documents yet. Upload a document from the library.',
     'history.open': 'Open',
 
     'studio.prepare': 'Prepare',
@@ -767,7 +767,7 @@ const messages: Messages = {
     'reasoning.uploading': 'Uploading document...',
     'reasoning.existingDocs': 'Previously analyzed documents',
     'reasoning.noAnalyzedDocs':
-      'None of your existing documents have been analyzed yet — run one from Studio, or drop a new PDF above.',
+      'None of your existing documents have been analyzed yet — run one from the library, or drop a new PDF above.',
     'reasoning.pagesCount': '{n} pages',
     'reasoning.changeDoc': 'Change document',
     'reasoning.modeSwitchLabel': 'View mode',

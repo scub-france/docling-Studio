@@ -68,16 +68,26 @@ class TestHealthEndpoint:
         data = resp.json()
         assert data["ingestionAvailable"] is True
 
+    def test_health_exposes_surface_flags(self, client):
+        """0.6.1 (#257): /api/health surfaces studio + rag_pipeline master flags."""
+        resp = client.get("/api/health")
+        data = resp.json()
+        assert "studioModeEnabled" in data
+        assert "ragPipelineEnabled" in data
+        # Defaults: studio off, rag pipeline on (production target).
+        assert data["studioModeEnabled"] is False
+        assert data["ragPipelineEnabled"] is True
+
     def test_health_exposes_doc_mode_flags(self, client):
-        """0.6.0 (#210): /api/health surfaces inspect/chunks/ask mode flags."""
+        """0.6.0 (#210, renamed in #257): /api/health surfaces inspect/linked/ask sub-flags."""
         resp = client.get("/api/health")
         data = resp.json()
         assert "inspectModeEnabled" in data
-        assert "chunksModeEnabled" in data
+        assert "linkedModeEnabled" in data
         assert "askModeEnabled" in data
-        # Defaults preserve current behaviour (all enabled).
+        # Sub-flag defaults preserve current behaviour (all enabled).
         assert data["inspectModeEnabled"] is True
-        assert data["chunksModeEnabled"] is True
+        assert data["linkedModeEnabled"] is True
         assert data["askModeEnabled"] is True
 
 

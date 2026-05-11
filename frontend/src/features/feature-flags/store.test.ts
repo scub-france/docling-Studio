@@ -156,19 +156,58 @@ describe('useFeatureFlagStore', () => {
     expect(store.isEnabled('disclaimer')).toBe(false)
   })
 
-  // 0.6.0 — Doc workspace mode flags (#210).
-  it('exposes inspectMode / chunksMode / askMode flags from /api/health', async () => {
+  // 0.6.1 — Surface master flags (#257).
+  it('exposes studioMode / ragPipeline master flags from /api/health', async () => {
     mockApiFetch.mockResolvedValue({
       status: 'ok',
       engine: 'local',
-      inspectModeEnabled: false,
-      chunksModeEnabled: true,
+      studioModeEnabled: true,
+      ragPipelineEnabled: false,
+    })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('studioMode')).toBe(true)
+    expect(store.isEnabled('ragPipeline')).toBe(false)
+  })
+
+  it('defaults studio off, rag pipeline on when /api/health omits the fields', async () => {
+    mockApiFetch.mockResolvedValue({ status: 'ok', engine: 'local' })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('studioMode')).toBe(false)
+    expect(store.isEnabled('ragPipeline')).toBe(true)
+  })
+
+  it('sub-flags require ragPipeline enabled', async () => {
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      ragPipelineEnabled: false,
+      inspectModeEnabled: true,
+      linkedModeEnabled: true,
       askModeEnabled: true,
     })
     const store = useFeatureFlagStore()
     await store.load()
     expect(store.isEnabled('inspectMode')).toBe(false)
-    expect(store.isEnabled('chunksMode')).toBe(true)
+    expect(store.isEnabled('linkedMode')).toBe(false)
+    expect(store.isEnabled('askMode')).toBe(false)
+  })
+
+  // 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257).
+  it('exposes inspectMode / linkedMode / askMode flags from /api/health', async () => {
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      ragPipelineEnabled: true,
+      inspectModeEnabled: false,
+      linkedModeEnabled: true,
+      askModeEnabled: true,
+    })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('inspectMode')).toBe(false)
+    expect(store.isEnabled('linkedMode')).toBe(true)
     expect(store.isEnabled('askMode')).toBe(true)
   })
 
@@ -177,7 +216,7 @@ describe('useFeatureFlagStore', () => {
     const store = useFeatureFlagStore()
     await store.load()
     expect(store.isEnabled('inspectMode')).toBe(true)
-    expect(store.isEnabled('chunksMode')).toBe(true)
+    expect(store.isEnabled('linkedMode')).toBe(true)
     expect(store.isEnabled('askMode')).toBe(true)
   })
 
@@ -186,7 +225,7 @@ describe('useFeatureFlagStore', () => {
       status: 'ok',
       engine: 'local',
       inspectModeEnabled: true,
-      chunksModeEnabled: false,
+      linkedModeEnabled: false,
       askModeEnabled: true,
     })
     const store = useFeatureFlagStore()

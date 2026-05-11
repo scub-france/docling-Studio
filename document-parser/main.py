@@ -343,8 +343,11 @@ async def health() -> HealthResponse:
         # actual Ollama reachability is checked lazily at call-time to avoid
         # blocking health checks on the LLM host.
         reasoning_available=runner is not None and runner.is_available,
-        # 0.6.0 — Doc workspace mode flags (#210).
+        # 0.6.1 — Surface flags (#257).
+        studio_mode_enabled=settings.studio_mode_enabled,
+        rag_pipeline_enabled=settings.rag_pipeline_enabled,
+        # 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257).
         inspect_mode_enabled=settings.inspect_mode_enabled,
-        chunks_mode_enabled=settings.chunks_mode_enabled,
+        linked_mode_enabled=settings.linked_mode_enabled,
         ask_mode_enabled=settings.ask_mode_enabled,
     )

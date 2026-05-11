@@ -50,7 +50,9 @@ describe('useI18n', () => {
     const { t } = useI18n()
     expect(t('history.tabAnalyses')).toBe('Analyses')
     expect(t('history.tabDocuments')).toBe('Documents')
-    expect(t('history.emptyDocs')).toBe('Aucun document. Importez un document depuis le Studio.')
+    expect(t('history.emptyDocs')).toBe(
+      'Aucun document. Importez un document depuis la bibliothèque.',
+    )
   })
 
   it('has history tab keys in English', () => {
@@ -59,7 +61,7 @@ describe('useI18n', () => {
     const { t } = useI18n()
     expect(t('history.tabAnalyses')).toBe('Analyses')
     expect(t('history.tabDocuments')).toBe('Documents')
-    expect(t('history.emptyDocs')).toBe('No documents yet. Upload a document from the Studio.')
+    expect(t('history.emptyDocs')).toBe('No documents yet. Upload a document from the library.')
   })
 
   it('has detailed pipeline option hints in French', () => {

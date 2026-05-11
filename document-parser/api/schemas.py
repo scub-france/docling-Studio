@@ -46,11 +46,14 @@ class HealthResponse(_CamelModel):
     # available: REASONING_ENABLED=true AND deps importable. Doesn't imply
     # Ollama itself is reachable — that's checked per-call.
     reasoning_available: bool = False
-    # 0.6.0 — Doc workspace mode flags (#210). Default true so existing
-    # frontends without the new keys (legacy backend image rolling forward)
-    # see the same behaviour they had.
+    # 0.6.1 — Surface flags (#257). Master flags select which surface(s)
+    # the frontend exposes. Defaults match the production target (RAG only).
+    studio_mode_enabled: bool = False
+    rag_pipeline_enabled: bool = True
+    # 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257). Default true
+    # so frontends pointed at an older backend keep every mode visible.
     inspect_mode_enabled: bool = True
-    chunks_mode_enabled: bool = True
+    linked_mode_enabled: bool = True
     ask_mode_enabled: bool = True
 
 

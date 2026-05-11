@@ -55,11 +55,17 @@ class Settings:
     cors_origins: list[str] = field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
     )
-    # 0.6.0 — Doc workspace mode flags (#210). All on by default to preserve
-    # existing behaviour; operators flip a flag off to hide a mode tab + redirect
-    # deep links. Per-tenant gating is out of scope for 0.6.0.
+    # 0.6.1 — Surface flags (#257). Two master flags select which UI surface
+    # is exposed: STUDIO_MODE_ENABLED (legacy OCR-debug) and
+    # RAG_PIPELINE_ENABLED (new doc-centric ingestion + visualization).
+    # At least one must be enabled. Sub-flags below gate individual modes
+    # inside the RAG pipeline surface.
+    studio_mode_enabled: bool = False
+    rag_pipeline_enabled: bool = True
+    # 0.6.0 — Doc workspace mode flags (#210, renamed in #257).
+    # Sub-flags effective only when rag_pipeline_enabled is true.
     inspect_mode_enabled: bool = True
-    chunks_mode_enabled: bool = True
+    linked_mode_enabled: bool = True
     ask_mode_enabled: bool = True
 
     def __post_init__(self) -> None:
@@ -96,6 +102,8 @@ class Settings:
             )
         if self.embedding_dimension < 1:
             errors.append(f"embedding_dimension must be >= 1 (got {self.embedding_dimension})")
+        if not (self.studio_mode_enabled or self.rag_pipeline_enabled):
+            errors.append("at least one of STUDIO_MODE_ENABLED / RAG_PIPELINE_ENABLED must be true")
         if self.default_table_mode not in ("accurate", "fast"):
             errors.append(
                 f"default_table_mode must be 'accurate' or 'fast' (got '{self.default_table_mode}')"
@@ -159,10 +167,15 @@ class Settings:
             max_paste_image_size_mb=int(os.environ.get("MAX_PASTE_IMAGE_SIZE_MB", "10")),
             paste_allowed_image_types=[t.strip() for t in paste_types_raw.split(",") if t.strip()],
             cors_origins=[o.strip() for o in cors_raw.split(",")],
-            # 0.6.0 — Doc workspace mode flags (#210). Defaults: enabled.
+            # 0.6.1 — Surface flags (#257).
+            studio_mode_enabled=os.environ.get("STUDIO_MODE_ENABLED", "false").lower()
+            in ("1", "true", "yes", "on"),
+            rag_pipeline_enabled=os.environ.get("RAG_PIPELINE_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            # 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257).
             inspect_mode_enabled=os.environ.get("INSPECT_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
-            chunks_mode_enabled=os.environ.get("CHUNKS_MODE_ENABLED", "true").lower()
+            linked_mode_enabled=os.environ.get("LINKED_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
             ask_mode_enabled=os.environ.get("ASK_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
