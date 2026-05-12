@@ -13,7 +13,12 @@ vi.mock('./api', () => ({
   pushChunksToStore: vi.fn(),
 }))
 
+vi.mock('../document/api', () => ({
+  rechunkDocument: vi.fn(),
+}))
+
 import * as api from './api'
+import * as documentApi from '../document/api'
 
 const makeChunk = (id: string, text = 'text', overrides: Record<string, unknown> = {}) => ({
   id,
@@ -155,5 +160,54 @@ describe('useChunksStore', () => {
 
     expect(jobId).toBeNull()
     expect(store.error).toBe('network')
+  })
+
+  // ---------------------------------------------------------------------------
+  // rechunk + hasManualEdits (#268)
+  // ---------------------------------------------------------------------------
+
+  it('rechunk — replaces chunks with the API response and returns true', async () => {
+    const next = [makeChunk('c1'), makeChunk('c2')]
+    documentApi.rechunkDocument.mockResolvedValue(next)
+    const store = useChunksStore()
+    store.chunks = [makeChunk('old')]
+
+    const ok = await store.rechunk('d1', { chunkerType: 'hybrid', maxTokens: 256 })
+
+    expect(documentApi.rechunkDocument).toHaveBeenCalledWith('d1', {
+      chunkerType: 'hybrid',
+      maxTokens: 256,
+    })
+    expect(ok).toBe(true)
+    expect(store.chunks.map((c) => c.id)).toEqual(['c1', 'c2'])
+    expect(store.rechunking).toBe(false)
+  })
+
+  it('rechunk — returns false on failure and keeps existing chunks', async () => {
+    documentApi.rechunkDocument.mockRejectedValue(new Error('boom'))
+    const store = useChunksStore()
+    store.chunks = [makeChunk('old')]
+
+    const ok = await store.rechunk('d1')
+
+    expect(ok).toBe(false)
+    expect(store.error).toBe('boom')
+    expect(store.chunks.map((c) => c.id)).toEqual(['old'])
+    expect(store.rechunking).toBe(false)
+  })
+
+  it('hasManualEdits — false when updatedAt equals createdAt for every chunk', () => {
+    const store = useChunksStore()
+    store.chunks = [makeChunk('c1'), makeChunk('c2')]
+    expect(store.hasManualEdits).toBe(false)
+  })
+
+  it('hasManualEdits — true as soon as one chunk has been touched', () => {
+    const store = useChunksStore()
+    store.chunks = [
+      makeChunk('c1'),
+      makeChunk('c2', 'edited', { updatedAt: '2025-02-01T00:00:00Z' }),
+    ]
+    expect(store.hasManualEdits).toBe(true)
   })
 })

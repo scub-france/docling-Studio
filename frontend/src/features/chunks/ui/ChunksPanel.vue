@@ -14,13 +14,22 @@
       <button
         type="button"
         class="strategy-btn"
-        :disabled="true"
-        :title="t('linked.strategySoon')"
+        :disabled="chunksStore.rechunking"
+        :title="t('chunk.strategy')"
         data-e2e="strategy-btn"
+        @click="openStrategy"
       >
-        ⚙ {{ t('linked.strategy') }}
+        ⚙ {{ t('chunk.strategy') }}
       </button>
     </header>
+
+    <StrategyPopover
+      :open="strategyOpen"
+      :has-manual-edits="chunksStore.hasManualEdits"
+      :rechunking="chunksStore.rechunking"
+      @close="strategyOpen = false"
+      @apply="onApplyStrategy"
+    />
 
     <div v-if="chunksStore.loading" class="chunks-panel-state">
       <span class="spinner" />
@@ -84,11 +93,13 @@
  * The Strategy button is rendered as disabled with a tooltip until
  * T7 (#268) wires the rechunk popover.
  */
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { DocChunk } from '../../../shared/types'
+import type { RechunkOptions } from '../../document/api'
 import { useI18n } from '../../../shared/i18n'
 import { colorFor } from '../../document/elementColors'
 import { useChunksStore } from '../store'
+import StrategyPopover from './StrategyPopover.vue'
 
 const props = defineProps<{
   docId: string
@@ -106,6 +117,19 @@ const { t } = useI18n()
 const chunksStore = useChunksStore()
 
 const pageChunks = computed<DocChunk[]>(() => chunksStore.chunksOnPage(props.currentPage))
+
+// Strategy popover (#268) — anchored inline; the chunks store handles
+// the actual rechunk call so its state survives popover dismissal.
+const strategyOpen = ref(false)
+
+function openStrategy(): void {
+  strategyOpen.value = true
+}
+
+async function onApplyStrategy(options: RechunkOptions): Promise<void> {
+  const ok = await chunksStore.rechunk(props.docId, options)
+  if (ok) strategyOpen.value = false
+}
 
 const cardRefs = new Map<string, HTMLElement>()
 
