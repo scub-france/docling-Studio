@@ -208,6 +208,12 @@ const messages: Messages = {
     'history.tabDocuments': 'Documents',
     'history.empty': 'Aucune analyse. Analysez votre premier document pour commencer.',
     'history.emptyDocs': 'Aucun document. Importez un document depuis la bibliothèque.',
+    // Workspace history drawer (#267) — `history.title` already declared above
+    // for the legacy HistoryPage, same value ("Historique").
+    'history.close': 'Fermer',
+    'history.current': '— en cours',
+    'history.setCurrent': 'Sélectionner',
+    'history.notCompleted': 'Disponible uniquement pour les analyses terminées.',
     'history.open': 'Ouvrir',
 
     // Chunking
@@ -764,6 +770,12 @@ const messages: Messages = {
     'history.tabDocuments': 'Documents',
     'history.empty': 'No analyses yet. Analyze your first document to get started.',
     'history.emptyDocs': 'No documents yet. Upload a document from the library.',
+    // Workspace history drawer (#267) — `history.title` already declared above
+    // for the legacy HistoryPage, same value ("History").
+    'history.close': 'Close',
+    'history.current': '— current',
+    'history.setCurrent': 'Set as current',
+    'history.notCompleted': 'Only available for completed analyses.',
     'history.open': 'Open',
 
     'studio.prepare': 'Prepare',

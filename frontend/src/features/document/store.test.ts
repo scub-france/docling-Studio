@@ -237,4 +237,115 @@ describe('useDocumentStore', () => {
     expect(store.workspacePages).toHaveLength(1)
     expect(store.workspacePages[0].page_number).toBe(1)
   })
+
+  // ---------------------------------------------------------------------------
+  // History drawer (#267) — workspaceAnalyses + setWorkspaceAnalysis
+  // ---------------------------------------------------------------------------
+
+  it('loadWorkspace() exposes the full analyses list, newest first', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
+      {
+        id: 'a-old',
+        status: 'COMPLETED',
+        completedAt: '2025-01-01T00:00:00Z',
+        createdAt: '2025-01-01T00:00:00Z',
+        pagesJson: '[]',
+      },
+      {
+        id: 'a-pending',
+        status: 'PENDING',
+        completedAt: null,
+        createdAt: '2025-03-01T00:00:00Z',
+        pagesJson: null,
+      },
+      {
+        id: 'a-new',
+        status: 'COMPLETED',
+        completedAt: '2025-02-01T00:00:00Z',
+        createdAt: '2025-02-01T00:00:00Z',
+        pagesJson: '[]',
+      },
+    ])
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    // Sort key falls back to createdAt for non-completed entries: the
+    // PENDING analysis (createdAt 2025-03-01) wins over the COMPLETED
+    // a-new (completedAt 2025-02-01).
+    expect(store.workspaceAnalyses.map((a) => a.id)).toEqual(['a-pending', 'a-new', 'a-old'])
+    // …but the auto-picked current is the latest COMPLETED, not the
+    // PENDING one.
+    expect(store.workspaceCurrentAnalysisId).toBe('a-new')
+  })
+
+  it('setWorkspaceAnalysis() switches the active analysis when the id is known', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
+      {
+        id: 'a-new',
+        status: 'COMPLETED',
+        completedAt: '2025-02-01T00:00:00Z',
+        createdAt: '2025-02-01T00:00:00Z',
+        pagesJson: '[]',
+      },
+      {
+        id: 'a-old',
+        status: 'COMPLETED',
+        completedAt: '2025-01-01T00:00:00Z',
+        createdAt: '2025-01-01T00:00:00Z',
+        pagesJson: '[]',
+      },
+    ])
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    expect(store.workspaceCurrentAnalysisId).toBe('a-new')
+    store.setWorkspaceAnalysis('a-old')
+    expect(store.workspaceCurrentAnalysisId).toBe('a-old')
+    expect(store.workspaceLatestAnalysis?.id).toBe('a-old')
+  })
+
+  it('setWorkspaceAnalysis() is a no-op for unknown ids', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
+      {
+        id: 'a1',
+        status: 'COMPLETED',
+        completedAt: '2025-02-01T00:00:00Z',
+        createdAt: '2025-02-01T00:00:00Z',
+        pagesJson: '[]',
+      },
+    ])
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    store.setWorkspaceAnalysis('not-in-the-list')
+    expect(store.workspaceCurrentAnalysisId).toBe('a1')
+  })
+
+  it('loadWorkspace() is idempotent — pinned analysis survives a second call for the same doc', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
+      {
+        id: 'a-new',
+        status: 'COMPLETED',
+        completedAt: '2025-02-01T00:00:00Z',
+        createdAt: '2025-02-01T00:00:00Z',
+        pagesJson: '[]',
+      },
+      {
+        id: 'a-old',
+        status: 'COMPLETED',
+        completedAt: '2025-01-01T00:00:00Z',
+        createdAt: '2025-01-01T00:00:00Z',
+        pagesJson: '[]',
+      },
+    ])
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    store.setWorkspaceAnalysis('a-old')
+    // Mimics switching from Parse to Chunk, which re-mounts and calls
+    // loadWorkspace again with the same docId.
+    await store.loadWorkspace('d1')
+    expect(store.workspaceCurrentAnalysisId).toBe('a-old')
+    expect(api.fetchDocument).toHaveBeenCalledTimes(1)
+  })
 })
