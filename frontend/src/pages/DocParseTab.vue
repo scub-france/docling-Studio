@@ -52,6 +52,15 @@
           {{ t('parse.noAnalysis') }}
         </div>
       </div>
+      <ElementProperties
+        :element="selectedElement"
+        :page-width="currentPageWidth"
+        :page-height="currentPageHeight"
+        :page-number="currentPage"
+        :linked-chunk="linkedChunk"
+        :saving="chunksStore.saving"
+        @save-chunk="onSaveChunk"
+      />
     </div>
   </div>
 </template>
@@ -69,10 +78,13 @@
  *   - Clicking a bbox → select the matching node in the tree
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import type { DocTreeNode, PageElement } from '../shared/types'
+import type { DocChunk, DocTreeNode, PageElement } from '../shared/types'
+import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
+import { chunkForElement } from '../features/document/linkedView'
 import DocTreeRail from '../features/document/ui/DocTreeRail.vue'
+import ElementProperties from '../features/document/ui/ElementProperties.vue'
 import LayersBar from '../features/document/ui/LayersBar.vue'
 import PagePreviewWithOverlay from '../features/document/ui/PagePreviewWithOverlay.vue'
 import { useI18n } from '../shared/i18n'
@@ -81,6 +93,7 @@ const props = defineProps<{ docId: string }>()
 
 const { t } = useI18n()
 const documentStore = useDocumentStore()
+const chunksStore = useChunksStore()
 
 const currentPage = ref(1)
 const hiddenTypes = ref<Set<string>>(new Set())
@@ -92,9 +105,30 @@ const treeError = ref<string | null>(null)
 const filter = ref('')
 const selectedNodeRef = ref<string | null>(null)
 
-const currentPageElements = computed<PageElement[]>(() => {
-  const page = documentStore.workspacePages.find((p) => p.page_number === currentPage.value)
-  return page?.elements ?? []
+const currentPageData = computed(() => {
+  return documentStore.workspacePages.find((p) => p.page_number === currentPage.value) ?? null
+})
+
+const currentPageElements = computed<PageElement[]>(() => currentPageData.value?.elements ?? [])
+const currentPageWidth = computed(() => currentPageData.value?.width ?? 0)
+const currentPageHeight = computed(() => currentPageData.value?.height ?? 0)
+
+const selectedElement = computed<PageElement | null>(() => {
+  if (!selectedNodeRef.value) return null
+  // Search every page — selectedNodeRef may point to an element on a
+  // different page than the one currently rendered (the click also
+  // triggers a page change, but until that lands the panel still wants
+  // to show the element's data).
+  for (const page of documentStore.workspacePages) {
+    const el = page.elements.find((e) => e.self_ref === selectedNodeRef.value)
+    if (el) return el
+  }
+  return null
+})
+
+const linkedChunk = computed<DocChunk | null>(() => {
+  if (!selectedElement.value) return null
+  return chunkForElement(selectedElement.value, currentPage.value, chunksStore.chunks)
 })
 
 const nodeCount = computed(() => countNodes(tree.value))
@@ -138,8 +172,16 @@ function onClickElement(el: PageElement): void {
   if (el.self_ref) selectedNodeRef.value = el.self_ref
 }
 
+async function onSaveChunk(chunkId: string, text: string): Promise<void> {
+  await chunksStore.updateText(props.docId, chunkId, text)
+}
+
 onMounted(async () => {
-  await Promise.all([documentStore.loadWorkspace(props.docId), loadTree()])
+  await Promise.all([
+    documentStore.loadWorkspace(props.docId),
+    chunksStore.load(props.docId),
+    loadTree(),
+  ])
   const first = documentStore.workspacePages[0]?.page_number
   if (first) currentPage.value = first
 })
@@ -149,7 +191,7 @@ watch(
   async (id) => {
     selectedNodeRef.value = null
     filter.value = ''
-    await Promise.all([documentStore.loadWorkspace(id), loadTree()])
+    await Promise.all([documentStore.loadWorkspace(id), chunksStore.load(id), loadTree()])
     const first = documentStore.workspacePages[0]?.page_number
     if (first) currentPage.value = first
   },
@@ -199,7 +241,7 @@ function findPageOfRef(
 
 .parse-body {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 320px minmax(0, 1fr) 360px;
   flex: 1;
   min-height: 0;
 }
