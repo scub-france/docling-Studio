@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { DocChunk, ChunkDiff } from '../../shared/types'
 import * as api from './api'
 
@@ -14,6 +14,11 @@ export const useChunksStore = defineStore('chunks', () => {
   function clearError(): void {
     error.value = null
   }
+
+  /** Pure derived getter — chunks whose `sourcePage` matches the given page. */
+  const chunksOnPage = computed(
+    () => (page: number) => chunks.value.filter((c) => c.sourcePage === page),
+  )
 
   async function load(docId: string): Promise<void> {
     loading.value = true
@@ -155,6 +160,7 @@ export const useChunksStore = defineStore('chunks', () => {
 
   return {
     chunks,
+    chunksOnPage,
     loading,
     saving,
     diffing,

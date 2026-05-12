@@ -17,7 +17,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.schemas import (
     AddChunkRequest,
+    ChunkBboxResponse,
     ChunkDiffResponse,
+    ChunkDocItemResponse,
     DocChunkResponse,
     DocRechunkRequest,
     DocTreeNodeResponse,
@@ -55,6 +57,10 @@ def _to_response(chunk) -> DocChunkResponse:
         headings=list(chunk.headings),
         source_page=chunk.source_page,
         token_count=chunk.token_count,
+        bboxes=[ChunkBboxResponse(page=b.page, bbox=list(b.bbox)) for b in chunk.bboxes],
+        doc_items=[
+            ChunkDocItemResponse(self_ref=di.self_ref, label=di.label) for di in chunk.doc_items
+        ],
         created_at=str(chunk.created_at),
         updated_at=str(chunk.updated_at),
     )

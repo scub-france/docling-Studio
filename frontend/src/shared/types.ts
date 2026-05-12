@@ -154,15 +154,27 @@ export interface DocTreeNode {
   children: DocTreeNode[]
 }
 
-/** Doc-centric chunk (distinct from legacy analysis Chunk). */
+/** Source element referenced by a chunk (Docling self_ref + label). */
+export interface ChunkDocItem {
+  selfRef: string
+  label: string
+}
+
+/** Doc-centric chunk (distinct from legacy analysis Chunk).
+ *
+ * `bboxes` and `docItems` were added in #264 so the Linked view can map
+ * a chunk to the bboxes / elements it covers on the page preview.
+ */
 export interface DocChunk {
   id: string
   docId: string
+  sequence: number
   text: string
-  title?: string
-  sourceNodeRef?: string
-  pageRange?: [number, number]
-  tokenCount?: number
+  headings: string[]
+  sourcePage: number | null
+  tokenCount: number | null
+  bboxes: ChunkBbox[]
+  docItems: ChunkDocItem[]
   createdAt: string
   updatedAt: string
 }

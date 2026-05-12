@@ -219,7 +219,11 @@ async function confirmPush(): Promise<void> {
 // --- Chunk interactions (#219 / #220) ---
 function onSelectChunk(id: string): void {
   const chunk = chunksStore.chunks.find((c) => c.id === id)
-  emit('nodeHighlight', chunk?.sourceNodeRef ?? null)
+  // 0.6.1 (#264) — sourceNodeRef was replaced by the richer docItems list.
+  // First doc item's self_ref is the closest equivalent for the legacy
+  // node-highlight contract; tree pane in Inspect (T4) will own this
+  // correlation properly.
+  emit('nodeHighlight', chunk?.docItems[0]?.selfRef ?? null)
 }
 
 function onToggleSelect(id: string): void {
