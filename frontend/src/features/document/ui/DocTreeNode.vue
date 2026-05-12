@@ -13,7 +13,15 @@
         >›</span
       >
       <span v-else class="tree-node-toggle-placeholder" />
-      <span class="tree-node-type">{{ node.type }}</span>
+      <span
+        class="tree-node-dot"
+        :style="{ background: nodeColor }"
+        :title="node.type"
+        aria-hidden="true"
+      />
+      <span class="tree-node-type" :style="{ color: nodeColor, borderColor: nodeColor + '55' }">{{
+        node.type
+      }}</span>
       <span class="tree-node-label" :title="node.label">{{ node.label }}</span>
     </button>
     <ul v-if="hasChildren && open" class="tree-list" role="group">
@@ -33,6 +41,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { DocTreeNode } from '../../../shared/types'
+import { colorFor } from '../elementColors'
 
 const props = withDefaults(
   defineProps<{
@@ -51,6 +60,8 @@ const emit = defineEmits<{
 const open = ref(props.depth < 2)
 
 const hasChildren = computed(() => props.node.children.length > 0)
+
+const nodeColor = computed(() => colorFor(props.node.type))
 
 function onRowClick(): void {
   emit('select', props.node.ref)
@@ -118,10 +129,16 @@ function onRowClick(): void {
   flex-shrink: 0;
 }
 
+.tree-node-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .tree-node-type {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
-  color: var(--text-muted);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 3px;

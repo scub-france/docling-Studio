@@ -395,7 +395,7 @@ const messages: Messages = {
     // Parse view (#264) \u2014 Docling extraction graph
     'parse.layers': 'LAYERS',
     'parse.showLabels': 'Afficher les libell\u00e9s',
-    'parse.pageOf': 'Page {page} sur {total}',
+    'workspace.pageOf': 'Page {page} sur {total}',
     'parse.structureTitle': 'Structure',
     'parse.structureNodes': '{n} n\u0153uds',
     'parse.filterPlaceholder': 'Filtrer les \u00e9l\u00e9ments\u2026',
@@ -403,7 +403,6 @@ const messages: Messages = {
 
     // Chunk view (#264) \u2014 chunks aligned to the page preview
     'chunk.showLabels': 'Afficher les libell\u00e9s',
-    'chunk.pageOf': 'Page {page} sur {total}',
     'chunk.strategy': 'Strat\u00e9gie',
     'chunk.strategySoon': 'Strat\u00e9gie \u2014 param\u00e8tres de rechunk \u00e0 venir',
     'chunk.panel.title': 'Chunks',
@@ -908,7 +907,7 @@ const messages: Messages = {
     // Parse view (#264) — Docling extraction graph
     'parse.layers': 'LAYERS',
     'parse.showLabels': 'Show labels',
-    'parse.pageOf': 'Page {page} of {total}',
+    'workspace.pageOf': 'Page {page} of {total}',
     'parse.structureTitle': 'Structure',
     'parse.structureNodes': '{n} nodes',
     'parse.filterPlaceholder': 'Filter elements…',
@@ -916,7 +915,6 @@ const messages: Messages = {
 
     // Chunk view (#264) — chunks aligned to the page preview
     'chunk.showLabels': 'Show labels',
-    'chunk.pageOf': 'Page {page} of {total}',
     'chunk.strategy': 'Strategy',
     'chunk.strategySoon': 'Strategy — rechunk options coming soon',
     'chunk.panel.title': 'Chunks',

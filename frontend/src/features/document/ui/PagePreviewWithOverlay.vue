@@ -12,11 +12,11 @@
         {{ p }}
       </button>
       <span class="page-paginator-meta">
-        {{ t('linked.pageOf', { page: currentPage, total: totalPages }) }}
+        {{ t('workspace.pageOf', { page: currentPage, total: totalPages }) }}
       </span>
     </div>
-    <div class="preview-stage">
-      <div class="preview-frame">
+    <div class="preview-stage" ref="stageRef">
+      <div class="preview-frame" ref="frameRef">
         <img
           v-if="previewUrl"
           ref="imageRef"
@@ -50,9 +50,10 @@
  * design doc §11); the image fills the container width. Adding zoom later
  * is contained to this component.
  */
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { Page, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
+import { bboxToRect, computeScale } from '../bboxScaling'
 import { getPreviewUrl } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
 
@@ -73,6 +74,8 @@ const emit = defineEmits<{
   clickElement: [el: PageElement]
 }>()
 
+const stageRef = ref<HTMLDivElement | null>(null)
+const frameRef = ref<HTMLDivElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
 const imageEl = ref<HTMLImageElement | null>(null)
 
@@ -89,6 +92,10 @@ const previewUrl = computed(() => {
 
 function onImageLoad(): void {
   imageEl.value = imageRef.value
+  // Center the highlighted element if one is already pending (e.g. the
+  // user clicked a tree node that triggered a page change — the canvas
+  // wasn't mounted yet).
+  nextTick(centerHighlighted)
 }
 
 function onPageChange(page: number): void {
@@ -97,6 +104,54 @@ function onPageChange(page: number): void {
   imageEl.value = null
   emit('update:currentPage', page)
 }
+
+/**
+ * Scroll the preview stage so the first highlighted element sits at the
+ * vertical and horizontal center of the viewport. No-op when no
+ * highlight is set, the image is not loaded yet, or the highlight
+ * doesn't resolve to an element on the current page.
+ */
+function centerHighlighted(): void {
+  const refs = props.highlightedRefs
+  const page = currentPageData.value
+  const img = imageEl.value
+  const stage = stageRef.value
+  const frame = frameRef.value
+  if (!refs || refs.size === 0 || !page || !img || !stage || !frame) return
+
+  const target = page.elements.find((e) => !!e.self_ref && refs.has(e.self_ref))
+  if (!target) return
+
+  const scale = computeScale(img.clientWidth, img.clientHeight, page.width, page.height)
+  const rect = bboxToRect(target.bbox, scale)
+  if (rect.w <= 0 || rect.h <= 0) return
+
+  // Position of the bbox center inside the stage's scrollable space.
+  // The frame is centered horizontally (`margin: 0 auto`) inside the
+  // stage's padding box, so we offset by the frame's position relative
+  // to the stage.
+  const frameLeft = frame.offsetLeft
+  const frameTop = frame.offsetTop
+  const cx = frameLeft + rect.x + rect.w / 2
+  const cy = frameTop + rect.y + rect.h / 2
+
+  const targetLeft = cx - stage.clientWidth / 2
+  const targetTop = cy - stage.clientHeight / 2
+
+  stage.scrollTo({
+    left: Math.max(0, targetLeft),
+    top: Math.max(0, targetTop),
+    behavior: 'smooth',
+  })
+}
+
+watch(
+  () => props.highlightedRefs,
+  () => {
+    nextTick(centerHighlighted)
+  },
+  { deep: true },
+)
 </script>
 
 <style scoped>

@@ -77,22 +77,59 @@ function draw(): void {
   const highlighted = props.highlightedRefs ?? new Set<string>()
   const showLabels = props.showLabels ?? false
 
+  const focusMode = highlighted.size > 0
+  // Two-pass draw so the highlighted element ends up on top, fully crisp.
   for (const el of visibleElements()) {
     const rect = bboxToRect(el.bbox, scale)
     if (rect.w <= 0 || rect.h <= 0) continue
     const color = colorFor(el.type)
     const isHighlight = !!el.self_ref && highlighted.has(el.self_ref)
+    if (isHighlight) continue // drawn in the second pass
 
-    ctx.lineWidth = isHighlight ? 3 : 1.5
-    ctx.strokeStyle = isHighlight ? color : color + 'CC'
+    // Dim everything else when a focus target is set, so the highlight pops.
+    const strokeAlpha = focusMode ? '22' : 'CC'
+    const fillAlpha = focusMode ? '06' : '14'
+    ctx.lineWidth = 1
+    ctx.strokeStyle = color + strokeAlpha
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
-    ctx.fillStyle = color + (isHighlight ? '33' : '14')
+    ctx.fillStyle = color + fillAlpha
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
 
-    if (showLabels) {
+    if (showLabels && !focusMode) {
       ctx.font = '10px -apple-system, sans-serif'
       ctx.fillStyle = color
       ctx.fillText(el.type, rect.x + 2, Math.max(10, rect.y - 2))
+    }
+  }
+
+  // Second pass — focused element, drawn on top with a bold stroke and a
+  // dashed halo so it pops over the dimmed neighbours.
+  if (focusMode) {
+    for (const el of visibleElements()) {
+      if (!el.self_ref || !highlighted.has(el.self_ref)) continue
+      const rect = bboxToRect(el.bbox, scale)
+      if (rect.w <= 0 || rect.h <= 0) continue
+      const color = colorFor(el.type)
+
+      // Halo (dashed outline a few px outside the rect).
+      ctx.setLineDash([5, 3])
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = color + '88'
+      ctx.strokeRect(rect.x - 4, rect.y - 4, rect.w + 8, rect.h + 8)
+      ctx.setLineDash([])
+
+      // Bold stroke + saturated fill on the rect itself.
+      ctx.lineWidth = 3
+      ctx.strokeStyle = color
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+      ctx.fillStyle = color + '33'
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+
+      if (showLabels) {
+        ctx.font = 'bold 11px -apple-system, sans-serif'
+        ctx.fillStyle = color
+        ctx.fillText(el.type, rect.x + 2, Math.max(11, rect.y - 2))
+      }
     }
   }
 }
