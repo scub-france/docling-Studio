@@ -48,16 +48,20 @@
           >
             ↻ {{ t('history.title') }}
           </button>
-          <!-- + New analysis (#266) — bridges to Studio with this doc
-               pre-selected. Interim until a dedicated launcher ships. -->
+          <!-- + New analysis (#266) — runs the analysis in place. Polls
+               via analysisStore.run; the watcher below refreshes the
+               workspace when status flips to COMPLETED. -->
           <button
             type="button"
             class="header-action-btn header-action-btn--primary"
+            :disabled="analysisStore.running"
             :title="t('newAnalysis.title')"
             data-e2e="new-analysis-btn"
             @click="onNewAnalysis"
           >
-            + {{ t('newAnalysis.title') }}
+            <span v-if="analysisStore.running" class="header-spinner" />
+            <span v-else>+</span>
+            {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
           </button>
         </template>
       </DocWorkspaceHeader>
@@ -94,6 +98,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink, useRouter, useRoute } from 'vue-router'
 import type { Document } from '../shared/types'
+import { useAnalysisStore } from '../features/analysis/store'
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocument } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
@@ -118,6 +123,7 @@ const { t } = useI18n()
 const flagStore = useFeatureFlagStore()
 const documentStore = useDocumentStore()
 const chunksStore = useChunksStore()
+const analysisStore = useAnalysisStore()
 
 const historyOpen = ref(false)
 
@@ -131,15 +137,32 @@ async function onSetCurrentAnalysis(analysisId: string): Promise<void> {
 }
 
 /**
- * Bridge to Studio (#266). Until a dedicated "new analysis" screen
- * lands, the doc workspace launches new parses through the existing
- * Studio UI; the docId query param pre-selects the document so the
- * user doesn't have to re-pick it. Studio strips the param from the
- * URL on mount.
+ * In-place analysis launch (#266). Fires `analysisStore.run`, which
+ * POSTs to /api/analyses and starts polling. The watcher below picks
+ * up the COMPLETED transition and refreshes the workspace.
  */
-function onNewAnalysis(): void {
-  router.push({ name: ROUTES.STUDIO, query: { docId: props.id } })
+async function onNewAnalysis(): Promise<void> {
+  if (analysisStore.running) return
+  await analysisStore.run(props.id)
 }
+
+// Watch analysisStore.running: when the in-place launch wraps up and
+// the polling sees a COMPLETED status, refresh the workspace analyses
+// list (the new run shows up in History + becomes the active one) and
+// reload the chunks (the analysis promoter on the backend just wrote
+// the canonical chunkset for the first analysis).
+watch(
+  () => analysisStore.running,
+  async (now, prev) => {
+    if (prev && !now) {
+      const finished = analysisStore.currentAnalysis
+      if (finished?.status === 'COMPLETED' && finished.documentId === props.id) {
+        await documentStore.reloadWorkspaceAnalyses(props.id)
+        await chunksStore.load(props.id)
+      }
+    }
+  },
+)
 
 const doc = ref<Document | null>(null)
 const loadingDoc = ref(true)
@@ -341,10 +364,24 @@ watch(
   color: white;
 }
 
-.header-action-btn--primary:hover {
+.header-action-btn--primary:hover:not(:disabled) {
   filter: brightness(1.1);
   color: white;
   border-color: var(--accent);
+}
+
+.header-action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.header-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }
 
 .tab-content {

@@ -675,16 +675,6 @@ onMounted(async () => {
     // Clean query param from URL
     router.replace({ query: {} })
   }
-
-  // 0.6.1 (#266) — Bridge from the doc workspace's "+ New analysis"
-  // button: pre-select the document so the user lands ready to launch
-  // a new analysis without picking the file again.
-  const bridgeDocId = route.query.docId
-  if (bridgeDocId && typeof bridgeDocId === 'string') {
-    documentStore.select(bridgeDocId)
-    mode.value = 'configure'
-    router.replace({ query: {} })
-  }
 })
 
 onBeforeUnmount(() => {

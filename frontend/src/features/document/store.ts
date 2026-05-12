@@ -162,6 +162,28 @@ export const useDocumentStore = defineStore('document', () => {
     workspaceCurrentAnalysisId.value = analysisId
   }
 
+  /**
+   * Refresh the analyses list without resetting the doc (#266). Called
+   * after an in-place analysis run completes so the new entry shows up
+   * in History and gets auto-pinned as the active one. Bypasses the
+   * idempotency guard on `loadWorkspace`.
+   */
+  async function reloadWorkspaceAnalyses(docId: string): Promise<void> {
+    if (workspaceDoc.value?.id !== docId) return
+    try {
+      const analyses = await fetchDocumentAnalyses(docId)
+      workspaceAnalyses.value = [...analyses].sort((a, b) =>
+        (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt),
+      )
+      // Auto-pin the latest COMPLETED so the workspace renders the
+      // freshly-finished analysis without a manual click in History.
+      const latestCompleted = workspaceAnalyses.value.find((a) => a.status === 'COMPLETED')
+      if (latestCompleted) workspaceCurrentAnalysisId.value = latestCompleted.id
+    } catch (e) {
+      workspaceError.value = (e as Error).message || 'Failed to reload analyses'
+    }
+  }
+
   async function pushToStore(id: string, store: string): Promise<string | null> {
     try {
       const res = await pushChunksToStore(id, store)
@@ -189,6 +211,7 @@ export const useDocumentStore = defineStore('document', () => {
     clearError,
     load,
     loadWorkspace,
+    reloadWorkspaceAnalyses,
     setWorkspaceAnalysis,
     upload,
     remove,

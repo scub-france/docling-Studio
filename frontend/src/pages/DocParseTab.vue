@@ -53,10 +53,13 @@
           <button
             type="button"
             class="parse-state-cta"
+            :disabled="analysisStore.running"
             data-e2e="parse-empty-cta"
             @click="onLaunchAnalysis"
           >
-            + {{ t('newAnalysis.title') }}
+            <span v-if="analysisStore.running" class="cta-spinner" />
+            <span v-else>+</span>
+            {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
           </button>
         </div>
       </div>
@@ -86,8 +89,8 @@
  *   - Clicking a bbox → select the matching node in the tree
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import type { DocChunk, DocTreeNode, PageElement } from '../shared/types'
+import { useAnalysisStore } from '../features/analysis/store'
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
@@ -97,17 +100,17 @@ import ElementProperties from '../features/document/ui/ElementProperties.vue'
 import LayersBar from '../features/document/ui/LayersBar.vue'
 import PagePreviewWithOverlay from '../features/document/ui/PagePreviewWithOverlay.vue'
 import { useI18n } from '../shared/i18n'
-import { ROUTES } from '../shared/routing/names'
 
 const props = defineProps<{ docId: string }>()
 
 const { t } = useI18n()
-const router = useRouter()
 const documentStore = useDocumentStore()
 const chunksStore = useChunksStore()
+const analysisStore = useAnalysisStore()
 
-function onLaunchAnalysis(): void {
-  router.push({ name: ROUTES.STUDIO, query: { docId: props.docId } })
+async function onLaunchAnalysis(): Promise<void> {
+  if (analysisStore.running) return
+  await analysisStore.run(props.docId)
 }
 
 const currentPage = ref(1)
@@ -325,6 +328,9 @@ function findPageOfRef(
 }
 
 .parse-state-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 14px;
   background: var(--accent);
   border: 1px solid var(--accent);
@@ -335,8 +341,22 @@ function findPageOfRef(
   transition: filter var(--transition);
 }
 
-.parse-state-cta:hover {
+.parse-state-cta:hover:not(:disabled) {
   filter: brightness(1.1);
+}
+
+.parse-state-cta:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.cta-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }
 
 .spinner {

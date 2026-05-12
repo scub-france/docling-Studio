@@ -29,10 +29,13 @@
           <button
             type="button"
             class="chunk-state-cta"
+            :disabled="analysisStore.running"
             data-e2e="chunk-empty-cta"
             @click="onLaunchAnalysis"
           >
-            + {{ t('newAnalysis.title') }}
+            <span v-if="analysisStore.running" class="cta-spinner" />
+            <span v-else>+</span>
+            {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
           </button>
         </div>
       </div>
@@ -65,8 +68,8 @@
  * hover/selection — keeps `BboxCanvas` and `ChunksPanel` decoupled.
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import type { DocStoreLink, PageElement } from '../shared/types'
+import { useAnalysisStore } from '../features/analysis/store'
 import { useChunksStore } from '../features/chunks/store'
 import { useDocumentStore } from '../features/document/store'
 import { chunkForElement, elementRefsForChunk } from '../features/document/linkedView'
@@ -75,7 +78,6 @@ import PagePreviewWithOverlay from '../features/document/ui/PagePreviewWithOverl
 import ChunksPanel from '../features/chunks/ui/ChunksPanel.vue'
 import StaleStoresStrip from '../features/chunks/ui/StaleStoresStrip.vue'
 import { useI18n } from '../shared/i18n'
-import { ROUTES } from '../shared/routing/names'
 
 const props = defineProps<{
   docId: string
@@ -84,12 +86,13 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-const router = useRouter()
 const documentStore = useDocumentStore()
 const chunksStore = useChunksStore()
+const analysisStore = useAnalysisStore()
 
-function onLaunchAnalysis(): void {
-  router.push({ name: ROUTES.STUDIO, query: { docId: props.docId } })
+async function onLaunchAnalysis(): Promise<void> {
+  if (analysisStore.running) return
+  await analysisStore.run(props.docId)
 }
 
 const currentPage = ref(1)
@@ -183,6 +186,9 @@ watch(
 }
 
 .chunk-state-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 14px;
   background: var(--accent);
   border: 1px solid var(--accent);
@@ -193,8 +199,22 @@ watch(
   transition: filter var(--transition);
 }
 
-.chunk-state-cta:hover {
+.chunk-state-cta:hover:not(:disabled) {
   filter: brightness(1.1);
+}
+
+.chunk-state-cta:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.cta-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }
 
 .chunk-aside {
