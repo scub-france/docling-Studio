@@ -3,6 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useDocumentStore } from './store'
 
 vi.mock('./api', () => ({
+  fetchDocument: vi.fn(),
   fetchDocuments: vi.fn(),
   uploadDocument: vi.fn(),
   deleteDocument: vi.fn(),
@@ -13,8 +14,13 @@ vi.mock('../chunks/api', () => ({
   pushChunksToStore: vi.fn(),
 }))
 
+vi.mock('../analysis/api', () => ({
+  fetchDocumentAnalyses: vi.fn(),
+}))
+
 import * as api from './api'
 import * as chunksApi from '../chunks/api'
+import * as analysisApi from '../analysis/api'
 
 describe('useDocumentStore', () => {
   beforeEach(() => {
@@ -175,5 +181,60 @@ describe('useDocumentStore', () => {
     const store = useDocumentStore()
     const result = await store.pushToStore('42', 'my-store')
     expect(result).toBeNull()
+  })
+
+  // ---------------------------------------------------------------------------
+  // loadWorkspace (#264) — Linked view orchestration
+  // ---------------------------------------------------------------------------
+
+  it('loadWorkspace() loads doc + picks the latest completed analysis', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
+      { id: 'a-old', status: 'COMPLETED', completedAt: '2025-01-01T00:00:00Z', pagesJson: '[]' },
+      { id: 'a-new', status: 'COMPLETED', completedAt: '2025-02-01T00:00:00Z', pagesJson: '[]' },
+      { id: 'a-pending', status: 'PENDING', completedAt: null, pagesJson: null },
+    ])
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    expect(store.workspaceDoc?.id).toBe('d1')
+    expect(store.workspaceLatestAnalysis?.id).toBe('a-new')
+    expect(store.workspaceLoading).toBe(false)
+    expect(store.workspaceError).toBeNull()
+  })
+
+  it('loadWorkspace() exposes null analysis when none completed', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
+      { id: 'a1', status: 'PENDING', completedAt: null, pagesJson: null },
+    ])
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    expect(store.workspaceLatestAnalysis).toBeNull()
+    expect(store.workspacePages).toEqual([])
+  })
+
+  it('loadWorkspace() sets workspaceError on failure', async () => {
+    api.fetchDocument.mockRejectedValue(new Error('boom'))
+    analysisApi.fetchDocumentAnalyses.mockResolvedValue([])
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    expect(store.workspaceError).toBe('boom')
+    expect(store.workspaceLoading).toBe(false)
+  })
+
+  it('workspacePages parses pages_json lazily, empty on parse error', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
+      {
+        id: 'a1',
+        status: 'COMPLETED',
+        completedAt: '2025-02-01T00:00:00Z',
+        pagesJson: '[{"page_number":1,"width":600,"height":800,"elements":[]}]',
+      },
+    ])
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    expect(store.workspacePages).toHaveLength(1)
+    expect(store.workspacePages[0].page_number).toBe(1)
   })
 })

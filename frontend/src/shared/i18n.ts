@@ -392,6 +392,17 @@ const messages: Messages = {
     'workspace.modeDisabled': 'Mode d\u00e9sactiv\u00e9 pour ce d\u00e9ploiement',
     'workspace.compareSoon': 'Compare \u2014 disponible en 0.9.0',
 
+    // Linked view (#264)
+    'linked.showLabels': 'Afficher les libell\u00e9s',
+    'linked.pageOf': 'Page {page} sur {total}',
+    'linked.strategy': 'Strat\u00e9gie',
+    'linked.strategySoon': 'Strat\u00e9gie \u2014 param\u00e8tres de rechunk \u00e0 venir',
+    'linked.chunks.title': 'Chunks',
+    'linked.chunks.count': '{n} sur {total} en page {page}',
+    'linked.chunks.emptyOnPage': 'Aucun chunk en page {page}.',
+    'linked.chunks.edited': 'modifi\u00e9',
+    'linked.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse.",
+
     // Doc tree rail (#217)
     'tree.empty': "Aucun n\u0153ud dans l'arbre.",
     'tree.expand': 'D\u00e9velopper',
@@ -884,6 +895,17 @@ const messages: Messages = {
     'workspace.backToLibrary': 'Back to library',
     'workspace.modeDisabled': 'Mode disabled for this deployment',
     'workspace.compareSoon': 'Compare — coming in 0.9.0',
+
+    // Linked view (#264)
+    'linked.showLabels': 'Show labels',
+    'linked.pageOf': 'Page {page} of {total}',
+    'linked.strategy': 'Strategy',
+    'linked.strategySoon': 'Strategy — rechunk options coming soon',
+    'linked.chunks.title': 'Chunks',
+    'linked.chunks.count': '{n} of {total} on page {page}',
+    'linked.chunks.emptyOnPage': 'No chunks on page {page}.',
+    'linked.chunks.edited': 'edited',
+    'linked.noAnalysis': 'No analysis yet — run a parse first.',
 
     // Doc tree rail (#217)
     'tree.empty': 'No nodes in tree.',

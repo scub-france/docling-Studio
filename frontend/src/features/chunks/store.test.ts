@@ -15,12 +15,19 @@ vi.mock('./api', () => ({
 
 import * as api from './api'
 
-const makeChunk = (id: string, text = 'text') => ({
+const makeChunk = (id: string, text = 'text', overrides: Record<string, unknown> = {}) => ({
   id,
   docId: 'd1',
+  sequence: 0,
   text,
+  headings: [],
+  sourcePage: null,
+  tokenCount: null,
+  bboxes: [],
+  docItems: [],
   createdAt: '2025-01-01T00:00:00Z',
   updatedAt: '2025-01-01T00:00:00Z',
+  ...overrides,
 })
 
 describe('useChunksStore', () => {
@@ -49,6 +56,21 @@ describe('useChunksStore', () => {
     expect(store.chunks).toEqual([])
   })
 
+  it('chunksOnPage — filters by sourcePage', async () => {
+    const chunks = [
+      makeChunk('c1', 'a', { sourcePage: 1 }),
+      makeChunk('c2', 'b', { sourcePage: 2 }),
+      makeChunk('c3', 'c', { sourcePage: 1 }),
+      makeChunk('c4', 'd', { sourcePage: null }),
+    ]
+    api.fetchChunks.mockResolvedValue(chunks)
+    const store = useChunksStore()
+    await store.load('d1')
+    expect(store.chunksOnPage(1).map((c) => c.id)).toEqual(['c1', 'c3'])
+    expect(store.chunksOnPage(2).map((c) => c.id)).toEqual(['c2'])
+    expect(store.chunksOnPage(3)).toEqual([])
+  })
+
   it('updateText — replaces chunk in list', async () => {
     const store = useChunksStore()
     store.chunks = [makeChunk('c1', 'original')]
@@ -63,12 +85,12 @@ describe('useChunksStore', () => {
   it('updateTitle — replaces chunk in list', async () => {
     const store = useChunksStore()
     store.chunks = [makeChunk('c1')]
-    const updated = { ...makeChunk('c1'), title: 'New title' }
+    const updated = makeChunk('c1', 'text', { headings: ['New title'] })
     api.updateChunk.mockResolvedValue(updated)
 
     await store.updateTitle('d1', 'c1', 'New title')
 
-    expect(store.chunks[0].title).toBe('New title')
+    expect(store.chunks[0].headings[0]).toBe('New title')
   })
 
   it('drop — removes chunk from list', async () => {

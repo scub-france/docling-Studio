@@ -24,10 +24,10 @@
         <span
           v-if="!editingTitle"
           class="chunk-title"
-          :class="{ 'chunk-title--empty': !chunk.title }"
+          :class="{ 'chunk-title--empty': !displayTitle }"
           @dblclick.stop="startEditTitle"
         >
-          {{ chunk.title || t('chunks.noTitle') }}
+          {{ displayTitle || t('chunks.noTitle') }}
         </span>
         <input
           v-else
@@ -40,7 +40,7 @@
           @click.stop
         />
         <span class="chunk-meta">
-          <span v-if="chunk.pageRange">p.{{ chunk.pageRange[0] }}–{{ chunk.pageRange[1] }}</span>
+          <span v-if="chunk.sourcePage !== null">p.{{ chunk.sourcePage }}</span>
           <span v-if="chunk.tokenCount">{{ chunk.tokenCount }}t</span>
           <span v-if="savingThis" class="saving-indicator">{{ t('chunks.saving') }}</span>
         </span>
@@ -145,6 +145,11 @@ const titleInput = ref<HTMLInputElement | null>(null)
 
 const diffStatus = computed<ChunkDiffStatus>(() => props.diffEntry?.status ?? 'unchanged')
 
+// First heading is the canonical "title" surface (#264). The backend stores
+// titles as `headings[0]`; the dedicated `title` field on the wire response
+// was dropped when the response shape was aligned with the domain.
+const displayTitle = computed(() => props.chunk.headings[0] ?? '')
+
 function startEdit(): void {
   draftText.value = props.chunk.text
   editing.value = true
@@ -163,13 +168,13 @@ function cancelText(): void {
 }
 
 function startEditTitle(): void {
-  draftTitle.value = props.chunk.title ?? ''
+  draftTitle.value = displayTitle.value
   editingTitle.value = true
   nextTick(() => titleInput.value?.focus())
 }
 
 function commitTitle(): void {
-  if (draftTitle.value !== (props.chunk.title ?? '')) {
+  if (draftTitle.value !== displayTitle.value) {
     emit('titleChange', props.chunk.id, draftTitle.value)
   }
   editingTitle.value = false

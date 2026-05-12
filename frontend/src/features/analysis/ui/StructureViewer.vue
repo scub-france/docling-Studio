@@ -62,7 +62,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, reactive } from 'vue'
 import { getPreviewUrl } from '../../document/api'
-import { computeScale, bboxToRect, pointInRect } from '../bboxScaling'
+import { computeScale, bboxToRect, pointInRect } from '../../document/bboxScaling'
 import type { Page, PageElement } from '../../../shared/types'
 
 const ELEMENT_COLORS: Record<string, string> = {

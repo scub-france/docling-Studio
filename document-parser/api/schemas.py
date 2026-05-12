@@ -303,8 +303,19 @@ class StoreDocEntryResponse(_CamelModel):
 # ---------------------------------------------------------------------------
 
 
+class ChunkDocItemResponse(_CamelModel):
+    """Wire shape for a chunk's source element reference (Docling `self_ref` + label)."""
+
+    self_ref: str
+    label: str
+
+
 class DocChunkResponse(_CamelModel):
-    """Canonical doc chunk — wire shape consumed by `features/chunks` on the front."""
+    """Canonical doc chunk — wire shape consumed by `features/chunks` on the front.
+
+    Carries `bboxes` and `docItems` (#264) so the Linked view can correlate
+    a chunk card with the element bboxes drawn on the page preview.
+    """
 
     id: str
     doc_id: str
@@ -313,6 +324,8 @@ class DocChunkResponse(_CamelModel):
     headings: list[str] = []
     source_page: int | None = None
     token_count: int | None = None
+    bboxes: list[ChunkBboxResponse] = []
+    doc_items: list[ChunkDocItemResponse] = []
     created_at: str | datetime
     updated_at: str | datetime
 

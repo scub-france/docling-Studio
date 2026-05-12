@@ -46,7 +46,7 @@
            (bbox, selectedPage, etc.) from leaking. -->
       <div class="tab-content" role="tabpanel" data-e2e="tab-content">
         <Suspense>
-          <DocChunksTab
+          <DocLinkedTab
             v-if="activeMode === 'linked'"
             :key="id"
             :doc-id="id"
@@ -74,7 +74,7 @@ import type { Crumb } from '../shared/breadcrumb/types'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocWorkspaceHeader from '../features/document/ui/DocWorkspaceHeader.vue'
-import DocChunksTab from './DocChunksTab.vue'
+import DocLinkedTab from './DocLinkedTab.vue'
 import DocInspectTab from './DocInspectTab.vue'
 
 const props = defineProps<{ id: string; mode: DocMode }>()
