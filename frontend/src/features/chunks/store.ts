@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { DocChunk, ChunkDiff } from '../../shared/types'
+import { rechunkDocument, type RechunkOptions } from '../document/api'
 import * as api from './api'
 
 export const useChunksStore = defineStore('chunks', () => {
   const chunks = ref<DocChunk[]>([])
   const loading = ref(false)
   const saving = ref(false)
+  const rechunking = ref(false)
   const diffing = ref(false)
   const diff = ref<ChunkDiff[]>([])
   const error = ref<string | null>(null)
@@ -130,6 +132,34 @@ export const useChunksStore = defineStore('chunks', () => {
     }
   }
 
+  /**
+   * Rechunk the canonical chunkset with the given options (#268). The
+   * backend replaces the whole chunkset and returns the new list; the
+   * store overwrites `chunks` so the UI reflects the new layout in
+   * one render pass.
+   */
+  async function rechunk(docId: string, options?: RechunkOptions): Promise<boolean> {
+    rechunking.value = true
+    error.value = null
+    try {
+      chunks.value = await rechunkDocument(docId, options)
+      return true
+    } catch (e) {
+      error.value = (e as Error).message || 'Failed to rechunk'
+      console.error('Failed to rechunk', e)
+      return false
+    } finally {
+      rechunking.value = false
+    }
+  }
+
+  /** True when at least one chunk has been hand-edited (#264 — chunks
+   *  where `updatedAt !== createdAt` are flagged with the `edited`
+   *  badge). The Strategy popover uses this to gate a confirm step. */
+  const hasManualEdits = computed(() =>
+    chunks.value.some((c) => c.updatedAt && c.createdAt && c.updatedAt !== c.createdAt),
+  )
+
   async function loadDiff(docId: string, store: string): Promise<void> {
     diffing.value = true
     error.value = null
@@ -161,13 +191,16 @@ export const useChunksStore = defineStore('chunks', () => {
   return {
     chunks,
     chunksOnPage,
+    hasManualEdits,
     loading,
     saving,
+    rechunking,
     diffing,
     diff,
     error,
     clearError,
     load,
+    rechunk,
     updateText,
     updateTitle,
     merge,

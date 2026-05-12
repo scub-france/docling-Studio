@@ -423,12 +423,30 @@ const messages: Messages = {
     // Chunk view (#264) \u2014 chunks aligned to the page preview
     'chunk.showLabels': 'Afficher les libell\u00e9s',
     'chunk.strategy': 'Strat\u00e9gie',
-    'chunk.strategySoon': 'Strat\u00e9gie \u2014 param\u00e8tres de rechunk \u00e0 venir',
     'chunk.panel.title': 'Chunks',
     'chunk.panel.count': '{n} sur {total} en page {page}',
     'chunk.panel.emptyOnPage': 'Aucun chunk en page {page}.',
     'chunk.panel.edited': 'modifi\u00e9',
     'chunk.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse.",
+
+    // Strategy popover (#268) \u2014 inline rechunk options
+    'strategy.title': 'Strat\u00e9gie de chunking',
+    'strategy.close': 'Fermer',
+    'strategy.hint':
+      'Recalcule l\u2019ensemble des chunks \u00e0 partir de la derni\u00e8re analyse.',
+    'strategy.chunkerType': 'Type',
+    'strategy.maxTokens': 'Tokens max',
+    'strategy.maxTokensHint': 'Entre 64 et 8192.',
+    'strategy.mergePeers': 'Fusionner les pairs',
+    'strategy.repeatTableHeader': 'R\u00e9p\u00e9ter les en-t\u00eates de tableaux',
+    'strategy.cancel': 'Annuler',
+    'strategy.apply': 'Appliquer',
+    'strategy.rechunking': 'Re-chunkage\u2026',
+    'strategy.confirmWarning':
+      'Des chunks ont \u00e9t\u00e9 \u00e9dit\u00e9s manuellement. Re-chunker \u00e9crasera ces modifications.',
+    'strategy.confirmHint': 'Continuer ?',
+    'strategy.confirmBack': 'Retour',
+    'strategy.confirmApply': 'Re-chunker quand m\u00eame',
 
     // Doc tree rail (#217)
     'tree.empty': "Aucun n\u0153ud dans l'arbre.",
@@ -953,12 +971,30 @@ const messages: Messages = {
     // Chunk view (#264) — chunks aligned to the page preview
     'chunk.showLabels': 'Show labels',
     'chunk.strategy': 'Strategy',
-    'chunk.strategySoon': 'Strategy — rechunk options coming soon',
     'chunk.panel.title': 'Chunks',
     'chunk.panel.count': '{n} of {total} on page {page}',
     'chunk.panel.emptyOnPage': 'No chunks on page {page}.',
     'chunk.panel.edited': 'edited',
     'chunk.noAnalysis': 'No analysis yet — run a parse first.',
+
+    // Strategy popover (#268) — inline rechunk options
+    'strategy.title': 'Chunking strategy',
+    'strategy.close': 'Close',
+    'strategy.hint':
+      'Re-runs the chunker on the latest analysis and replaces the current chunkset.',
+    'strategy.chunkerType': 'Type',
+    'strategy.maxTokens': 'Max tokens',
+    'strategy.maxTokensHint': 'Between 64 and 8192.',
+    'strategy.mergePeers': 'Merge peers',
+    'strategy.repeatTableHeader': 'Repeat table headers',
+    'strategy.cancel': 'Cancel',
+    'strategy.apply': 'Apply',
+    'strategy.rechunking': 'Rechunking…',
+    'strategy.confirmWarning':
+      'Some chunks have been hand-edited. Rechunking will overwrite those edits.',
+    'strategy.confirmHint': 'Proceed anyway?',
+    'strategy.confirmBack': 'Back',
+    'strategy.confirmApply': 'Rechunk anyway',
 
     // Doc tree rail (#217)
     'tree.empty': 'No nodes in tree.',
