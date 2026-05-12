@@ -17,7 +17,7 @@
       <!-- Sticky header (#218) -->
       <DocWorkspaceHeader :doc="doc">
         <template #actions>
-          <!-- View switcher (#263) — Linked / Inspect / Compare. Compare is
+          <!-- View switcher (#263) — Parse / Chunk / Compare. Compare is
                rendered as a disabled placeholder until #270 (0.9.0). -->
           <div class="view-switcher" role="tablist" data-e2e="view-switcher">
             <button
@@ -38,8 +38,27 @@
               {{ t(`workspace.tabs.${view.key}`) }}
             </button>
           </div>
+          <!-- History drawer trigger (#267) — visible on every view. -->
+          <button
+            type="button"
+            class="header-action-btn"
+            :title="t('history.title')"
+            data-e2e="history-btn"
+            @click="historyOpen = true"
+          >
+            ↻ {{ t('history.title') }}
+          </button>
         </template>
       </DocWorkspaceHeader>
+
+      <!-- History drawer (#267) — teleported to body. -->
+      <HistoryDrawer
+        :open="historyOpen"
+        :analyses="documentStore.workspaceAnalyses"
+        :current-id="documentStore.workspaceCurrentAnalysisId"
+        @close="historyOpen = false"
+        @set-current="onSetCurrentAnalysis"
+      />
 
       <!-- View content — lazy loaded (#216). :key on docId forces a clean
            remount when navigating to a different doc, preventing stale state
@@ -64,7 +83,9 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink, useRouter, useRoute } from 'vue-router'
 import type { Document } from '../shared/types'
+import { useChunksStore } from '../features/chunks/store'
 import { fetchDocument } from '../features/document/api'
+import { useDocumentStore } from '../features/document/store'
 import { useFeatureFlagStore } from '../features/feature-flags/store'
 import { type DocMode } from '../shared/routing/modes'
 import { resolveMode } from '../shared/routing/resolveMode'
@@ -74,6 +95,7 @@ import type { Crumb } from '../shared/breadcrumb/types'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocWorkspaceHeader from '../features/document/ui/DocWorkspaceHeader.vue'
+import HistoryDrawer from '../features/document/ui/HistoryDrawer.vue'
 import DocParseTab from './DocParseTab.vue'
 import DocChunkTab from './DocChunkTab.vue'
 
@@ -83,6 +105,19 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const flagStore = useFeatureFlagStore()
+const documentStore = useDocumentStore()
+const chunksStore = useChunksStore()
+
+const historyOpen = ref(false)
+
+async function onSetCurrentAnalysis(analysisId: string): Promise<void> {
+  documentStore.setWorkspaceAnalysis(analysisId)
+  // The chunks tied to the canonical chunkset don't change with the
+  // analysis pointer, but reload them anyway so any backend-side side
+  // effect of the switch (e.g. a re-promotion) is reflected.
+  await chunksStore.load(props.id)
+  historyOpen.value = false
+}
 
 const doc = ref<Document | null>(null)
 const loadingDoc = ref(true)
@@ -257,6 +292,25 @@ watch(
 .view-btn.disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.header-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.header-action-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .tab-content {

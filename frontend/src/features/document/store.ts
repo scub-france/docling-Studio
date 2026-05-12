@@ -12,15 +12,27 @@ export const useDocumentStore = defineStore('document', () => {
   const loading = ref(false)
   const uploading = ref(false)
   const error = ref<string | null>(null)
-  // 0.6.1 (#264) — Linked view workspace orchestration. Independent from
+  // 0.6.1 (#264, #267) — Doc workspace orchestration. Independent from
   // the library listing above (documents/loading) so the two surfaces can
   // be tested in isolation.
   const workspaceDoc = ref<Document | null>(null)
-  const workspaceLatestAnalysis = ref<Analysis | null>(null)
+  // Full analyses history for the current doc (#267). Sorted newest-first
+  // by completedAt (falling back to createdAt for non-completed entries).
+  const workspaceAnalyses = ref<Analysis[]>([])
+  // Currently-selected analysis id. Defaults to the latest COMPLETED on
+  // load; the History drawer (#267) can pin a different one.
+  const workspaceCurrentAnalysisId = ref<string | null>(null)
   const workspaceLoading = ref(false)
   const workspaceError = ref<string | null>(null)
 
-  /** Pages parsed lazily from `workspaceLatestAnalysis.pagesJson`. Returns
+  /** The selected analysis for this workspace — auto-picked latest, or
+   *  the one the user pinned via the History drawer. */
+  const workspaceLatestAnalysis = computed<Analysis | null>(() => {
+    if (!workspaceCurrentAnalysisId.value) return null
+    return workspaceAnalyses.value.find((a) => a.id === workspaceCurrentAnalysisId.value) ?? null
+  })
+
+  /** Pages parsed lazily from the selected analysis's `pagesJson`. Returns
    *  an empty array on missing data or parse error — non-fatal. */
   const workspacePages = computed<Page[]>(() => {
     const raw = workspaceLatestAnalysis.value?.pagesJson
@@ -98,31 +110,56 @@ export const useDocumentStore = defineStore('document', () => {
   }
 
   /**
-   * Doc workspace orchestration (#264). Fetches the doc metadata and the
-   * latest completed analysis in parallel — chunks are loaded by the
-   * chunks store independently so the two stores stay testable in
-   * isolation.
+   * Doc workspace orchestration (#264, extended #267). Fetches the doc
+   * metadata and the doc's analyses in parallel — chunks are loaded by
+   * the chunks store independently so the two stores stay testable in
+   * isolation. Defaults the active analysis to the latest COMPLETED one;
+   * the History drawer can pin a different one via `setWorkspaceAnalysis`.
+   *
+   * Idempotent across view switches: if the workspace is already loaded
+   * for `docId`, returns immediately. This preserves a user-pinned
+   * analysis when the user switches between Parse and Chunk tabs.
+   * Reloading the analyses list is a separate concern handled by
+   * `reloadAnalyses(docId)`.
    */
   async function loadWorkspace(docId: string): Promise<void> {
+    if (workspaceDoc.value?.id === docId) return
     workspaceLoading.value = true
     workspaceError.value = null
     workspaceDoc.value = null
-    workspaceLatestAnalysis.value = null
+    workspaceAnalyses.value = []
+    workspaceCurrentAnalysisId.value = null
     try {
       const [doc, analyses] = await Promise.all([
         api.fetchDocument(docId),
         fetchDocumentAnalyses(docId),
       ])
       workspaceDoc.value = doc
-      workspaceLatestAnalysis.value =
-        analyses
-          .filter((a) => a.status === 'COMPLETED')
-          .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))[0] ?? null
+      // Newest-first sort. Falls back to createdAt when completedAt is
+      // null (PENDING / RUNNING / FAILED entries still belong to history).
+      workspaceAnalyses.value = [...analyses].sort((a, b) =>
+        (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt),
+      )
+      // Auto-pick the latest COMPLETED analysis as the active one. If
+      // none is completed yet, leave the workspace empty — Parse / Chunk
+      // already render an "Aucune analyse" state in that case.
+      workspaceCurrentAnalysisId.value =
+        workspaceAnalyses.value.find((a) => a.status === 'COMPLETED')?.id ?? null
     } catch (e) {
       workspaceError.value = (e as Error).message || 'Failed to load workspace'
     } finally {
       workspaceLoading.value = false
     }
+  }
+
+  /**
+   * Switch the active analysis without re-fetching the analyses list
+   * (#267). Caller code (DocParseTab / DocChunkTab) is responsible for
+   * reloading the chunks tied to the new analysis.
+   */
+  function setWorkspaceAnalysis(analysisId: string): void {
+    if (!workspaceAnalyses.value.some((a) => a.id === analysisId)) return
+    workspaceCurrentAnalysisId.value = analysisId
   }
 
   async function pushToStore(id: string, store: string): Promise<string | null> {
@@ -143,6 +180,8 @@ export const useDocumentStore = defineStore('document', () => {
     uploading,
     error,
     workspaceDoc,
+    workspaceAnalyses,
+    workspaceCurrentAnalysisId,
     workspaceLatestAnalysis,
     workspacePages,
     workspaceLoading,
@@ -150,6 +189,7 @@ export const useDocumentStore = defineStore('document', () => {
     clearError,
     load,
     loadWorkspace,
+    setWorkspaceAnalysis,
     upload,
     remove,
     select,
