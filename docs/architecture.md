@@ -87,6 +87,16 @@ document-parser/
 
 The API uses **camelCase** serialization (via Pydantic `alias_generator`), while the backend uses **snake_case** internally. The `pages_json` field contains raw `dataclasses.asdict()` output, so page data uses **snake_case** (`page_number`, not `pageNumber`).
 
+### API design rule — no UX-shaped routes (#269)
+
+The backend exposes **DDD-granular** services, not screens. One route ≈ one domain operation: chunk CRUD lives under `/api/documents/{id}/chunks/*`, store CRUD under `/api/stores/*`, document versions under `/api/documents/{id}/versions/*`, and so on.
+
+If a UI screen needs several calls to render or submit, the sequencing is done **client-side** in a Pinia store action (`features/*/store.ts`). The backend never grows a "screen-shaped" aggregate route just because it would shorten one frontend function.
+
+**Exceptions are limited to atomicity / transactional guarantees** the client cannot achieve by chaining calls — e.g. `POST .../chunks/{id}/split` writes two new chunks + an audit row atomically; doing it client-side would race the audit log. When such a bundled operation is added, the service docstring must spell out the atomicity argument.
+
+Reviewers: any new route under `/api/*` that doesn't fit one of these two buckets (single domain op, or named atomicity exception) is a red flag. See `docs/design/269-backend-ddd-audit.md` for the full classification of every route as of 0.6.1.
+
 ## Frontend — Feature-Based
 
 The frontend is organized by feature, each with its own store, API client, and UI components.
