@@ -111,6 +111,7 @@
             :key="id"
             :doc-id="id"
             :store-links="doc.storeLinks"
+            @pushed="loadDoc"
           />
         </Suspense>
       </div>
