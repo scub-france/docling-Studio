@@ -9,6 +9,13 @@ When chunks carry `doc_items` provenance (list of `self_ref` strings), we
 create `(:Chunk)-[:DERIVED_FROM]->(:Element)` links so that queries can go
 from a chunk back to its source elements. Chunks without doc_items get no
 back-links but are still persisted.
+
+Reliability note (#225): the raw Cypher driver does not raise when a
+MATCH returns zero rows and downstream CREATE statements consequently
+no-op. We therefore RETURN counts from the write statement and assert
+them on the Python side, raising `Neo4jWriteError` on a mismatch. See
+the docstring on `infra/neo4j/__init__.py` for the broader rationale
+on why we stay on the raw driver instead of an OGM (neomodel etc.).
 """
 
 from __future__ import annotations
@@ -22,6 +29,16 @@ if TYPE_CHECKING:
     from infra.neo4j.driver import Neo4jDriver
 
 logger = logging.getLogger(__name__)
+
+
+class Neo4jWriteError(RuntimeError):
+    """Raised when a Neo4j write reports a different count than expected.
+
+    See `infra/neo4j/__init__.py` for the rationale on why we assert
+    on the server-reported count (instead of trusting Python-side
+    row counts that don't reflect whether the statement actually
+    matched anything in the graph).
+    """
 
 
 @dataclass
@@ -85,7 +102,7 @@ async def write_chunks(
         await tx.run("MATCH (c:Chunk {doc_id: $doc_id}) DETACH DELETE c", doc_id=doc_id)
 
         if chunk_rows:
-            await tx.run(
+            result = await tx.run(
                 """
                     MATCH (d:Document {id: $doc_id})
                     UNWIND $rows AS r
@@ -98,10 +115,21 @@ async def write_chunks(
                       embedding_ref: r.embedding_ref
                     })
                     MERGE (d)-[:HAS_CHUNK]->(c)
+                    RETURN count(c) AS created
                     """,
                 doc_id=doc_id,
                 rows=chunk_rows,
             )
+            row = await result.single()
+            created = row["created"] if row else 0
+            if created != len(chunk_rows):
+                raise Neo4jWriteError(
+                    f"Neo4j write mismatch for doc {doc_id}: expected "
+                    f"{len(chunk_rows)} chunks created, got {created}. "
+                    "Likely cause: the Document node disappeared between "
+                    "the MERGE step and this CREATE — re-run after a "
+                    "tree-write or check for concurrent writers."
+                )
 
         if derived_rows:
             await tx.run(
