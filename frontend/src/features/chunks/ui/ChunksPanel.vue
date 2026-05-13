@@ -37,8 +37,26 @@
     <div v-else-if="chunksStore.error" class="chunks-panel-state chunks-panel-error">
       {{ chunksStore.error }}
     </div>
+    <div
+      v-else-if="!chunksStore.chunks.length"
+      class="chunks-panel-state chunks-panel-state--empty"
+      data-e2e="chunks-panel-empty"
+    >
+      <p>{{ t('chunk.panel.emptyAll') }}</p>
+      <button
+        type="button"
+        class="chunks-empty-cta"
+        :disabled="chunksStore.rechunking"
+        data-e2e="chunks-panel-empty-cta"
+        @click="openStrategy"
+      >
+        <span v-if="chunksStore.rechunking" class="spinner spinner--inline" />
+        <span v-else>⚙</span>
+        {{ chunksStore.rechunking ? t('strategy.rechunking') : t('chunk.panel.generate') }}
+      </button>
+    </div>
     <div v-else-if="!pageChunks.length" class="chunks-panel-state">
-      {{ t('linked.chunks.emptyOnPage', { page: currentPage }) }}
+      {{ t('chunk.panel.emptyOnPage', { page: currentPage }) }}
     </div>
 
     <ul v-else class="chunks-panel-list" data-e2e="chunks-panel-list">
@@ -226,6 +244,41 @@ void props.docId
   font-size: 12px;
   color: var(--text-muted);
   padding: 20px;
+  text-align: center;
+}
+
+.chunks-panel-state--empty {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chunks-empty-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: filter var(--transition);
+}
+
+.chunks-empty-cta:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.chunks-empty-cta:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.spinner--inline {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
 }
 
 .chunks-panel-error {
