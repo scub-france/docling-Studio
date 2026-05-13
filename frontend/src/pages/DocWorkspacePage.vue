@@ -148,9 +148,11 @@ async function onNewAnalysis(): Promise<void> {
 
 // Watch analysisStore.running: when the in-place launch wraps up and
 // the polling sees a COMPLETED status, refresh the workspace analyses
-// list (the new run shows up in History + becomes the active one) and
-// reload the chunks (the analysis promoter on the backend just wrote
-// the canonical chunkset for the first analysis).
+// list (the new run shows up in History + becomes the active one).
+// Chunks are NOT reloaded here — running an analysis no longer creates
+// chunks (the backend auto-promoter was disabled in 0.6.1). The user
+// must explicitly invoke the Strategy popover from the Chunk view to
+// generate / regenerate the canonical chunkset.
 watch(
   () => analysisStore.running,
   async (now, prev) => {
@@ -158,7 +160,6 @@ watch(
       const finished = analysisStore.currentAnalysis
       if (finished?.status === 'COMPLETED' && finished.documentId === props.id) {
         await documentStore.reloadWorkspaceAnalyses(props.id)
-        await chunksStore.load(props.id)
       }
     }
   },
