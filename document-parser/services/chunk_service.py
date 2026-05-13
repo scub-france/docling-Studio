@@ -22,7 +22,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain.models import Chunk, ChunkEdit, ChunkPush
+from domain.models import Chunk, ChunkEdit, ChunkPush, DocumentStoreLink
 from domain.value_objects import (
     ChunkBbox,
     ChunkDocItem,
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
         DocumentChunker,
         DocumentRepository,
     )
+    from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
     from persistence.store_repo import SqliteStoreRepository
     from services.ingestion_service import IngestionService
 
@@ -149,6 +150,7 @@ class ChunkService:
         chunker: DocumentChunker | None = None,
         ingestion_service: IngestionService | None = None,
         store_repo: SqliteStoreRepository | None = None,
+        link_repo: SqliteDocumentStoreLinkRepository | None = None,
         actor: str = "user",
     ) -> None:
         self._chunks = chunk_repo
@@ -163,6 +165,12 @@ class ChunkService:
         # When None, push_to_store falls back to using the passed value
         # verbatim (legacy callers may already pass an id).
         self._stores = store_repo
+        # Optional — used by `push_to_store` to upsert the live
+        # `document_store_links` row that drives the per-store state
+        # badges in the UI (Ingested / Stale / Failed). Without it the
+        # audit row in `chunk_pushes` still lands but the user-visible
+        # state stays NotPushed forever.
+        self._links = link_repo
         self._actor = actor
         # Duck-typed recorder for document versions (#267). Wired in
         # main.py to `VersionService.record_on_rechunk` so each
@@ -594,22 +602,43 @@ class ChunkService:
 
         chunks_payload = [_chunk_to_ingestion_dict(c) for c in canonical]
         chunks_json_payload = json.dumps(chunks_payload)
-        ingestion_result = await self._ingestion.ingest(
-            doc_id=document_id,
-            filename=(doc.filename if doc else document_id),
-            chunks_json=chunks_json_payload,
-        )
+        chunkset_hash = _compute_chunkset_hash(canonical)
+        try:
+            ingestion_result = await self._ingestion.ingest(
+                doc_id=document_id,
+                filename=(doc.filename if doc else document_id),
+                chunks_json=chunks_json_payload,
+            )
+        except Exception as exc:
+            # Push failed mid-flight — record the failure on the link
+            # so the UI can show "Failed" instead of an indefinite
+            # "Pushing…" or the previous state. Then re-raise.
+            await self._mark_link_failed(document_id, resolved_store_id, error=str(exc))
+            raise
 
         chunk_ids = [c.id for c in canonical]
+        pushed_at = _utcnow()
         push = ChunkPush(
             id=_new_id(),
             document_id=document_id,
             store_id=resolved_store_id,
-            chunkset_hash=_compute_chunkset_hash(canonical),
+            chunkset_hash=chunkset_hash,
             chunk_ids=chunk_ids,
-            pushed_at=_utcnow(),
+            pushed_at=pushed_at,
         )
         await self._pushes.insert(push)
+
+        # Upsert the live link row that the UI reads from. Without
+        # this, `Document.storeLinks` (the source of truth for the
+        # Ingest view badges) stays NotPushed indefinitely even
+        # though the audit log records the push.
+        await self._upsert_link_ingested(
+            document_id,
+            resolved_store_id,
+            chunkset_hash=chunkset_hash,
+            at=pushed_at,
+            run_id=push.id,
+        )
 
         token_total = sum((c.token_count or 0) for c in canonical)
         logger.info(
@@ -626,6 +655,50 @@ class ChunkService:
                 "tokens": token_total,
             },
         }
+
+    async def _upsert_link_ingested(
+        self,
+        document_id: str,
+        store_id: str,
+        *,
+        chunkset_hash: str,
+        at: datetime,
+        run_id: str,
+    ) -> None:
+        """Mark the (doc, store) link as Ingested. No-op if no link repo
+        is wired (legacy ChunkService instances without store wiring).
+        """
+        if self._links is None:
+            return
+        existing = await self._links.find_one(document_id, store_id)
+        link = existing or DocumentStoreLink(
+            document_id=document_id,
+            store_id=store_id,
+        )
+        link.mark_ingested(hash_=chunkset_hash, at=at, run_id=run_id)
+        await self._links.upsert(link)
+
+    async def _mark_link_failed(self, document_id: str, store_id: str, *, error: str) -> None:
+        """Best-effort failure marker — never raises (we're already
+        in an error path; the original push exception must bubble up
+        unchanged).
+        """
+        if self._links is None:
+            return
+        try:
+            existing = await self._links.find_one(document_id, store_id)
+            link = existing or DocumentStoreLink(
+                document_id=document_id,
+                store_id=store_id,
+            )
+            link.mark_failed(error=error[:500])
+            await self._links.upsert(link)
+        except Exception:
+            logger.exception(
+                "Failed to record push failure on document_store_links for doc=%s store=%s",
+                document_id,
+                store_id,
+            )
 
     # -- tree (read from latest analysis document_json)
 
