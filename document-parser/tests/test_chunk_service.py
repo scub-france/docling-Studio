@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from domain.models import AnalysisJob, AnalysisStatus, Chunk, Document
-from domain.value_objects import ChunkEditAction, ChunkResult
+from domain.value_objects import ChunkDocItem, ChunkEditAction, ChunkResult
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.chunk_edit_repo import (
     SqliteChunkEditRepository,
@@ -282,6 +282,41 @@ class TestRechunkDocument:
         with pytest.raises(ChunkServiceError) as exc:
             await service.rechunk_document(doc.id)
         assert exc.value.http_status == 503
+
+    async def test_rechunk_preserves_doc_items_from_chunker(self, service, repos, doc):
+        """0.6.1 — the bbox↔chunk linking on the Chunk view depends on
+        the canonical chunks carrying `doc_items`. The previous implementation
+        dropped them on a stale "ChunkResult has no doc_items" comment.
+        """
+        # Seed a completed analysis.
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = json.dumps({"texts": []})
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(
+            return_value=[
+                ChunkResult(
+                    text="t",
+                    source_page=1,
+                    token_count=4,
+                    doc_items=[
+                        ChunkDocItem(self_ref="#/texts/0", label="text"),
+                        ChunkDocItem(self_ref="#/texts/1", label="text"),
+                    ],
+                ),
+            ]
+        )
+        service._chunker = chunker
+
+        result = await service.rechunk_document(doc.id)
+        assert len(result) == 1
+        assert [d.self_ref for d in result[0].doc_items] == ["#/texts/0", "#/texts/1"]
+        # Persisted chunks carry doc_items too.
+        chunks = await service.list_chunks(doc.id)
+        assert [d.self_ref for d in chunks[0].doc_items] == ["#/texts/0", "#/texts/1"]
 
 
 # ---------------------------------------------------------------------------
