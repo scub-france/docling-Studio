@@ -68,6 +68,12 @@ async def write_chunks(
         neo.driver.session(database=neo.database) as session,
         await session.begin_transaction() as tx,
     ):
+        # MERGE the Document node first — chunk-ingest must not silently
+        # fail when the workspace wasn't analyzed via the tree writer
+        # yet (or the graph was wiped manually). MERGE is idempotent;
+        # `write_document` later fills in the metadata.
+        await tx.run("MERGE (d:Document {id: $doc_id})", doc_id=doc_id)
+
         # Replace existing chunks.
         await tx.run(
             """
