@@ -435,6 +435,9 @@ const messages: Messages = {
     'chunk.panel.title': 'Chunks',
     'chunk.panel.count': '{n} sur {total} en page {page}',
     'chunk.panel.emptyOnPage': 'Aucun chunk en page {page}.',
+    'chunk.panel.emptyAll':
+      'Aucun chunk pour ce document. Générez-en depuis la stratégie ci-dessous.',
+    'chunk.panel.generate': 'Générer les chunks',
     'chunk.panel.edited': 'modifi\u00e9',
     'chunk.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse.",
 
@@ -992,6 +995,9 @@ const messages: Messages = {
     'chunk.panel.title': 'Chunks',
     'chunk.panel.count': '{n} of {total} on page {page}',
     'chunk.panel.emptyOnPage': 'No chunks on page {page}.',
+    'chunk.panel.emptyAll':
+      'No chunks for this document yet. Generate them from the strategy below.',
+    'chunk.panel.generate': 'Generate chunks',
     'chunk.panel.edited': 'edited',
     'chunk.noAnalysis': 'No analysis yet — run a parse first.',
 

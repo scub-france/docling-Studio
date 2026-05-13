@@ -440,19 +440,14 @@ class AnalysisService:
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)
 
-        # Promote chunks into the canonical doc-centric chunkset on the
-        # first analysis (#256). Idempotent: a doc that already has
-        # canonical chunks is left untouched, so subsequent ad-hoc
-        # analyses (Studio / OCR Debug) never overwrite hand-edited state.
-        if chunks_json is not None and self._chunk_promoter is not None:
-            try:
-                await self._chunk_promoter.promote_from_analysis_if_empty(
-                    job.document_id, chunks_json
-                )
-            except Exception:
-                # Promotion is a best-effort hook — never fail an analysis
-                # because the canonical promotion hit a snag.
-                logger.exception("Canonical chunk promotion failed for doc %s", job.document_id)
+        # Canonical chunk promotion was previously called here (#256), but
+        # the 0.6.1 doc workspace (#266) requires the analysis and chunk
+        # actions to be independent — running an analysis must NOT
+        # implicitly create chunks. Chunks are now produced explicitly via
+        # `POST /api/documents/{id}/rechunk` (driven from the Strategy
+        # popover, #268). The promoter hook stays wired in main.py so
+        # legacy callers / tests can still trigger it directly, but it is
+        # no longer invoked as part of the analysis flow.
 
         # Drive the document lifecycle (#202): chunks present → Chunked,
         # otherwise → Parsed.
