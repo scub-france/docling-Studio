@@ -55,11 +55,7 @@
                 class="ingest-state-badge"
                 :class="`ingest-state-badge--${stateBucket(row.state)}`"
               >
-                {{
-                  t(
-                    `ingest.state${stateBucket(row.state)[0].toUpperCase() + stateBucket(row.state).slice(1)}`,
-                  )
-                }}
+                {{ t(stateLabelKey(row.state)) }}
               </span>
             </td>
             <td class="ingest-col-actions">
@@ -129,34 +125,33 @@
  * and `POST /api/documents/{id}/chunks/push` from the frontend.
  */
 import { computed, onMounted, ref } from 'vue'
-import type {
-  ChunkDiff,
-  ChunkDiffStatus,
-  DocStoreLink,
-  DocumentLifecycleState,
-} from '../shared/types'
+import type { ChunkDiff, DocStoreLink } from '../shared/types'
 import { fetchChunkDiff, pushChunksToStore } from '../features/chunks/api'
 import { fetchStores, type StoreInfo } from '../features/store/api'
 import { formatRelativeTime } from '../shared/format'
 import { useI18n } from '../shared/i18n'
+import {
+  type IngestRow,
+  buildRows,
+  countStalePushable,
+  stateBucket,
+  stateLabelKey,
+  summarizeDiff,
+} from './DocIngestTab.logic'
 
 const props = defineProps<{
   docId: string
   storeLinks?: DocStoreLink[]
 }>()
 
+// Emitted when at least one push succeeded — the parent
+// (DocWorkspacePage) refetches the document so `storeLinks` reflect
+// the new push state immediately, instead of staying stale until
+// navigation. Required for the "Stale → Up-to-date" transition to be
+// visible in the row right after the action.
+const emit = defineEmits<{ pushed: [] }>()
+
 const { t } = useI18n()
-
-interface IngestRow {
-  slug: string
-  name: string
-  kind: string
-  connected: boolean
-  state: DocumentLifecycleState | 'NotPushed'
-  pushedAt: string | null
-}
-
-type StateBucket = 'notPushed' | 'upToDate' | 'stale' | 'failed'
 
 const stores = ref<StoreInfo[]>([])
 const loading = ref(false)
@@ -168,42 +163,11 @@ const diffLoading = ref(false)
 const diffError = ref<string | null>(null)
 const diffEntries = ref<ChunkDiff[]>([])
 
-const rows = computed<IngestRow[]>(() => {
-  const linkBySlug = new Map<string, DocStoreLink>(
-    (props.storeLinks ?? []).map((l) => [l.store, l]),
-  )
-  return stores.value.map((s) => {
-    const link = linkBySlug.get(s.slug)
-    return {
-      slug: s.slug,
-      name: s.name,
-      kind: s.type,
-      connected: s.connected,
-      state: link?.state ?? 'NotPushed',
-      pushedAt: link?.pushedAt ?? null,
-    }
-  })
-})
+const rows = computed<IngestRow[]>(() => buildRows(stores.value, props.storeLinks))
 
-const staleStoreCount = computed(() => rows.value.filter((r) => r.state === 'Stale').length)
+const staleStoreCount = computed(() => countStalePushable(rows.value))
 
-const diffSummary = computed(() => {
-  const tally: Record<ChunkDiffStatus, number> = {
-    added: 0,
-    modified: 0,
-    removed: 0,
-    unchanged: 0,
-  }
-  for (const d of diffEntries.value) tally[d.status] += 1
-  return tally
-})
-
-function stateBucket(state: IngestRow['state']): StateBucket {
-  if (state === 'Ingested') return 'upToDate'
-  if (state === 'Stale') return 'stale'
-  if (state === 'Failed') return 'failed'
-  return 'notPushed'
-}
+const diffSummary = computed(() => summarizeDiff(diffEntries.value))
 
 async function load(): Promise<void> {
   loading.value = true
@@ -238,12 +202,11 @@ async function toggleDiff(slug: string): Promise<void> {
 async function onPush(slug: string): Promise<void> {
   if (pushingSlug.value) return
   pushingSlug.value = slug
+  let succeeded = false
   try {
     await pushChunksToStore(props.docId, slug)
-    // Refresh the stores list so connected / counts re-render. The
-    // doc's storeLinks come from the parent (DocWorkspacePage); a
-    // subsequent navigation away/back will refresh those — for the
-    // first cut we don't roundtrip the document.
+    succeeded = true
+    // Refresh the stores list so connected / counts re-render.
     await load()
     // If the row was expanded with a diff, refresh it too.
     if (expandedSlug.value === slug) {
@@ -256,17 +219,24 @@ async function onPush(slug: string): Promise<void> {
   } finally {
     pushingSlug.value = null
   }
+  // Ask the parent to refetch the doc so `storeLinks` (and thus the
+  // per-row state) reflect this push immediately. Emitted AFTER the
+  // local refresh so the parent's `loadDoc` doesn't race with our
+  // own `load()`.
+  if (succeeded) emit('pushed')
 }
 
 async function onPushAll(): Promise<void> {
   if (pushingAll.value) return
   pushingAll.value = true
+  let anySucceeded = false
   try {
     const stale = rows.value.filter((r) => r.state === 'Stale' && r.connected)
     for (const r of stale) {
       pushingSlug.value = r.slug
       try {
         await pushChunksToStore(props.docId, r.slug)
+        anySucceeded = true
       } catch (e) {
         error.value = (e as Error).message || `Push failed for ${r.slug}`
         // Don't break the loop — keep pushing the rest.
@@ -277,6 +247,7 @@ async function onPushAll(): Promise<void> {
     pushingSlug.value = null
     pushingAll.value = false
   }
+  if (anySucceeded) emit('pushed')
 }
 
 onMounted(load)
