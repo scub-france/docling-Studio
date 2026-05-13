@@ -550,7 +550,8 @@ class ChunkService:
         await self._require_doc(document_id)
         if self._ingestion is None:
             raise ChunkServiceError(
-                "Ingestion not available (EMBEDDING_URL and OPENSEARCH_URL required)",
+                "Ingestion not available — set EMBEDDING_URL and at least one of "
+                "OPENSEARCH_URL or NEO4J_URI on the backend",
                 http_status=503,
             )
         doc = await self._documents.find_by_id(document_id)

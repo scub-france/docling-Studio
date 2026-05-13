@@ -47,12 +47,19 @@ class IngestionResult:
 
 
 class IngestionService:
-    """Orchestrates the embedding + indexing pipeline."""
+    """Orchestrates the embedding + indexing pipeline.
+
+    The vector_store (OpenSearch) is optional (#199) — when None, the
+    service runs in "Neo4j only" mode: chunks are still embedded so
+    text-search semantics stay consistent, but indexed only in Neo4j
+    via the `write_chunks` adapter. Search / full-text endpoints
+    return empty results when no vector store is wired.
+    """
 
     def __init__(
         self,
         embedding_service: EmbeddingService,
-        vector_store: VectorStore,
+        vector_store: VectorStore | None,
         config: IngestionConfig | None = None,
         neo4j_driver=None,
     ) -> None:
@@ -62,7 +69,12 @@ class IngestionService:
         self._neo4j = neo4j_driver
 
     async def ensure_index(self) -> None:
-        """Ensure the vector index exists with the correct mapping."""
+        """Ensure the vector index exists with the correct mapping.
+
+        No-op when no vector store is configured (#199).
+        """
+        if self._vector_store is None:
+            return
         mapping = build_index_mapping(self._config.embedding_dimension)
         await self._vector_store.ensure_index(self._config.index_name, mapping)
 
@@ -132,14 +144,22 @@ class IngestionService:
                 )
             )
 
-        # 3. Delete old chunks (idempotent re-indexing)
-        deleted = await self._vector_store.delete_document(self._config.index_name, doc_id)
-        if deleted:
-            logger.info("Deleted %d old chunks for doc %s", deleted, doc_id)
+        indexed = 0
+        if self._vector_store is not None:
+            # 3. Delete old chunks (idempotent re-indexing)
+            deleted = await self._vector_store.delete_document(self._config.index_name, doc_id)
+            if deleted:
+                logger.info("Deleted %d old chunks for doc %s", deleted, doc_id)
 
-        # 4. Index new chunks
-        indexed = await self._vector_store.index_chunks(self._config.index_name, indexed_chunks)
-        logger.info("Indexed %d/%d chunks for doc %s", indexed, len(indexed_chunks), doc_id)
+            # 4. Index new chunks
+            indexed = await self._vector_store.index_chunks(self._config.index_name, indexed_chunks)
+            logger.info("Indexed %d/%d chunks for doc %s", indexed, len(indexed_chunks), doc_id)
+        else:
+            logger.info(
+                "Vector store not configured — skipping OpenSearch index for doc %s (#199)",
+                doc_id,
+            )
+            indexed = len(indexed_chunks)
 
         # 5. Mirror chunks in Neo4j if configured (with DERIVED_FROM edges).
         if self._neo4j is not None:
@@ -157,7 +177,12 @@ class IngestionService:
         )
 
     async def delete_document(self, doc_id: str) -> int:
-        """Remove all indexed chunks for a document."""
+        """Remove all indexed chunks for a document.
+
+        Returns 0 when no vector store is configured (#199).
+        """
+        if self._vector_store is None:
+            return 0
         return await self._vector_store.delete_document(self._config.index_name, doc_id)
 
     async def search(
@@ -167,7 +192,12 @@ class IngestionService:
         k: int = 10,
         doc_id: str | None = None,
     ) -> list:
-        """Semantic search: embed the query then find nearest chunks."""
+        """Semantic search: embed the query then find nearest chunks.
+
+        Returns an empty list when no vector store is configured (#199).
+        """
+        if self._vector_store is None:
+            return []
         embeddings = await self._embedding.embed([query])
         return await self._vector_store.search_similar(
             self._config.index_name,
@@ -183,7 +213,12 @@ class IngestionService:
         k: int = 20,
         doc_id: str | None = None,
     ) -> list:
-        """Full-text keyword search in indexed chunks."""
+        """Full-text keyword search in indexed chunks.
+
+        Returns an empty list when no vector store is configured (#199).
+        """
+        if self._vector_store is None:
+            return []
         return await self._vector_store.search_fulltext(
             self._config.index_name,
             query,
@@ -192,7 +227,14 @@ class IngestionService:
         )
 
     async def ping(self) -> bool:
-        """Check if the underlying vector store is reachable."""
+        """Check if the underlying vector store is reachable.
+
+        True when no vector store is wired (#199) — the service still
+        accepts ingestion calls (Neo4j-only path), so reporting it as
+        unreachable would be misleading.
+        """
+        if self._vector_store is None:
+            return True
         try:
             return await self._vector_store.ping()
         except Exception:

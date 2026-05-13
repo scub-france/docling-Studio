@@ -135,26 +135,47 @@ async def _init_neo4j():
 
 
 def _build_ingestion_service(neo4j_driver=None) -> IngestionService | None:
-    """Build the ingestion service — only if embedding + opensearch are configured."""
-    if not settings.embedding_url or not settings.opensearch_url:
-        logger.info("Ingestion disabled (EMBEDDING_URL or OPENSEARCH_URL not set)")
+    """Build the ingestion service (#199).
+
+    Available as soon as `EMBEDDING_URL` is set AND at least one store
+    backend is configured (`OPENSEARCH_URL` and/or `NEO4J_URI`). The
+    historical precondition required both embedding + OpenSearch — this
+    was the bug that conflated the embedding pipeline with the
+    OpenSearch store.
+    """
+    if not settings.embedding_url:
+        logger.info("Ingestion disabled (EMBEDDING_URL not set)")
+        return None
+
+    has_opensearch = bool(settings.opensearch_url)
+    has_neo4j = neo4j_driver is not None
+    if not has_opensearch and not has_neo4j:
+        logger.info(
+            "Ingestion disabled (no store backend configured — set OPENSEARCH_URL or NEO4J_URI)"
+        )
         return None
 
     from infra.embedding_client import EmbeddingClient
-    from infra.opensearch_store import OpenSearchStore
 
     embedding = EmbeddingClient(settings.embedding_url)
-    vector_store = OpenSearchStore(
-        settings.opensearch_url,
-        default_limit=settings.opensearch_default_limit,
-    )
+
+    vector_store = None
+    if has_opensearch:
+        from infra.opensearch_store import OpenSearchStore
+
+        vector_store = OpenSearchStore(
+            settings.opensearch_url,
+            default_limit=settings.opensearch_default_limit,
+        )
+
     config = IngestionConfig(
         embedding_dimension=settings.embedding_dimension,
     )
     logger.info(
-        "Ingestion enabled (embedding=%s, opensearch=%s)",
+        "Ingestion enabled (embedding=%s, opensearch=%s, neo4j=%s)",
         settings.embedding_url,
-        settings.opensearch_url,
+        settings.opensearch_url or "off",
+        "on" if has_neo4j else "off",
     )
     return IngestionService(embedding, vector_store, config, neo4j_driver=neo4j_driver)
 
