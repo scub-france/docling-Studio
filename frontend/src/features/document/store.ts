@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { Analysis, Document, Page } from '../../shared/types'
+import type { Analysis, Document, DocumentVersion, Page } from '../../shared/types'
 import { appMaxFileSizeMb } from '../../shared/appConfig'
-import { fetchDocumentAnalyses } from '../analysis/api'
+import { fetchAnalysis } from '../analysis/api'
 import { pushChunksToStore } from '../chunks/api'
 import * as api from './api'
 
@@ -12,30 +12,32 @@ export const useDocumentStore = defineStore('document', () => {
   const loading = ref(false)
   const uploading = ref(false)
   const error = ref<string | null>(null)
-  // 0.6.1 (#264, #267) — Doc workspace orchestration. Independent from
-  // the library listing above (documents/loading) so the two surfaces can
-  // be tested in isolation.
+  // 0.6.1 (#264, refactored #267) — Doc workspace orchestration. The
+  // workspace's History timeline is now versioned (frozen pairs of
+  // analysis + chunks snapshot). The active version drives the OCR
+  // side of the workspace (pagesJson, treeJson) — the chunks side is
+  // owned by `chunksStore`.
   const workspaceDoc = ref<Document | null>(null)
-  // Full analyses history for the current doc (#267). Sorted newest-first
-  // by completedAt (falling back to createdAt for non-completed entries).
-  const workspaceAnalyses = ref<Analysis[]>([])
-  // Currently-selected analysis id. Defaults to the latest COMPLETED on
-  // load; the History drawer (#267) can pin a different one.
-  const workspaceCurrentAnalysisId = ref<string | null>(null)
+  const workspaceVersions = ref<DocumentVersion[]>([])
+  const workspaceCurrentVersionId = ref<string | null>(null)
+  // Cached analysis row for the active version (analysisId resolution).
+  const workspaceActiveAnalysis = ref<Analysis | null>(null)
   const workspaceLoading = ref(false)
   const workspaceError = ref<string | null>(null)
 
-  /** The selected analysis for this workspace — auto-picked latest, or
-   *  the one the user pinned via the History drawer. */
-  const workspaceLatestAnalysis = computed<Analysis | null>(() => {
-    if (!workspaceCurrentAnalysisId.value) return null
-    return workspaceAnalyses.value.find((a) => a.id === workspaceCurrentAnalysisId.value) ?? null
+  const workspaceCurrentVersion = computed<DocumentVersion | null>(() => {
+    if (!workspaceCurrentVersionId.value) return null
+    return workspaceVersions.value.find((v) => v.id === workspaceCurrentVersionId.value) ?? null
   })
 
-  /** Pages parsed lazily from the selected analysis's `pagesJson`. Returns
-   *  an empty array on missing data or parse error — non-fatal. */
+  /** Backwards-compatible alias kept for existing consumers
+   * (DocParseTab, DocChunkTab) — semantically "the analysis row that
+   * powers the workspace right now". Resolved from the active version. */
+  const workspaceLatestAnalysis = computed<Analysis | null>(() => workspaceActiveAnalysis.value)
+
+  /** Pages parsed lazily from the active analysis's `pagesJson`. */
   const workspacePages = computed<Page[]>(() => {
-    const raw = workspaceLatestAnalysis.value?.pagesJson
+    const raw = workspaceActiveAnalysis.value?.pagesJson
     if (!raw) return []
     try {
       return JSON.parse(raw) as Page[]
@@ -110,41 +112,34 @@ export const useDocumentStore = defineStore('document', () => {
   }
 
   /**
-   * Doc workspace orchestration (#264, extended #267). Fetches the doc
-   * metadata and the doc's analyses in parallel — chunks are loaded by
-   * the chunks store independently so the two stores stay testable in
-   * isolation. Defaults the active analysis to the latest COMPLETED one;
-   * the History drawer can pin a different one via `setWorkspaceAnalysis`.
+   * Workspace orchestration (#267). Loads the doc + the versions
+   * timeline, auto-pins the most recent version, and resolves its
+   * analysis row so Parse / Chunk render the right OCR side.
    *
    * Idempotent across view switches: if the workspace is already loaded
    * for `docId`, returns immediately. This preserves a user-pinned
-   * analysis when the user switches between Parse and Chunk tabs.
-   * Reloading the analyses list is a separate concern handled by
-   * `reloadAnalyses(docId)`.
+   * version when the user switches between Parse and Chunk tabs.
    */
   async function loadWorkspace(docId: string): Promise<void> {
     if (workspaceDoc.value?.id === docId) return
     workspaceLoading.value = true
     workspaceError.value = null
     workspaceDoc.value = null
-    workspaceAnalyses.value = []
-    workspaceCurrentAnalysisId.value = null
+    workspaceVersions.value = []
+    workspaceCurrentVersionId.value = null
+    workspaceActiveAnalysis.value = null
     try {
-      const [doc, analyses] = await Promise.all([
+      const [doc, versions] = await Promise.all([
         api.fetchDocument(docId),
-        fetchDocumentAnalyses(docId),
+        api.fetchDocumentVersions(docId),
       ])
       workspaceDoc.value = doc
-      // Newest-first sort. Falls back to createdAt when completedAt is
-      // null (PENDING / RUNNING / FAILED entries still belong to history).
-      workspaceAnalyses.value = [...analyses].sort((a, b) =>
-        (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt),
-      )
-      // Auto-pick the latest COMPLETED analysis as the active one. If
-      // none is completed yet, leave the workspace empty — Parse / Chunk
-      // already render an "Aucune analyse" state in that case.
-      workspaceCurrentAnalysisId.value =
-        workspaceAnalyses.value.find((a) => a.status === 'COMPLETED')?.id ?? null
+      workspaceVersions.value = versions
+      const latest = versions[0] ?? null
+      workspaceCurrentVersionId.value = latest?.id ?? null
+      if (latest?.analysisId) {
+        workspaceActiveAnalysis.value = await fetchAnalysis(latest.analysisId)
+      }
     } catch (e) {
       workspaceError.value = (e as Error).message || 'Failed to load workspace'
     } finally {
@@ -153,34 +148,49 @@ export const useDocumentStore = defineStore('document', () => {
   }
 
   /**
-   * Switch the active analysis without re-fetching the analyses list
-   * (#267). Caller code (DocParseTab / DocChunkTab) is responsible for
-   * reloading the chunks tied to the new analysis.
+   * Refresh the versions list without resetting the doc (#266 / #267).
+   * Called after a `+ New analysis` or `+ Generate chunks` completes —
+   * the backend appended a fresh version, we pin it as active.
    */
-  function setWorkspaceAnalysis(analysisId: string): void {
-    if (!workspaceAnalyses.value.some((a) => a.id === analysisId)) return
-    workspaceCurrentAnalysisId.value = analysisId
+  async function reloadWorkspaceVersions(docId: string): Promise<void> {
+    if (workspaceDoc.value?.id !== docId) return
+    try {
+      const versions = await api.fetchDocumentVersions(docId)
+      workspaceVersions.value = versions
+      const latest = versions[0] ?? null
+      if (latest) {
+        workspaceCurrentVersionId.value = latest.id
+        if (latest.analysisId) {
+          workspaceActiveAnalysis.value = await fetchAnalysis(latest.analysisId)
+        }
+      }
+    } catch (e) {
+      workspaceError.value = (e as Error).message || 'Failed to reload versions'
+    }
   }
 
   /**
-   * Refresh the analyses list without resetting the doc (#266). Called
-   * after an in-place analysis run completes so the new entry shows up
-   * in History and gets auto-pinned as the active one. Bypasses the
-   * idempotency guard on `loadWorkspace`.
+   * Pin a different version as the active one — calls the backend
+   * restore endpoint (which rewrites the live chunkset from the
+   * version's snapshot) and refreshes the active analysis row.
+   * Returns `true` on success so callers can update sibling state
+   * (e.g. reload the chunks store, scroll, close the drawer).
    */
-  async function reloadWorkspaceAnalyses(docId: string): Promise<void> {
-    if (workspaceDoc.value?.id !== docId) return
+  async function setWorkspaceVersion(versionId: string): Promise<boolean> {
+    const docId = workspaceDoc.value?.id
+    if (!docId) return false
+    const version = workspaceVersions.value.find((v) => v.id === versionId)
+    if (!version) return false
     try {
-      const analyses = await fetchDocumentAnalyses(docId)
-      workspaceAnalyses.value = [...analyses].sort((a, b) =>
-        (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt),
-      )
-      // Auto-pin the latest COMPLETED so the workspace renders the
-      // freshly-finished analysis without a manual click in History.
-      const latestCompleted = workspaceAnalyses.value.find((a) => a.status === 'COMPLETED')
-      if (latestCompleted) workspaceCurrentAnalysisId.value = latestCompleted.id
+      await api.restoreDocumentVersion(docId, versionId)
+      workspaceCurrentVersionId.value = versionId
+      workspaceActiveAnalysis.value = version.analysisId
+        ? await fetchAnalysis(version.analysisId)
+        : null
+      return true
     } catch (e) {
-      workspaceError.value = (e as Error).message || 'Failed to reload analyses'
+      workspaceError.value = (e as Error).message || 'Failed to restore version'
+      return false
     }
   }
 
@@ -202,8 +212,10 @@ export const useDocumentStore = defineStore('document', () => {
     uploading,
     error,
     workspaceDoc,
-    workspaceAnalyses,
-    workspaceCurrentAnalysisId,
+    workspaceVersions,
+    workspaceCurrentVersionId,
+    workspaceCurrentVersion,
+    workspaceActiveAnalysis,
     workspaceLatestAnalysis,
     workspacePages,
     workspaceLoading,
@@ -211,8 +223,8 @@ export const useDocumentStore = defineStore('document', () => {
     clearError,
     load,
     loadWorkspace,
-    reloadWorkspaceAnalyses,
-    setWorkspaceAnalysis,
+    reloadWorkspaceVersions,
+    setWorkspaceVersion,
     upload,
     remove,
     select,

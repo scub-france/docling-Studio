@@ -24,39 +24,42 @@
           </button>
         </header>
 
-        <div v-if="!analyses.length" class="history-empty" data-e2e="history-empty">
+        <div v-if="!versions.length" class="history-empty" data-e2e="history-empty">
           {{ t('history.empty') }}
         </div>
 
         <ul v-else class="history-list" data-e2e="history-list">
           <li
-            v-for="a in analyses"
-            :key="a.id"
+            v-for="v in versions"
+            :key="v.id"
             class="history-item"
-            :class="{ active: a.id === currentId }"
-            :data-e2e="`history-item-${a.id}`"
+            :class="{ active: v.id === currentId }"
+            :data-e2e="`history-item-${v.id}`"
           >
             <div class="history-item-head">
-              <span class="history-status" :class="`history-status--${a.status.toLowerCase()}`">
-                {{ a.status }}
+              <span class="history-kind" :class="`history-kind--${v.kind}`">
+                {{ t(`history.kind.${v.kind}`) }}
               </span>
-              <span class="history-time" :title="a.completedAt ?? a.createdAt">
-                {{ formatRelativeTime(a.completedAt ?? a.createdAt) }}
+              <span class="history-time" :title="v.createdAt">
+                {{ formatRelativeTime(v.createdAt) }}
               </span>
             </div>
-            <div class="history-item-id">{{ a.id }}</div>
+            <div class="history-item-meta">
+              <span class="history-meta-line">{{ v.summary }}</span>
+              <span class="history-meta-line history-meta-mono">
+                {{ t('history.chunksCount', { n: v.chunksSnapshotSize }) }}
+              </span>
+            </div>
             <div class="history-item-actions">
-              <span v-if="a.id === currentId" class="history-current-flag">
+              <span v-if="v.id === currentId" class="history-current-flag">
                 {{ t('history.current') }}
               </span>
               <button
                 v-else
                 type="button"
                 class="history-set-current"
-                :disabled="a.status !== 'COMPLETED'"
-                :title="a.status !== 'COMPLETED' ? t('history.notCompleted') : undefined"
-                :data-e2e="`history-set-current-${a.id}`"
-                @click="$emit('setCurrent', a.id)"
+                :data-e2e="`history-set-current-${v.id}`"
+                @click="$emit('setCurrent', v.id)"
               >
                 {{ t('history.setCurrent') }}
               </button>
@@ -70,30 +73,28 @@
 
 <script setup lang="ts">
 /**
- * History drawer (#267) — right-side panel listing every analysis run
- * on the current document, newest first. Lets the user pin a different
- * analysis as the workspace's active one via "Set as current".
- *
- * Set-as-current is disabled on non-COMPLETED analyses (PENDING,
- * RUNNING, FAILED) — Parse / Chunk views can only render a completed
- * analysis's pages_json.
+ * History drawer (#267) — right-side panel listing every frozen
+ * (analysis, chunks) version of the current document, newest first.
+ * Lets the user pin a different version via "Set as current", which
+ * routes to the backend restore endpoint (rewrites the live chunkset
+ * from the version's snapshot).
  *
  * The actual switch is handled by the parent: this component only
- * emits `setCurrent` with the analysis id.
+ * emits `setCurrent` with the version id.
  */
-import type { Analysis } from '../../../shared/types'
+import type { DocumentVersion } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { formatRelativeTime } from '../../../shared/format'
 
 defineProps<{
   open: boolean
-  analyses: readonly Analysis[]
+  versions: readonly DocumentVersion[]
   currentId: string | null
 }>()
 
 defineEmits<{
   close: []
-  setCurrent: [analysisId: string]
+  setCurrent: [versionId: string]
 }>()
 
 const { t } = useI18n()
@@ -158,6 +159,7 @@ const { t } = useI18n()
   color: var(--text-muted);
   font-size: 12px;
   padding: 20px;
+  text-align: center;
 }
 
 .history-list {
@@ -190,29 +192,24 @@ const { t } = useI18n()
   gap: 8px;
 }
 
-.history-status {
+.history-kind {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 10px;
   font-weight: 600;
   font-family: 'IBM Plex Mono', monospace;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.history-status--completed {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
+.history-kind--analysis {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
 }
 
-.history-status--pending,
-.history-status--running {
-  background: rgba(234, 179, 8, 0.15);
-  color: #eab308;
-}
-
-.history-status--failed {
-  background: rgba(220, 38, 38, 0.15);
-  color: #dc2626;
+.history-kind--chunks {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
 }
 
 .history-time {
@@ -221,13 +218,20 @@ const { t } = useI18n()
   font-family: 'IBM Plex Mono', monospace;
 }
 
-.history-item-id {
+.history-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-meta-line {
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+}
+
+.history-meta-mono {
   font-family: 'IBM Plex Mono', monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-muted);
 }
 
 .history-item-actions {
@@ -252,13 +256,8 @@ const { t } = useI18n()
   transition: all var(--transition);
 }
 
-.history-set-current:hover:not(:disabled) {
+.history-set-current:hover {
   color: var(--accent);
   border-color: var(--accent);
-}
-
-.history-set-current:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 </style>

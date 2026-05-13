@@ -278,3 +278,37 @@ class ChunkPush:
     chunkset_hash: str
     chunk_ids: list[str]
     pushed_at: datetime
+
+
+class DocumentVersionKind(enum.StrEnum):
+    """What triggered the version snapshot.
+
+    - ANALYSIS — a `+ New analysis` run completed for this document
+    - CHUNKS   — `+ Generate chunks` (rechunk) produced a new chunkset
+    """
+
+    ANALYSIS = "analysis"
+    CHUNKS = "chunks"
+
+
+@dataclass
+class DocumentVersion:
+    """Frozen pair (OCR analysis + chunks state) for a document (#267).
+
+    Created on explicit version-creating triggers (a new analysis run or
+    a `+ Generate chunks` invocation). Manual chunk edits do NOT create
+    a version — they mutate the live chunkset until the next snapshot.
+
+    `chunks_snapshot` is a JSON array of chunk records captured at the
+    moment of version creation. `analysis_id` points at the active
+    analysis at that moment. The pair is what the History drawer
+    surfaces, and what `restore` writes back into the live state.
+    """
+
+    id: str = field(default_factory=_new_id)
+    document_id: str = ""
+    kind: DocumentVersionKind = DocumentVersionKind.ANALYSIS
+    analysis_id: str | None = None
+    chunks_snapshot: str | None = None  # JSON-serialized list of chunk dicts
+    summary: str = ""
+    created_at: datetime = field(default_factory=_utcnow)

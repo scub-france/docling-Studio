@@ -157,6 +157,15 @@ class ChunkService:
         self._chunker = chunker
         self._ingestion = ingestion_service
         self._actor = actor
+        # Duck-typed recorder for document versions (#267). Wired in
+        # main.py to `VersionService.record_on_rechunk` so each
+        # `+ Generate chunks` call appends a frozen pair to History.
+        self._version_recorder = None
+
+    def set_version_recorder(self, version_service) -> None:
+        """Inject the document-version recorder (#267). Contract: a
+        coroutine `(document_id: str, analysis_id: str | None) -> DocumentVersion`."""
+        self._version_recorder = version_service
 
     # -- promotion (called by AnalysisService after first successful analysis)
 
@@ -476,6 +485,21 @@ class ChunkService:
             len(existing),
             len(new_chunks),
         )
+
+        # Record a frozen (analysis, chunks_snapshot) pair in the
+        # workspace History timeline (#267). Snapshots the chunks we
+        # just wrote, paired with the analysis they came from.
+        if self._version_recorder is not None:
+            try:
+                await self._version_recorder.record_on_rechunk(document_id, job.id)
+            except Exception:
+                # Best-effort hook — never fail the rechunk if the
+                # version snapshot write hits a snag.
+                logger.exception(
+                    "Version snapshot failed for doc %s after rechunk",
+                    document_id,
+                )
+
         return new_chunks
 
     # -- diff (against last push to a store)

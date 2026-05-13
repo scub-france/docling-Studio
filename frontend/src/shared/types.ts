@@ -191,3 +191,21 @@ export interface PushSummary {
   embeds: number
   tokens: number
 }
+
+/**
+ * Frozen pair (#267) — `+ New analysis` and `+ Generate chunks` each
+ * append one of these to the document's History timeline. The drawer
+ * surfaces them; restore replaces the live chunkset with the version's
+ * snapshot.
+ */
+export type DocumentVersionKind = 'analysis' | 'chunks'
+
+export interface DocumentVersion {
+  id: string
+  documentId: string
+  kind: DocumentVersionKind
+  analysisId: string | null
+  chunksSnapshotSize: number
+  summary: string
+  createdAt: string
+}

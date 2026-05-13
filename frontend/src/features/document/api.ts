@@ -1,4 +1,4 @@
-import type { DocChunk, Document, DocTreeNode } from '../../shared/types'
+import type { DocChunk, Document, DocTreeNode, DocumentVersion } from '../../shared/types'
 import { apiFetch } from '../../shared/api/http'
 
 export function fetchDocuments(): Promise<Document[]> {
@@ -52,4 +52,17 @@ export function rechunkDocument(id: string, options?: RechunkOptions): Promise<D
 
 export function fetchDocumentTree(id: string): Promise<DocTreeNode[]> {
   return apiFetch<DocTreeNode[]>(`/api/documents/${id}/tree`)
+}
+
+/** Workspace History timeline (#267) — frozen pairs newest-first. */
+export function fetchDocumentVersions(id: string): Promise<DocumentVersion[]> {
+  return apiFetch<DocumentVersion[]>(`/api/documents/${id}/versions`)
+}
+
+/** Restore a version — overwrites the live chunkset with the snapshot. */
+export function restoreDocumentVersion(docId: string, versionId: string): Promise<DocumentVersion> {
+  return apiFetch<DocumentVersion>(`/api/documents/${docId}/versions/${versionId}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
 }

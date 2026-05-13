@@ -225,10 +225,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         chunker=_build_chunker(),
         ingestion_service=ingestion_service,
     )
-    # The analysis service promotes the first analysis's chunks into the
-    # canonical chunkset (idempotent), so the doc workspace lights up the
-    # moment a doc is parsed for the first time.
+    # The analysis service still carries the chunk promoter wiring for
+    # legacy callers / tests, but the analysis flow no longer invokes it
+    # (decoupling from #266). Chunks are explicit — produced via the
+    # `+ Generate chunks` action on the Chunk view.
     app.state.analysis_service.set_chunk_promoter(app.state.chunk_service)
+
+    # 0.6.1 — Document versions (#267). Frozen (analysis, chunks)
+    # snapshots written on each version-creating trigger. Wired into
+    # AnalysisService + ChunkService below.
+    from persistence.document_version_repo import SqliteDocumentVersionRepository
+    from services.version_service import VersionService
+
+    version_repo = SqliteDocumentVersionRepository()
+    app.state.version_service = VersionService(
+        version_repo=version_repo,
+        chunk_repo=chunk_repo,
+        chunk_edit_repo=chunk_edit_repo,
+        document_repo=document_repo,
+    )
+    app.state.analysis_service.set_version_recorder(app.state.version_service)
+    app.state.chunk_service.set_version_recorder(app.state.version_service)
+
     logger.info("Docling Studio backend ready (engine=%s)", settings.conversion_engine)
     try:
         yield
@@ -263,6 +281,11 @@ app.include_router(documents_router)
 app.include_router(document_chunks_router)
 app.include_router(analyses_router)
 app.include_router(stores_router)
+
+# Document versions (#267) — workspace History timeline.
+from api.document_versions import router as document_versions_router  # noqa: E402
+
+app.include_router(document_versions_router)
 
 # Graph view — mounted regardless; individual requests 503 if Neo4j is absent.
 from api.graph import router as graph_router  # noqa: E402

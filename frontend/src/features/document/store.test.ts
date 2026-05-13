@@ -8,6 +8,8 @@ vi.mock('./api', () => ({
   uploadDocument: vi.fn(),
   deleteDocument: vi.fn(),
   rechunkDocument: vi.fn(),
+  fetchDocumentVersions: vi.fn(),
+  restoreDocumentVersion: vi.fn(),
 }))
 
 vi.mock('../chunks/api', () => ({
@@ -15,7 +17,7 @@ vi.mock('../chunks/api', () => ({
 }))
 
 vi.mock('../analysis/api', () => ({
-  fetchDocumentAnalyses: vi.fn(),
+  fetchAnalysis: vi.fn(),
 }))
 
 import * as api from './api'
@@ -184,38 +186,71 @@ describe('useDocumentStore', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // loadWorkspace (#264) — Linked view orchestration
+  // loadWorkspace (#264 / #267) — versioned (analysis, chunks) timeline
   // ---------------------------------------------------------------------------
 
-  it('loadWorkspace() loads doc + picks the latest completed analysis', async () => {
+  const mkVersion = (overrides = {}) => ({
+    id: 'v1',
+    documentId: 'd1',
+    kind: 'analysis' as const,
+    analysisId: 'a1',
+    chunksSnapshotSize: 0,
+    summary: 'Analysis run',
+    createdAt: '2025-02-01T00:00:00Z',
+    ...overrides,
+  })
+
+  const mkAnalysis = (overrides = {}) => ({
+    id: 'a1',
+    documentId: 'd1',
+    documentFilename: 'a.pdf',
+    status: 'COMPLETED' as const,
+    contentMarkdown: null,
+    contentHtml: null,
+    pagesJson: '[]',
+    chunksJson: null,
+    hasDocumentJson: true,
+    errorMessage: null,
+    progressCurrent: null,
+    progressTotal: null,
+    startedAt: null,
+    completedAt: '2025-02-01T00:00:00Z',
+    createdAt: '2025-02-01T00:00:00Z',
+    ...overrides,
+  })
+
+  it('loadWorkspace() loads doc + auto-pins the latest version + fetches its analysis', async () => {
     api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
-    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
-      { id: 'a-old', status: 'COMPLETED', completedAt: '2025-01-01T00:00:00Z', pagesJson: '[]' },
-      { id: 'a-new', status: 'COMPLETED', completedAt: '2025-02-01T00:00:00Z', pagesJson: '[]' },
-      { id: 'a-pending', status: 'PENDING', completedAt: null, pagesJson: null },
+    api.fetchDocumentVersions.mockResolvedValue([
+      mkVersion({ id: 'v-new', createdAt: '2025-02-01T00:00:00Z' }),
+      mkVersion({ id: 'v-old', createdAt: '2025-01-01T00:00:00Z' }),
     ])
+    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis())
+
     const store = useDocumentStore()
     await store.loadWorkspace('d1')
+
     expect(store.workspaceDoc?.id).toBe('d1')
-    expect(store.workspaceLatestAnalysis?.id).toBe('a-new')
+    expect(store.workspaceCurrentVersionId).toBe('v-new')
+    expect(store.workspaceVersions.map((v) => v.id)).toEqual(['v-new', 'v-old'])
+    expect(store.workspaceLatestAnalysis?.id).toBe('a1')
     expect(store.workspaceLoading).toBe(false)
     expect(store.workspaceError).toBeNull()
   })
 
-  it('loadWorkspace() exposes null analysis when none completed', async () => {
+  it('loadWorkspace() exposes null active analysis when no versions exist', async () => {
     api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
-    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
-      { id: 'a1', status: 'PENDING', completedAt: null, pagesJson: null },
-    ])
+    api.fetchDocumentVersions.mockResolvedValue([])
     const store = useDocumentStore()
     await store.loadWorkspace('d1')
+    expect(store.workspaceCurrentVersionId).toBeNull()
     expect(store.workspaceLatestAnalysis).toBeNull()
     expect(store.workspacePages).toEqual([])
   })
 
   it('loadWorkspace() sets workspaceError on failure', async () => {
     api.fetchDocument.mockRejectedValue(new Error('boom'))
-    analysisApi.fetchDocumentAnalyses.mockResolvedValue([])
+    api.fetchDocumentVersions.mockResolvedValue([])
     const store = useDocumentStore()
     await store.loadWorkspace('d1')
     expect(store.workspaceError).toBe('boom')
@@ -224,14 +259,12 @@ describe('useDocumentStore', () => {
 
   it('workspacePages parses pages_json lazily, empty on parse error', async () => {
     api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
-    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
-      {
-        id: 'a1',
-        status: 'COMPLETED',
-        completedAt: '2025-02-01T00:00:00Z',
+    api.fetchDocumentVersions.mockResolvedValue([mkVersion()])
+    analysisApi.fetchAnalysis.mockResolvedValue(
+      mkAnalysis({
         pagesJson: '[{"page_number":1,"width":600,"height":800,"elements":[]}]',
-      },
-    ])
+      }),
+    )
     const store = useDocumentStore()
     await store.loadWorkspace('d1')
     expect(store.workspacePages).toHaveLength(1)
@@ -239,113 +272,84 @@ describe('useDocumentStore', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // History drawer (#267) — workspaceAnalyses + setWorkspaceAnalysis
+  // setWorkspaceVersion — restore path
   // ---------------------------------------------------------------------------
 
-  it('loadWorkspace() exposes the full analyses list, newest first', async () => {
+  it('setWorkspaceVersion() POSTs restore + swaps the active version + analysis', async () => {
     api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
-    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
-      {
-        id: 'a-old',
-        status: 'COMPLETED',
-        completedAt: '2025-01-01T00:00:00Z',
-        createdAt: '2025-01-01T00:00:00Z',
-        pagesJson: '[]',
-      },
-      {
-        id: 'a-pending',
-        status: 'PENDING',
-        completedAt: null,
-        createdAt: '2025-03-01T00:00:00Z',
-        pagesJson: null,
-      },
-      {
-        id: 'a-new',
-        status: 'COMPLETED',
-        completedAt: '2025-02-01T00:00:00Z',
-        createdAt: '2025-02-01T00:00:00Z',
-        pagesJson: '[]',
-      },
+    api.fetchDocumentVersions.mockResolvedValue([
+      mkVersion({ id: 'v-new', analysisId: 'a-new' }),
+      mkVersion({ id: 'v-old', analysisId: 'a-old' }),
     ])
+    analysisApi.fetchAnalysis.mockImplementation((id: string) =>
+      Promise.resolve(mkAnalysis({ id })),
+    )
+    api.restoreDocumentVersion.mockResolvedValue(mkVersion({ id: 'v-old' }))
+
     const store = useDocumentStore()
     await store.loadWorkspace('d1')
-    // Sort key falls back to createdAt for non-completed entries: the
-    // PENDING analysis (createdAt 2025-03-01) wins over the COMPLETED
-    // a-new (completedAt 2025-02-01).
-    expect(store.workspaceAnalyses.map((a) => a.id)).toEqual(['a-pending', 'a-new', 'a-old'])
-    // …but the auto-picked current is the latest COMPLETED, not the
-    // PENDING one.
-    expect(store.workspaceCurrentAnalysisId).toBe('a-new')
+    expect(store.workspaceCurrentVersionId).toBe('v-new')
+
+    const ok = await store.setWorkspaceVersion('v-old')
+    expect(ok).toBe(true)
+    expect(api.restoreDocumentVersion).toHaveBeenCalledWith('d1', 'v-old')
+    expect(store.workspaceCurrentVersionId).toBe('v-old')
+    expect(store.workspaceActiveAnalysis?.id).toBe('a-old')
   })
 
-  it('setWorkspaceAnalysis() switches the active analysis when the id is known', async () => {
+  it('setWorkspaceVersion() returns false for unknown ids and leaves state intact', async () => {
     api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
-    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
-      {
-        id: 'a-new',
-        status: 'COMPLETED',
-        completedAt: '2025-02-01T00:00:00Z',
-        createdAt: '2025-02-01T00:00:00Z',
-        pagesJson: '[]',
-      },
-      {
-        id: 'a-old',
-        status: 'COMPLETED',
-        completedAt: '2025-01-01T00:00:00Z',
-        createdAt: '2025-01-01T00:00:00Z',
-        pagesJson: '[]',
-      },
-    ])
+    api.fetchDocumentVersions.mockResolvedValue([mkVersion({ id: 'v1' })])
+    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis())
+
     const store = useDocumentStore()
     await store.loadWorkspace('d1')
-    expect(store.workspaceCurrentAnalysisId).toBe('a-new')
-    store.setWorkspaceAnalysis('a-old')
-    expect(store.workspaceCurrentAnalysisId).toBe('a-old')
-    expect(store.workspaceLatestAnalysis?.id).toBe('a-old')
+    const ok = await store.setWorkspaceVersion('nope')
+    expect(ok).toBe(false)
+    expect(store.workspaceCurrentVersionId).toBe('v1')
   })
 
-  it('setWorkspaceAnalysis() is a no-op for unknown ids', async () => {
+  it('loadWorkspace() is idempotent — pinned version survives a second call for the same doc', async () => {
     api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
-    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
-      {
-        id: 'a1',
-        status: 'COMPLETED',
-        completedAt: '2025-02-01T00:00:00Z',
-        createdAt: '2025-02-01T00:00:00Z',
-        pagesJson: '[]',
-      },
+    api.fetchDocumentVersions.mockResolvedValue([
+      mkVersion({ id: 'v-new', analysisId: 'a-new' }),
+      mkVersion({ id: 'v-old', analysisId: 'a-old' }),
     ])
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-    store.setWorkspaceAnalysis('not-in-the-list')
-    expect(store.workspaceCurrentAnalysisId).toBe('a1')
-  })
+    analysisApi.fetchAnalysis.mockImplementation((id: string) =>
+      Promise.resolve(mkAnalysis({ id })),
+    )
+    api.restoreDocumentVersion.mockResolvedValue(mkVersion({ id: 'v-old' }))
 
-  it('loadWorkspace() is idempotent — pinned analysis survives a second call for the same doc', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
-    analysisApi.fetchDocumentAnalyses.mockResolvedValue([
-      {
-        id: 'a-new',
-        status: 'COMPLETED',
-        completedAt: '2025-02-01T00:00:00Z',
-        createdAt: '2025-02-01T00:00:00Z',
-        pagesJson: '[]',
-      },
-      {
-        id: 'a-old',
-        status: 'COMPLETED',
-        completedAt: '2025-01-01T00:00:00Z',
-        createdAt: '2025-01-01T00:00:00Z',
-        pagesJson: '[]',
-      },
-    ])
     const store = useDocumentStore()
     await store.loadWorkspace('d1')
-    store.setWorkspaceAnalysis('a-old')
-    // Mimics switching from Parse to Chunk, which re-mounts and calls
-    // loadWorkspace again with the same docId.
+    await store.setWorkspaceVersion('v-old')
+    // Mimics switching tabs — second loadWorkspace must be a no-op.
     await store.loadWorkspace('d1')
-    expect(store.workspaceCurrentAnalysisId).toBe('a-old')
+    expect(store.workspaceCurrentVersionId).toBe('v-old')
     expect(api.fetchDocument).toHaveBeenCalledTimes(1)
+  })
+
+  // ---------------------------------------------------------------------------
+  // reloadWorkspaceVersions — post-completion refresh
+  // ---------------------------------------------------------------------------
+
+  it('reloadWorkspaceVersions() refreshes the list + auto-pins the newest', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocumentVersions.mockResolvedValueOnce([mkVersion({ id: 'v1', analysisId: 'a1' })])
+    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ id: 'a1' }))
+
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    expect(store.workspaceCurrentVersionId).toBe('v1')
+
+    api.fetchDocumentVersions.mockResolvedValueOnce([
+      mkVersion({ id: 'v2', analysisId: 'a2', createdAt: '2025-03-01T00:00:00Z' }),
+      mkVersion({ id: 'v1', analysisId: 'a1' }),
+    ])
+    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ id: 'a2' }))
+
+    await store.reloadWorkspaceVersions('d1')
+    expect(store.workspaceCurrentVersionId).toBe('v2')
+    expect(store.workspaceActiveAnalysis?.id).toBe('a2')
   })
 })

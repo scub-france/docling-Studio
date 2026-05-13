@@ -212,9 +212,12 @@ const messages: Messages = {
     // for the legacy HistoryPage, same value ("Historique").
     'history.close': 'Fermer',
     'history.current': '— en cours',
-    'history.setCurrent': 'Sélectionner',
+    'history.setCurrent': 'Restaurer',
     'history.notCompleted': 'Disponible uniquement pour les analyses terminées.',
     'history.open': 'Ouvrir',
+    'history.kind.analysis': 'OCR',
+    'history.kind.chunks': 'Chunks',
+    'history.chunksCount': '{n} chunks figés',
     // + New analysis — in-place trigger (#266)
     'newAnalysis.title': 'Nouvelle analyse',
     'newAnalysis.running': 'Analyse en cours…',
@@ -780,9 +783,12 @@ const messages: Messages = {
     // for the legacy HistoryPage, same value ("History").
     'history.close': 'Close',
     'history.current': '— current',
-    'history.setCurrent': 'Set as current',
+    'history.setCurrent': 'Restore',
     'history.notCompleted': 'Only available for completed analyses.',
     'history.open': 'Open',
+    'history.kind.analysis': 'OCR',
+    'history.kind.chunks': 'Chunks',
+    'history.chunksCount': '{n} chunks frozen',
     // + New analysis — in-place trigger (#266)
     'newAnalysis.title': 'New analysis',
     'newAnalysis.running': 'Analyzing…',

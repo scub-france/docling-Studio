@@ -115,6 +115,26 @@ CREATE TABLE IF NOT EXISTS chunk_pushes (
 );
 CREATE INDEX IF NOT EXISTS idx_chunk_pushes_doc_store ON chunk_pushes(document_id, store_id);
 
+-- 0.6.1 — document versions (#267). Frozen pair (analysis_id, chunks
+-- snapshot) created on each explicit version trigger: a new analysis
+-- run or a `+ Generate chunks` invocation. The chunks snapshot is a
+-- JSON array; live chunks remain in `chunks` and can be restored from
+-- a version on demand.
+CREATE TABLE IF NOT EXISTS document_versions (
+    id              TEXT PRIMARY KEY,
+    document_id     TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    kind            TEXT NOT NULL,
+    -- Soft reference to analysis_jobs(id). Not enforced as FK so the
+    -- version row can outlive the analysis (deleted analyses just
+    -- become orphan pointers, frontend shows a "stale" marker).
+    analysis_id     TEXT,
+    chunks_snapshot TEXT,
+    summary         TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_document_versions_doc_created
+    ON document_versions(document_id, created_at);
+
 -- 0.6.0 — migration progress (resumability for the 0.6.0 backfill, #206).
 CREATE TABLE IF NOT EXISTS migration_progress (
     name         TEXT PRIMARY KEY,

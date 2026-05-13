@@ -105,6 +105,10 @@ class AnalysisService:
         # making the Doc workspace tab functional immediately (#256).
         # Optional: when None, analysis behaviour is unchanged.
         self._chunk_promoter = None
+        # Duck-typed recorder for document versions (#267). Wired in
+        # main.py to `VersionService.record_on_analysis` so each
+        # successful analysis appends a frozen pair to History.
+        self._version_recorder = None
 
     def set_chunk_promoter(self, chunk_service) -> None:
         """Inject the canonical-chunk promoter (post-construction wiring).
@@ -114,6 +118,13 @@ class AnalysisService:
         coroutine `(document_id: str, chunks_json: str) -> int`.
         """
         self._chunk_promoter = chunk_service
+
+    def set_version_recorder(self, version_service) -> None:
+        """Inject the document-version recorder (#267, post-construction
+        wiring). Contract: a coroutine
+        `(document_id: str, analysis_id: str) -> DocumentVersion`.
+        """
+        self._version_recorder = version_service
 
     async def create(
         self,
@@ -448,6 +459,22 @@ class AnalysisService:
         # popover, #268). The promoter hook stays wired in main.py so
         # legacy callers / tests can still trigger it directly, but it is
         # no longer invoked as part of the analysis flow.
+
+        # Record a frozen (analysis, chunks_snapshot) pair in the
+        # workspace History timeline (#267). Snapshots the LIVE chunks
+        # at this moment so user edits since the previous version are
+        # preserved alongside the new analysis pointer.
+        if self._version_recorder is not None:
+            try:
+                await self._version_recorder.record_on_analysis(job.document_id, job_id)
+            except Exception:
+                # Versioning is a best-effort side hook — never fail the
+                # analysis itself if the snapshot write hits a snag.
+                logger.exception(
+                    "Version snapshot failed for doc %s after analysis %s",
+                    job.document_id,
+                    job_id,
+                )
 
         # Drive the document lifecycle (#202): chunks present → Chunked,
         # otherwise → Parsed.

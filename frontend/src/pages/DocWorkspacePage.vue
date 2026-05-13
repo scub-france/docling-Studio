@@ -83,13 +83,14 @@
         </template>
       </DocWorkspaceHeader>
 
-      <!-- History drawer (#267) — teleported to body. -->
+      <!-- History drawer (#267) — teleported to body. Lists frozen
+           (analysis, chunks) versions; "Set as current" restores. -->
       <HistoryDrawer
         :open="historyOpen"
-        :analyses="documentStore.workspaceAnalyses"
-        :current-id="documentStore.workspaceCurrentAnalysisId"
+        :versions="documentStore.workspaceVersions"
+        :current-id="documentStore.workspaceCurrentVersionId"
         @close="historyOpen = false"
-        @set-current="onSetCurrentAnalysis"
+        @set-current="onSetCurrentVersion"
       />
 
       <!-- View content — lazy loaded (#216). :key on docId forces a clean
@@ -144,11 +145,11 @@ const analysisStore = useAnalysisStore()
 
 const historyOpen = ref(false)
 
-async function onSetCurrentAnalysis(analysisId: string): Promise<void> {
-  documentStore.setWorkspaceAnalysis(analysisId)
-  // The chunks tied to the canonical chunkset don't change with the
-  // analysis pointer, but reload them anyway so any backend-side side
-  // effect of the switch (e.g. a re-promotion) is reflected.
+async function onSetCurrentVersion(versionId: string): Promise<void> {
+  const ok = await documentStore.setWorkspaceVersion(versionId)
+  if (!ok) return
+  // The restore endpoint rewrote the live chunkset from the version's
+  // snapshot — reload so Chunk view re-renders with the restored set.
   await chunksStore.load(props.id)
   historyOpen.value = false
 }
@@ -168,21 +169,31 @@ function onGenerateChunks(): void {
   chunksStore.openStrategy()
 }
 
-// Watch analysisStore.running: when the in-place launch wraps up and
-// the polling sees a COMPLETED status, refresh the workspace analyses
-// list (the new run shows up in History + becomes the active one).
-// Chunks are NOT reloaded here — running an analysis no longer creates
-// chunks (the backend auto-promoter was disabled in 0.6.1). The user
-// must explicitly invoke the Strategy popover from the Chunk view to
-// generate / regenerate the canonical chunkset.
+// Watch analysisStore.running: when the in-place launch wraps up,
+// reload the workspace versions list (the backend just appended a
+// fresh ANALYSIS version that becomes the auto-pinned active one).
+// Chunks aren't touched on analysis runs — the version snapshot
+// preserves whatever was there.
 watch(
   () => analysisStore.running,
   async (now, prev) => {
     if (prev && !now) {
       const finished = analysisStore.currentAnalysis
       if (finished?.status === 'COMPLETED' && finished.documentId === props.id) {
-        await documentStore.reloadWorkspaceAnalyses(props.id)
+        await documentStore.reloadWorkspaceVersions(props.id)
       }
+    }
+  },
+)
+
+// Watch chunksStore.rechunking: when `+ Generate chunks` (rechunk)
+// completes, the backend appends a CHUNKS version. Refresh History
+// so the new entry shows up + is pinned.
+watch(
+  () => chunksStore.rechunking,
+  async (now, prev) => {
+    if (prev && !now && documentStore.workspaceDoc?.id === props.id) {
+      await documentStore.reloadWorkspaceVersions(props.id)
     }
   },
 )
