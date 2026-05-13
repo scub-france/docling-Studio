@@ -451,7 +451,7 @@ class ChunkService:
                 headings=list(r.headings),
                 source_page=r.source_page,
                 bboxes=list(r.bboxes),
-                doc_items=[],  # ChunkResult has no doc_items currently
+                doc_items=list(r.doc_items),
                 token_count=r.token_count or None,
             )
             for seq, r in enumerate(new_results)
