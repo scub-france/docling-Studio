@@ -17,17 +17,17 @@
         :disabled="chunksStore.rechunking"
         :title="t('chunk.strategy')"
         data-e2e="strategy-btn"
-        @click="openStrategy"
+        @click="chunksStore.openStrategy"
       >
         ⚙ {{ t('chunk.strategy') }}
       </button>
     </header>
 
     <StrategyPopover
-      :open="strategyOpen"
+      :open="chunksStore.strategyOpen"
       :has-manual-edits="chunksStore.hasManualEdits"
       :rechunking="chunksStore.rechunking"
-      @close="strategyOpen = false"
+      @close="chunksStore.closeStrategy"
       @apply="onApplyStrategy"
     />
 
@@ -39,21 +39,10 @@
     </div>
     <div
       v-else-if="!chunksStore.chunks.length"
-      class="chunks-panel-state chunks-panel-state--empty"
+      class="chunks-panel-state"
       data-e2e="chunks-panel-empty"
     >
-      <p>{{ t('chunk.panel.emptyAll') }}</p>
-      <button
-        type="button"
-        class="chunks-empty-cta"
-        :disabled="chunksStore.rechunking"
-        data-e2e="chunks-panel-empty-cta"
-        @click="openStrategy"
-      >
-        <span v-if="chunksStore.rechunking" class="spinner spinner--inline" />
-        <span v-else>⚙</span>
-        {{ chunksStore.rechunking ? t('strategy.rechunking') : t('chunk.panel.generate') }}
-      </button>
+      {{ t('chunk.panel.emptyAll') }}
     </div>
     <div v-else-if="!pageChunks.length" class="chunks-panel-state">
       {{ t('chunk.panel.emptyOnPage', { page: currentPage }) }}
@@ -111,7 +100,7 @@
  * The Strategy button is rendered as disabled with a tooltip until
  * T7 (#268) wires the rechunk popover.
  */
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import type { DocChunk } from '../../../shared/types'
 import type { RechunkOptions } from '../../document/api'
 import { useI18n } from '../../../shared/i18n'
@@ -136,17 +125,12 @@ const chunksStore = useChunksStore()
 
 const pageChunks = computed<DocChunk[]>(() => chunksStore.chunksOnPage(props.currentPage))
 
-// Strategy popover (#268) — anchored inline; the chunks store handles
-// the actual rechunk call so its state survives popover dismissal.
-const strategyOpen = ref(false)
-
-function openStrategy(): void {
-  strategyOpen.value = true
-}
-
+// Strategy popover open state is owned by `chunksStore` so the
+// workspace-level `Generate chunks` button (#266) can open the same
+// popover. Apply still routes through the panel for the rechunk call.
 async function onApplyStrategy(options: RechunkOptions): Promise<void> {
   const ok = await chunksStore.rechunk(props.docId, options)
-  if (ok) strategyOpen.value = false
+  if (ok) chunksStore.closeStrategy()
 }
 
 const cardRefs = new Map<string, HTMLElement>()
@@ -232,8 +216,18 @@ void props.docId
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  cursor: not-allowed;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.strategy-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.strategy-btn:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .chunks-panel-state {
@@ -245,40 +239,6 @@ void props.docId
   color: var(--text-muted);
   padding: 20px;
   text-align: center;
-}
-
-.chunks-panel-state--empty {
-  flex-direction: column;
-  gap: 12px;
-}
-
-.chunks-empty-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  color: white;
-  font-size: 12px;
-  cursor: pointer;
-  transition: filter var(--transition);
-}
-
-.chunks-empty-cta:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
-.chunks-empty-cta:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.spinner--inline {
-  width: 10px;
-  height: 10px;
-  border-width: 1.5px;
 }
 
 .chunks-panel-error {
