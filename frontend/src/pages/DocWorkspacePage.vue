@@ -48,6 +48,23 @@
           >
             ↻ {{ t('history.title') }}
           </button>
+          <!-- + Generate chunks (#268, exposed at workspace level after
+               the analysis/chunks decoupling). Visible only on the
+               Chunk view; opens the Strategy popover owned by the
+               chunks store. -->
+          <button
+            v-if="activeMode === 'chunk'"
+            type="button"
+            class="header-action-btn"
+            :disabled="chunksStore.rechunking"
+            :title="t('chunk.panel.generate')"
+            data-e2e="generate-chunks-btn"
+            @click="onGenerateChunks"
+          >
+            <span v-if="chunksStore.rechunking" class="header-spinner" />
+            <span v-else>⚙</span>
+            {{ chunksStore.rechunking ? t('strategy.rechunking') : t('chunk.panel.generate') }}
+          </button>
           <!-- + New analysis (#266) — runs the analysis in place. Polls
                via analysisStore.run; the watcher below refreshes the
                workspace when status flips to COMPLETED. -->
@@ -144,6 +161,11 @@ async function onSetCurrentAnalysis(analysisId: string): Promise<void> {
 async function onNewAnalysis(): Promise<void> {
   if (analysisStore.running) return
   await analysisStore.run(props.id)
+}
+
+/** Open the Strategy popover from the workspace header (#268). */
+function onGenerateChunks(): void {
+  chunksStore.openStrategy()
 }
 
 // Watch analysisStore.running: when the in-place launch wraps up and

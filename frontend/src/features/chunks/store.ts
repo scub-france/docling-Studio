@@ -12,9 +12,21 @@ export const useChunksStore = defineStore('chunks', () => {
   const diffing = ref(false)
   const diff = ref<ChunkDiff[]>([])
   const error = ref<string | null>(null)
+  // 0.6.1 — Strategy popover open state (#268). Lifted to the store so
+  // either the in-panel `⚙ Strategy` button or the workspace-level
+  // `Generate chunks` button can open the same popover.
+  const strategyOpen = ref(false)
 
   function clearError(): void {
     error.value = null
+  }
+
+  function openStrategy(): void {
+    strategyOpen.value = true
+  }
+
+  function closeStrategy(): void {
+    strategyOpen.value = false
   }
 
   /** Pure derived getter — chunks whose `sourcePage` matches the given page. */
@@ -198,7 +210,10 @@ export const useChunksStore = defineStore('chunks', () => {
     diffing,
     diff,
     error,
+    strategyOpen,
     clearError,
+    openStrategy,
+    closeStrategy,
     load,
     rechunk,
     updateText,
