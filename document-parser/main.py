@@ -104,7 +104,13 @@ def _build_analysis_service(
 
 
 async def _init_neo4j():
-    """Initialize the Neo4j driver and bootstrap schema — skip if not configured."""
+    """Warm the env-based Neo4j driver and bootstrap schema.
+
+    Returns the env-based driver so legacy callers (`AnalysisService`,
+    `IngestionService` service-level defaults) keep working. New
+    per-store callers go through the pool directly (#279) — schema
+    bootstrap is now the pool's job and runs once per (uri, user).
+    """
     if not settings.neo4j_uri:
         logger.info("Neo4j disabled (NEO4J_URI not set)")
         return None
@@ -118,15 +124,17 @@ async def _init_neo4j():
             "Override NEO4J_PASSWORD before deploying outside localhost."
         )
 
-    from infra.neo4j import bootstrap_schema, get_driver
+    from infra.neo4j import get_driver
 
     try:
+        # `get_driver` now delegates to the pool — schema bootstrap
+        # happens inside the pool's factory, no need to call it again
+        # here.
         neo = await get_driver(
             settings.neo4j_uri,
             settings.neo4j_user,
             settings.neo4j_password,
         )
-        await bootstrap_schema(neo)
         logger.info("Neo4j ready (uri=%s)", settings.neo4j_uri)
         return neo
     except Exception:
@@ -266,6 +274,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.include_router(ingestion_router)
         logger.info("Ingestion router mounted")
 
+    # 0.6.1 (#279) — per-store backend resolver. Bridges the per-store
+    # CRUD world to the (uri, user)-keyed driver pools. Env vars feed
+    # the transitional fallback path for the seeded `default` store +
+    # any pre-#279 store row that doesn't carry its own credentials.
+    from infra.neo4j.driver_pool import get_pool as get_neo4j_pool
+    from infra.opensearch_pool import get_pool as get_opensearch_pool
+    from services.store_backend_resolver import StoreBackendResolver
+
+    backend_resolver = StoreBackendResolver(
+        store_repo=store_repo,
+        neo4j_pool=get_neo4j_pool(),
+        opensearch_pool=get_opensearch_pool(),
+        env_neo4j_uri=settings.neo4j_uri,
+        env_neo4j_user=settings.neo4j_user,
+        env_neo4j_password=settings.neo4j_password,
+        env_opensearch_url=settings.opensearch_url,
+    )
+    app.state.backend_resolver = backend_resolver
+
     # Doc-centric chunks (#256). Wires the canonical chunkset CRUD on top
     # of the chunk / chunk_edit / chunk_push repos introduced by #205.
     chunk_repo = SqliteChunkRepository()
@@ -282,6 +309,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ingestion_service=ingestion_service,
         store_repo=store_repo,
         link_repo=link_repo,
+        backend_resolver=backend_resolver,
     )
     # The analysis service still carries the chunk promoter wiring for
     # legacy callers / tests, but the analysis flow no longer invokes it
@@ -313,10 +341,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        if app.state.neo4j is not None:
-            from infra.neo4j import close_driver
+        # Drain both backend pools (#279). `close_driver` drains the
+        # Neo4j pool (every (uri, user) entry, not just the env-based
+        # one). The OpenSearch pool is drained explicitly.
+        from infra.neo4j import close_driver
+        from infra.opensearch_pool import get_pool as get_opensearch_pool
 
-            await close_driver()
+        await close_driver()
+        await get_opensearch_pool().close_all()
 
 
 app = FastAPI(

@@ -585,6 +585,80 @@ class TestPushToStore:
         assert link.state == DocumentStoreLinkState.FAILED
         assert link.error_message == "opensearch unreachable"
 
+    async def test_calls_backend_resolver_and_forwards_targets(
+        self, repos, store_repo, link_repo, doc, mock_ingestion
+    ):
+        """When a backend resolver is wired (#279), push_to_store
+        resolves the per-store backends and forwards them as the
+        `targets` kwarg of the ingest call. The resolver is what gives
+        each store its own Neo4j/OpenSearch destination.
+        """
+        from services.store_backend_resolver import IngestionTargets
+
+        resolved = IngestionTargets(vector_store="vs-sentinel", neo4j_driver=None)
+        resolver = AsyncMock()
+        resolver.resolve = AsyncMock(return_value=resolved)
+        service = ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            chunker=None,
+            ingestion_service=mock_ingestion,
+            store_repo=store_repo,
+            link_repo=link_repo,
+            backend_resolver=resolver,
+        )
+        await service.add_chunk(doc.id, text="hello")
+        await service.push_to_store(doc.id, "rh-corpus-v3")
+
+        resolver.resolve.assert_awaited_once()
+        # The Store passed to resolve is the row from the repo —
+        # ensures the per-store identity reaches the resolver.
+        resolved_store = resolver.resolve.await_args.args[0]
+        assert resolved_store.slug == "rh-corpus-v3"
+        # ingest received the resolver's IngestionTargets, not None.
+        ingest_call = mock_ingestion.ingest.await_args
+        assert ingest_call.kwargs["targets"] is resolved
+
+    async def test_resolver_failure_raises_503_and_marks_link_failed(
+        self, repos, store_repo, link_repo, doc, mock_ingestion
+    ):
+        """If the resolver cannot map a Store to a backend (e.g. store
+        has no connection_uri and no env fallback), surface a 503 — not
+        a generic 500 — and record Failed on the link so the UI can
+        communicate.
+        """
+        from services.store_backend_resolver import StoreBackendNotConfiguredError
+
+        resolver = AsyncMock()
+        resolver.resolve = AsyncMock(side_effect=StoreBackendNotConfiguredError("no NEO4J_URI"))
+        service = ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            chunker=None,
+            ingestion_service=mock_ingestion,
+            store_repo=store_repo,
+            link_repo=link_repo,
+            backend_resolver=resolver,
+        )
+        await service.add_chunk(doc.id, text="hello")
+
+        with pytest.raises(ChunkServiceError) as excinfo:
+            await service.push_to_store(doc.id, "rh-corpus-v3")
+        assert excinfo.value.http_status == 503
+
+        # The Ingestion call should never happen if resolution fails.
+        mock_ingestion.ingest.assert_not_awaited()
+
+        link = await link_repo.find_one(doc.id, "store-uuid-1")
+        assert link is not None
+        assert link.state == DocumentStoreLinkState.FAILED
+
 
 class TestGetTree:
     async def test_tree_empty_when_no_analysis(self, service, doc):

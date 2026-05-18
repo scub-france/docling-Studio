@@ -25,6 +25,7 @@ from domain.vector_schema import (
 
 if TYPE_CHECKING:
     from domain.ports import EmbeddingService, VectorStore
+    from services.store_backend_resolver import IngestionTargets
 
 logger = logging.getLogger(__name__)
 
@@ -85,22 +86,29 @@ class IngestionService:
         chunks_json: str,
         *,
         binary_hash: str | None = None,
+        targets: IngestionTargets | None = None,
     ) -> IngestionResult:
         """Run the embedding + indexing pipeline on pre-chunked data.
 
-        This method is idempotent: it deletes any existing chunks for the
-        document before re-indexing.
+        Idempotent — deletes any existing chunks for the document
+        before re-indexing.
 
         Args:
             doc_id: Unique document identifier.
             filename: Original filename.
-            chunks_json: JSON-serialized list of chunk dicts (from analysis).
+            chunks_json: JSON-serialized list of chunk dicts.
             binary_hash: Optional hash of the source file for provenance.
+            targets: Per-call override for the vector_store /
+                neo4j_driver pair (#279). When None, the
+                service-level backends are used — preserves the pre-
+                #279 single-cluster path. When provided, per-store
+                dispatch wins.
 
         Returns:
             IngestionResult with the number of chunks indexed.
         """
-        await self.ensure_index()
+        vector_store, neo4j = self._resolve_call_targets(targets)
+        await self._ensure_index_on(vector_store)
 
         chunks_data: list[dict] = json.loads(chunks_json)
         active_chunks = [c for c in chunks_data if not c.get("deleted")]
@@ -108,12 +116,54 @@ class IngestionService:
             logger.info("No active chunks for doc %s — skipping ingestion", doc_id)
             return IngestionResult(doc_id=doc_id, chunks_indexed=0, embedding_dimension=0)
 
-        # 1. Embed all chunk texts
         texts = [c["text"] for c in active_chunks]
         logger.info("Embedding %d chunks for doc %s", len(texts), doc_id)
         embeddings = await self._embedding.embed(texts)
 
-        # 2. Build IndexedChunk domain objects
+        indexed_chunks = self._build_indexed_chunks(
+            doc_id=doc_id,
+            filename=filename,
+            active_chunks=active_chunks,
+            embeddings=embeddings,
+            binary_hash=binary_hash,
+        )
+
+        indexed = await self._write_to_vector_store(vector_store, doc_id, indexed_chunks)
+        await self._mirror_to_neo4j(neo4j, doc_id, chunks_json)
+
+        return IngestionResult(
+            doc_id=doc_id,
+            chunks_indexed=indexed,
+            embedding_dimension=len(embeddings[0]) if embeddings else 0,
+        )
+
+    # -- per-call helpers (extracted to keep `ingest` under the 30-line budget)
+
+    def _resolve_call_targets(
+        self, targets: IngestionTargets | None
+    ) -> tuple[VectorStore | None, object | None]:
+        """Pick between the call-level override and the service-level
+        defaults. Returns `(vector_store, neo4j_driver)`."""
+        if targets is None:
+            return self._vector_store, self._neo4j
+        return targets.vector_store, targets.neo4j_driver
+
+    async def _ensure_index_on(self, vector_store: VectorStore | None) -> None:
+        """Idempotent index bootstrap on the resolved vector store."""
+        if vector_store is None:
+            return
+        mapping = build_index_mapping(self._config.embedding_dimension)
+        await vector_store.ensure_index(self._config.index_name, mapping)
+
+    def _build_indexed_chunks(
+        self,
+        *,
+        doc_id: str,
+        filename: str,
+        active_chunks: list[dict],
+        embeddings: list[list[float]],
+        binary_hash: str | None,
+    ) -> list[IndexedChunk]:
         origin = (
             ChunkOrigin(binary_hash=binary_hash or "", filename=filename) if binary_hash else None
         )
@@ -143,38 +193,36 @@ class IngestionService:
                     origin=origin,
                 )
             )
+        return indexed_chunks
 
-        indexed = 0
-        if self._vector_store is not None:
-            # 3. Delete old chunks (idempotent re-indexing)
-            deleted = await self._vector_store.delete_document(self._config.index_name, doc_id)
-            if deleted:
-                logger.info("Deleted %d old chunks for doc %s", deleted, doc_id)
-
-            # 4. Index new chunks
-            indexed = await self._vector_store.index_chunks(self._config.index_name, indexed_chunks)
-            logger.info("Indexed %d/%d chunks for doc %s", indexed, len(indexed_chunks), doc_id)
-        else:
+    async def _write_to_vector_store(
+        self,
+        vector_store: VectorStore | None,
+        doc_id: str,
+        indexed_chunks: list[IndexedChunk],
+    ) -> int:
+        if vector_store is None:
             logger.info(
                 "Vector store not configured — skipping OpenSearch index for doc %s (#199)",
                 doc_id,
             )
-            indexed = len(indexed_chunks)
+            return len(indexed_chunks)
+        deleted = await vector_store.delete_document(self._config.index_name, doc_id)
+        if deleted:
+            logger.info("Deleted %d old chunks for doc %s", deleted, doc_id)
+        indexed = await vector_store.index_chunks(self._config.index_name, indexed_chunks)
+        logger.info("Indexed %d/%d chunks for doc %s", indexed, len(indexed_chunks), doc_id)
+        return indexed
 
-        # 5. Mirror chunks in Neo4j if configured (with DERIVED_FROM edges).
-        if self._neo4j is not None:
-            try:
-                from infra.neo4j import write_chunks
+    async def _mirror_to_neo4j(self, neo4j_driver, doc_id: str, chunks_json: str) -> None:
+        if neo4j_driver is None:
+            return
+        try:
+            from infra.neo4j import write_chunks
 
-                await write_chunks(self._neo4j, doc_id=doc_id, chunks_json=chunks_json)
-            except Exception:
-                logger.exception("Neo4j ChunkWriter failed for doc %s", doc_id)
-
-        return IngestionResult(
-            doc_id=doc_id,
-            chunks_indexed=indexed,
-            embedding_dimension=len(embeddings[0]) if embeddings else 0,
-        )
+            await write_chunks(neo4j_driver, doc_id=doc_id, chunks_json=chunks_json)
+        except Exception:
+            logger.exception("Neo4j ChunkWriter failed for doc %s", doc_id)
 
     async def delete_document(self, doc_id: str) -> int:
         """Remove all indexed chunks for a document.

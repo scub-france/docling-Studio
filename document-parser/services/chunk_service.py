@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
     from persistence.store_repo import SqliteStoreRepository
     from services.ingestion_service import IngestionService
+    from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,7 @@ class ChunkService:
         ingestion_service: IngestionService | None = None,
         store_repo: SqliteStoreRepository | None = None,
         link_repo: SqliteDocumentStoreLinkRepository | None = None,
+        backend_resolver: StoreBackendResolver | None = None,
         actor: str = "user",
     ) -> None:
         self._chunks = chunk_repo
@@ -171,6 +173,12 @@ class ChunkService:
         # audit row in `chunk_pushes` still lands but the user-visible
         # state stays NotPushed forever.
         self._links = link_repo
+        # Optional — resolves a Store to its concrete backend pair
+        # (#279). When wired, `push_to_store` uses it to pick the per-
+        # store driver from the pool; when None, the IngestionService
+        # falls back to its service-level defaults (env-based, pre-#279
+        # behaviour).
+        self._backend_resolver = backend_resolver
         self._actor = actor
         # Duck-typed recorder for document versions (#267). Wired in
         # main.py to `VersionService.record_on_rechunk` so each
@@ -603,11 +611,27 @@ class ChunkService:
         chunks_payload = [_chunk_to_ingestion_dict(c) for c in canonical]
         chunks_json_payload = json.dumps(chunks_payload)
         chunkset_hash = _compute_chunkset_hash(canonical)
+        # Resolve the per-store backends through the pool (#279). When
+        # the resolver is not wired the call falls back to the
+        # IngestionService's service-level defaults — preserves
+        # behaviour for existing tests and for installs that still
+        # rely on env-var fallbacks.
+        targets = None
+        if self._backend_resolver is not None and store is not None:
+            try:
+                targets = await self._backend_resolver.resolve(store)
+            except Exception as exc:
+                await self._mark_link_failed(document_id, resolved_store_id, error=str(exc))
+                raise ChunkServiceError(
+                    f"Cannot resolve backend for store {store.slug!r}: {exc}",
+                    http_status=503,
+                ) from exc
         try:
             ingestion_result = await self._ingestion.ingest(
                 doc_id=document_id,
                 filename=(doc.filename if doc else document_id),
                 chunks_json=chunks_json_payload,
+                targets=targets,
             )
         except Exception as exc:
             # Push failed mid-flight — record the failure on the link
