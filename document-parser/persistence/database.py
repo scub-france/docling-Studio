@@ -235,10 +235,17 @@ async def _seed_default_store(db: aiosqlite.Connection) -> None:
     via the API/UI or sets env-var fallbacks (covered in #279 wiring).
     """
     embedder = os.environ.get("DEFAULT_EMBEDDER", "bge-m3")
+    # Connection columns are intentionally left NULL — the default
+    # store seeds happily on any backend (with or without
+    # STORE_SECRET_KEY). The operator fills them via the API / UI when
+    # they actually want to push to a real endpoint.
     await db.execute(
         """INSERT OR IGNORE INTO stores
-           (id, name, slug, kind, embedder, config, is_default, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+           (id, name, slug, kind, embedder, config,
+            connection_uri, connection_username, connection_password_sealed,
+            is_default, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?,
+                   datetime('now'), datetime('now'))""",
         ("default", "default", "default", "opensearch", embedder, "{}", 1),
     )
 
