@@ -1,48 +1,61 @@
-"""Async Neo4j driver wrapper.
+"""Async Neo4j driver dataclass.
 
-Owns a single `AsyncDriver` per process. Callers acquire it via
-`get_driver()` and must call `close_driver()` at shutdown.
+The `Neo4jDriver` value object lives here so other infra modules
+(chunk_writer, tree_writer, schema bootstrap) can import it without
+pulling the pool. Driver acquisition itself is the pool's job — see
+`infra/neo4j/driver_pool.py`.
+
+Historical note: until 0.6.1, this module owned a process-wide
+singleton driver via `get_driver()` / `close_driver()`. That model
+hardwired every Neo4j-kind store to one physical cluster (the
+`NEO4J_URI` env var). #279 moves driver acquisition to a pool keyed
+by `(uri, user)`. The legacy `get_driver` and `close_driver` are
+preserved as thin compatibility shims that delegate to the pool —
+they are still imported by `tests/neo4j/conftest.py`.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from neo4j import AsyncDriver, AsyncGraphDatabase
+if TYPE_CHECKING:
+    from neo4j import AsyncDriver
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class Neo4jDriver:
+    """Wrapper around an `AsyncDriver` + a default session database.
+
+    Carried by the driver pool; passed around inside services so the
+    writers can open sessions without knowing about the pool.
+    """
+
     driver: AsyncDriver
     database: str = "neo4j"
 
 
-_instance: Neo4jDriver | None = None
-
-
 async def get_driver(uri: str, user: str, password: str, database: str = "neo4j") -> Neo4jDriver:
-    """Return the process-wide driver, creating it on first call.
+    """Compatibility shim — returns the pool entry for `(uri, user)`.
 
-    Verifies connectivity once at creation — raises if the server is unreachable.
+    Pre-0.6.1 callers (and the live test fixture in
+    `tests/neo4j/conftest.py`) still use this. New callers should
+    talk to `infra.neo4j.driver_pool.get_pool()` directly.
     """
-    global _instance
-    if _instance is not None:
-        return _instance
+    from infra.neo4j.driver_pool import get_pool
 
-    driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
-    await driver.verify_connectivity()
-    logger.info("Neo4j driver connected to %s (db=%s)", uri, database)
-    _instance = Neo4jDriver(driver=driver, database=database)
-    return _instance
+    return await get_pool().get(uri, user, password, database=database)
 
 
 async def close_driver() -> None:
-    global _instance
-    if _instance is None:
-        return
-    await _instance.driver.close()
-    _instance = None
-    logger.info("Neo4j driver closed")
+    """Compatibility shim — drains the pool.
+
+    Pre-0.6.1 callers expected a single driver. The pool may hold
+    several, so this draining variant is the closest semantic match.
+    """
+    from infra.neo4j.driver_pool import get_pool
+
+    await get_pool().close_all()
