@@ -143,3 +143,41 @@ class SqliteChunkPushRepository:
             )
             row = await cursor.fetchone()
             return _row_to_push(row) if row else None
+
+    async def find_for_document(
+        self,
+        document_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[ChunkPush]:
+        """Return every push for `document_id`, newest first.
+
+        Used by `GET /api/documents/{id}/chunks/pushes` (#283) to
+        drive the Ingest tab's history list. Hits the
+        `idx_chunk_pushes_doc_store_pushed` covering index.
+        """
+        async with get_connection() as db:
+            cursor = await db.execute(
+                """SELECT * FROM chunk_pushes
+                   WHERE document_id = ?
+                   ORDER BY pushed_at DESC
+                   LIMIT ? OFFSET ?""",
+                (document_id, limit, offset),
+            )
+            rows = await cursor.fetchall()
+            return [_row_to_push(row) for row in rows]
+
+    async def count_for_document(self, document_id: str) -> int:
+        """Return the total number of pushes recorded for the document.
+
+        Lets paginated callers expose a "showing N of M" hint without
+        a second query against `find_for_document`.
+        """
+        async with get_connection() as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) AS n FROM chunk_pushes WHERE document_id = ?",
+                (document_id,),
+            )
+            row = await cursor.fetchone()
+            return row["n"] if row else 0

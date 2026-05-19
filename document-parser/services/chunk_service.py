@@ -46,6 +46,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Sentinel for "not yet probed" in `list_pushes`'s store-name cache.
+# Distinct from None (which means "store row deleted after the push").
+_UNSET = object()
+
 
 # ---------------------------------------------------------------------------
 # Errors — carry an http_status hint, mirrors store_service.py convention.
@@ -679,6 +683,56 @@ class ChunkService:
                 "tokens": token_total,
             },
         }
+
+    async def list_pushes(
+        self,
+        document_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """List the document's push history, newest first (#283).
+
+        Joined view: each row carries the store slug + kind (via the
+        store_repo) so the UI does not need a second round-trip to
+        render the history list. When the store row was deleted
+        after the push, slug and kind are returned as None — the
+        push remains an immutable audit row.
+
+        Returns a paginated envelope `{items, total, limit, offset}`.
+        """
+        await self._require_doc(document_id)
+        total = await self._pushes.count_for_document(document_id)
+        if total == 0:
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+        pushes = await self._pushes.find_for_document(document_id, limit=limit, offset=offset)
+        # Resolve store names in one repo round per unique store_id
+        # (typically 1-3 stores for a given doc).
+        store_cache: dict[str, object | None] = {}
+        items: list[dict] = []
+        for push in pushes:
+            store = store_cache.get(push.store_id, _UNSET)
+            if store is _UNSET:
+                store = (
+                    await self._stores.find_by_id(push.store_id)
+                    if self._stores is not None
+                    else None
+                )
+                store_cache[push.store_id] = store
+            items.append(
+                {
+                    "id": push.id,
+                    "documentId": push.document_id,
+                    "storeId": push.store_id,
+                    "storeSlug": getattr(store, "slug", None),
+                    "storeName": getattr(store, "name", None),
+                    "storeKind": getattr(store.kind, "value", None) if store else None,
+                    "chunksetHash": push.chunkset_hash,
+                    "chunkCount": len(push.chunk_ids),
+                    "pushedAt": push.pushed_at.isoformat() if push.pushed_at else None,
+                }
+            )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
 
     async def _upsert_link_ingested(
         self,
