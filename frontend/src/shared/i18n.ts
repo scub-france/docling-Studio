@@ -577,6 +577,31 @@ const messages: Messages = {
     'storeForm.invalidSlug':
       'Slug invalide : minuscules, chiffres, tirets uniquement (ex. \u00ab\u00a0rh-corpus-v3\u00a0\u00bb).',
 
+    // Connection sub-form (#279)
+    'storeForm.sectionConnection': 'Connexion',
+    'storeForm.connectionIntro':
+      "Identifie le cluster cible. Si vide, le backend utilise les variables d'environnement (NEO4J_URI / OPENSEARCH_URL).",
+    'storeForm.fieldConnectionUri': 'URI de connexion',
+    'storeForm.fieldConnectionUriHelp':
+      'Neo4j : bolt:// \u00b7 neo4j:// \u00b7 neo4j+s://. OpenSearch : http:// \u00b7 https://.',
+    'storeForm.fieldConnectionUsername': 'Utilisateur',
+    'storeForm.fieldConnectionUsernameHelp': 'Laissez vide pour un acc\u00e8s anonyme.',
+    'storeForm.fieldConnectionPassword': 'Mot de passe',
+    'storeForm.fieldConnectionPasswordHelp':
+      "Chiffr\u00e9 au repos via Fernet (STORE_SECRET_KEY). Jamais renvoy\u00e9 par l'API.",
+    'storeForm.passwordKeepPlaceholder':
+      '\u2022\u2022\u2022\u2022 (inchang\u00e9 \u2014 tapez pour remplacer)',
+    'storeForm.clearPasswordLabel':
+      "Effacer le mot de passe (l'authentification deviendra anonyme)",
+    'storeForm.revealPassword': 'Afficher le mot de passe',
+    'storeForm.hidePassword': 'Masquer le mot de passe',
+    'storeForm.testConnection': 'Tester la connexion',
+    'storeForm.testConnectionOk': 'Connexion \u00e9tablie',
+    'storeForm.testConnectionFailed': '\u00c9chec de la connexion',
+    'storeForm.invalid-neo4j-scheme':
+      'URI Neo4j attendue : bolt://, bolt+s://, neo4j://, neo4j+s:// (etc.).',
+    'storeForm.invalid-opensearch-scheme': 'URI OpenSearch attendue : http:// ou https://.',
+
     // Store detail (#244)
     'storeDetail.back': 'Stores',
     'storeDetail.query': 'Requ\u00eater',
@@ -1160,6 +1185,29 @@ const messages: Messages = {
     'storeForm.create': 'Create',
     'storeForm.required': 'Required field.',
     'storeForm.invalidSlug': 'Invalid slug: lowercase, digits, dashes only (e.g. "rh-corpus-v3").',
+
+    // Connection sub-form (#279)
+    'storeForm.sectionConnection': 'Connection',
+    'storeForm.connectionIntro':
+      'Identifies the target cluster. Leave blank to fall back to the backend env vars (NEO4J_URI / OPENSEARCH_URL).',
+    'storeForm.fieldConnectionUri': 'Connection URI',
+    'storeForm.fieldConnectionUriHelp':
+      'Neo4j: bolt:// · neo4j:// · neo4j+s://. OpenSearch: http:// · https://.',
+    'storeForm.fieldConnectionUsername': 'Username',
+    'storeForm.fieldConnectionUsernameHelp': 'Leave blank for anonymous access.',
+    'storeForm.fieldConnectionPassword': 'Password',
+    'storeForm.fieldConnectionPasswordHelp':
+      'Sealed at rest with Fernet (STORE_SECRET_KEY). Never returned by the API.',
+    'storeForm.passwordKeepPlaceholder': '•••• (unchanged — type to replace)',
+    'storeForm.clearPasswordLabel': 'Clear password (auth becomes anonymous)',
+    'storeForm.revealPassword': 'Reveal password',
+    'storeForm.hidePassword': 'Hide password',
+    'storeForm.testConnection': 'Test connection',
+    'storeForm.testConnectionOk': 'Connection successful',
+    'storeForm.testConnectionFailed': 'Connection failed',
+    'storeForm.invalid-neo4j-scheme':
+      'Expected a Neo4j URI: bolt://, bolt+s://, neo4j://, neo4j+s:// (etc.).',
+    'storeForm.invalid-opensearch-scheme': 'Expected an OpenSearch URI: http:// or https://.',
 
     // Store detail (#244)
     'storeDetail.back': 'Stores',

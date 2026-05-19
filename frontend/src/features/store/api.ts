@@ -21,6 +21,12 @@ export interface StoreDetail {
   embedder: string
   isDefault: boolean
   config: Record<string, unknown>
+  // Connection identity (#279). The password itself never crosses
+  // the wire on a GET — only the boolean indicator does. The form
+  // renders "•••• (unchanged — type to replace)" when this is true.
+  connectionUri?: string | null
+  connectionUsername?: string | null
+  hasConnectionPassword?: boolean
   createdAt: string
 }
 
@@ -31,6 +37,10 @@ export interface StoreCreatePayload {
   embedder: string
   config: Record<string, unknown>
   isDefault?: boolean
+  // #279 — write-only on create. Empty string == "no password set".
+  connectionUri?: string | null
+  connectionUsername?: string | null
+  connectionPassword?: string | null
 }
 
 export interface StoreUpdatePayload {
@@ -40,6 +50,18 @@ export interface StoreUpdatePayload {
   embedder?: string
   config?: Record<string, unknown>
   isDefault?: boolean
+  // #279 — write-only on update. Tri-state on password:
+  //   - undefined / missing → leave the existing seal alone
+  //   - ""                  → clear the seal
+  //   - "value"             → seal and persist
+  connectionUri?: string | null
+  connectionUsername?: string | null
+  connectionPassword?: string | null
+}
+
+export interface StoreTestConnectionResult {
+  ok: boolean
+  errorMessage?: string | null
 }
 
 export interface StoreDocEntry {
@@ -93,6 +115,13 @@ export function removeDocumentFromStore(store: string, docId: string): Promise<v
   return apiFetch<void>(
     `/api/stores/${encodeURIComponent(store)}/documents/${encodeURIComponent(docId)}`,
     { method: 'DELETE' },
+  )
+}
+
+export function testStoreConnection(slug: string): Promise<StoreTestConnectionResult> {
+  return apiFetch<StoreTestConnectionResult>(
+    `/api/stores/${encodeURIComponent(slug)}/test-connection`,
+    { method: 'POST' },
   )
 }
 
