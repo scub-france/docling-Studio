@@ -585,6 +585,177 @@ class TestPushToStore:
         assert link.state == DocumentStoreLinkState.FAILED
         assert link.error_message == "opensearch unreachable"
 
+    async def test_calls_backend_resolver_and_forwards_targets(
+        self, repos, store_repo, link_repo, doc, mock_ingestion
+    ):
+        """When a backend resolver is wired (#279), push_to_store
+        resolves the per-store backends and forwards them as the
+        `targets` kwarg of the ingest call. The resolver is what gives
+        each store its own Neo4j/OpenSearch destination.
+        """
+        from services.store_backend_resolver import IngestionTargets
+
+        resolved = IngestionTargets(vector_store="vs-sentinel", neo4j_driver=None)
+        resolver = AsyncMock()
+        resolver.resolve = AsyncMock(return_value=resolved)
+        service = ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            chunker=None,
+            ingestion_service=mock_ingestion,
+            store_repo=store_repo,
+            link_repo=link_repo,
+            backend_resolver=resolver,
+        )
+        await service.add_chunk(doc.id, text="hello")
+        await service.push_to_store(doc.id, "rh-corpus-v3")
+
+        resolver.resolve.assert_awaited_once()
+        # The Store passed to resolve is the row from the repo —
+        # ensures the per-store identity reaches the resolver.
+        resolved_store = resolver.resolve.await_args.args[0]
+        assert resolved_store.slug == "rh-corpus-v3"
+        # ingest received the resolver's IngestionTargets, not None.
+        ingest_call = mock_ingestion.ingest.await_args
+        assert ingest_call.kwargs["targets"] is resolved
+
+    async def test_resolver_failure_raises_503_and_marks_link_failed(
+        self, repos, store_repo, link_repo, doc, mock_ingestion
+    ):
+        """If the resolver cannot map a Store to a backend (e.g. store
+        has no connection_uri and no env fallback), surface a 503 — not
+        a generic 500 — and record Failed on the link so the UI can
+        communicate.
+        """
+        from services.store_backend_resolver import StoreBackendNotConfiguredError
+
+        resolver = AsyncMock()
+        resolver.resolve = AsyncMock(side_effect=StoreBackendNotConfiguredError("no NEO4J_URI"))
+        service = ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            chunker=None,
+            ingestion_service=mock_ingestion,
+            store_repo=store_repo,
+            link_repo=link_repo,
+            backend_resolver=resolver,
+        )
+        await service.add_chunk(doc.id, text="hello")
+
+        with pytest.raises(ChunkServiceError) as excinfo:
+            await service.push_to_store(doc.id, "rh-corpus-v3")
+        assert excinfo.value.http_status == 503
+
+        # The Ingestion call should never happen if resolution fails.
+        mock_ingestion.ingest.assert_not_awaited()
+
+        link = await link_repo.find_one(doc.id, "store-uuid-1")
+        assert link is not None
+        assert link.state == DocumentStoreLinkState.FAILED
+
+
+class TestListPushes:
+    """Coverage for the push-history feed (#283).
+
+    Three properties to pin:
+      - Newest-first order (the UI bets on this).
+      - Pagination envelope shape (items / total / limit / offset).
+      - The store fields are joined from the store_repo and survive
+        the store being deleted later (audit log is immutable).
+    """
+
+    @pytest.fixture
+    async def store_repo(self):
+        repo = SqliteStoreRepository()
+        await repo.insert(
+            Store(
+                id="s-rh",
+                name="RH Corpus",
+                slug="rh-corpus",
+                kind=StoreKind.OPENSEARCH,
+                embedder="bge-m3",
+            )
+        )
+        return repo
+
+    @pytest.fixture
+    def service_with_pushes(self, repos, store_repo, doc):
+        return ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            chunker=None,
+            ingestion_service=None,
+            store_repo=store_repo,
+        )
+
+    async def _seed_pushes(self, repos, *, doc_id, store_id, count, base_minute=0):
+        from domain.models import ChunkPush
+
+        for i in range(count):
+            await repos["pushes"].insert(
+                ChunkPush(
+                    id=f"push-{i}",
+                    document_id=doc_id,
+                    store_id=store_id,
+                    chunkset_hash=f"hash-{i}",
+                    chunk_ids=[f"c-{j}" for j in range(i + 1)],
+                    pushed_at=datetime(2026, 5, 19, 10, base_minute + i, tzinfo=UTC),
+                )
+            )
+
+    async def test_empty_history(self, service_with_pushes, doc):
+        result = await service_with_pushes.list_pushes(doc.id)
+        assert result == {"items": [], "total": 0, "limit": 50, "offset": 0}
+
+    async def test_returns_newest_first(self, service_with_pushes, repos, doc):
+        await self._seed_pushes(repos, doc_id=doc.id, store_id="s-rh", count=3)
+        result = await service_with_pushes.list_pushes(doc.id)
+        assert result["total"] == 3
+        # Reversed order: the highest minute lands first.
+        ids = [item["id"] for item in result["items"]]
+        assert ids == ["push-2", "push-1", "push-0"]
+
+    async def test_joins_store_name_and_kind(self, service_with_pushes, repos, doc):
+        await self._seed_pushes(repos, doc_id=doc.id, store_id="s-rh", count=1)
+        result = await service_with_pushes.list_pushes(doc.id)
+        entry = result["items"][0]
+        assert entry["storeSlug"] == "rh-corpus"
+        assert entry["storeName"] == "RH Corpus"
+        assert entry["storeKind"] == "opensearch"
+        assert entry["chunkCount"] == 1  # i=0 → one chunk_id
+
+    # Note: a "store deleted after the push" case can't exist with the
+    # current schema — `chunk_pushes.store_id` is a FK with ON DELETE
+    # CASCADE, so deleting the store wipes its push history. The
+    # service's defensive None handling
+    # (`storeSlug`/`storeName`/`storeKind` may be None) is kept
+    # because a future schema change to ON DELETE SET NULL would
+    # rehabilitate the audit log as a survivor of store deletion —
+    # see follow-up notes in #283 / the audit-trail thread.
+
+    async def test_pagination_limit_and_offset(self, service_with_pushes, repos, doc):
+        await self._seed_pushes(repos, doc_id=doc.id, store_id="s-rh", count=5)
+        page_1 = await service_with_pushes.list_pushes(doc.id, limit=2, offset=0)
+        page_2 = await service_with_pushes.list_pushes(doc.id, limit=2, offset=2)
+        assert [item["id"] for item in page_1["items"]] == ["push-4", "push-3"]
+        assert [item["id"] for item in page_2["items"]] == ["push-2", "push-1"]
+        assert page_2["total"] == 5
+        assert page_2["limit"] == 2
+        assert page_2["offset"] == 2
+
+    async def test_unknown_document_raises_404(self, service_with_pushes):
+        with pytest.raises(DocumentNotFoundError):
+            await service_with_pushes.list_pushes("ghost-doc")
+
 
 class TestGetTree:
     async def test_tree_empty_when_no_analysis(self, service, doc):

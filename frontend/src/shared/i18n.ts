@@ -445,28 +445,41 @@ const messages: Messages = {
     'chunk.panel.edited': 'modifi\u00e9',
     'chunk.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse.",
 
-    // Ingest view (#225) \u2014 per-store push state + actions
+    // Ingest view (#225, redesigned in #283 \u2014 CTA + history)
     'ingest.title': 'Ingest',
-    'ingest.noStores': 'Aucun store configur\u00e9. Cr\u00e9ez-en un dans la section Stores.',
+    'ingest.noStores': 'Aucun store configur\u00e9.',
+    'ingest.noStoresAction': 'Cr\u00e9er un store \u2192',
     'ingest.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse pour pouvoir ing\u00e9rer.",
-    'ingest.colStore': 'Store',
-    'ingest.colKind': 'Type',
-    'ingest.colLastPush': 'Dernier push',
-    'ingest.colState': '\u00c9tat',
-    'ingest.colActions': 'Actions',
+    'ingest.noHistory': 'Aucun ingest pour ce document.',
+    'ingest.noHistoryHint': 'Cliquez sur \u00ab Lancer un ingest \u00bb pour le premier push.',
+    'ingest.launchCta': 'Lancer un ingest',
+    'ingest.historyTitle': 'Historique des ingests',
+    'ingest.historyCount': '{n} entr\u00e9e(s)',
+    'ingest.colWhen': 'Quand',
+    'ingest.colTarget': 'Destination',
+    'ingest.colChunks': 'Chunks',
+    'ingest.colVersion': 'Empreinte',
+    'ingest.chunkCount': '{n} chunks',
+    'ingest.loadMore': 'Charger plus',
+    'ingest.loadError': "\u00c9chec du chargement de l'historique",
+    'ingest.storeDeleted': 'Store supprim\u00e9',
     'ingest.stateNotPushed': 'Jamais ing\u00e9r\u00e9',
     'ingest.stateUpToDate': '\u00c0 jour',
     'ingest.stateStale': 'Obsol\u00e8te',
     'ingest.stateFailed': '\u00c9chec',
-    'ingest.pushBtn': 'Ing\u00e9rer',
-    'ingest.pushBtn.running': 'Ingest en cours\u2026',
-    'ingest.pushAll': 'Ing\u00e9rer dans tous les stores obsol\u00e8tes',
-    'ingest.diffShow': 'Voir le diff',
-    'ingest.diffHide': 'Masquer le diff',
-    'ingest.diffAdded': '+ ajout\u00e9s : {n}',
-    'ingest.diffModified': '~ modifi\u00e9s : {n}',
-    'ingest.diffRemoved': '\u2212 retir\u00e9s : {n}',
-    'ingest.diffUnchanged': '= inchang\u00e9s : {n}',
+
+    // Launch-ingest modal (#283)
+    'ingest.launch.title': 'Lancer un ingest',
+    'ingest.launch.hint':
+      'S\u00e9lectionnez les stores cibles. Les pushes sont effectu\u00e9s s\u00e9quentiellement ; les erreurs ne bloquent pas les autres.',
+    'ingest.launch.empty': 'Aucun store \u00e9ligible.',
+    'ingest.launch.confirm': 'Lancer',
+    'ingest.launch.running': 'En cours\u2026',
+    'ingest.launch.cancel': 'Annuler',
+    'ingest.launch.close': 'Fermer',
+    'ingest.launch.closeAction': 'Fermer',
+    'ingest.launch.rowOk': 'OK',
+    'ingest.launch.rowFailed': '\u00c9chec',
 
     // Strategy popover (#268) \u2014 inline rechunk options
     'strategy.title': 'Strat\u00e9gie de chunking',
@@ -576,6 +589,31 @@ const messages: Messages = {
     'storeForm.required': 'Champ requis.',
     'storeForm.invalidSlug':
       'Slug invalide : minuscules, chiffres, tirets uniquement (ex. \u00ab\u00a0rh-corpus-v3\u00a0\u00bb).',
+
+    // Connection sub-form (#279)
+    'storeForm.sectionConnection': 'Connexion',
+    'storeForm.connectionIntro':
+      "Identifie le cluster cible. Si vide, le backend utilise les variables d'environnement (NEO4J_URI / OPENSEARCH_URL).",
+    'storeForm.fieldConnectionUri': 'URI de connexion',
+    'storeForm.fieldConnectionUriHelp':
+      'Neo4j : bolt:// \u00b7 neo4j:// \u00b7 neo4j+s://. OpenSearch : http:// \u00b7 https://.',
+    'storeForm.fieldConnectionUsername': 'Utilisateur',
+    'storeForm.fieldConnectionUsernameHelp': 'Laissez vide pour un acc\u00e8s anonyme.',
+    'storeForm.fieldConnectionPassword': 'Mot de passe',
+    'storeForm.fieldConnectionPasswordHelp':
+      "Chiffr\u00e9 au repos via Fernet (STORE_SECRET_KEY). Jamais renvoy\u00e9 par l'API.",
+    'storeForm.passwordKeepPlaceholder':
+      '\u2022\u2022\u2022\u2022 (inchang\u00e9 \u2014 tapez pour remplacer)',
+    'storeForm.clearPasswordLabel':
+      "Effacer le mot de passe (l'authentification deviendra anonyme)",
+    'storeForm.revealPassword': 'Afficher le mot de passe',
+    'storeForm.hidePassword': 'Masquer le mot de passe',
+    'storeForm.testConnection': 'Tester la connexion',
+    'storeForm.testConnectionOk': 'Connexion \u00e9tablie',
+    'storeForm.testConnectionFailed': '\u00c9chec de la connexion',
+    'storeForm.invalid-neo4j-scheme':
+      'URI Neo4j attendue : bolt://, bolt+s://, neo4j://, neo4j+s:// (etc.).',
+    'storeForm.invalid-opensearch-scheme': 'URI OpenSearch attendue : http:// ou https://.',
 
     // Store detail (#244)
     'storeDetail.back': 'Stores',
@@ -1032,28 +1070,41 @@ const messages: Messages = {
     'chunk.panel.edited': 'edited',
     'chunk.noAnalysis': 'No analysis yet — run a parse first.',
 
-    // Ingest view (#225) — per-store push state + actions
+    // Ingest view (#225, redesigned in #283 — CTA + history)
     'ingest.title': 'Ingest',
-    'ingest.noStores': 'No store configured yet. Create one from the Stores section.',
+    'ingest.noStores': 'No store configured yet.',
+    'ingest.noStoresAction': 'Create a store →',
     'ingest.noAnalysis': 'No analysis yet — run a parse before ingesting.',
-    'ingest.colStore': 'Store',
-    'ingest.colKind': 'Kind',
-    'ingest.colLastPush': 'Last push',
-    'ingest.colState': 'State',
-    'ingest.colActions': 'Actions',
+    'ingest.noHistory': 'No ingests for this document yet.',
+    'ingest.noHistoryHint': 'Click "Launch ingest" to push for the first time.',
+    'ingest.launchCta': 'Launch ingest',
+    'ingest.historyTitle': 'Ingest history',
+    'ingest.historyCount': '{n} entries',
+    'ingest.colWhen': 'When',
+    'ingest.colTarget': 'Target',
+    'ingest.colChunks': 'Chunks',
+    'ingest.colVersion': 'Hash',
+    'ingest.chunkCount': '{n} chunks',
+    'ingest.loadMore': 'Load more',
+    'ingest.loadError': 'Failed to load history',
+    'ingest.storeDeleted': 'Store deleted',
     'ingest.stateNotPushed': 'Never ingested',
     'ingest.stateUpToDate': 'Up-to-date',
     'ingest.stateStale': 'Stale',
     'ingest.stateFailed': 'Failed',
-    'ingest.pushBtn': 'Ingest',
-    'ingest.pushBtn.running': 'Ingesting…',
-    'ingest.pushAll': 'Ingest into every stale store',
-    'ingest.diffShow': 'Show diff',
-    'ingest.diffHide': 'Hide diff',
-    'ingest.diffAdded': '+ added: {n}',
-    'ingest.diffModified': '~ modified: {n}',
-    'ingest.diffRemoved': '− removed: {n}',
-    'ingest.diffUnchanged': '= unchanged: {n}',
+
+    // Launch-ingest modal (#283)
+    'ingest.launch.title': 'Launch ingest',
+    'ingest.launch.hint':
+      'Pick the target stores. Pushes run sequentially; failures do not block the others.',
+    'ingest.launch.empty': 'No eligible store.',
+    'ingest.launch.confirm': 'Launch',
+    'ingest.launch.running': 'Running…',
+    'ingest.launch.cancel': 'Cancel',
+    'ingest.launch.close': 'Close',
+    'ingest.launch.closeAction': 'Close',
+    'ingest.launch.rowOk': 'OK',
+    'ingest.launch.rowFailed': 'Failed',
 
     // Strategy popover (#268) — inline rechunk options
     'strategy.title': 'Chunking strategy',
@@ -1160,6 +1211,29 @@ const messages: Messages = {
     'storeForm.create': 'Create',
     'storeForm.required': 'Required field.',
     'storeForm.invalidSlug': 'Invalid slug: lowercase, digits, dashes only (e.g. "rh-corpus-v3").',
+
+    // Connection sub-form (#279)
+    'storeForm.sectionConnection': 'Connection',
+    'storeForm.connectionIntro':
+      'Identifies the target cluster. Leave blank to fall back to the backend env vars (NEO4J_URI / OPENSEARCH_URL).',
+    'storeForm.fieldConnectionUri': 'Connection URI',
+    'storeForm.fieldConnectionUriHelp':
+      'Neo4j: bolt:// · neo4j:// · neo4j+s://. OpenSearch: http:// · https://.',
+    'storeForm.fieldConnectionUsername': 'Username',
+    'storeForm.fieldConnectionUsernameHelp': 'Leave blank for anonymous access.',
+    'storeForm.fieldConnectionPassword': 'Password',
+    'storeForm.fieldConnectionPasswordHelp':
+      'Sealed at rest with Fernet (STORE_SECRET_KEY). Never returned by the API.',
+    'storeForm.passwordKeepPlaceholder': '•••• (unchanged — type to replace)',
+    'storeForm.clearPasswordLabel': 'Clear password (auth becomes anonymous)',
+    'storeForm.revealPassword': 'Reveal password',
+    'storeForm.hidePassword': 'Hide password',
+    'storeForm.testConnection': 'Test connection',
+    'storeForm.testConnectionOk': 'Connection successful',
+    'storeForm.testConnectionFailed': 'Connection failed',
+    'storeForm.invalid-neo4j-scheme':
+      'Expected a Neo4j URI: bolt://, bolt+s://, neo4j://, neo4j+s:// (etc.).',
+    'storeForm.invalid-opensearch-scheme': 'Expected an OpenSearch URI: http:// or https://.',
 
     // Store detail (#244)
     'storeDetail.back': 'Stores',

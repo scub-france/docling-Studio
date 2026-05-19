@@ -1,19 +1,25 @@
 @ui @regression
-Feature: UI — Ingest view lists stores and pushes from the workspace (#225)
+Feature: UI — Ingest view shell + history-driven design (#225, redesigned #283)
 
   # The third tab in the workspace switcher (Parse | Chunk | Ingest)
-  # surfaces the document's ingestion state per store. The table loads
-  # via GET /api/stores; the legacy /index/* paths redirect to /ingest/*.
+  # surfaces a primary "Launch ingest" CTA + the document's push
+  # history. Per-store state lives inside the launch modal — the
+  # tab itself shows only the timeline.
+  #
+  # On a fresh document we expect either:
+  #   - no-stores empty state (no stores configured in the test env), or
+  #   - no-history empty state (stores exist but no pushes yet).
+  # Both states are valid Karate-side; we just assert the tab renders
+  # and the CTA + at least one empty-state surface is visible.
 
   Background:
     * url baseUrl
 
-  Scenario: Ingest tab renders the stores table
+  Scenario: Ingest tab renders the CTA + history shell
     * def upload = call read('classpath:common/helpers/upload.feature') { file: 'small.pdf' }
     * def docId = upload.docId
 
-    # Doc + at least one completed analysis so the workspace has data
-    # to act on.
+    # Doc + at least one completed analysis so the workspace has data.
     Given url baseUrl
     And path '/api/analyses'
     And request { documentId: '#(docId)', chunkingOptions: { chunkerType: 'hybrid', maxTokens: 256, mergePeers: true, repeatTableHeader: true } }
@@ -31,11 +37,28 @@ Feature: UI — Ingest view lists stores and pushes from the workspace (#225)
     * driver uiBaseUrl + '/docs/' + docId + '?mode=ingest'
     * waitFor('[data-e2e=view-switcher]')
     * waitFor('[data-e2e=ingest-tab]')
-    # Either the table or the "no stores configured" empty state must
-    # show up — both are valid depending on the test environment.
-    * def hasTable = exists('[data-e2e=ingest-table]')
-    * def hasEmpty = exists('[data-e2e=ingest-no-stores]')
-    * assert hasTable || hasEmpty
+    * waitFor('[data-e2e=ingest-launch-cta]')
+
+    # Exactly one of the three states is visible: error / no-stores /
+    # no-history / history. We assert at least one of the safe ones.
+    * def hasHistory = exists('[data-e2e=ingest-history]')
+    * def hasNoStores = exists('[data-e2e=ingest-no-stores]')
+    * def hasNoHistory = exists('[data-e2e=ingest-no-history]')
+    * assert hasHistory || hasNoStores || hasNoHistory
+
+    * call read('classpath:common/helpers/cleanup-by-name.feature') { filename: 'small.pdf' }
+
+  Scenario: Launch CTA opens the modal (when stores are available)
+    * def upload = call read('classpath:common/helpers/upload.feature') { file: 'small.pdf' }
+    * def docId = upload.docId
+
+    * driver uiBaseUrl + '/docs/' + docId + '?mode=ingest'
+    * waitFor('[data-e2e=ingest-tab]')
+    * waitFor('[data-e2e=ingest-launch-cta]')
+
+    # Only attempt the modal flow if the CTA is enabled (stores exist).
+    * def ctaDisabled = script('[data-e2e=ingest-launch-cta]', "el => el.disabled")
+    * if (!ctaDisabled) karate.call('classpath:documents/_open-launch-modal.feature', { docId: docId })
 
     * call read('classpath:common/helpers/cleanup-by-name.feature') { filename: 'small.pdf' }
 

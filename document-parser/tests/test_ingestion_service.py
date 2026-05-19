@@ -187,6 +187,108 @@ class TestEnsureIndex:
 
 
 # ---------------------------------------------------------------------------
+# Per-call targets override (#279)
+#
+# `ingest()` accepts an optional `IngestionTargets` kwarg that
+# overrides the service-level (vector_store, neo4j_driver) defaults.
+# This is the linchpin of per-store dispatch — the StoreBackendResolver
+# resolves a Store to an IngestionTargets, then `chunk_service.push_to_store`
+# passes that through. The resolver itself is tested in
+# `test_store_backend_resolver.py`; this class pins the IngestionService
+# end of the contract.
+# ---------------------------------------------------------------------------
+
+
+class TestIngestTargetsOverride:
+    async def test_targets_vector_store_wins_over_service_default(
+        self, service: IngestionService, mock_vector_store: AsyncMock
+    ) -> None:
+        """A non-None targets.vector_store is used in place of the
+        service-level default. The service-level default must NOT
+        receive any call when an override is provided.
+        """
+        from services.store_backend_resolver import IngestionTargets
+
+        override = AsyncMock()
+        override.ensure_index.return_value = None
+        override.delete_document.return_value = 0
+        override.index_chunks.return_value = 3
+        targets = IngestionTargets(vector_store=override, neo4j_driver=None)
+
+        result = await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
+
+        # The override carried the writes.
+        override.ensure_index.assert_awaited_once()
+        override.delete_document.assert_awaited_once_with("test-idx", "doc-1")
+        override.index_chunks.assert_awaited_once()
+        # The service-level default never saw a single call.
+        mock_vector_store.ensure_index.assert_not_awaited()
+        mock_vector_store.delete_document.assert_not_awaited()
+        mock_vector_store.index_chunks.assert_not_awaited()
+        assert result.chunks_indexed == 3
+
+    async def test_targets_neo4j_driver_wins_over_service_default(
+        self,
+        service: IngestionService,
+        mock_vector_store: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A non-None targets.neo4j_driver triggers the Neo4j mirror
+        write through the resolved driver, not through the service's
+        own (which is None by default in the fixture).
+        """
+        from services.store_backend_resolver import IngestionTargets
+
+        write_chunks_calls: list[dict] = []
+
+        async def fake_write_chunks(neo, *, doc_id, chunks_json):
+            write_chunks_calls.append({"neo": neo, "doc_id": doc_id, "chunks_json": chunks_json})
+
+        monkeypatch.setattr("infra.neo4j.write_chunks", fake_write_chunks)
+
+        neo_override = object()  # sentinel — the writer is mocked, we just track identity
+        targets = IngestionTargets(vector_store=mock_vector_store, neo4j_driver=neo_override)
+
+        await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
+
+        assert len(write_chunks_calls) == 1
+        assert write_chunks_calls[0]["neo"] is neo_override
+        assert write_chunks_calls[0]["doc_id"] == "doc-1"
+
+    async def test_targets_none_falls_back_to_service_defaults(
+        self, service: IngestionService, mock_vector_store: AsyncMock
+    ) -> None:
+        """The explicit `targets=None` path is the pre-#279 contract —
+        backwards-compat with single-cluster callers (legacy tests,
+        embedding/search endpoints that don't know about stores).
+        """
+        await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=None)
+        mock_vector_store.index_chunks.assert_awaited_once()
+
+    async def test_targets_both_none_inside_envelope_is_a_full_skip(
+        self, service: IngestionService, mock_vector_store: AsyncMock
+    ) -> None:
+        """An IngestionTargets with both fields None reaches the
+        Neo4j-only / no-store-configured branch — embedding still runs,
+        no vector index call happens. Defensive: shouldn't occur in
+        practice (the resolver always returns one non-None), but the
+        contract should be predictable if a caller forges this shape.
+        """
+        from services.store_backend_resolver import IngestionTargets
+
+        targets = IngestionTargets(vector_store=None, neo4j_driver=None)
+        result = await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
+
+        # Vector store path is entirely skipped despite the
+        # service-level default being present (the override wins,
+        # even with None).
+        mock_vector_store.index_chunks.assert_not_awaited()
+        # `chunks_indexed` mirrors the processed count (#199 Neo4j-only
+        # contract carries over).
+        assert result.chunks_indexed == 3
+
+
+# ---------------------------------------------------------------------------
 # Neo4j-only mode (#199)
 #
 # When no OpenSearch is configured (vector_store=None), the service

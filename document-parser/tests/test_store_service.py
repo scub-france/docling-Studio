@@ -281,3 +281,248 @@ class TestDelete:
         )
         with pytest.raises(StoreConflictError):
             await service.delete_store("rh")
+
+
+# ---------------------------------------------------------------------------
+# Connection identity (#279)
+# ---------------------------------------------------------------------------
+
+
+class TestTestConnection:
+    """Behavioural tests for `StoreService.test_connection`. The
+    resolver is mocked at the service boundary — the resolver itself
+    has its own dedicated tests in tests/test_store_backend_resolver.py.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _fernet_key(self, monkeypatch):
+        from infra.secrets import generate_key, reset_fernet_box
+
+        reset_fernet_box()
+        monkeypatch.setenv("STORE_SECRET_KEY", generate_key())
+        yield
+        reset_fernet_box()
+
+    @pytest.fixture
+    def store_with_resolver(self):
+        from unittest.mock import AsyncMock
+
+        store_repo = SqliteStoreRepository()
+        link_repo = SqliteDocumentStoreLinkRepository()
+        resolver = AsyncMock()
+        # Each test overrides resolver.resolve.return_value /
+        # side_effect as needed; the targets shape is what matters.
+        service = StoreService(
+            store_repo=store_repo,
+            link_repo=link_repo,
+            backend_resolver=resolver,
+        )
+        return service, resolver
+
+    async def test_returns_ok_true_when_opensearch_ping_succeeds(self, store_with_resolver):
+        from unittest.mock import AsyncMock
+
+        from services.store_backend_resolver import IngestionTargets
+
+        service, resolver = store_with_resolver
+        fake_client = AsyncMock()
+        fake_client.ping = AsyncMock(return_value=True)
+        resolver.resolve.return_value = IngestionTargets(vector_store=fake_client)
+        await service.create_store(
+            name="os",
+            slug="os",
+            kind=StoreKind.OPENSEARCH,
+            embedder="b",
+            config=VALID_OS_CONFIG,
+            connection_uri="http://x:9200",
+        )
+
+        ok, err = await service.test_connection("os")
+        assert ok is True
+        assert err is None
+        fake_client.ping.assert_awaited_once()
+
+    async def test_returns_ok_false_when_ping_returns_false(self, store_with_resolver):
+        from unittest.mock import AsyncMock
+
+        from services.store_backend_resolver import IngestionTargets
+
+        service, resolver = store_with_resolver
+        fake_client = AsyncMock()
+        fake_client.ping = AsyncMock(return_value=False)
+        resolver.resolve.return_value = IngestionTargets(vector_store=fake_client)
+        await service.create_store(
+            name="os",
+            slug="os",
+            kind=StoreKind.OPENSEARCH,
+            embedder="b",
+            config=VALID_OS_CONFIG,
+            connection_uri="http://x:9200",
+        )
+
+        ok, err = await service.test_connection("os")
+        assert ok is False
+        assert "ping" in (err or "").lower()
+
+    async def test_returns_ok_true_for_neo4j_when_verify_connectivity_succeeds(
+        self, store_with_resolver
+    ):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from services.store_backend_resolver import IngestionTargets
+
+        service, resolver = store_with_resolver
+        neo = MagicMock()
+        neo.driver = MagicMock()
+        neo.driver.verify_connectivity = AsyncMock(return_value=None)
+        resolver.resolve.return_value = IngestionTargets(neo4j_driver=neo)
+        await service.create_store(
+            name="neo",
+            slug="neo",
+            kind=StoreKind.NEO4J,
+            embedder="b",
+            config={"index_name": "x"},
+            connection_uri="bolt://x:7687",
+        )
+
+        ok, err = await service.test_connection("neo")
+        assert ok is True
+        assert err is None
+        neo.driver.verify_connectivity.assert_awaited_once()
+
+    async def test_returns_ok_false_when_resolver_raises(self, store_with_resolver):
+        from services.store_backend_resolver import StoreBackendNotConfiguredError
+
+        service, resolver = store_with_resolver
+        resolver.resolve.side_effect = StoreBackendNotConfiguredError("no NEO4J_URI configured")
+        await service.create_store(
+            name="neo",
+            slug="neo",
+            kind=StoreKind.NEO4J,
+            embedder="b",
+            config={"index_name": "x"},
+        )
+
+        ok, err = await service.test_connection("neo")
+        assert ok is False
+        assert "NEO4J_URI" in (err or "")
+
+    async def test_returns_ok_false_when_resolver_not_wired(self):
+        """A service built without a resolver returns a friendly 'not
+        available' message instead of crashing.
+        """
+        service = StoreService(
+            store_repo=SqliteStoreRepository(),
+            link_repo=SqliteDocumentStoreLinkRepository(),
+        )
+        await service.create_store(
+            name="os",
+            slug="os",
+            kind=StoreKind.OPENSEARCH,
+            embedder="b",
+            config=VALID_OS_CONFIG,
+        )
+        ok, err = await service.test_connection("os")
+        assert ok is False
+        assert "resolver" in (err or "").lower()
+
+    async def test_raises_404_when_slug_unknown(self):
+        service = StoreService(
+            store_repo=SqliteStoreRepository(),
+            link_repo=SqliteDocumentStoreLinkRepository(),
+        )
+        with pytest.raises(StoreNotFoundError):
+            await service.test_connection("ghost")
+
+
+class TestConnectionFieldsRoundTrip:
+    """Service-level tests for the create/update + connection fields
+    pairing. The repo-level seal/open is already covered in
+    tests/test_store_repo.py — here we verify the service plumbing
+    forwards the values correctly.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _fernet_key(self, monkeypatch):
+        from infra.secrets import generate_key, reset_fernet_box
+
+        reset_fernet_box()
+        monkeypatch.setenv("STORE_SECRET_KEY", generate_key())
+        yield
+        reset_fernet_box()
+
+    async def test_create_with_uri_username_and_password(self, service):
+        store = await service.create_store(
+            name="neo",
+            slug="neo",
+            kind=StoreKind.NEO4J,
+            embedder="b",
+            config={"index_name": "x"},
+            connection_uri="bolt://store:7687",
+            connection_username="neo4j",
+            connection_password="secret",
+        )
+        assert store.connection_uri == "bolt://store:7687"
+        assert store.connection_username == "neo4j"
+        assert store.has_connection_password is True
+
+    async def test_create_rejects_bad_neo4j_scheme(self, service):
+        with pytest.raises(StoreValidationError):
+            await service.create_store(
+                name="neo",
+                slug="neo",
+                kind=StoreKind.NEO4J,
+                embedder="b",
+                config={"index_name": "x"},
+                connection_uri="http://wrong:7687",
+            )
+
+    async def test_create_rejects_bad_opensearch_scheme(self, service):
+        with pytest.raises(StoreValidationError):
+            await service.create_store(
+                name="os",
+                slug="os",
+                kind=StoreKind.OPENSEARCH,
+                embedder="b",
+                config=VALID_OS_CONFIG,
+                connection_uri="bolt://wrong:9200",
+            )
+
+    async def test_update_password_none_keeps_seal(self, service):
+        await service.create_store(
+            name="neo",
+            slug="neo",
+            kind=StoreKind.NEO4J,
+            embedder="b",
+            config={"index_name": "x"},
+            connection_password="initial",
+        )
+        updated = await service.update_store("neo", name="neo-renamed")
+        assert updated.has_connection_password is True
+
+    async def test_update_password_empty_string_clears_seal(self, service):
+        await service.create_store(
+            name="neo",
+            slug="neo",
+            kind=StoreKind.NEO4J,
+            embedder="b",
+            config={"index_name": "x"},
+            connection_password="initial",
+        )
+        updated = await service.update_store("neo", connection_password="")
+        assert updated.has_connection_password is False
+
+    async def test_update_password_non_empty_replaces_seal(self, service):
+        await service.create_store(
+            name="neo",
+            slug="neo",
+            kind=StoreKind.NEO4J,
+            embedder="b",
+            config={"index_name": "x"},
+            connection_password="initial",
+        )
+        updated = await service.update_store("neo", connection_password="rotated")
+        assert updated.has_connection_password is True
+        # The plaintext is unsealable from the repo with the right key.
+        plaintext = await SqliteStoreRepository().get_connection_password(updated.id)
+        assert plaintext == "rotated"

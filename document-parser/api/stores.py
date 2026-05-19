@@ -12,6 +12,7 @@ from api.schemas import (
     StoreDocEntryResponse,
     StoreInfoResponse,
     StoreResponse,
+    StoreTestConnectionResponse,
     StoreUpdateRequest,
 )
 from domain.value_objects import StoreKind
@@ -51,6 +52,11 @@ def _store_to_response(store) -> StoreResponse:
         embedder=store.embedder,
         is_default=store.is_default,
         config=store.config,
+        connection_uri=store.connection_uri,
+        connection_username=store.connection_username,
+        # #279 — never serialise the plaintext password. The boolean
+        # indicator is what the form uses to render "•••• (unchanged)".
+        has_connection_password=store.has_connection_password,
         created_at=str(store.created_at),
     )
 
@@ -99,6 +105,9 @@ async def create_store(
             embedder=payload.embedder,
             config=payload.config,
             is_default=payload.is_default,
+            connection_uri=payload.connection_uri,
+            connection_username=payload.connection_username,
+            connection_password=payload.connection_password,
         )
     except StoreServiceError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
@@ -130,10 +139,37 @@ async def update_store(
             embedder=payload.embedder,
             config=payload.config,
             is_default=payload.is_default,
+            connection_uri=payload.connection_uri,
+            connection_username=payload.connection_username,
+            connection_password=payload.connection_password,
         )
     except StoreServiceError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     return _store_to_response(store)
+
+
+@router.post("/{slug}/test-connection", response_model=StoreTestConnectionResponse)
+async def test_store_connection(
+    slug: str,
+    service: ServiceDep,
+) -> StoreTestConnectionResponse:
+    """Probe the store's backend (#279).
+
+    Returns `{ok: true}` when the underlying driver can verify
+    connectivity, `{ok: false, errorMessage: "..."}` otherwise. The
+    endpoint is intentionally always 200 — the boolean carries the
+    result. Callers should not infer "backend down" from a non-2xx
+    here (that would imply a server-side error, not a connection
+    failure).
+    """
+    try:
+        # Surface 404 if the slug is unknown — keeps parity with the
+        # other store endpoints.
+        await service.get_by_slug(slug)
+    except StoreServiceError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    ok, error_message = await service.test_connection(slug)
+    return StoreTestConnectionResponse(ok=ok, error_message=error_message)
 
 
 @router.delete("/{slug}", status_code=204)

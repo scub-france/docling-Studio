@@ -42,8 +42,13 @@ if TYPE_CHECKING:
     from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
     from persistence.store_repo import SqliteStoreRepository
     from services.ingestion_service import IngestionService
+    from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
+
+# Sentinel for "not yet probed" in `list_pushes`'s store-name cache.
+# Distinct from None (which means "store row deleted after the push").
+_UNSET = object()
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +156,7 @@ class ChunkService:
         ingestion_service: IngestionService | None = None,
         store_repo: SqliteStoreRepository | None = None,
         link_repo: SqliteDocumentStoreLinkRepository | None = None,
+        backend_resolver: StoreBackendResolver | None = None,
         actor: str = "user",
     ) -> None:
         self._chunks = chunk_repo
@@ -171,6 +177,12 @@ class ChunkService:
         # audit row in `chunk_pushes` still lands but the user-visible
         # state stays NotPushed forever.
         self._links = link_repo
+        # Optional — resolves a Store to its concrete backend pair
+        # (#279). When wired, `push_to_store` uses it to pick the per-
+        # store driver from the pool; when None, the IngestionService
+        # falls back to its service-level defaults (env-based, pre-#279
+        # behaviour).
+        self._backend_resolver = backend_resolver
         self._actor = actor
         # Duck-typed recorder for document versions (#267). Wired in
         # main.py to `VersionService.record_on_rechunk` so each
@@ -603,11 +615,27 @@ class ChunkService:
         chunks_payload = [_chunk_to_ingestion_dict(c) for c in canonical]
         chunks_json_payload = json.dumps(chunks_payload)
         chunkset_hash = _compute_chunkset_hash(canonical)
+        # Resolve the per-store backends through the pool (#279). When
+        # the resolver is not wired the call falls back to the
+        # IngestionService's service-level defaults — preserves
+        # behaviour for existing tests and for installs that still
+        # rely on env-var fallbacks.
+        targets = None
+        if self._backend_resolver is not None and store is not None:
+            try:
+                targets = await self._backend_resolver.resolve(store)
+            except Exception as exc:
+                await self._mark_link_failed(document_id, resolved_store_id, error=str(exc))
+                raise ChunkServiceError(
+                    f"Cannot resolve backend for store {store.slug!r}: {exc}",
+                    http_status=503,
+                ) from exc
         try:
             ingestion_result = await self._ingestion.ingest(
                 doc_id=document_id,
                 filename=(doc.filename if doc else document_id),
                 chunks_json=chunks_json_payload,
+                targets=targets,
             )
         except Exception as exc:
             # Push failed mid-flight — record the failure on the link
@@ -655,6 +683,56 @@ class ChunkService:
                 "tokens": token_total,
             },
         }
+
+    async def list_pushes(
+        self,
+        document_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """List the document's push history, newest first (#283).
+
+        Joined view: each row carries the store slug + kind (via the
+        store_repo) so the UI does not need a second round-trip to
+        render the history list. When the store row was deleted
+        after the push, slug and kind are returned as None — the
+        push remains an immutable audit row.
+
+        Returns a paginated envelope `{items, total, limit, offset}`.
+        """
+        await self._require_doc(document_id)
+        total = await self._pushes.count_for_document(document_id)
+        if total == 0:
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+        pushes = await self._pushes.find_for_document(document_id, limit=limit, offset=offset)
+        # Resolve store names in one repo round per unique store_id
+        # (typically 1-3 stores for a given doc).
+        store_cache: dict[str, object | None] = {}
+        items: list[dict] = []
+        for push in pushes:
+            store = store_cache.get(push.store_id, _UNSET)
+            if store is _UNSET:
+                store = (
+                    await self._stores.find_by_id(push.store_id)
+                    if self._stores is not None
+                    else None
+                )
+                store_cache[push.store_id] = store
+            items.append(
+                {
+                    "id": push.id,
+                    "documentId": push.document_id,
+                    "storeId": push.store_id,
+                    "storeSlug": getattr(store, "slug", None),
+                    "storeName": getattr(store, "name", None),
+                    "storeKind": getattr(store.kind, "value", None) if store else None,
+                    "chunksetHash": push.chunkset_hash,
+                    "chunkCount": len(push.chunk_ids),
+                    "pushedAt": push.pushed_at.isoformat() if push.pushed_at else None,
+                }
+            )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
 
     async def _upsert_link_ingested(
         self,

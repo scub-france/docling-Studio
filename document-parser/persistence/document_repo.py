@@ -24,8 +24,8 @@ def _row_to_document(row) -> Document:
         created = datetime.fromisoformat(created)
     if created.tzinfo is None:
         created = created.replace(tzinfo=UTC)
-    # `_run_migrations` guarantees both lifecycle columns exist by the time
-    # any read happens, so direct access is safe.
+    # The schema defines both lifecycle columns inline (#279 schema
+    # reset), so direct access is always safe.
     lifecycle_value = row["lifecycle_state"]
     lifecycle_state = (
         DocumentLifecycleState(lifecycle_value)

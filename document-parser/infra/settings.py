@@ -33,6 +33,12 @@ class Settings:
     # so prod operators notice if they inherited it by accident. Real
     # deployments must override NEO4J_PASSWORD.
     neo4j_password: str = "changeme"
+    # 0.6.1 (#279) — Fernet key sealing per-store connection passwords
+    # in SQLite. Empty by default; the backend refuses to boot if any
+    # store row has a non-NULL `connection_password_sealed` and this
+    # key is missing. Generate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    store_secret_key: str = ""
     # Live reasoning via docling-agent — off by default (heavy deps, needs an
     # Ollama host reachable from the backend). Toggle REASONING_ENABLED=true +
     # point OLLAMA_HOST at a running instance (default http://localhost:11434).
@@ -155,6 +161,7 @@ class Settings:
             neo4j_uri=os.environ.get("NEO4J_URI", ""),
             neo4j_user=os.environ.get("NEO4J_USER", "neo4j"),
             neo4j_password=os.environ.get("NEO4J_PASSWORD", "changeme"),
+            store_secret_key=os.environ.get("STORE_SECRET_KEY", ""),
             reasoning_enabled=os.environ.get("REASONING_ENABLED", "false").lower()
             in ("1", "true", "yes", "on"),
             llm_provider_type=os.environ.get("LLM_PROVIDER_TYPE", "ollama"),

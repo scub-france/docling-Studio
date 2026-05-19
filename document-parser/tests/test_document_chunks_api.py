@@ -223,3 +223,68 @@ class TestPush:
         body = resp.json()
         assert body["jobId"] == "p1"
         assert body["summary"]["embeds"] == 3
+
+
+class TestListPushes:
+    """`GET /api/documents/{id}/chunks/pushes` — push history feed (#283)."""
+
+    def test_200_returns_paginated_envelope(self, client, mock_service):
+        mock_service.list_pushes = AsyncMock(
+            return_value={
+                "items": [
+                    {
+                        "id": "push-1",
+                        "documentId": "d-1",
+                        "storeId": "s-rh",
+                        "storeSlug": "rh-corpus",
+                        "storeName": "RH Corpus",
+                        "storeKind": "opensearch",
+                        "chunksetHash": "abc123",
+                        "chunkCount": 11,
+                        "pushedAt": "2026-05-19T14:32:00+00:00",
+                    }
+                ],
+                "total": 1,
+                "limit": 50,
+                "offset": 0,
+            }
+        )
+        resp = client.get("/api/documents/d-1/chunks/pushes")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 1
+        assert body["limit"] == 50
+        assert body["offset"] == 0
+        assert len(body["items"]) == 1
+        entry = body["items"][0]
+        assert entry["storeSlug"] == "rh-corpus"
+        assert entry["storeKind"] == "opensearch"
+        assert entry["chunkCount"] == 11
+        # Service got the default limit/offset.
+        mock_service.list_pushes.assert_awaited_once_with("d-1", limit=50, offset=0)
+
+    def test_forwards_limit_and_offset_query_params(self, client, mock_service):
+        mock_service.list_pushes = AsyncMock(
+            return_value={"items": [], "total": 0, "limit": 10, "offset": 20}
+        )
+        resp = client.get("/api/documents/d-1/chunks/pushes?limit=10&offset=20")
+        assert resp.status_code == 200
+        mock_service.list_pushes.assert_awaited_once_with("d-1", limit=10, offset=20)
+
+    def test_404_when_document_unknown(self, client, mock_service):
+        mock_service.list_pushes = AsyncMock(side_effect=DocumentNotFoundError("not found"))
+        resp = client.get("/api/documents/ghost/chunks/pushes")
+        assert resp.status_code == 404
+
+    def test_422_when_limit_out_of_range(self, client, mock_service):
+        mock_service.list_pushes = AsyncMock(return_value={"items": [], "total": 0})
+        resp = client.get("/api/documents/d-1/chunks/pushes?limit=500")
+        # 500 > 200 (the cap).
+        assert resp.status_code == 422
+        mock_service.list_pushes.assert_not_awaited()
+
+    def test_422_when_offset_negative(self, client, mock_service):
+        mock_service.list_pushes = AsyncMock(return_value={"items": [], "total": 0})
+        resp = client.get("/api/documents/d-1/chunks/pushes?offset=-1")
+        assert resp.status_code == 422
+        mock_service.list_pushes.assert_not_awaited()

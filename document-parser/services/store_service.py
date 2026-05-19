@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from persistence.document_repo import SqliteDocumentRepository
     from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
     from persistence.store_repo import SqliteStoreRepository
+    from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,45 @@ def _validate_slug(slug: str) -> None:
         )
 
 
+_NEO4J_URI_SCHEMES = (
+    "bolt://",
+    "bolt+s://",
+    "bolt+ssc://",
+    "neo4j://",
+    "neo4j+s://",
+    "neo4j+ssc://",
+)
+_OPENSEARCH_URI_SCHEMES = ("http://", "https://")
+
+
+def _normalise_optional(value: str | None) -> str | None:
+    """Return None for empty / whitespace-only input; trimmed value otherwise."""
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+def _normalise_uri_for_kind(kind: StoreKind, value: str | None) -> str | None:
+    """Validate the URI scheme against the store kind (#279).
+
+    Empty / None values are allowed — the env-var fallback in the
+    resolver covers stores without their own URI.
+    """
+    normalised = _normalise_optional(value)
+    if normalised is None:
+        return None
+    if kind is StoreKind.NEO4J and not normalised.lower().startswith(_NEO4J_URI_SCHEMES):
+        raise StoreValidationError(
+            f"connection_uri must start with one of {', '.join(_NEO4J_URI_SCHEMES)} for Neo4j stores"
+        )
+    if kind is StoreKind.OPENSEARCH and not normalised.lower().startswith(_OPENSEARCH_URI_SCHEMES):
+        raise StoreValidationError(
+            "connection_uri must start with http:// or https:// for OpenSearch stores"
+        )
+    return normalised
+
+
 def _validate_config_for_kind(kind: StoreKind, config: dict) -> None:
     """Per-kind config schema. New kinds plug in here without touching the
     rest of the pipeline. Authentication for remote stores comes from the
@@ -108,10 +148,14 @@ class StoreService:
         store_repo: SqliteStoreRepository,
         link_repo: SqliteDocumentStoreLinkRepository,
         document_repo: SqliteDocumentRepository | None = None,
+        backend_resolver: StoreBackendResolver | None = None,
     ):
         self._stores = store_repo
         self._links = link_repo
         self._documents = document_repo
+        # Optional — required by `test_connection`. When None, the
+        # endpoint returns a 503-shaped failure rather than 500.
+        self._backend_resolver = backend_resolver
 
     async def list_stores(self) -> list[StoreInfoView]:
         stores = await self._stores.find_all()
@@ -147,6 +191,9 @@ class StoreService:
         embedder: str,
         config: dict,
         is_default: bool = False,
+        connection_uri: str | None = None,
+        connection_username: str | None = None,
+        connection_password: str | None = None,
     ) -> Store:
         name = (name or "").strip()
         slug = (slug or "").strip().lower()
@@ -158,6 +205,8 @@ class StoreService:
             raise StoreValidationError("embedder is required")
         _validate_slug(slug)
         _validate_config_for_kind(kind, config)
+        connection_uri = _normalise_uri_for_kind(kind, connection_uri)
+        connection_username = _normalise_optional(connection_username)
 
         if await self._stores.find_by_slug(slug) is not None:
             raise StoreConflictError(f"slug '{slug}' is already in use")
@@ -171,12 +220,18 @@ class StoreService:
             kind=kind,
             embedder=embedder,
             config=config,
+            connection_uri=connection_uri,
+            connection_username=connection_username,
             is_default=is_default,
         )
-        await self._stores.insert(store)
+        # Empty-string password → no seal at create-time (the column
+        # stays NULL). Only a non-empty value triggers Fernet.
+        seal_password = connection_password if connection_password else None
+        await self._stores.insert(store, password=seal_password)
         if is_default:
             await self._stores.clear_default_except(store.id)
-        return store
+        # Re-read so `has_connection_password` reflects what landed.
+        return await self._stores.find_by_id(store.id) or store
 
     async def update_store(
         self,
@@ -188,6 +243,9 @@ class StoreService:
         embedder: str | None = None,
         config: dict | None = None,
         is_default: bool | None = None,
+        connection_uri: str | None = None,
+        connection_username: str | None = None,
+        connection_password: str | None = None,
     ) -> Store:
         store = await self.get_by_slug(slug)
 
@@ -225,15 +283,61 @@ class StoreService:
         # the two changed, the combination must still satisfy the schema.
         _validate_config_for_kind(store.kind, store.config)
 
+        if connection_uri is not None:
+            store.connection_uri = _normalise_uri_for_kind(store.kind, connection_uri)
+        if connection_username is not None:
+            store.connection_username = _normalise_optional(connection_username)
+
         promote_default = False
         if is_default is not None:
             store.is_default = is_default
             promote_default = is_default
 
         await self._stores.update(store)
+
+        # Password write is separate (#279). Three behaviours per the
+        # DTO contract: None=untouched, ""=clear, other=replace.
+        if connection_password is not None:
+            cleared_or_replaced = connection_password if connection_password else None
+            await self._stores.set_connection_password(store.id, cleared_or_replaced)
+
         if promote_default:
             await self._stores.clear_default_except(store.id)
-        return store
+        # Re-read so the response reflects the new sealed-flag state.
+        return await self._stores.find_by_id(store.id) or store
+
+    async def test_connection(self, slug: str) -> tuple[bool, str | None]:
+        """Open a probe connection to the store's backend.
+
+        Returns `(ok, error_message)`. Success means the resolver
+        could build a driver/client AND the underlying ping returned
+        OK. Failure modes:
+          - `StoreBackendNotConfiguredError` → "no URI configured"
+          - Driver/connection error → the exception message (passwords
+            never appear in the message — we strip the password from
+            the resolver before raising).
+          - `_backend_resolver` not wired → ("connection probe not
+            available", 503-shaped).
+        """
+        store = await self.get_by_slug(slug)
+        if self._backend_resolver is None:
+            return False, "connection probe not available (backend resolver not configured)"
+        try:
+            targets = await self._backend_resolver.resolve(store)
+        except Exception as exc:
+            return False, str(exc)
+        try:
+            if targets.vector_store is not None:
+                ok = await targets.vector_store.ping()
+                if not ok:
+                    return False, "OpenSearch ping returned not-ok"
+                return True, None
+            if targets.neo4j_driver is not None:
+                await targets.neo4j_driver.driver.verify_connectivity()
+                return True, None
+        except Exception as exc:
+            return False, str(exc)
+        return False, "no backend resolved for this store"
 
     async def list_documents(self, slug: str) -> list[StoreDocEntryView]:
         store = await self.get_by_slug(slug)

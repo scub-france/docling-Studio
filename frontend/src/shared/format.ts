@@ -17,3 +17,20 @@ export function formatRelativeTime(iso: string | null | undefined, locale = 'fr'
   if (abs < 30 * 86_400_000) return rtf.format(dir * Math.round(abs / 86_400_000), 'day')
   return rtf.format(dir * Math.round(abs / (30 * 86_400_000)), 'month')
 }
+
+/**
+ * Absolute timestamp formatted for tooltips on top of relative-time
+ * labels (#283). Locale-aware short date + time; defaults to the
+ * user's locale so this stays human even outside the fr/en UI.
+ */
+export function formatAbsolute(iso: string | null | undefined): string {
+  if (!iso) return ''
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(iso))
+  } catch {
+    return iso
+  }
+}

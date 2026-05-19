@@ -67,11 +67,25 @@ class OpenSearchStore:
     Args:
         url: OpenSearch cluster URL (e.g. ``http://localhost:9200``).
         verify_certs: Whether to verify TLS certificates.
+        username: Optional HTTP basic-auth username (#279).
+        password: Optional HTTP basic-auth password (#279). Required
+            when `username` is set; ignored otherwise.
+        default_limit: Cap on rows returned by paginated reads.
     """
 
-    def __init__(self, url: str, *, verify_certs: bool = False, default_limit: int = 1000) -> None:
+    def __init__(
+        self,
+        url: str,
+        *,
+        verify_certs: bool = False,
+        default_limit: int = 1000,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> None:
+        http_auth = (username, password) if username is not None else None
         self._client = AsyncOpenSearch(
             hosts=[url],
+            http_auth=http_auth,
             use_ssl=url.startswith("https"),
             verify_certs=verify_certs,
             ssl_show_warn=False,

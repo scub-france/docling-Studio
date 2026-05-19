@@ -163,6 +163,145 @@ class TestStoreRepo:
         assert await store_repo.delete("s-tmp") is False
 
 
+class TestStoreConnectionCredentials:
+    """Coverage for #279 — connection_uri/username and the
+    sealed-at-rest password path. The plaintext never appears on the
+    Store dataclass; it travels through explicit repo methods.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _fernet_key(self, monkeypatch):
+        # Tests need a working STORE_SECRET_KEY so the Fernet box can
+        # seal / open. Generate a fresh key per test and reset the
+        # cached singleton so prior tests don't leak through.
+        from infra.secrets import generate_key, reset_fernet_box
+
+        reset_fernet_box()
+        monkeypatch.setenv("STORE_SECRET_KEY", generate_key())
+        yield
+        reset_fernet_box()
+
+    async def test_uri_and_username_round_trip_through_insert_find(self, store_repo):
+        await store_repo.insert(
+            Store(
+                id="s-neo",
+                name="Neo4j Local",
+                slug="neo4j-local",
+                kind=StoreKind.NEO4J,
+                embedder="bge-m3",
+                connection_uri="bolt://localhost:7687",
+                connection_username="neo4j",
+            )
+        )
+        found = await store_repo.find_by_slug("neo4j-local")
+        assert found is not None
+        assert found.connection_uri == "bolt://localhost:7687"
+        assert found.connection_username == "neo4j"
+        # No password was set — the indicator flag must be False.
+        assert found.has_connection_password is False
+
+    async def test_password_sealed_on_insert_and_opened_on_read(self, store_repo):
+        await store_repo.insert(
+            Store(
+                id="s-secret",
+                name="Secret",
+                slug="secret",
+                kind=StoreKind.NEO4J,
+                embedder="bge-m3",
+                connection_uri="bolt://x:7687",
+                connection_username="neo4j",
+            ),
+            password="my-super-secret",
+        )
+        found = await store_repo.find_by_id("s-secret")
+        assert found is not None
+        # Presence flag is True, but the plaintext is NOT on the dataclass.
+        assert found.has_connection_password is True
+        assert not hasattr(found, "connection_password")
+        # Plaintext is only accessible via the explicit getter.
+        plaintext = await store_repo.get_connection_password("s-secret")
+        assert plaintext == "my-super-secret"
+
+    async def test_plaintext_never_appears_in_dataclass_repr(self, store_repo):
+        # Belt-and-braces: even if someone logs a Store, the password
+        # must not be in the string representation.
+        await store_repo.insert(
+            Store(id="s-repr", name="repr", slug="repr", kind=StoreKind.NEO4J, embedder="b"),
+            password="leaky-password",
+        )
+        s = await store_repo.find_by_id("s-repr")
+        assert "leaky-password" not in repr(s)
+        assert "leaky-password" not in str(s)
+
+    async def test_set_connection_password_writes_and_overwrites(self, store_repo):
+        await store_repo.insert(
+            Store(id="s-p", name="p", slug="p", kind=StoreKind.NEO4J, embedder="b"),
+        )
+        # Initially no password.
+        assert await store_repo.get_connection_password("s-p") is None
+        # Set it.
+        ok = await store_repo.set_connection_password("s-p", "first")
+        assert ok is True
+        assert await store_repo.get_connection_password("s-p") == "first"
+        # Overwrite.
+        await store_repo.set_connection_password("s-p", "second")
+        assert await store_repo.get_connection_password("s-p") == "second"
+        # The has-password flag flips with it.
+        s = await store_repo.find_by_id("s-p")
+        assert s.has_connection_password is True
+
+    async def test_set_connection_password_none_clears_the_seal(self, store_repo):
+        await store_repo.insert(
+            Store(id="s-c", name="c", slug="c", kind=StoreKind.NEO4J, embedder="b"),
+            password="will-be-cleared",
+        )
+        await store_repo.set_connection_password("s-c", None)
+        assert await store_repo.get_connection_password("s-c") is None
+        s = await store_repo.find_by_id("s-c")
+        assert s.has_connection_password is False
+
+    async def test_get_connection_password_returns_none_for_unknown_store(self, store_repo):
+        # Defensive — callers should always check existence first, but
+        # the contract is "None on missing".
+        assert await store_repo.get_connection_password("ghost") is None
+
+    async def test_set_connection_password_returns_false_for_unknown_store(self, store_repo):
+        assert await store_repo.set_connection_password("ghost", "x") is False
+
+    async def test_update_does_not_touch_the_sealed_password(self, store_repo):
+        await store_repo.insert(
+            Store(id="s-u", name="u", slug="u", kind=StoreKind.NEO4J, embedder="b"),
+            password="keep-me",
+        )
+        # PATCH the user-facing fields. Password write path is separate,
+        # so the password must survive this update untouched.
+        s = await store_repo.find_by_id("s-u")
+        s.name = "updated"
+        s.connection_uri = "bolt://other:7687"
+        await store_repo.update(s)
+        assert await store_repo.get_connection_password("s-u") == "keep-me"
+        reloaded = await store_repo.find_by_id("s-u")
+        assert reloaded.name == "updated"
+        assert reloaded.connection_uri == "bolt://other:7687"
+
+    async def test_clear_password_works_without_fernet_key(self, store_repo, monkeypatch):
+        """Clearing a password is a NULL-write that does not invoke
+        Fernet — it must work even on a backend booted without
+        STORE_SECRET_KEY. Operators recovering from a lost key rely
+        on this.
+        """
+        from infra.secrets import reset_fernet_box
+
+        await store_repo.insert(
+            Store(id="s-recovery", name="r", slug="r", kind=StoreKind.NEO4J, embedder="b"),
+        )
+        # Wipe the env var and the cached box.
+        monkeypatch.delenv("STORE_SECRET_KEY", raising=False)
+        reset_fernet_box()
+        # Clear must still succeed.
+        assert await store_repo.set_connection_password("s-recovery", None) is True
+
+
 class TestDocumentStoreLinkRepo:
     async def _seed_doc(self, document_repo, doc_id: str = "doc-1") -> Document:
         doc = Document(id=doc_id, filename="t.pdf", storage_path="/tmp/t.pdf")

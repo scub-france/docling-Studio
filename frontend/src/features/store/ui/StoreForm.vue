@@ -80,6 +80,104 @@
       />
     </fieldset>
 
+    <fieldset class="config-section" data-e2e="store-form-connection">
+      <legend>{{ t('storeForm.sectionConnection') }}</legend>
+      <p class="field-help section-intro">{{ t('storeForm.connectionIntro') }}</p>
+
+      <div class="field">
+        <label class="field-label" for="store-connection-uri">
+          {{ t('storeForm.fieldConnectionUri') }}
+        </label>
+        <input
+          id="store-connection-uri"
+          v-model="connection.uri"
+          class="field-input"
+          type="text"
+          autocomplete="off"
+          :placeholder="connectionUriPlaceholder"
+          :aria-invalid="showError && connectionUriError !== null"
+          data-e2e="store-form-connection-uri"
+        />
+        <p v-if="showError && connectionUriError !== null" class="field-error">
+          {{ t(`storeForm.${connectionUriError}`) }}
+        </p>
+        <p v-else class="field-help">{{ t('storeForm.fieldConnectionUriHelp') }}</p>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="store-connection-username">
+          {{ t('storeForm.fieldConnectionUsername') }}
+        </label>
+        <input
+          id="store-connection-username"
+          v-model="connection.username"
+          class="field-input"
+          type="text"
+          autocomplete="off"
+          data-e2e="store-form-connection-username"
+        />
+        <p class="field-help">{{ t('storeForm.fieldConnectionUsernameHelp') }}</p>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="store-connection-password">
+          {{ t('storeForm.fieldConnectionPassword') }}
+        </label>
+        <div class="password-row">
+          <input
+            id="store-connection-password"
+            v-model="connection.password"
+            class="field-input password-input"
+            :type="showPassword ? 'text' : 'password'"
+            autocomplete="new-password"
+            :placeholder="passwordPlaceholder"
+            :disabled="connection.clearPassword"
+            data-e2e="store-form-connection-password"
+          />
+          <button
+            type="button"
+            class="btn-icon"
+            :title="t(showPassword ? 'storeForm.hidePassword' : 'storeForm.revealPassword')"
+            data-e2e="store-form-connection-password-toggle"
+            @click="showPassword = !showPassword"
+          >
+            {{ showPassword ? '🙈' : '👁' }}
+          </button>
+        </div>
+        <label v-if="mode === 'edit' && initialHasPassword" class="checkbox-label clear-row">
+          <input
+            v-model="connection.clearPassword"
+            type="checkbox"
+            data-e2e="store-form-connection-clear-password"
+          />
+          <span>{{ t('storeForm.clearPasswordLabel') }}</span>
+        </label>
+        <p class="field-help">{{ t('storeForm.fieldConnectionPasswordHelp') }}</p>
+      </div>
+
+      <div class="test-row">
+        <button
+          type="button"
+          class="btn-secondary"
+          :disabled="!canTestConnection || testingConnection"
+          data-e2e="store-form-test-connection"
+          @click="onTestConnection"
+        >
+          <span v-if="testingConnection" class="spinner" />
+          {{ t('storeForm.testConnection') }}
+        </button>
+        <p
+          v-if="testResult"
+          class="test-result"
+          :class="testResult.ok ? 'test-result--ok' : 'test-result--err'"
+          data-e2e="store-form-test-connection-result"
+        >
+          <span v-if="testResult.ok">✓ {{ t('storeForm.testConnectionOk') }}</span>
+          <span v-else>✗ {{ testResult.errorMessage || t('storeForm.testConnectionFailed') }}</span>
+        </p>
+      </div>
+    </fieldset>
+
     <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
 
     <div class="actions">
@@ -95,9 +193,18 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import type { StoreCreatePayload, StoreDetail } from '../api'
+import type { StoreCreatePayload, StoreDetail, StoreTestConnectionResult } from '../api'
+import { testStoreConnection } from '../api'
 import { useI18n } from '../../../shared/i18n'
 import StoreConfigForm from './StoreConfigForm.vue'
+import {
+  buildConnectionPayloadForCreate,
+  buildConnectionPayloadForUpdate,
+  connectionFormFromStore,
+  emptyConnectionFormState,
+  type StoreKind,
+  validateConnectionUri,
+} from './connectionForm.logic'
 
 const SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
 
@@ -131,6 +238,22 @@ const form = reactive<StoreCreatePayload>({
   isDefault: props.initialValue?.isDefault ?? false,
 })
 
+// Connection sub-form lives in its own reactive object — the payload
+// marshaller produces the wire contract distinct from the main form's
+// shape (write-only password, tri-state on edit).
+const connection = reactive(
+  props.initialValue
+    ? connectionFormFromStore({
+        connectionUri: props.initialValue.connectionUri ?? null,
+        connectionUsername: props.initialValue.connectionUsername ?? null,
+      })
+    : emptyConnectionFormState(),
+)
+const initialHasPassword = ref(props.initialValue?.hasConnectionPassword ?? false)
+const showPassword = ref(false)
+const testingConnection = ref(false)
+const testResult = ref<StoreTestConnectionResult | null>(null)
+
 const showError = ref(false)
 const configValid = ref(false)
 
@@ -144,11 +267,56 @@ watch(
     form.embedder = next.embedder ?? form.embedder
     form.config = { ...(next.config ?? {}) }
     form.isDefault = next.isDefault ?? form.isDefault
+    // Re-hydrate the connection sub-form from the refreshed entity.
+    connection.uri = next.connectionUri ?? ''
+    connection.username = next.connectionUsername ?? ''
+    connection.password = ''
+    connection.clearPassword = false
+    initialHasPassword.value = next.hasConnectionPassword ?? false
+    testResult.value = null
   },
   { deep: true },
 )
 
+// Clear any cached probe result the moment the user changes any
+// connection field — stale "✓ OK" against the previous URI would
+// be misleading.
+watch(
+  () => [connection.uri, connection.username, connection.password, connection.clearPassword],
+  () => {
+    testResult.value = null
+  },
+)
+
 const slugIsValid = computed(() => SLUG_PATTERN.test(form.slug.trim()))
+
+const connectionUriError = computed(() =>
+  validateConnectionUri(connection.uri, form.kind as StoreKind),
+)
+
+const connectionUriPlaceholder = computed(() =>
+  form.kind === 'neo4j' ? 'bolt://localhost:7687' : 'http://localhost:9200',
+)
+
+const passwordPlaceholder = computed(() => {
+  if (props.mode === 'edit' && initialHasPassword.value && !connection.password) {
+    return t('storeForm.passwordKeepPlaceholder')
+  }
+  return ''
+})
+
+// The Test connection button is only useful once we have a slug and
+// at least a URI to probe. In create mode we also require the form
+// to be valid enough that the backend can resolve a store row —
+// today the endpoint takes a slug, so create-time test isn't
+// supported (the row doesn't exist yet). Hide the button until the
+// store is persisted in that case.
+const canTestConnection = computed(() => {
+  if (props.mode === 'create') return false
+  if (!props.initialValue?.slug) return false
+  if (!connection.uri.trim()) return false
+  return connectionUriError.value === null
+})
 
 const submitLabel = computed(() =>
   props.mode === 'create' ? t('storeForm.create') : t('storeForm.save'),
@@ -158,12 +326,42 @@ function onConfigValid(valid: boolean) {
   configValid.value = valid
 }
 
+async function onTestConnection() {
+  if (!canTestConnection.value || !props.initialValue?.slug) return
+  testingConnection.value = true
+  testResult.value = null
+  try {
+    testResult.value = await testStoreConnection(props.initialValue.slug)
+  } catch (e) {
+    testResult.value = {
+      ok: false,
+      errorMessage: (e as Error).message || t('storeForm.testConnectionFailed'),
+    }
+  } finally {
+    testingConnection.value = false
+  }
+}
+
 function onSubmit() {
   showError.value = true
-  if (!form.name.trim() || !form.embedder.trim() || !slugIsValid.value || !configValid.value) {
+  if (
+    !form.name.trim() ||
+    !form.embedder.trim() ||
+    !slugIsValid.value ||
+    !configValid.value ||
+    connectionUriError.value !== null
+  ) {
     return
   }
-  emit('submit', { ...form, slug: form.slug.trim().toLowerCase() })
+  const connectionPayload =
+    props.mode === 'edit'
+      ? buildConnectionPayloadForUpdate(connection)
+      : buildConnectionPayloadForCreate(connection)
+  emit('submit', {
+    ...form,
+    slug: form.slug.trim().toLowerCase(),
+    ...connectionPayload,
+  })
 }
 </script>
 
@@ -260,5 +458,63 @@ function onSubmit() {
 .btn-secondary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.section-intro {
+  margin: 0 0 0.5rem 0;
+}
+.password-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.password-input {
+  flex: 1;
+}
+.btn-icon {
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 0.375rem;
+  background: white;
+  cursor: pointer;
+  font-size: 1rem;
+}
+.btn-icon:hover {
+  background: var(--color-bg-muted, #f3f4f6);
+}
+.clear-row {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+}
+.test-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.test-result {
+  margin: 0;
+  font-size: 0.75rem;
+}
+.test-result--ok {
+  color: #16a34a;
+}
+.test-result--err {
+  color: #dc2626;
+}
+.spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 0.4rem;
+  border: 1.5px solid rgba(0, 0, 0, 0.2);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spform 0.6s linear infinite;
+}
+@keyframes spform {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

@@ -3,16 +3,14 @@
     <header class="ingest-header">
       <h2 class="ingest-title">{{ t('ingest.title') }}</h2>
       <button
-        v-if="staleStoreCount > 0"
         type="button"
-        class="ingest-push-all"
-        :disabled="pushingAll"
-        data-e2e="ingest-push-all"
-        @click="onPushAll"
+        class="ingest-launch-cta"
+        :disabled="!hasStores || loading"
+        data-e2e="ingest-launch-cta"
+        @click="onLaunchClick"
       >
-        <span v-if="pushingAll" class="ingest-spinner" />
-        <span v-else>↑</span>
-        {{ t('ingest.pushAll') }} ({{ staleStoreCount }})
+        <span class="ingest-launch-icon">↑</span>
+        {{ t('ingest.launchCta') }}
       </button>
     </header>
 
@@ -22,232 +20,183 @@
     <div v-else-if="error" class="ingest-state ingest-state--error" data-e2e="ingest-error">
       {{ error }}
     </div>
-    <div v-else-if="!stores.length" class="ingest-state" data-e2e="ingest-no-stores">
-      {{ t('ingest.noStores') }}
+    <div v-else-if="!hasStores" class="ingest-state" data-e2e="ingest-no-stores">
+      <p>{{ t('ingest.noStores') }}</p>
+      <RouterLink :to="{ name: ROUTES.STORES_LIST }" class="ingest-no-stores-link">
+        {{ t('ingest.noStoresAction') }}
+      </RouterLink>
     </div>
-    <table v-else class="ingest-table" data-e2e="ingest-table">
-      <thead>
-        <tr>
-          <th>{{ t('ingest.colStore') }}</th>
-          <th>{{ t('ingest.colKind') }}</th>
-          <th>{{ t('ingest.colLastPush') }}</th>
-          <th>{{ t('ingest.colState') }}</th>
-          <th class="ingest-col-actions">{{ t('ingest.colActions') }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <template v-for="row in rows" :key="row.slug">
-          <tr
-            :class="{ 'ingest-row--stale': row.state === 'Stale' }"
-            :data-e2e="`ingest-row-${row.slug}`"
-          >
-            <td class="ingest-store-name">
-              <span
-                class="ingest-store-dot"
-                :class="{ connected: row.connected, disconnected: !row.connected }"
-              />
-              {{ row.name }}
-            </td>
-            <td class="mono">{{ row.kind }}</td>
-            <td class="mono">{{ row.pushedAt ? formatRelativeTime(row.pushedAt) : '—' }}</td>
-            <td>
-              <span
-                class="ingest-state-badge"
-                :class="`ingest-state-badge--${stateBucket(row.state)}`"
-              >
-                {{ t(stateLabelKey(row.state)) }}
-              </span>
-            </td>
-            <td class="ingest-col-actions">
-              <button
-                type="button"
-                class="ingest-diff-btn"
-                :class="{ active: expandedSlug === row.slug }"
-                :disabled="!row.pushedAt"
-                :data-e2e="`ingest-diff-${row.slug}`"
-                @click="toggleDiff(row.slug)"
-              >
-                {{ expandedSlug === row.slug ? t('ingest.diffHide') : t('ingest.diffShow') }}
-              </button>
-              <button
-                type="button"
-                class="ingest-push-btn"
-                :disabled="pushingSlug === row.slug || !row.connected"
-                :data-e2e="`ingest-push-${row.slug}`"
-                @click="onPush(row.slug)"
-              >
-                <span v-if="pushingSlug === row.slug" class="ingest-spinner" />
-                <span v-else>↑</span>
-                {{ pushingSlug === row.slug ? t('ingest.pushBtn.running') : t('ingest.pushBtn') }}
-              </button>
-            </td>
-          </tr>
-          <tr v-if="expandedSlug === row.slug" class="ingest-diff-row">
-            <td colspan="5">
-              <div v-if="diffLoading" class="ingest-diff-loading">
-                <span class="ingest-spinner" />
-              </div>
-              <div v-else-if="diffError" class="ingest-state--error">{{ diffError }}</div>
-              <div v-else class="ingest-diff-counts" :data-e2e="`ingest-diff-counts-${row.slug}`">
-                <span class="ingest-diff-added">
-                  {{ t('ingest.diffAdded', { n: diffSummary.added }) }}
-                </span>
-                <span class="ingest-diff-modified">
-                  {{ t('ingest.diffModified', { n: diffSummary.modified }) }}
-                </span>
-                <span class="ingest-diff-removed">
-                  {{ t('ingest.diffRemoved', { n: diffSummary.removed }) }}
-                </span>
-                <span class="ingest-diff-unchanged">
-                  {{ t('ingest.diffUnchanged', { n: diffSummary.unchanged }) }}
-                </span>
-              </div>
-            </td>
-          </tr>
-        </template>
-      </tbody>
-    </table>
+    <div v-else-if="!history.length" class="ingest-state" data-e2e="ingest-no-history">
+      <p>{{ t('ingest.noHistory') }}</p>
+      <p class="ingest-no-history-hint">{{ t('ingest.noHistoryHint') }}</p>
+    </div>
+
+    <section v-else class="ingest-history" data-e2e="ingest-history">
+      <header class="ingest-history-header">
+        <h3 class="ingest-history-title">{{ t('ingest.historyTitle') }}</h3>
+        <span class="ingest-history-total">
+          {{ t('ingest.historyCount', { n: total }) }}
+        </span>
+      </header>
+      <div class="ingest-history-headers" aria-hidden="true">
+        <span class="ingest-col ingest-col-when">{{ t('ingest.colWhen') }}</span>
+        <span class="ingest-col ingest-col-store">{{ t('ingest.colTarget') }}</span>
+        <span class="ingest-col ingest-col-count">{{ t('ingest.colChunks') }}</span>
+        <span class="ingest-col ingest-col-hash">{{ t('ingest.colVersion') }}</span>
+      </div>
+      <ul class="ingest-history-list">
+        <li
+          v-for="entry in history"
+          :key="entry.id"
+          class="ingest-history-row"
+          :data-e2e="`ingest-history-row-${entry.id}`"
+        >
+          <div class="ingest-col ingest-col-when ingest-history-when">
+            <span
+              class="ingest-history-when-rel"
+              :title="entry.pushedAt ? formatAbsolute(entry.pushedAt) : ''"
+            >
+              {{ entry.pushedAt ? formatRelativeTime(entry.pushedAt) : '—' }}
+            </span>
+          </div>
+          <div class="ingest-col ingest-col-store ingest-history-target">
+            <span class="ingest-history-store">{{ entry.displayName }}</span>
+            <span v-if="entry.storeKind" class="ingest-history-kind">{{ entry.storeKind }}</span>
+            <span v-if="entry.storeDeleted" class="ingest-history-tag">
+              {{ t('ingest.storeDeleted') }}
+            </span>
+          </div>
+          <div class="ingest-col ingest-col-count ingest-history-count">
+            {{ entry.chunkCount }}
+          </div>
+          <div class="ingest-col ingest-col-hash ingest-history-hash">
+            <code :title="entry.chunksetHash">{{ entry.chunksetHash.slice(0, 8) }}</code>
+          </div>
+        </li>
+      </ul>
+      <div v-if="hasMore" class="ingest-history-more">
+        <button
+          type="button"
+          class="ingest-more-btn"
+          :disabled="loadingMore"
+          data-e2e="ingest-history-load-more"
+          @click="loadMore"
+        >
+          <span v-if="loadingMore" class="ingest-spinner" />
+          {{ t('ingest.loadMore') }}
+        </button>
+      </div>
+    </section>
+
+    <IngestLaunchDialog
+      v-if="dialogOpen"
+      :doc-id="docId"
+      :stores="stores"
+      :store-links="storeLinks"
+      @close="dialogOpen = false"
+      @done="onLaunchDone"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * Ingest view (#225) — per-store push state for the current document.
+ * Ingest view (#225, redesigned in #283).
  *
- * Replaces the deferred "Compare" slot in the workspace switcher
- * (Parse | Chunk | Ingest). Lists every configured store, surfaces
- * the document's ingestion state per store (never pushed / up-to-date
- * / stale / failed), and offers a one-click push action. Diff is
- * expand-on-click per row.
+ * Replaces the per-store table from #225 with the launch-CTA +
+ * history-list shell. Rationale captured in #283:
  *
- * Backend orchestration stays granular (#269 audit rule): this view
- * sequences `GET /api/stores`, `GET /api/documents/{id}/diff?store=`
- * and `POST /api/documents/{id}/chunks/push` from the frontend.
+ *   - The action (push) deserves a primary CTA, not a buried table
+ *     cell.
+ *   - The timeline of "what was actually ingested when" matters more
+ *     than the current per-store state — the live state is one
+ *     click away (the modal lists it).
+ *
+ * Per-store state lives inside `IngestLaunchDialog` now. The data
+ * source for the history is `GET /api/documents/{id}/chunks/pushes`,
+ * a newest-first paginated feed of `chunk_pushes` rows joined with
+ * their store identity.
  */
 import { computed, onMounted, ref } from 'vue'
-import type { ChunkDiff, DocStoreLink } from '../shared/types'
-import { fetchChunkDiff, pushChunksToStore } from '../features/chunks/api'
+import { RouterLink } from 'vue-router'
+import type { DocStoreLink } from '../shared/types'
+import { fetchChunkPushes, type ChunkPushEntry } from '../features/chunks/api'
 import { fetchStores, type StoreInfo } from '../features/store/api'
-import { formatRelativeTime } from '../shared/format'
+import { formatAbsolute, formatRelativeTime } from '../shared/format'
 import { useI18n } from '../shared/i18n'
-import {
-  type IngestRow,
-  buildRows,
-  countStalePushable,
-  stateBucket,
-  stateLabelKey,
-  summarizeDiff,
-} from './DocIngestTab.logic'
+import { ROUTES } from '../shared/routing/names'
+import IngestLaunchDialog from './IngestLaunchDialog.vue'
+import { type HistoryDisplayEntry, toHistoryEntry } from './DocIngestTab.logic'
 
 const props = defineProps<{
   docId: string
   storeLinks?: DocStoreLink[]
 }>()
 
-// Emitted when at least one push succeeded — the parent
-// (DocWorkspacePage) refetches the document so `storeLinks` reflect
-// the new push state immediately, instead of staying stale until
-// navigation. Required for the "Stale → Up-to-date" transition to be
-// visible in the row right after the action.
+// Emitted when at least one push completed successfully — the
+// parent (DocWorkspacePage) refetches the document so `storeLinks`
+// reflects the new push state.
 const emit = defineEmits<{ pushed: [] }>()
 
 const { t } = useI18n()
 
+const PAGE_SIZE = 50
+
 const stores = ref<StoreInfo[]>([])
+const history = ref<HistoryDisplayEntry[]>([])
+const total = ref(0)
 const loading = ref(false)
+const loadingMore = ref(false)
 const error = ref<string | null>(null)
-const pushingSlug = ref<string | null>(null)
-const pushingAll = ref(false)
-const expandedSlug = ref<string | null>(null)
-const diffLoading = ref(false)
-const diffError = ref<string | null>(null)
-const diffEntries = ref<ChunkDiff[]>([])
+const dialogOpen = ref(false)
 
-const rows = computed<IngestRow[]>(() => buildRows(stores.value, props.storeLinks))
-
-const staleStoreCount = computed(() => countStalePushable(rows.value))
-
-const diffSummary = computed(() => summarizeDiff(diffEntries.value))
+const hasStores = computed(() => stores.value.length > 0)
+const hasMore = computed(() => history.value.length < total.value)
 
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
   try {
-    stores.value = await fetchStores()
+    const [storeList, pushList] = await Promise.all([
+      fetchStores(),
+      fetchChunkPushes(props.docId, { limit: PAGE_SIZE, offset: 0 }),
+    ])
+    stores.value = storeList
+    history.value = pushList.items.map(toHistoryEntry)
+    total.value = pushList.total
   } catch (e) {
-    error.value = (e as Error).message || 'Failed to load stores'
+    error.value = (e as Error).message || t('ingest.loadError')
   } finally {
     loading.value = false
   }
 }
 
-async function toggleDiff(slug: string): Promise<void> {
-  if (expandedSlug.value === slug) {
-    expandedSlug.value = null
-    return
-  }
-  expandedSlug.value = slug
-  diffLoading.value = true
-  diffError.value = null
-  diffEntries.value = []
+async function loadMore(): Promise<void> {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
   try {
-    diffEntries.value = await fetchChunkDiff(props.docId, slug)
+    const offset = history.value.length
+    const page = await fetchChunkPushes(props.docId, { limit: PAGE_SIZE, offset })
+    history.value = [...history.value, ...(page.items as ChunkPushEntry[]).map(toHistoryEntry)]
+    total.value = page.total
   } catch (e) {
-    diffError.value = (e as Error).message || 'Failed to load diff'
+    error.value = (e as Error).message || t('ingest.loadError')
   } finally {
-    diffLoading.value = false
+    loadingMore.value = false
   }
 }
 
-async function onPush(slug: string): Promise<void> {
-  if (pushingSlug.value) return
-  pushingSlug.value = slug
-  let succeeded = false
-  try {
-    await pushChunksToStore(props.docId, slug)
-    succeeded = true
-    // Refresh the stores list so connected / counts re-render.
-    await load()
-    // If the row was expanded with a diff, refresh it too.
-    if (expandedSlug.value === slug) {
-      const slugToRefresh = slug
-      expandedSlug.value = null
-      await toggleDiff(slugToRefresh)
-    }
-  } catch (e) {
-    error.value = (e as Error).message || 'Push failed'
-  } finally {
-    pushingSlug.value = null
-  }
-  // Ask the parent to refetch the doc so `storeLinks` (and thus the
-  // per-row state) reflect this push immediately. Emitted AFTER the
-  // local refresh so the parent's `loadDoc` doesn't race with our
-  // own `load()`.
-  if (succeeded) emit('pushed')
+function onLaunchClick(): void {
+  dialogOpen.value = true
 }
 
-async function onPushAll(): Promise<void> {
-  if (pushingAll.value) return
-  pushingAll.value = true
-  let anySucceeded = false
-  try {
-    const stale = rows.value.filter((r) => r.state === 'Stale' && r.connected)
-    for (const r of stale) {
-      pushingSlug.value = r.slug
-      try {
-        await pushChunksToStore(props.docId, r.slug)
-        anySucceeded = true
-      } catch (e) {
-        error.value = (e as Error).message || `Push failed for ${r.slug}`
-        // Don't break the loop — keep pushing the rest.
-      }
-    }
-    await load()
-  } finally {
-    pushingSlug.value = null
-    pushingAll.value = false
-  }
-  if (anySucceeded) emit('pushed')
+async function onLaunchDone(): Promise<void> {
+  // The modal already ran the pushes; we just refresh our own
+  // history list to reflect them. The parent gets notified so it
+  // can refetch the document for storeLinks updates.
+  dialogOpen.value = false
+  emit('pushed')
+  await load()
 }
 
 onMounted(load)
@@ -268,7 +217,7 @@ onMounted(load)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   flex-shrink: 0;
 }
 
@@ -279,213 +228,243 @@ onMounted(load)
   margin: 0;
 }
 
-.ingest-push-all {
+.ingest-launch-cta {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 8px 18px;
   background: var(--accent);
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   color: white;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: filter var(--transition);
 }
 
-.ingest-push-all:hover:not(:disabled) {
+.ingest-launch-cta:hover:not(:disabled) {
   filter: brightness(1.1);
 }
 
-.ingest-push-all:disabled {
-  opacity: 0.7;
+.ingest-launch-cta:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.ingest-launch-icon {
+  font-size: 14px;
 }
 
 .ingest-state {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
   font-size: 13px;
   padding: 40px 20px;
   text-align: center;
+  gap: 8px;
 }
 
 .ingest-state--error {
   color: var(--error);
 }
 
-.ingest-table {
-  width: 100%;
-  border-collapse: collapse;
+.ingest-no-stores-link {
   font-size: 12px;
+  color: var(--accent);
+  text-decoration: underline;
 }
 
-.ingest-table thead th {
-  text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
+.ingest-no-history-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.ingest-history {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.ingest-history-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.ingest-history-title {
   font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
+  margin: 0;
   font-family: 'IBM Plex Mono', monospace;
 }
 
-.ingest-table tbody td {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
+.ingest-history-total {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
 }
 
-.ingest-table tbody tr:hover:not(.ingest-diff-row) {
+.ingest-history-headers,
+.ingest-history-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 80px 100px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+}
+
+.ingest-history-headers {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.ingest-col {
+  font-size: 11px;
+}
+
+/* Column header labels. */
+.ingest-history-headers .ingest-col {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ingest-col-count {
+  text-align: right;
+}
+
+.ingest-col-hash {
+  text-align: left;
+}
+
+.ingest-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ingest-history-row {
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  transition: background var(--transition);
+}
+
+.ingest-history-row:last-child {
+  border-bottom: none;
+}
+
+.ingest-history-row:hover {
   background: var(--bg-elevated);
 }
 
-.ingest-row--stale {
-  background: rgba(234, 179, 8, 0.05);
-}
-
-.ingest-store-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.ingest-store-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.ingest-store-dot.connected {
-  background: #22c55e;
-}
-
-.ingest-store-dot.disconnected {
-  background: #94a3b8;
-}
-
-.mono {
-  font-family: 'IBM Plex Mono', monospace;
+.ingest-history-when {
   color: var(--text-muted);
 }
 
-.ingest-col-actions {
+.ingest-history-when-rel {
+  cursor: help;
+}
+
+.ingest-history-target {
   display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ingest-history-store {
+  font-weight: 500;
+  color: var(--text);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.ingest-state-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
+.ingest-history-kind {
   font-family: 'IBM Plex Mono', monospace;
-  letter-spacing: 0.04em;
+  font-size: 10px;
+  color: var(--text-muted);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
-.ingest-state-badge--notPushed {
-  background: rgba(148, 163, 184, 0.15);
-  color: #94a3b8;
+.ingest-history-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 
-.ingest-state-badge--upToDate {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
+.ingest-history-count {
+  color: var(--text-secondary);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  text-align: right;
 }
 
-.ingest-state-badge--stale {
-  background: rgba(234, 179, 8, 0.15);
-  color: #eab308;
+.ingest-history-hash code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  padding: 1px 5px;
+  border-radius: 3px;
+  cursor: help;
 }
 
-.ingest-state-badge--failed {
-  background: rgba(220, 38, 38, 0.15);
-  color: #dc2626;
+.ingest-history-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
 }
 
-.ingest-diff-btn,
-.ingest-push-btn {
+.ingest-more-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 6px 14px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
-  transition: all var(--transition);
 }
 
-.ingest-diff-btn:hover:not(:disabled),
-.ingest-push-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.ingest-diff-btn.active {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.ingest-diff-btn:disabled,
-.ingest-push-btn:disabled {
-  opacity: 0.4;
+.ingest-more-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
-}
-
-.ingest-diff-row td {
-  padding: 8px 24px 16px;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
-}
-
-.ingest-diff-loading {
-  display: flex;
-  justify-content: center;
-  padding: 8px;
-}
-
-.ingest-diff-counts {
-  display: flex;
-  gap: 16px;
-  font-size: 11px;
-  font-family: 'IBM Plex Mono', monospace;
-}
-
-.ingest-diff-added {
-  color: #22c55e;
-}
-
-.ingest-diff-modified {
-  color: #eab308;
-}
-
-.ingest-diff-removed {
-  color: #dc2626;
-}
-
-.ingest-diff-unchanged {
-  color: var(--text-muted);
 }
 
 .ingest-spinner {
   display: inline-block;
   width: 10px;
   height: 10px;
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border: 1.5px solid rgba(0, 0, 0, 0.15);
   border-top-color: currentColor;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;

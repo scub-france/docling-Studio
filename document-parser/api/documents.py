@@ -10,7 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 
-from api.schemas import DocumentResponse
+from api.schemas import DocStoreLinkResponse, DocumentResponse
 from services.document_service import DocumentService
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ def _get_service(request: Request) -> DocumentService:
 ServiceDep = Annotated[DocumentService, Depends(_get_service)]
 
 
-def _to_response(doc) -> DocumentResponse:
+def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) -> DocumentResponse:
     return DocumentResponse(
         id=doc.id,
         filename=doc.filename,
@@ -36,7 +36,37 @@ def _to_response(doc) -> DocumentResponse:
         created_at=str(doc.created_at),
         lifecycle_state=doc.lifecycle_state.value,
         lifecycle_state_at=(str(doc.lifecycle_state_at) if doc.lifecycle_state_at else None),
+        store_links=store_links,
     )
+
+
+async def _fetch_store_links(request: Request, doc_id: str) -> list[DocStoreLinkResponse]:
+    """Build the per-store link payload for a single document (#283 fix).
+
+    Joins `document_store_links` with `stores` so the frontend gets the
+    store slug (its stable identity) on each link, not the opaque
+    store_id. Returns an empty list when no links exist — the frontend
+    treats absent vs empty the same.
+    """
+    link_repo = getattr(request.app.state, "document_store_link_repo", None)
+    store_repo = getattr(request.app.state, "store_repo", None)
+    if link_repo is None or store_repo is None:
+        return []
+    links = await link_repo.find_for_document(doc_id)
+    if not links:
+        return []
+    # Resolve store_id → slug in one shot. `find_all()` is fine here —
+    # store rows are O(1-10) in practice.
+    stores = await store_repo.find_all()
+    slug_by_id = {s.id: s.slug for s in stores}
+    return [
+        DocStoreLinkResponse(
+            store=slug_by_id.get(link.store_id, link.store_id),
+            state=link.state.value,
+            pushed_at=str(link.last_push_at) if link.last_push_at else None,
+        )
+        for link in links
+    ]
 
 
 @router.post("/upload", response_model=DocumentResponse, status_code=200)
@@ -81,12 +111,13 @@ async def list_documents(service: ServiceDep) -> list[DocumentResponse]:
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
-async def get_document(doc_id: str, service: ServiceDep) -> DocumentResponse:
-    """Get a single document."""
+async def get_document(doc_id: str, service: ServiceDep, request: Request) -> DocumentResponse:
+    """Get a single document, joined with its per-store ingestion links."""
     doc = await service.find_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    return _to_response(doc)
+    store_links = await _fetch_store_links(request, doc_id)
+    return _to_response(doc, store_links=store_links)
 
 
 @router.delete("/{doc_id}", status_code=204, response_model=None)

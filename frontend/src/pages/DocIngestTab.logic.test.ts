@@ -190,3 +190,279 @@ describe('summarizeDiff', () => {
     })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Launch modal (#283)
+// ---------------------------------------------------------------------------
+
+import {
+  anyLaunchSucceeded,
+  defaultLaunchSelection,
+  hasSelection,
+  isLaunchDone,
+  selectedSlugs,
+  toHistoryEntry,
+  type LaunchRow,
+} from './DocIngestTab.logic'
+import type { ChunkPushEntry } from '../features/chunks/api'
+
+describe('defaultLaunchSelection', () => {
+  it('preselects connected + (stale OR not pushed) rows only', () => {
+    const rows = buildRows(
+      [
+        makeStore({ slug: 'a', connected: true }),
+        makeStore({ slug: 'b', connected: true }),
+        // disconnected but stale — NOT preselected (can't push to it)
+        makeStore({ slug: 'c', connected: false }),
+        // connected + up-to-date — NOT preselected (nothing to do)
+        makeStore({ slug: 'd', connected: true }),
+      ],
+      [
+        { store: 'a', state: 'Stale', pushedAt: '2026-05-01T00:00:00Z' },
+        { store: 'b', state: 'NotPushed', pushedAt: null }, // hypothetical
+        { store: 'c', state: 'Stale', pushedAt: '2026-05-01T00:00:00Z' },
+        { store: 'd', state: 'Ingested', pushedAt: '2026-05-01T00:00:00Z' },
+      ],
+    )
+    const launch = defaultLaunchSelection(rows)
+    const selected = launch.filter((r) => r.selected).map((r) => r.slug)
+    // `b` defaults to NotPushed via the missing-link path (no
+    // storeLinks row); included here for completeness.
+    expect(selected.sort()).toEqual(['a', 'b'])
+  })
+
+  it('every row starts idle with no error', () => {
+    const rows = buildRows([makeStore({ slug: 'a' })], [])
+    const launch = defaultLaunchSelection(rows)
+    expect(launch[0].status).toBe('idle')
+    expect(launch[0].errorMessage).toBeNull()
+  })
+})
+
+describe('hasSelection', () => {
+  it('is true when at least one row is selected', () => {
+    const rows: LaunchRow[] = [
+      {
+        slug: 'a',
+        name: 'a',
+        kind: 'os',
+        connected: true,
+        state: 'NotPushed',
+        pushedAt: null,
+        selected: false,
+        status: 'idle',
+        errorMessage: null,
+      },
+      {
+        slug: 'b',
+        name: 'b',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'idle',
+        errorMessage: null,
+      },
+    ]
+    expect(hasSelection(rows)).toBe(true)
+  })
+
+  it('is false when nothing is selected', () => {
+    const rows: LaunchRow[] = [
+      {
+        slug: 'a',
+        name: 'a',
+        kind: 'os',
+        connected: true,
+        state: 'NotPushed',
+        pushedAt: null,
+        selected: false,
+        status: 'idle',
+        errorMessage: null,
+      },
+    ]
+    expect(hasSelection(rows)).toBe(false)
+  })
+})
+
+describe('selectedSlugs', () => {
+  it('preserves the row order', () => {
+    const rows: LaunchRow[] = [
+      {
+        slug: 'c',
+        name: 'c',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'idle',
+        errorMessage: null,
+      },
+      {
+        slug: 'a',
+        name: 'a',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: false,
+        status: 'idle',
+        errorMessage: null,
+      },
+      {
+        slug: 'b',
+        name: 'b',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'idle',
+        errorMessage: null,
+      },
+    ]
+    expect(selectedSlugs(rows)).toEqual(['c', 'b'])
+  })
+})
+
+describe('isLaunchDone', () => {
+  it('is true when no row is in running state', () => {
+    const rows: LaunchRow[] = [
+      {
+        slug: 'a',
+        name: 'a',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'success',
+        errorMessage: null,
+      },
+      {
+        slug: 'b',
+        name: 'b',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'failed',
+        errorMessage: 'down',
+      },
+    ]
+    expect(isLaunchDone(rows)).toBe(true)
+  })
+
+  it('is false while at least one row is running', () => {
+    const rows: LaunchRow[] = [
+      {
+        slug: 'a',
+        name: 'a',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'running',
+        errorMessage: null,
+      },
+    ]
+    expect(isLaunchDone(rows)).toBe(false)
+  })
+})
+
+describe('anyLaunchSucceeded', () => {
+  it('is true on at least one success row', () => {
+    const rows: LaunchRow[] = [
+      {
+        slug: 'a',
+        name: 'a',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'failed',
+        errorMessage: 'x',
+      },
+      {
+        slug: 'b',
+        name: 'b',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'success',
+        errorMessage: null,
+      },
+    ]
+    expect(anyLaunchSucceeded(rows)).toBe(true)
+  })
+
+  it('is false when every run failed', () => {
+    const rows: LaunchRow[] = [
+      {
+        slug: 'a',
+        name: 'a',
+        kind: 'os',
+        connected: true,
+        state: 'Stale',
+        pushedAt: null,
+        selected: true,
+        status: 'failed',
+        errorMessage: 'x',
+      },
+    ]
+    expect(anyLaunchSucceeded(rows)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// History list (#283)
+// ---------------------------------------------------------------------------
+
+describe('toHistoryEntry', () => {
+  function makeEntry(overrides: Partial<ChunkPushEntry> = {}): ChunkPushEntry {
+    return {
+      id: 'push-1',
+      documentId: 'd-1',
+      storeId: 's-1',
+      storeSlug: 'rh-corpus',
+      storeName: 'RH Corpus',
+      storeKind: 'opensearch',
+      chunksetHash: 'abc123def456',
+      chunkCount: 11,
+      pushedAt: '2026-05-19T14:32:00+00:00',
+      ...overrides,
+    }
+  }
+
+  it('uses storeName when present', () => {
+    const display = toHistoryEntry(makeEntry())
+    expect(display.displayName).toBe('RH Corpus')
+    expect(display.storeDeleted).toBe(false)
+  })
+
+  it('falls back to storeSlug when name is null', () => {
+    const display = toHistoryEntry(makeEntry({ storeName: null }))
+    expect(display.displayName).toBe('rh-corpus')
+    expect(display.storeDeleted).toBe(false)
+  })
+
+  it('flags storeDeleted when both name and slug are null', () => {
+    const display = toHistoryEntry(makeEntry({ storeName: null, storeSlug: null, storeKind: null }))
+    expect(display.displayName).toBe('s-1')
+    expect(display.storeDeleted).toBe(true)
+  })
+
+  it('forwards all the metric fields', () => {
+    const display = toHistoryEntry(makeEntry())
+    expect(display.chunkCount).toBe(11)
+    expect(display.chunksetHash).toBe('abc123def456')
+    expect(display.pushedAt).toBe('2026-05-19T14:32:00+00:00')
+  })
+})

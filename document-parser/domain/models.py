@@ -144,12 +144,18 @@ class Store:
     """A logical destination for ingested chunks.
 
     A `Store` represents a named, configurable target for ingestion (e.g.
-    `rh-corpus-v3`, `legal-v1`). It is decoupled from the underlying
-    `VectorStore` adapter (which represents the *technology*, like
-    OpenSearch). One adapter can serve many stores by namespacing the
-    physical index name on `slug`.
+    `rh-corpus-v3`, `legal-v1`).
 
-    See design doc `docs/design/203-per-store-ingestion-state.md`.
+    Connection identity (#279): `connection_uri` and `connection_username`
+    live on the entity because the store **is** the connection target.
+    The password is **not** on this dataclass — it is sealed at rest with
+    Fernet and accessed only through explicit repo methods
+    (`get_connection_password` / `set_connection_password`). Keeping the
+    plaintext off the entity prevents accidental serialization through
+    Pydantic / logs / __repr__.
+
+    See design docs `docs/design/203-per-store-ingestion-state.md` and
+    `docs/design/279-store-connection-credentials.md`.
     """
 
     id: str = field(default_factory=_new_id)
@@ -158,8 +164,19 @@ class Store:
     kind: StoreKind = StoreKind.OPENSEARCH
     embedder: str = ""
     config: dict = field(default_factory=dict)
+    # Connection identity (#279). None means "use env-var fallback at
+    # the driver pool" during the transition; once a store carries a
+    # URI, the pool keys on that value and ignores the global env.
+    connection_uri: str | None = None
+    connection_username: str | None = None
+    # Whether a password is currently sealed for this store. Lets the
+    # API response say "password set" / "password not set" without
+    # ever exposing the value. The actual plaintext is fetched via
+    # `SqliteStoreRepository.get_connection_password`.
+    has_connection_password: bool = False
     is_default: bool = False
     created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
 
 
 @dataclass

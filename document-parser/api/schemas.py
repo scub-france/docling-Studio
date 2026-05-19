@@ -57,6 +57,23 @@ class HealthResponse(_CamelModel):
     ask_mode_enabled: bool = True
 
 
+class DocStoreLinkResponse(_CamelModel):
+    """Per-store ingestion link surfaced on a document (#283 fix).
+
+    The frontend has shipped a `Document.storeLinks` type since #224
+    but the backend was never actually populating it — only the
+    audit log (`chunk_pushes`) was. The Ingest tab redesign uncovered
+    this gap (modal showed NotPushed even when history listed pushes).
+    The `store` field carries the store slug (stable identity used
+    by the frontend's `link.store` lookup); `state` mirrors the
+    `DocumentStoreLinkState` enum values.
+    """
+
+    store: str
+    state: str
+    pushed_at: str | None = None
+
+
 class DocumentResponse(_CamelModel):
     id: str
     filename: str
@@ -70,6 +87,10 @@ class DocumentResponse(_CamelModel):
     # backwards compat and currently still maps to `DOCUMENT_STATUS_UPLOADED`.
     lifecycle_state: str = "Uploaded"
     lifecycle_state_at: str | datetime | None = None
+    # 0.6.1 (#283) — per-store ingestion state. Always present on
+    # `GET /api/documents/{id}`; the list endpoint omits it to keep
+    # the listing payload light (callers that need it can drill in).
+    store_links: list[DocStoreLinkResponse] | None = None
 
 
 class AnalysisResponse(_CamelModel):
@@ -258,7 +279,13 @@ class StoreInfoResponse(_CamelModel):
 
 
 class StoreResponse(_CamelModel):
-    """Detailed read model for `GET /api/stores/{slug}`."""
+    """Detailed read model for `GET /api/stores/{slug}`.
+
+    Connection identity (#279) is exposed via `connectionUri` /
+    `connectionUsername`. The password is **never** serialised — the
+    response carries a `hasConnectionPassword` boolean indicator so
+    the UI can show "password set" without ever seeing the value.
+    """
 
     id: str
     name: str
@@ -267,20 +294,39 @@ class StoreResponse(_CamelModel):
     embedder: str
     is_default: bool
     config: dict
+    connection_uri: str | None = None
+    connection_username: str | None = None
+    has_connection_password: bool = False
     created_at: str | datetime
 
 
 class StoreCreateRequest(_CamelModel):
+    """Create a store (#251) + optional connection identity (#279).
+
+    `connectionPassword` is write-only — it never appears on a
+    response. Empty string is treated as "no password" (= NULL on
+    the column).
+    """
+
     name: str
     slug: str
     kind: str
     embedder: str
     config: dict = Field(default_factory=dict)
     is_default: bool = False
+    connection_uri: str | None = None
+    connection_username: str | None = None
+    connection_password: str | None = None
 
 
 class StoreUpdateRequest(_CamelModel):
-    """Partial update — every field is optional. Use `slug` to rename."""
+    """Partial update — every field is optional. Use `slug` to rename.
+
+    For `connectionPassword` (#279):
+      - `None` (field absent) → leave the existing seal untouched
+      - empty string `""` → clear the password (NULL the column)
+      - non-empty string → seal the new value
+    """
 
     name: str | None = None
     slug: str | None = None
@@ -288,6 +334,16 @@ class StoreUpdateRequest(_CamelModel):
     embedder: str | None = None
     config: dict | None = None
     is_default: bool | None = None
+    connection_uri: str | None = None
+    connection_username: str | None = None
+    connection_password: str | None = None
+
+
+class StoreTestConnectionResponse(_CamelModel):
+    """Result of `POST /api/stores/{slug}/test-connection` (#279)."""
+
+    ok: bool
+    error_message: str | None = None
 
 
 class StoreDocEntryResponse(_CamelModel):
@@ -385,6 +441,39 @@ class PushChunksResponse(_CamelModel):
 
 class PushChunksRequest(_CamelModel):
     store: str
+
+
+# ---------------------------------------------------------------------------
+# Push history (#283) — newest-first paginated feed for the Ingest tab.
+# ---------------------------------------------------------------------------
+
+
+class ChunkPushEntryResponse(_CamelModel):
+    """One row of the document's push history.
+
+    `storeSlug` / `storeName` / `storeKind` are None when the store
+    row was deleted after the push — the audit log survives, the
+    UI shows a "deleted store" badge.
+    """
+
+    id: str
+    document_id: str
+    store_id: str
+    store_slug: str | None = None
+    store_name: str | None = None
+    store_kind: str | None = None
+    chunkset_hash: str
+    chunk_count: int
+    pushed_at: str | None = None
+
+
+class ChunkPushListResponse(_CamelModel):
+    """Paginated envelope for `GET /api/documents/{id}/chunks/pushes`."""
+
+    items: list[ChunkPushEntryResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 # ---------------------------------------------------------------------------

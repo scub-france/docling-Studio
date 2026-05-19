@@ -58,3 +58,33 @@ export function pushChunksToStore(
     body: JSON.stringify({ store }),
   })
 }
+
+/** Push-history entry surfaced by `GET /api/documents/{id}/chunks/pushes` (#283). */
+export interface ChunkPushEntry {
+  id: string
+  documentId: string
+  storeId: string
+  storeSlug: string | null
+  storeName: string | null
+  storeKind: string | null
+  chunksetHash: string
+  chunkCount: number
+  pushedAt: string | null
+}
+
+export interface ChunkPushList {
+  items: ChunkPushEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function fetchChunkPushes(
+  docId: string,
+  { limit = 50, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<ChunkPushList> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return apiFetch<ChunkPushList>(
+    `/api/documents/${encodeURIComponent(docId)}/chunks/pushes?${params}`,
+  )
+}
