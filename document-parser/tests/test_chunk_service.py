@@ -761,14 +761,95 @@ class TestGetTree:
     async def test_tree_empty_when_no_analysis(self, service, doc):
         assert await service.get_tree(doc.id) == []
 
-    async def test_tree_groups_by_label(self, service, repos, doc):
+    async def test_tree_follows_document_hierarchy(self, service, repos, doc):
+        """Title → H1 → H2 nest by heading level, leaves under their section."""
         job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
         await repos["analyses"].insert(job)
         job.document_json = json.dumps(
             {
+                "body": {
+                    "self_ref": "#/body",
+                    "children": [
+                        {"$ref": "#/texts/0"},
+                        {"$ref": "#/texts/1"},
+                        {"$ref": "#/texts/2"},
+                        {"$ref": "#/texts/3"},
+                        {"$ref": "#/texts/4"},
+                        {"$ref": "#/texts/5"},
+                    ],
+                },
                 "texts": [
-                    {"self_ref": "#/texts/0", "label": "title", "text": "Hi"},
-                    {"self_ref": "#/texts/1", "label": "text", "text": "Body"},
+                    {"self_ref": "#/texts/0", "label": "title", "text": "Doc Title"},
+                    {
+                        "self_ref": "#/texts/1",
+                        "label": "section_header",
+                        "text": "Chapter 1",
+                        "level": 1,
+                    },
+                    {"self_ref": "#/texts/2", "label": "text", "text": "Intro paragraph"},
+                    {
+                        "self_ref": "#/texts/3",
+                        "label": "section_header",
+                        "text": "Section 1.1",
+                        "level": 2,
+                    },
+                    {"self_ref": "#/texts/4", "label": "text", "text": "Nested paragraph"},
+                    {
+                        "self_ref": "#/texts/5",
+                        "label": "section_header",
+                        "text": "Chapter 2",
+                        "level": 1,
+                    },
+                ],
+                "tables": [],
+                "pictures": [],
+                "groups": [],
+            }
+        )
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        tree = await service.get_tree(doc.id)
+
+        # Single top-level title containing both chapters.
+        assert len(tree) == 1
+        title = tree[0]
+        assert title["type"] == "title"
+        assert title["label"] == "Doc Title"
+        assert [c["label"] for c in title["children"]] == ["Chapter 1", "Chapter 2"]
+
+        chapter1 = title["children"][0]
+        # Intro paragraph then Section 1.1 (which owns the nested paragraph).
+        assert [c["type"] for c in chapter1["children"]] == ["text", "section_header"]
+        section_1_1 = chapter1["children"][1]
+        assert [c["label"] for c in section_1_1["children"]] == ["Nested paragraph"]
+
+        # Chapter 2 is a sibling, not a child of Section 1.1.
+        chapter2 = title["children"][1]
+        assert chapter2["children"] == []
+
+    async def test_tree_keeps_list_items_under_list(self, service, repos, doc):
+        """`list` containers preserve their `list_item` descendants."""
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = json.dumps(
+            {
+                "body": {
+                    "self_ref": "#/body",
+                    "children": [{"$ref": "#/groups/0"}],
+                },
+                "groups": [
+                    {
+                        "self_ref": "#/groups/0",
+                        "label": "list",
+                        "children": [
+                            {"$ref": "#/texts/0"},
+                            {"$ref": "#/texts/1"},
+                        ],
+                    }
+                ],
+                "texts": [
+                    {"self_ref": "#/texts/0", "label": "list_item", "text": "First"},
+                    {"self_ref": "#/texts/1", "label": "list_item", "text": "Second"},
                 ],
                 "tables": [],
                 "pictures": [],
@@ -777,9 +858,8 @@ class TestGetTree:
         job.completed_at = datetime.now(UTC)
         await repos["analyses"].update_status(job)
         tree = await service.get_tree(doc.id)
-        labels = {n["type"] for n in tree}
-        assert labels == {"group"}
-        # Both Titles and Paragraphs groups should be present
-        group_titles = {n["label"] for n in tree}
-        assert "Titles" in group_titles
-        assert "Paragraphs" in group_titles
+
+        assert len(tree) == 1
+        list_node = tree[0]
+        assert list_node["type"] == "list"
+        assert [c["label"] for c in list_node["children"]] == ["First", "Second"]

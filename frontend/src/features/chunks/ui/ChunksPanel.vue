@@ -1,26 +1,16 @@
 <template>
   <section class="chunks-panel" data-e2e="chunks-panel">
     <header class="chunks-panel-header">
-      <h2 class="chunks-panel-title">{{ t('linked.chunks.title') }}</h2>
+      <h2 class="chunks-panel-title">{{ t('chunk.panel.title') }}</h2>
       <span class="chunks-panel-count">
         {{
-          t('linked.chunks.count', {
+          t('chunk.panel.count', {
             n: pageChunks.length,
             total: chunksStore.chunks.length,
             page: currentPage,
           })
         }}
       </span>
-      <button
-        type="button"
-        class="strategy-btn"
-        :disabled="chunksStore.rechunking"
-        :title="t('chunk.strategy')"
-        data-e2e="strategy-btn"
-        @click="chunksStore.openStrategy"
-      >
-        ⚙ {{ t('chunk.strategy') }}
-      </button>
     </header>
 
     <StrategyPopover
@@ -75,7 +65,7 @@
           </span>
           <span class="chunk-seq">#{{ chunk.sequence }}</span>
           <span v-if="chunk.sourcePage !== null" class="chunk-page">p.{{ chunk.sourcePage }}</span>
-          <span v-if="isEdited(chunk)" class="edited-badge">{{ t('linked.chunks.edited') }}</span>
+          <span v-if="isEdited(chunk)" class="edited-badge">{{ t('chunk.panel.edited') }}</span>
           <span v-if="chunk.tokenCount" class="chunk-tokens">{{ chunk.tokenCount }}t</span>
         </div>
         <div class="chunk-card-body">
@@ -97,8 +87,9 @@
  * until #91 / #92 / #95 refactor them — by design we ship the Linked
  * view with a minimal read-only-ish surface.
  *
- * The Strategy button is rendered as disabled with a tooltip until
- * T7 (#268) wires the rechunk popover.
+ * The Strategy popover trigger moved to the Chunk tab's top toolbar
+ * (LayersBar action slot); this panel still owns the popover render
+ * and apply handler since rechunk lives on the chunks store.
  */
 import { computed, watch } from 'vue'
 import type { DocChunk } from '../../../shared/types'
@@ -207,27 +198,6 @@ void props.docId
   color: var(--text-muted);
   font-family: 'IBM Plex Mono', monospace;
   margin-right: auto;
-}
-
-.strategy-btn {
-  font-size: 11px;
-  padding: 3px 10px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.strategy-btn:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.strategy-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .chunks-panel-state {

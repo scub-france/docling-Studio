@@ -32,6 +32,7 @@
         :depth="depth + 1"
         :selected="selected"
         :highlight="highlight"
+        :default-open="defaultOpen"
         @select="$emit('select', $event)"
       />
     </ul>
@@ -49,15 +50,17 @@ const props = withDefaults(
     depth?: number
     selected?: string | null
     highlight?: string | null
+    /** When set, every node mounts in that state (used by Expand/Collapse-all). */
+    defaultOpen?: boolean | null
   }>(),
-  { depth: 0 },
+  { depth: 0, defaultOpen: null },
 )
 
 const emit = defineEmits<{
   select: [ref: string]
 }>()
 
-const open = ref(props.depth < 2)
+const open = ref(props.defaultOpen ?? props.depth < 3)
 
 const hasChildren = computed(() => props.node.children.length > 0)
 

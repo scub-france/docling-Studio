@@ -3,10 +3,23 @@
     <LayersBar
       :elements="currentPageElements"
       :hidden-types="hiddenTypes"
-      :show-labels="showLabels"
       @update:hidden-types="(next) => (hiddenTypes = next)"
-      @update:show-labels="(next) => (showLabels = next)"
-    />
+    >
+      <template #action>
+        <button
+          type="button"
+          class="tab-action-cta"
+          :disabled="analysisStore.running"
+          :title="t('newAnalysis.title')"
+          data-e2e="parse-new-analysis"
+          @click="onLaunchAnalysis"
+        >
+          <span v-if="analysisStore.running" class="tab-action-spinner" />
+          <span v-else>+</span>
+          {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
+        </button>
+      </template>
+    </LayersBar>
     <div class="parse-body">
       <aside class="parse-structure">
         <header class="parse-structure-header">
@@ -14,6 +27,28 @@
           <span class="parse-structure-count">
             {{ t('parse.structureNodes', { n: nodeCount }) }}
           </span>
+          <div class="parse-structure-actions">
+            <button
+              type="button"
+              class="tree-action-btn"
+              :title="t('parse.expandAll')"
+              :aria-label="t('parse.expandAll')"
+              data-e2e="tree-expand-all"
+              @click="onExpandAll"
+            >
+              ⊕
+            </button>
+            <button
+              type="button"
+              class="tree-action-btn"
+              :title="t('parse.collapseAll')"
+              :aria-label="t('parse.collapseAll')"
+              data-e2e="tree-collapse-all"
+              @click="onCollapseAll"
+            >
+              ⊖
+            </button>
+          </div>
         </header>
         <input
           v-model="filter"
@@ -23,11 +58,13 @@
           data-e2e="structure-filter"
         />
         <DocTreeRail
+          :key="treeRemountKey"
           :nodes="filteredNodes"
           :loading="treeLoading"
           :error="treeError"
           :selected="selectedNodeRef"
           :highlight="selectedNodeRef"
+          :default-open="treeDefaultOpen"
           @select="onTreeSelect"
           @reload="loadTree"
         />
@@ -39,7 +76,7 @@
           :pages="documentStore.workspacePages"
           :current-page="currentPage"
           :hidden-types="hiddenTypes"
-          :show-labels="showLabels"
+          :show-labels="true"
           :highlighted-refs="highlightedRefs"
           @update:current-page="(p) => (currentPage = p)"
           @hover-element="onHoverElement"
@@ -50,17 +87,6 @@
         </div>
         <div v-else class="parse-state parse-state--empty">
           <p>{{ t('parse.noAnalysis') }}</p>
-          <button
-            type="button"
-            class="parse-state-cta"
-            :disabled="analysisStore.running"
-            data-e2e="parse-empty-cta"
-            @click="onLaunchAnalysis"
-          >
-            <span v-if="analysisStore.running" class="cta-spinner" />
-            <span v-else>+</span>
-            {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
-          </button>
         </div>
       </div>
       <ElementProperties
@@ -115,7 +141,19 @@ async function onLaunchAnalysis(): Promise<void> {
 
 const currentPage = ref(1)
 const hiddenTypes = ref<Set<string>>(new Set())
-const showLabels = ref(false)
+
+// Expand/Collapse all — bumping `treeRemountKey` re-keys the rail so every
+// DocTreeNode mounts fresh and picks up the new `treeDefaultOpen` value.
+const treeRemountKey = ref(0)
+const treeDefaultOpen = ref<boolean | null>(null)
+function onExpandAll(): void {
+  treeDefaultOpen.value = true
+  treeRemountKey.value++
+}
+function onCollapseAll(): void {
+  treeDefaultOpen.value = false
+  treeRemountKey.value++
+}
 
 const tree = ref<DocTreeNode[]>([])
 const treeLoading = ref(false)
@@ -310,6 +348,33 @@ function findPageOfRef(
   font-family: 'IBM Plex Mono', monospace;
 }
 
+.parse-structure-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tree-action-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.tree-action-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .parse-structure-filter {
   margin: 8px 14px;
   padding: 6px 10px;
@@ -342,7 +407,7 @@ function findPageOfRef(
   gap: 12px;
 }
 
-.parse-state-cta {
+.tab-action-cta {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -356,16 +421,16 @@ function findPageOfRef(
   transition: filter var(--transition);
 }
 
-.parse-state-cta:hover:not(:disabled) {
+.tab-action-cta:hover:not(:disabled) {
   filter: brightness(1.1);
 }
 
-.parse-state-cta:disabled {
+.tab-action-cta:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
 
-.cta-spinner {
+.tab-action-spinner {
   width: 10px;
   height: 10px;
   border: 1.5px solid rgba(255, 255, 255, 0.4);

@@ -14,6 +14,30 @@
       <span class="page-paginator-meta">
         {{ t('workspace.pageOf', { page: currentPage, total: totalPages }) }}
       </span>
+      <div class="page-paginator-nav">
+        <button
+          type="button"
+          class="page-nav-btn"
+          :disabled="currentPage <= 1"
+          :title="t('workspace.pagePrev')"
+          :aria-label="t('workspace.pagePrev')"
+          data-e2e="page-prev"
+          @click="onPageChange(currentPage - 1)"
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          class="page-nav-btn"
+          :disabled="currentPage >= totalPages"
+          :title="t('workspace.pageNext')"
+          :aria-label="t('workspace.pageNext')"
+          data-e2e="page-next"
+          @click="onPageChange(currentPage + 1)"
+        >
+          ›
+        </button>
+      </div>
     </div>
     <div class="preview-stage" ref="stageRef">
       <div class="preview-frame" ref="frameRef">
@@ -201,6 +225,36 @@ watch(
   font-size: 11px;
   color: var(--text-muted);
   font-family: 'IBM Plex Mono', monospace;
+}
+
+.page-paginator-nav {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.page-nav-btn {
+  min-width: 24px;
+  padding: 2px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.page-nav-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.page-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .preview-stage {

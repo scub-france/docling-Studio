@@ -407,7 +407,6 @@ const messages: Messages = {
 
     // Parse view (#264) \u2014 Docling extraction graph
     'parse.layers': 'LAYERS',
-    'parse.showLabels': 'Afficher les libell\u00e9s',
     // Element Properties panel (#265)
     'properties.title': 'Propri\u00e9t\u00e9s',
     'properties.empty':
@@ -428,13 +427,16 @@ const messages: Messages = {
     'properties.save': 'Enregistrer',
     'properties.saving': 'Enregistrement\u2026',
     'workspace.pageOf': 'Page {page} sur {total}',
+    'workspace.pagePrev': 'Page précédente',
+    'workspace.pageNext': 'Page suivante',
     'parse.structureTitle': 'Structure',
     'parse.structureNodes': '{n} n\u0153uds',
     'parse.filterPlaceholder': 'Filtrer les \u00e9l\u00e9ments\u2026',
     'parse.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse.",
+    'parse.expandAll': 'Tout d\u00e9plier',
+    'parse.collapseAll': 'Tout replier',
 
     // Chunk view (#264) \u2014 chunks aligned to the page preview
-    'chunk.showLabels': 'Afficher les libell\u00e9s',
     'chunk.strategy': 'Strat\u00e9gie',
     'chunk.panel.title': 'Chunks',
     'chunk.panel.count': '{n} sur {total} en page {page}',
@@ -1033,7 +1035,6 @@ const messages: Messages = {
 
     // Parse view (#264) — Docling extraction graph
     'parse.layers': 'LAYERS',
-    'parse.showLabels': 'Show labels',
     // Element Properties panel (#265)
     'properties.title': 'Properties',
     'properties.empty': 'Select a node in the tree or click a bbox.',
@@ -1053,13 +1054,16 @@ const messages: Messages = {
     'properties.save': 'Save',
     'properties.saving': 'Saving…',
     'workspace.pageOf': 'Page {page} of {total}',
+    'workspace.pagePrev': 'Previous page',
+    'workspace.pageNext': 'Next page',
     'parse.structureTitle': 'Structure',
     'parse.structureNodes': '{n} nodes',
     'parse.filterPlaceholder': 'Filter elements…',
     'parse.noAnalysis': 'No analysis yet — run a parse first.',
+    'parse.expandAll': 'Expand all',
+    'parse.collapseAll': 'Collapse all',
 
     // Chunk view (#264) — chunks aligned to the page preview
-    'chunk.showLabels': 'Show labels',
     'chunk.strategy': 'Strategy',
     'chunk.panel.title': 'Chunks',
     'chunk.panel.count': '{n} of {total} on page {page}',

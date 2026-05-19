@@ -3,10 +3,23 @@
     <LayersBar
       :elements="currentPageElements"
       :hidden-types="hiddenTypes"
-      :show-labels="showLabels"
       @update:hidden-types="(next) => (hiddenTypes = next)"
-      @update:show-labels="(next) => (showLabels = next)"
-    />
+    >
+      <template #action>
+        <button
+          type="button"
+          class="tab-action-cta"
+          :disabled="chunksStore.rechunking"
+          :title="t('chunk.panel.generate')"
+          data-e2e="chunk-generate-btn"
+          @click="onGenerateChunks"
+        >
+          <span v-if="chunksStore.rechunking" class="tab-action-spinner" />
+          <span v-else>⚙</span>
+          {{ chunksStore.rechunking ? t('strategy.rechunking') : t('chunk.panel.generate') }}
+        </button>
+      </template>
+    </LayersBar>
     <div class="chunk-body">
       <div class="chunk-stage">
         <PagePreviewWithOverlay
@@ -15,7 +28,7 @@
           :pages="documentStore.workspacePages"
           :current-page="currentPage"
           :hidden-types="hiddenTypes"
-          :show-labels="showLabels"
+          :show-labels="true"
           :highlighted-refs="highlightedRefs"
           @update:current-page="(p) => (currentPage = p)"
           @hover-element="onHoverElement"
@@ -26,17 +39,6 @@
         </div>
         <div v-else class="chunk-state chunk-state--empty">
           <p>{{ t('chunk.noAnalysis') }}</p>
-          <button
-            type="button"
-            class="chunk-state-cta"
-            :disabled="analysisStore.running"
-            data-e2e="chunk-empty-cta"
-            @click="onLaunchAnalysis"
-          >
-            <span v-if="analysisStore.running" class="cta-spinner" />
-            <span v-else>+</span>
-            {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
-          </button>
         </div>
       </div>
       <aside class="chunk-aside">
@@ -72,7 +74,6 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import type { DocStoreLink, PageElement } from '../shared/types'
-import { useAnalysisStore } from '../features/analysis/store'
 import { useChunksStore } from '../features/chunks/store'
 import { useDocumentStore } from '../features/document/store'
 import { chunkForElement, elementRefsForChunk } from '../features/document/linkedView'
@@ -90,16 +91,13 @@ const props = defineProps<{
 const { t } = useI18n()
 const documentStore = useDocumentStore()
 const chunksStore = useChunksStore()
-const analysisStore = useAnalysisStore()
 
-async function onLaunchAnalysis(): Promise<void> {
-  if (analysisStore.running) return
-  await analysisStore.run(props.docId)
+function onGenerateChunks(): void {
+  chunksStore.openStrategy()
 }
 
 const currentPage = ref(1)
 const hiddenTypes = ref<Set<string>>(new Set())
-const showLabels = ref(false)
 const hoveredChunkId = ref<string | null>(null)
 const selectedChunkId = ref<string | null>(null)
 
@@ -187,7 +185,7 @@ watch(
   gap: 12px;
 }
 
-.chunk-state-cta {
+.tab-action-cta {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -201,16 +199,16 @@ watch(
   transition: filter var(--transition);
 }
 
-.chunk-state-cta:hover:not(:disabled) {
+.tab-action-cta:hover:not(:disabled) {
   filter: brightness(1.1);
 }
 
-.chunk-state-cta:disabled {
+.tab-action-cta:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
 
-.cta-spinner {
+.tab-action-spinner {
   width: 10px;
   height: 10px;
   border: 1.5px solid rgba(255, 255, 255, 0.4);

@@ -48,38 +48,6 @@
           >
             ↻ {{ t('history.title') }}
           </button>
-          <!-- + Generate chunks (#268, exposed at workspace level after
-               the analysis/chunks decoupling). Visible only on the
-               Chunk view; opens the Strategy popover owned by the
-               chunks store. -->
-          <button
-            v-if="activeMode === 'chunk'"
-            type="button"
-            class="header-action-btn"
-            :disabled="chunksStore.rechunking"
-            :title="t('chunk.panel.generate')"
-            data-e2e="generate-chunks-btn"
-            @click="onGenerateChunks"
-          >
-            <span v-if="chunksStore.rechunking" class="header-spinner" />
-            <span v-else>⚙</span>
-            {{ chunksStore.rechunking ? t('strategy.rechunking') : t('chunk.panel.generate') }}
-          </button>
-          <!-- + New analysis (#266) — runs the analysis in place. Polls
-               via analysisStore.run; the watcher below refreshes the
-               workspace when status flips to COMPLETED. -->
-          <button
-            type="button"
-            class="header-action-btn header-action-btn--primary"
-            :disabled="analysisStore.running"
-            :title="t('newAnalysis.title')"
-            data-e2e="new-analysis-btn"
-            @click="onNewAnalysis"
-          >
-            <span v-if="analysisStore.running" class="header-spinner" />
-            <span v-else>+</span>
-            {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
-          </button>
         </template>
       </DocWorkspaceHeader>
 
@@ -160,21 +128,6 @@ async function onSetCurrentVersion(versionId: string): Promise<void> {
   // snapshot — reload so Chunk view re-renders with the restored set.
   await chunksStore.load(props.id)
   historyOpen.value = false
-}
-
-/**
- * In-place analysis launch (#266). Fires `analysisStore.run`, which
- * POSTs to /api/analyses and starts polling. The watcher below picks
- * up the COMPLETED transition and refreshes the workspace.
- */
-async function onNewAnalysis(): Promise<void> {
-  if (analysisStore.running) return
-  await analysisStore.run(props.id)
-}
-
-/** Open the Strategy popover from the workspace header (#268). */
-function onGenerateChunks(): void {
-  chunksStore.openStrategy()
 }
 
 // Watch analysisStore.running: when the in-place launch wraps up,

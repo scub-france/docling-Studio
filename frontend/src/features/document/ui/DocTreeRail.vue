@@ -17,6 +17,7 @@
         :node="node"
         :selected="selected"
         :highlight="highlight"
+        :default-open="defaultOpen"
         @select="(ref) => $emit('select', ref)"
       />
     </ul>
@@ -34,6 +35,8 @@ defineProps<{
   error?: string | null
   selected?: string | null
   highlight?: string | null
+  /** Forwarded to every node — null lets each node use its depth-based default. */
+  defaultOpen?: boolean | null
 }>()
 
 defineEmits<{

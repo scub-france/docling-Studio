@@ -16,39 +16,34 @@
         <span class="chip-count">{{ entry.count }}</span>
       </button>
     </div>
-    <label class="show-labels-toggle" data-e2e="show-labels-toggle">
-      <input type="checkbox" :checked="showLabels" @change="onToggleLabels" />
-      <span>{{ t('linked.showLabels') }}</span>
-    </label>
+    <div class="layers-action">
+      <slot name="action" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * LAYERS chip row + "Show labels" toggle (#264).
+ * LAYERS chip row (#264).
  *
- * Externally controlled via v-model on `hiddenTypes` and `showLabels`.
+ * Externally controlled via v-model on `hiddenTypes`.
  * Renders chips in `LAYER_ORDER`, then appends any extra types found on
  * the page (in insertion order) so the bar never silently swallows a new
- * element kind.
+ * element kind. An optional `action` slot is right-aligned for the
+ * tab-level primary CTA.
  */
 import { computed } from 'vue'
 import type { PageElement } from '../../../shared/types'
-import { useI18n } from '../../../shared/i18n'
 import { colorFor, LAYER_ORDER } from '../elementColors'
 
 const props = defineProps<{
   elements: readonly PageElement[]
   hiddenTypes: ReadonlySet<string>
-  showLabels: boolean
 }>()
 
 const emit = defineEmits<{
   'update:hiddenTypes': [next: Set<string>]
-  'update:showLabels': [next: boolean]
 }>()
-
-const { t } = useI18n()
 
 const chipEntries = computed(() => {
   const counts = new Map<string, number>()
@@ -68,10 +63,6 @@ function toggle(type: string): void {
   if (next.has(type)) next.delete(type)
   else next.add(type)
   emit('update:hiddenTypes', next)
-}
-
-function onToggleLabels(e: Event): void {
-  emit('update:showLabels', (e.target as HTMLInputElement).checked)
 }
 </script>
 
@@ -135,13 +126,9 @@ function onToggleLabels(e: Event): void {
   font-size: 10px;
 }
 
-.show-labels-toggle {
+.layers-action {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
 }
 </style>
