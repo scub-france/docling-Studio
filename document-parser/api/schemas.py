@@ -423,6 +423,39 @@ class PushChunksRequest(_CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# Push history (#283) — newest-first paginated feed for the Ingest tab.
+# ---------------------------------------------------------------------------
+
+
+class ChunkPushEntryResponse(_CamelModel):
+    """One row of the document's push history.
+
+    `storeSlug` / `storeName` / `storeKind` are None when the store
+    row was deleted after the push — the audit log survives, the
+    UI shows a "deleted store" badge.
+    """
+
+    id: str
+    document_id: str
+    store_id: str
+    store_slug: str | None = None
+    store_name: str | None = None
+    store_kind: str | None = None
+    chunkset_hash: str
+    chunk_count: int
+    pushed_at: str | None = None
+
+
+class ChunkPushListResponse(_CamelModel):
+    """Paginated envelope for `GET /api/documents/{id}/chunks/pushes`."""
+
+    items: list[ChunkPushEntryResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+# ---------------------------------------------------------------------------
 # Document versions (#267) — frozen (analysis_id, chunks_snapshot) pairs.
 # ---------------------------------------------------------------------------
 

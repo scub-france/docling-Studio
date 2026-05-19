@@ -660,6 +660,103 @@ class TestPushToStore:
         assert link.state == DocumentStoreLinkState.FAILED
 
 
+class TestListPushes:
+    """Coverage for the push-history feed (#283).
+
+    Three properties to pin:
+      - Newest-first order (the UI bets on this).
+      - Pagination envelope shape (items / total / limit / offset).
+      - The store fields are joined from the store_repo and survive
+        the store being deleted later (audit log is immutable).
+    """
+
+    @pytest.fixture
+    async def store_repo(self):
+        repo = SqliteStoreRepository()
+        await repo.insert(
+            Store(
+                id="s-rh",
+                name="RH Corpus",
+                slug="rh-corpus",
+                kind=StoreKind.OPENSEARCH,
+                embedder="bge-m3",
+            )
+        )
+        return repo
+
+    @pytest.fixture
+    def service_with_pushes(self, repos, store_repo, doc):
+        return ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            chunker=None,
+            ingestion_service=None,
+            store_repo=store_repo,
+        )
+
+    async def _seed_pushes(self, repos, *, doc_id, store_id, count, base_minute=0):
+        from domain.models import ChunkPush
+
+        for i in range(count):
+            await repos["pushes"].insert(
+                ChunkPush(
+                    id=f"push-{i}",
+                    document_id=doc_id,
+                    store_id=store_id,
+                    chunkset_hash=f"hash-{i}",
+                    chunk_ids=[f"c-{j}" for j in range(i + 1)],
+                    pushed_at=datetime(2026, 5, 19, 10, base_minute + i, tzinfo=UTC),
+                )
+            )
+
+    async def test_empty_history(self, service_with_pushes, doc):
+        result = await service_with_pushes.list_pushes(doc.id)
+        assert result == {"items": [], "total": 0, "limit": 50, "offset": 0}
+
+    async def test_returns_newest_first(self, service_with_pushes, repos, doc):
+        await self._seed_pushes(repos, doc_id=doc.id, store_id="s-rh", count=3)
+        result = await service_with_pushes.list_pushes(doc.id)
+        assert result["total"] == 3
+        # Reversed order: the highest minute lands first.
+        ids = [item["id"] for item in result["items"]]
+        assert ids == ["push-2", "push-1", "push-0"]
+
+    async def test_joins_store_name_and_kind(self, service_with_pushes, repos, doc):
+        await self._seed_pushes(repos, doc_id=doc.id, store_id="s-rh", count=1)
+        result = await service_with_pushes.list_pushes(doc.id)
+        entry = result["items"][0]
+        assert entry["storeSlug"] == "rh-corpus"
+        assert entry["storeName"] == "RH Corpus"
+        assert entry["storeKind"] == "opensearch"
+        assert entry["chunkCount"] == 1  # i=0 → one chunk_id
+
+    # Note: a "store deleted after the push" case can't exist with the
+    # current schema — `chunk_pushes.store_id` is a FK with ON DELETE
+    # CASCADE, so deleting the store wipes its push history. The
+    # service's defensive None handling
+    # (`storeSlug`/`storeName`/`storeKind` may be None) is kept
+    # because a future schema change to ON DELETE SET NULL would
+    # rehabilitate the audit log as a survivor of store deletion —
+    # see follow-up notes in #283 / the audit-trail thread.
+
+    async def test_pagination_limit_and_offset(self, service_with_pushes, repos, doc):
+        await self._seed_pushes(repos, doc_id=doc.id, store_id="s-rh", count=5)
+        page_1 = await service_with_pushes.list_pushes(doc.id, limit=2, offset=0)
+        page_2 = await service_with_pushes.list_pushes(doc.id, limit=2, offset=2)
+        assert [item["id"] for item in page_1["items"]] == ["push-4", "push-3"]
+        assert [item["id"] for item in page_2["items"]] == ["push-2", "push-1"]
+        assert page_2["total"] == 5
+        assert page_2["limit"] == 2
+        assert page_2["offset"] == 2
+
+    async def test_unknown_document_raises_404(self, service_with_pushes):
+        with pytest.raises(DocumentNotFoundError):
+            await service_with_pushes.list_pushes("ghost-doc")
+
+
 class TestGetTree:
     async def test_tree_empty_when_no_analysis(self, service, doc):
         assert await service.get_tree(doc.id) == []

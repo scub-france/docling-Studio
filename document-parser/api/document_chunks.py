@@ -20,6 +20,8 @@ from api.schemas import (
     ChunkBboxResponse,
     ChunkDiffResponse,
     ChunkDocItemResponse,
+    ChunkPushEntryResponse,
+    ChunkPushListResponse,
     DocChunkResponse,
     DocRechunkRequest,
     DocTreeNodeResponse,
@@ -215,4 +217,29 @@ async def push_chunks(
     return PushChunksResponse(
         job_id=result["jobId"],
         summary=result["summary"],
+    )
+
+
+@router.get("/{doc_id}/chunks/pushes", response_model=ChunkPushListResponse)
+async def list_chunk_pushes(
+    doc_id: str,
+    service: ServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> ChunkPushListResponse:
+    """Newest-first push history for the document (#283).
+
+    Drives the Ingest tab's history list. Pagination is conservative
+    (`limit<=200`) — the UI lists 20-50 entries per page; larger pulls
+    are unusual and cap the response size anyway.
+    """
+    try:
+        payload = await service.list_pushes(doc_id, limit=limit, offset=offset)
+    except ChunkServiceError as e:
+        _raise_for(e)
+    return ChunkPushListResponse(
+        items=[ChunkPushEntryResponse(**entry) for entry in payload["items"]],
+        total=payload["total"],
+        limit=payload["limit"],
+        offset=payload["offset"],
     )
