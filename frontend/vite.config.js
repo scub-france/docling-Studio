@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import { readFileSync } from 'fs'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000'
 
 export default defineConfig({
   plugins: [vue()],
@@ -13,13 +14,13 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true
+        target: apiProxyTarget,
+        changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:8000',
-        changeOrigin: true
-      }
-    }
-  }
+        target: apiProxyTarget,
+        changeOrigin: true,
+      },
+    },
+  },
 })
