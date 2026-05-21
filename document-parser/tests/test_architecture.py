@@ -33,11 +33,48 @@ get_evaluable_architecture = pytestarch.get_evaluable_architecture
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+_SKIP_PATH_PARTS = {"__pycache__", ".venv", ".ruff_cache", "uploads", "data"}
+
+_PYTESTARCH_EXCLUSIONS = (
+    "*__pycache__*",
+    "*.pyc",
+    "*.lock",
+    "*.sqlite*",
+    "*.db",
+    "*.json",
+    "*.log",
+    "*.pdf",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.webp",
+    "*.svg",
+    "*.ico",
+    "*.bin",
+    "*.so",
+    "*.dylib",
+    "*.dll",
+    "*.a",
+    "*.o",
+    "*.whl",
+    "*.egg-info*",
+    "*.dist-info*",
+    "*.venv*",
+    "*.ruff_cache*",
+    "*uploads*",
+    "*data*",
+)
+
 # pytestarch uses the directory name as module prefix when given absolute paths.
 # We use the directory name to build qualified module references.
 _PREFIX = _PROJECT_ROOT.name  # "document-parser"
 
-_evaluable = get_evaluable_architecture(str(_PROJECT_ROOT), str(_PROJECT_ROOT))
+_evaluable = get_evaluable_architecture(
+    str(_PROJECT_ROOT),
+    str(_PROJECT_ROOT),
+    exclusions=_PYTESTARCH_EXCLUSIONS,
+)
 
 
 def _mod(layer: str) -> str:
@@ -55,6 +92,8 @@ def _collect_imports(package: str) -> set[str]:
     pkg_path = Path(_PROJECT_ROOT) / package
     imports: set[str] = set()
     for py_file in pkg_path.rglob("*.py"):
+        if any(part in _SKIP_PATH_PARTS for part in py_file.parts):
+            continue
         tree = ast.parse(py_file.read_text(), filename=str(py_file))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -190,8 +229,7 @@ class TestPortConvention:
         for py_file in Path(_PROJECT_ROOT).rglob("*.py"):
             if py_file == ports_file:
                 continue
-            # Skip test files and __pycache__
-            if "tests" in py_file.parts or "__pycache__" in py_file.parts:
+            if "tests" in py_file.parts or any(part in _SKIP_PATH_PARTS for part in py_file.parts):
                 continue
             tree = ast.parse(py_file.read_text(), filename=str(py_file))
             for node in ast.walk(tree):
