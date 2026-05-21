@@ -37,10 +37,8 @@ open http://localhost:3000
 
 ```bash
 cd document-parser
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # remote mode (lightweight)
-pip install ruff pytest pytest-asyncio httpx
-uvicorn main:app --reload --port 8000
+uv sync --group dev
+uv run uvicorn main:app --reload --port 8000  # remote mode (lightweight)
 ```
 
 ### Frontend
@@ -79,8 +77,8 @@ Follow the [branching strategy](https://github.com/scub-france/Docling-Studio/bl
 ```bash
 # Backend
 cd document-parser
-ruff check . && ruff format --check .
-pytest tests/ -v
+uv run ruff check . && uv run ruff format --check .
+uv run pytest tests/ -v
 
 # Frontend
 cd frontend

@@ -146,15 +146,14 @@ docker compose --profile ingestion -f docker-compose.yml -f docker-compose.inges
 **Backend** (Python 3.12+):
 ```bash
 cd document-parser
-python -m venv .venv && source .venv/bin/activate
+uv sync --group dev
 
 # Remote mode (lightweight)
-pip install -r requirements.txt
+uv run uvicorn main:app --reload --port 8000
 
 # Local mode (with Docling)
-pip install -r requirements-local.txt
-
-uvicorn main:app --reload --port 8000
+uv sync --group dev --group local
+uv run uvicorn main:app --reload --port 8000
 ```
 
 **Frontend** (Node 20+):
@@ -169,8 +168,7 @@ npm run dev
 ```bash
 # Backend (377 tests)
 cd document-parser
-pip install pytest pytest-asyncio httpx
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Frontend (156 tests)
 cd frontend
@@ -326,7 +324,7 @@ export REASONING_MODEL_ID=gpt-oss:20b           # any model already pulled in Ol
 export LLM_PROVIDER_TYPE=ollama
 ```
 
-Then `pip install docling-agent mellea` (or use the `local` Docker image which bundles them) and restart the backend. The frontend reads `reasoningAvailable` from `/api/health` and hides the **Reasoning** sidebar entry when the runner isn't wired — so users never click through to a 503.
+Then `uv sync --group dev --group local` (or use the `local` Docker image which bundles the local stack) and restart the backend. The frontend reads `reasoningAvailable` from `/api/health` and hides the **Reasoning** sidebar entry when the runner isn't wired — so users never click through to a 503.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

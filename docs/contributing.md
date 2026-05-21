@@ -19,16 +19,14 @@
 
     ```bash
     cd document-parser
-    python -m venv .venv && source .venv/bin/activate
+    uv sync --group dev
 
     # Remote mode (lightweight — delegates to Docling Serve)
-    pip install -r requirements.txt
+    uv run uvicorn main:app --reload --port 8000
 
     # Local mode (full — runs Docling in-process)
-    pip install -r requirements-local.txt
-
-    pip install ruff pytest pytest-asyncio httpx
-    uvicorn main:app --reload --port 8000
+    uv sync --group dev --group local
+    uv run uvicorn main:app --reload --port 8000
     ```
 
 === "Frontend (Node 20+)"
@@ -45,9 +43,9 @@
 
 ```bash
 cd document-parser
-ruff check .          # lint
-ruff check . --fix    # auto-fix
-ruff format .         # format
+uv run ruff check .          # lint
+uv run ruff check . --fix    # auto-fix
+uv run ruff format .         # format
 ```
 
 ### Frontend — TypeScript + ESLint + Prettier
@@ -66,7 +64,7 @@ npx prettier --write src/   # auto-format
 
     ```bash
     cd document-parser
-    pytest tests/ -v
+    uv run pytest tests/ -v
     ```
 
 === "Frontend"

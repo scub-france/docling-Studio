@@ -51,15 +51,14 @@ docker compose --profile ingestion \
 
     ```bash
     cd document-parser
-    python -m venv .venv && source .venv/bin/activate
+    uv sync --group dev
 
     # Remote mode (lightweight)
-    pip install -r requirements.txt
+    uv run uvicorn main:app --reload --port 8000
 
     # Local mode (with Docling)
-    pip install -r requirements-local.txt
-
-    uvicorn main:app --reload --port 8000
+    uv sync --group dev --group local
+    uv run uvicorn main:app --reload --port 8000
     ```
 
 === "Frontend (Node 20+)"
@@ -78,8 +77,7 @@ The frontend runs on `http://localhost:3000` and proxies API calls to `http://lo
 
     ```bash
     cd document-parser
-    pip install pytest pytest-asyncio httpx
-    pytest tests/ -v
+    uv run pytest tests/ -v
     ```
 
 === "Frontend"

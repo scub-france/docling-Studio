@@ -28,8 +28,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: document-parser/requirements.txt
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
 
       - uses: actions/setup-node@v4
         with:
@@ -38,16 +41,13 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install backend deps
-        run: |
-          pip install --upgrade pip
-          pip install -r document-parser/requirements.txt
-          pip install ruff
+        run: cd document-parser && uv sync --frozen --group dev
 
       - name: Install frontend deps
         run: cd frontend && npm ci
 
       - name: Backend lint
-        run: cd document-parser && ruff check .
+        run: cd document-parser && uv run ruff check .
 
       - name: Frontend lint
         run: cd frontend && npx eslint src/
@@ -64,8 +64,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: document-parser/requirements.txt
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
 
       - uses: actions/setup-node@v4
         with:
@@ -79,10 +82,8 @@ jobs:
       - name: Backend tests
         run: |
           cd document-parser
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx ruff
-          pytest tests/ -v --tb=short 2>&1 | tee /tmp/backend-tests.txt
+          uv sync --frozen --group dev
+          uv run pytest tests/ -v --tb=short 2>&1 | tee /tmp/backend-tests.txt
 
       - name: Frontend tests
         run: |
@@ -106,8 +107,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: document-parser/requirements.txt
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
 
       - uses: actions/setup-node@v4
         with:
@@ -117,7 +121,7 @@ jobs:
 
       - name: Install deps
         run: |
-          cd document-parser && pip install --upgrade pip && pip install -r requirements.txt && pip install pip-audit
+          cd document-parser && uv sync --frozen && uv pip install --python .venv/bin/python pip-audit
           cd ../frontend && npm ci
 
       - name: Python audit
@@ -125,10 +129,10 @@ jobs:
         continue-on-error: true
         run: |
           cd document-parser
-          pip-audit --format=json --output=/tmp/pip-audit.json 2>&1 || true
-          pip-audit 2>&1 | tee /tmp/pip-audit.txt
+          uv run pip-audit --format=json --output=/tmp/pip-audit.json 2>&1 || true
+          uv run pip-audit 2>&1 | tee /tmp/pip-audit.txt
           # Check for critical vulnerabilities
-          if pip-audit --format=json 2>/dev/null | python3 -c "
+          if uv run pip-audit --format=json 2>/dev/null | python3 -c "
           import sys, json
           data = json.load(sys.stdin)
           vulns = data.get('dependencies', [])

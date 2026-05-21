@@ -26,27 +26,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: document-parser/requirements-test.txt
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
 
       - name: Install pinned dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-test.txt
-          pip install httpx
+        run: uv sync --frozen --group dev --group local
 
       - name: Upgrade docling to latest
         id: versions
         run: |
-          pip install --upgrade docling docling-core
-          echo "docling=$(pip show docling | grep Version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
-          echo "docling_core=$(pip show docling-core | grep Version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+          uv pip install --python .venv/bin/python --upgrade docling docling-core
+          echo "docling=$(uv run python -c 'import importlib.metadata as m; print(m.version("'"'docling"'"'))')" >> "$GITHUB_OUTPUT"
+          echo "docling_core=$(uv run python -c 'import importlib.metadata as m; print(m.version("'"'docling-core"'"'))')" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: uv run pytest tests/ -v
 
       - name: Open issue on failure
         if: failure()
@@ -92,7 +92,7 @@ jobs:
                 `### Next steps`,
                 `1. Check the failing tests in the workflow logs`,
                 `2. Identify breaking changes in the Docling changelog`,
-                `3. Update the code and version pins in \`requirements.txt\``,
+                `3. Update the code and version pins in \`document-parser/pyproject.toml\``,
                 `4. Close this issue once fixed`,
               ].join('\n'),
             });

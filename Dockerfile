@@ -31,10 +31,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --no-cache-dir uv==0.11.6
+
 # Python deps (common)
 WORKDIR /app
-COPY document-parser/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV UV_PROJECT_ENVIRONMENT=/usr/local
+COPY document-parser/pyproject.toml document-parser/uv.lock ./
+RUN uv sync --frozen --no-dev
 
 # Backend code
 COPY document-parser/ .
@@ -71,9 +74,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY document-parser/requirements-local.txt .
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir -r requirements-local.txt
+RUN uv pip install --python /usr/local/bin/python --index-url https://download.pytorch.org/whl/cpu torch torchvision \
+    && uv sync --frozen --no-dev --group local
 
 RUN chown -R appuser:appuser /app \
     && chown -R appuser:appuser /usr/local/lib/python3.12/site-packages/rapidocr/models
