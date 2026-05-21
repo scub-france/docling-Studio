@@ -10,7 +10,14 @@
         @click="onLaunchClick"
       >
         <span class="ingest-launch-icon">↑</span>
-        {{ t('ingest.launchCta') }}
+        {{ t('ingest.launchCta')
+        }}<span
+          v-if="pendingPushCount > 0"
+          class="ingest-launch-badge"
+          data-e2e="ingest-launch-badge"
+        >
+          {{ pendingPushCount }}
+        </span>
       </button>
     </header>
 
@@ -126,7 +133,7 @@ import { formatAbsolute, formatRelativeTime } from '../shared/format'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import IngestLaunchDialog from './IngestLaunchDialog.vue'
-import { type HistoryDisplayEntry, toHistoryEntry } from './DocIngestTab.logic'
+import { type HistoryDisplayEntry, buildRows, toHistoryEntry } from './DocIngestTab.logic'
 
 const props = defineProps<{
   docId: string
@@ -152,6 +159,15 @@ const dialogOpen = ref(false)
 
 const hasStores = computed(() => stores.value.length > 0)
 const hasMore = computed(() => history.value.length < total.value)
+
+// Pending-push hint on the CTA: count of connected stores that are
+// Stale or NotPushed — same set the launch modal pre-checks. Surfaces
+// at-a-glance "there's work to do" without forcing the user to open
+// the modal first.
+const pendingPushCount = computed(() => {
+  const rows = buildRows(stores.value, props.storeLinks)
+  return rows.filter((r) => r.connected && (r.state === 'Stale' || r.state === 'NotPushed')).length
+})
 
 async function load(): Promise<void> {
   loading.value = true
@@ -254,6 +270,23 @@ onMounted(load)
 
 .ingest-launch-icon {
   font-size: 14px;
+}
+
+.ingest-launch-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  margin-left: 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 0.02em;
 }
 
 .ingest-state {
