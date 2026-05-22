@@ -584,6 +584,10 @@ jobs:
         timeout-minutes: 10
         env:
           RATE_LIMIT_RPM: "0"
+          # The @critical UI suite still drives the legacy /studio surface
+          # (#257 made it default-off). Enable it for e2e until those tests
+          # are rewritten against /docs/:id in 0.7.0.
+          STUDIO_MODE_ENABLED: "true"
 
       - name: Wait for health
         run: |

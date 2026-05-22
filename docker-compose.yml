@@ -106,6 +106,11 @@ services:
       NEO4J_URI: ${NEO4J_URI:-}
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme}
+      # Surface flags (#257). Default-off in production; the e2e UI suite
+      # opts in via STUDIO_MODE_ENABLED=true to exercise the legacy /studio
+      # tests until they're rewritten against /docs/:id (0.7.0).
+      STUDIO_MODE_ENABLED: ${STUDIO_MODE_ENABLED:-false}
+      RAG_PIPELINE_ENABLED: ${RAG_PIPELINE_ENABLED:-true}
     deploy:
       resources:
         limits:
