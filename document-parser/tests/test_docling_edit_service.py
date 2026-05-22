@@ -15,6 +15,21 @@ from persistence.document_repo import SqliteDocumentRepository
 from services.docling_edit_service import DoclingEditService
 
 
+def _assert_valid_doc_dict(doc_dict: dict) -> DoclingDocument:
+    doc = DoclingDocument.model_validate(doc_dict)
+    round_tripped = DoclingDocument.model_validate(doc.export_to_dict())
+    assert round_tripped.export_to_dict() == doc.export_to_dict()
+    assert isinstance(doc.export_to_markdown(), str)
+    assert isinstance(doc.export_to_html(), str)
+    return doc
+
+
+def _assert_valid_session_payload(payload: dict) -> dict:
+    doc_dict = json.loads(payload["documentJson"])
+    _assert_valid_doc_dict(doc_dict)
+    return doc_dict
+
+
 @pytest.fixture(autouse=True)
 async def setup_db(monkeypatch, tmp_path):
     db_path = str(tmp_path / "test.db")
@@ -70,29 +85,59 @@ async def _seed_analysis(repos) -> tuple[Document, AnalysisJob, dict[str, str]]:
     )
 
 
+async def _seed_root_text_analysis(repos) -> tuple[Document, AnalysisJob, dict[str, str]]:
+    doc = Document(id="doc-root", filename="root.pdf", storage_path="/tmp/root.pdf")
+    await repos["documents"].insert(doc)
+
+    parsed = DoclingDocument(name="RootEditable")
+    text_a = parsed.add_text(label=DocItemLabel.TEXT, text="alpha")
+    text_b = parsed.add_text(label=DocItemLabel.TEXT, text="beta")
+
+    analysis = AnalysisJob(
+        id="a-root",
+        document_id=doc.id,
+        status=AnalysisStatus.COMPLETED,
+        content_markdown=parsed.export_to_markdown(),
+        content_html=parsed.export_to_html(),
+        pages_json="[]",
+        document_json=json.dumps(parsed.export_to_dict()),
+        chunks_json="[]",
+    )
+    await repos["analyses"].insert(analysis)
+    await repos["analyses"].update_status(analysis)
+    return (
+        doc,
+        analysis,
+        {
+            "text_a": text_a.self_ref,
+            "text_b": text_b.self_ref,
+        },
+    )
+
+
 class TestEditSession:
     async def test_edit_text_then_undo_redo(self, service, repos):
         _, _, refs = await _seed_analysis(repos)
 
         edited = await service.edit_text("doc-1", refs["text_a"], "alpha updated")
-        edited_doc = json.loads(edited["documentJson"])
+        edited_doc = _assert_valid_session_payload(edited)
         assert edited["hasChanges"] is True
         assert edited_doc["texts"][0]["text"] == "alpha updated"
 
         undone = await service.undo("doc-1")
-        undone_doc = json.loads(undone["documentJson"])
+        undone_doc = _assert_valid_session_payload(undone)
         assert undone_doc["texts"][0]["text"] == "alpha"
         assert undone["canRedo"] is True
 
         redone = await service.redo("doc-1")
-        redone_doc = json.loads(redone["documentJson"])
+        redone_doc = _assert_valid_session_payload(redone)
         assert redone_doc["texts"][0]["text"] == "alpha updated"
 
     async def test_reparent_item_moves_parent_reference(self, service, repos):
         _, _, refs = await _seed_analysis(repos)
 
         result = await service.reparent_item("doc-1", refs["text_b"], refs["section"])
-        doc_json = json.loads(result["documentJson"])
+        doc_json = _assert_valid_session_payload(result)
         moved = next(item for item in doc_json["texts"] if item["self_ref"] == refs["text_b"])
         assert moved["parent"]["$ref"] == refs["section"]
 
@@ -100,7 +145,15 @@ class TestEditSession:
         _, _, refs = await _seed_analysis(repos)
 
         result = await service.merge_texts("doc-1", refs["text_a"], refs["text_b"], " ")
-        doc_json = json.loads(result["documentJson"])
+        doc_json = _assert_valid_session_payload(result)
+        assert len(doc_json["texts"]) == 1
+        assert doc_json["texts"][0]["text"] == "alpha beta"
+
+    async def test_merge_root_level_texts_deletes_trailing_item(self, service, repos):
+        _, _, refs = await _seed_root_text_analysis(repos)
+
+        result = await service.merge_texts("doc-root", refs["text_a"], refs["text_b"], " ")
+        doc_json = _assert_valid_session_payload(result)
         assert len(doc_json["texts"]) == 1
         assert doc_json["texts"][0]["text"] == "alpha beta"
 
@@ -115,4 +168,6 @@ class TestEditSession:
         assert saved.id != "a-1"
         assert saved.status is AnalysisStatus.COMPLETED
         assert "alpha updated" in (saved.content_markdown or "")
-        assert json.loads(saved.document_json or "{}")["texts"][0]["text"] == "alpha updated"
+        committed_doc = _assert_valid_doc_dict(json.loads(saved.document_json or "{}"))
+        assert committed_doc.texts[0].text == "alpha updated"
+        assert isinstance(json.loads(saved.pages_json or "[]"), list)

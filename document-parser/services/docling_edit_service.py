@@ -85,7 +85,7 @@ def get_document_item(doc: DoclingDocument, ref: str) -> Any:
 
 
 def _get_parent_children(doc: DoclingDocument, parent_ref: str | None) -> list[RefItem] | None:
-    if parent_ref is None:
+    if parent_ref in (None, "#/body"):
         body = getattr(doc, "body", None)
         return getattr(body, "children", None)
     parent = get_document_item(doc, parent_ref)
