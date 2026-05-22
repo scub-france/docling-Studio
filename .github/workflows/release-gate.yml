@@ -603,6 +603,13 @@ jobs:
           docker compose logs
           exit 1
 
+      - name: Debug — surface flags wired through
+        run: |
+          echo "=== /api/health response ==="
+          curl -s http://localhost:3000/api/health | python3 -m json.tool
+          echo "=== document-parser container env (surface flags) ==="
+          docker compose exec -T document-parser env | grep -E "STUDIO_MODE|RAG_PIPELINE" || true
+
       - name: Run critical UI tests
         run: >
           mvn test -f e2e/ui/pom.xml
