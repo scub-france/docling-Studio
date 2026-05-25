@@ -390,10 +390,10 @@ async function confirmPush(): Promise<void> {
   showPushModal.value = false
   const ids = [...selectedIds.value]
   clearSelection()
-  const jobs = await Promise.all(ids.map((id) => docStore.pushToStore(id, target)))
-  const dispatched = jobs.filter(Boolean)
+  const pushIds = await Promise.all(ids.map((id) => docStore.pushToStore(id, target)))
+  const dispatched = pushIds.filter(Boolean)
   if (dispatched.length) {
-    window.alert(t('docs.jobDispatched', { jobId: dispatched.join(', ') }))
+    window.alert(t('docs.pushDispatched', { pushId: dispatched.join(', ') }))
   }
 }
 

@@ -208,11 +208,11 @@ async function confirmPush(): Promise<void> {
   const store = pushStoreName.value.trim()
   if (!store || pushing.value) return
   pushing.value = true
-  const jobId = await chunksStore.push(props.docId, store)
+  const pushId = await chunksStore.push(props.docId, store)
   pushing.value = false
-  if (jobId) {
+  if (pushId) {
     closePushModal()
-    alert(t('chunks.pushedJob', { jobId }))
+    alert(t('chunks.pushDispatched', { pushId }))
   }
 }
 

@@ -52,8 +52,8 @@ export function fetchChunkDiff(docId: string, store: string): Promise<ChunkDiff[
 export function pushChunksToStore(
   docId: string,
   store: string,
-): Promise<{ jobId: string; summary: PushSummary }> {
-  return apiFetch<{ jobId: string; summary: PushSummary }>(`/api/documents/${docId}/chunks/push`, {
+): Promise<{ pushId: string; summary: PushSummary }> {
+  return apiFetch<{ pushId: string; summary: PushSummary }>(`/api/documents/${docId}/chunks/push`, {
     method: 'POST',
     body: JSON.stringify({ store }),
   })

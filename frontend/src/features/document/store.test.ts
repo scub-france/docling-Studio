@@ -166,15 +166,15 @@ describe('useDocumentStore', () => {
     expect(result).toBeNull()
   })
 
-  it('pushToStore() delegates to chunks/api.pushChunksToStore and returns jobId', async () => {
+  it('pushToStore() delegates to chunks/api.pushChunksToStore and returns pushId', async () => {
     chunksApi.pushChunksToStore.mockResolvedValue({
-      jobId: 'j2',
+      pushId: 'p2',
       summary: { embeds: 5, tokens: 50 },
     })
     const store = useDocumentStore()
     const result = await store.pushToStore('42', 'my-store')
     expect(chunksApi.pushChunksToStore).toHaveBeenCalledWith('42', 'my-store')
-    expect(result).toBe('j2')
+    expect(result).toBe('p2')
   })
 
   it('pushToStore() returns null on error', async () => {

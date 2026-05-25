@@ -435,7 +435,7 @@ class PushSummaryResponse(_CamelModel):
 
 
 class PushChunksResponse(_CamelModel):
-    job_id: str
+    push_id: str
     summary: PushSummaryResponse
 
 

@@ -677,7 +677,7 @@ class ChunkService:
             token_total,
         )
         return {
-            "jobId": push.id,
+            "pushId": push.id,
             "summary": {
                 "embeds": ingestion_result.chunks_indexed,
                 "tokens": token_total,

@@ -75,7 +75,7 @@ const messages: Messages = {
     'docs.pushPlaceholder': 'Nom du store…',
     'docs.pushSubmit': 'Ingérer',
     'docs.pushCancel': 'Annuler',
-    'docs.jobDispatched': 'Job lancé ({jobId})',
+    'docs.pushDispatched': 'Push enregistré ({pushId})',
     'docs.rechunkDone': 'Re-chunkage terminé ({n} document(s))',
 
     // Doc import (#214)
@@ -531,12 +531,12 @@ const messages: Messages = {
     'chunks.pushSummary': '{embeds} chunks \u00b7 ~{tokens} tokens',
     'chunks.pushConfirm': 'Ing\u00e9rer',
     'chunks.pushCancel': 'Annuler',
-    'chunks.pushedJob': 'Job lanc\u00e9 : {jobId}',
+    'chunks.pushDispatched': 'Push enregistr\u00e9 : {pushId}',
     // Stale stores strip (#224)
     'chunks.stale.pushedAt': 'ing\u00e9r\u00e9 le {date}',
     'chunks.stale.reingest': 'R\u00e9-ing\u00e9rer',
     'chunks.stale.reingestAll': 'R\u00e9-ing\u00e9rer tous les obsol\u00e8tes',
-    'chunks.stale.jobDispatched': 'Job lanc\u00e9 : {jobId}',
+    'chunks.stale.pushDispatched': 'Push enregistr\u00e9 : {pushId}',
 
     'chunks.selected': '{n} s\u00e9lectionn\u00e9(s)',
     'chunks.bulkDrop': 'Supprimer la s\u00e9lection',
@@ -717,7 +717,7 @@ const messages: Messages = {
     'docs.pushPlaceholder': 'Store name…',
     'docs.pushSubmit': 'Ingest',
     'docs.pushCancel': 'Cancel',
-    'docs.jobDispatched': 'Job dispatched ({jobId})',
+    'docs.pushDispatched': 'Push recorded ({pushId})',
     'docs.rechunkDone': 'Rechunk done ({n} document(s))',
 
     // Doc import (#214)
@@ -1158,12 +1158,12 @@ const messages: Messages = {
     'chunks.pushSummary': '{embeds} chunks \u00b7 ~{tokens} tokens',
     'chunks.pushConfirm': 'Ingest',
     'chunks.pushCancel': 'Cancel',
-    'chunks.pushedJob': 'Job dispatched: {jobId}',
+    'chunks.pushDispatched': 'Push recorded: {pushId}',
     // Stale stores strip (#224)
     'chunks.stale.pushedAt': 'ingested on {date}',
     'chunks.stale.reingest': 'Re-ingest',
     'chunks.stale.reingestAll': 'Re-ingest all stale',
-    'chunks.stale.jobDispatched': 'Job dispatched: {jobId}',
+    'chunks.stale.pushDispatched': 'Push recorded: {pushId}',
 
     'chunks.selected': '{n} selected',
     'chunks.bulkDrop': 'Drop selected',

@@ -197,7 +197,7 @@ export const useDocumentStore = defineStore('document', () => {
   async function pushToStore(id: string, store: string): Promise<string | null> {
     try {
       const res = await pushChunksToStore(id, store)
-      return res.jobId
+      return res.pushId
     } catch (e) {
       error.value = (e as Error).message || 'Failed to push to store'
       console.error('Push to store failed', e)

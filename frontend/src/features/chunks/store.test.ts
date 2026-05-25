@@ -143,22 +143,22 @@ describe('useChunksStore', () => {
     expect(store.diff).toEqual(diffs)
   })
 
-  it('push — returns jobId on success', async () => {
-    api.pushChunksToStore.mockResolvedValue({ jobId: 'j1', summary: { embeds: 3, tokens: 500 } })
+  it('push — returns pushId on success', async () => {
+    api.pushChunksToStore.mockResolvedValue({ pushId: 'p1', summary: { embeds: 3, tokens: 500 } })
     const store = useChunksStore()
 
-    const jobId = await store.push('d1', 'my-store')
+    const pushId = await store.push('d1', 'my-store')
 
-    expect(jobId).toBe('j1')
+    expect(pushId).toBe('p1')
   })
 
   it('push — returns null on failure', async () => {
     api.pushChunksToStore.mockRejectedValue(new Error('network'))
     const store = useChunksStore()
 
-    const jobId = await store.push('d1', 'my-store')
+    const pushId = await store.push('d1', 'my-store')
 
-    expect(jobId).toBeNull()
+    expect(pushId).toBeNull()
     expect(store.error).toBe('network')
   })
 

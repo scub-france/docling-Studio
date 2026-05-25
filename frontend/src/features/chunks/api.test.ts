@@ -117,7 +117,7 @@ describe('chunks API', () => {
   })
 
   it('pushChunksToStore calls POST /chunks/push with store', async () => {
-    const response = { jobId: 'j1', summary: { embeds: 5, tokens: 1000 } }
+    const response = { pushId: 'p1', summary: { embeds: 5, tokens: 1000 } }
     apiFetch.mockResolvedValue(response)
 
     const result = await pushChunksToStore('d1', 'my-store')

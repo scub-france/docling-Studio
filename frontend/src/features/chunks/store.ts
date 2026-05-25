@@ -192,7 +192,7 @@ export const useChunksStore = defineStore('chunks', () => {
   async function push(docId: string, store: string): Promise<string | null> {
     try {
       const res = await api.pushChunksToStore(docId, store)
-      return res.jobId
+      return res.pushId
     } catch (e) {
       error.value = (e as Error).message || 'Failed to push chunks'
       console.error('Failed to push chunks', e)
