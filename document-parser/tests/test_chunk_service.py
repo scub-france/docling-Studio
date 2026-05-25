@@ -16,6 +16,7 @@ from domain.value_objects import (
     DocumentStoreLinkState,
     StoreKind,
 )
+from infra.docling_tree import DoclingTreeReader
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.chunk_edit_repo import (
     SqliteChunkEditRepository,
@@ -35,6 +36,9 @@ from services.chunk_service import (
     DocumentNotFoundError,
 )
 from services.ingestion_service import IngestionResult
+
+# Stateless shim — safe to share across the entire test module.
+_TREE_READER = DoclingTreeReader()
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -76,6 +80,7 @@ def service(repos):
         chunk_push_repo=repos["pushes"],
         document_repo=repos["documents"],
         analysis_repo=repos["analyses"],
+        tree_reader=_TREE_READER,
         chunker=None,
         ingestion_service=None,
     )
@@ -443,6 +448,7 @@ class TestPushToStore:
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
             analysis_repo=repos["analyses"],
+            tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
             store_repo=store_repo,
@@ -493,6 +499,7 @@ class TestPushToStore:
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
             analysis_repo=repos["analyses"],
+            tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=None,
             store_repo=store_repo,
@@ -570,6 +577,7 @@ class TestPushToStore:
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
             analysis_repo=repos["analyses"],
+            tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=failing,
             store_repo=store_repo,
@@ -595,7 +603,7 @@ class TestPushToStore:
         """
         from services.store_backend_resolver import IngestionTargets
 
-        resolved = IngestionTargets(vector_store="vs-sentinel", neo4j_driver=None)
+        resolved = IngestionTargets(vector_store="vs-sentinel", graph_writer=None)
         resolver = AsyncMock()
         resolver.resolve = AsyncMock(return_value=resolved)
         service = ChunkService(
@@ -604,6 +612,7 @@ class TestPushToStore:
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
             analysis_repo=repos["analyses"],
+            tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
             store_repo=store_repo,
@@ -640,6 +649,7 @@ class TestPushToStore:
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
             analysis_repo=repos["analyses"],
+            tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
             store_repo=store_repo,
@@ -692,6 +702,7 @@ class TestListPushes:
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
             analysis_repo=repos["analyses"],
+            tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=None,
             store_repo=store_repo,

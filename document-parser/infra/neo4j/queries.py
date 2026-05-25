@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+# Re-exported from the domain layer (#audit-01) so existing callers keep
+# working while the wire-shape lives where every adapter can return it.
+from domain.value_objects import GraphPayload
 
 if TYPE_CHECKING:
     from infra.neo4j.driver import Neo4jDriver
 
-
-@dataclass
-class GraphPayload:
-    doc_id: str
-    nodes: list[dict[str, Any]]
-    edges: list[dict[str, Any]]
-    node_count: int
-    edge_count: int
-    truncated: bool
-    page_count: int
+__all__ = ["GraphPayload", "fetch_graph"]
 
 
 # Full graph for one doc: Document + Elements + Pages + Chunks and their edges.

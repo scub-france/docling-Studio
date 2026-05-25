@@ -215,7 +215,7 @@ async def push_chunks(
     except ChunkServiceError as e:
         _raise_for(e)
     return PushChunksResponse(
-        job_id=result["jobId"],
+        push_id=result["pushId"],
         summary=result["summary"],
     )
 

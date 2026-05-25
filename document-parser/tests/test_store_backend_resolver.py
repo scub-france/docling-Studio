@@ -86,10 +86,16 @@ def _make_resolver(
     opensearch_pool: Any,
     **env: str,
 ) -> StoreBackendResolver:
+    # Mark each "wrapped" driver so the assertions can still pattern-match
+    # the underlying driver while exercising the GraphWriter port shape.
+    def _fake_writer(driver: Any) -> Any:
+        return {"_graph_writer_for": driver}
+
     return StoreBackendResolver(
         store_repo=store_repo,
         neo4j_pool=neo4j_pool,
         opensearch_pool=opensearch_pool,
+        graph_writer_factory=_fake_writer,
         env_neo4j_uri=env.get("neo4j_uri", ""),
         env_neo4j_user=env.get("neo4j_user", "neo4j"),
         env_neo4j_password=env.get("neo4j_password", ""),
@@ -125,7 +131,7 @@ class TestNeo4jResolution:
         targets = await resolver.resolve(store)
         assert isinstance(targets, IngestionTargets)
         assert targets.vector_store is None
-        assert targets.neo4j_driver is not None
+        assert targets.graph_writer is not None
         neo4j_pool.get.assert_awaited_once()
         call_kwargs = neo4j_pool.get.await_args.kwargs
         call_args = neo4j_pool.get.await_args.args
@@ -240,7 +246,7 @@ class TestOpenSearchResolution:
 
         targets = await resolver.resolve(store)
         assert targets.vector_store is not None
-        assert targets.neo4j_driver is None
+        assert targets.graph_writer is None
         call_args = opensearch_pool.get.await_args.args
         assert call_args[0] == "http://os-store:9200"
         kwargs = opensearch_pool.get.await_args.kwargs
@@ -333,8 +339,12 @@ class TestIsolationBetweenStores:
 
         local_targets = await resolver.resolve(local)
         prod_targets = await resolver.resolve(prod)
-        assert local_targets.neo4j_driver["uri"] == "bolt://local:7687"
-        assert prod_targets.neo4j_driver["uri"] == "bolt://prod:7687"
+        # `_fake_writer` wraps the driver in {"_graph_writer_for": driver}
+        # so the test can still pattern-match the underlying pool output.
+        local_driver = local_targets.graph_writer["_graph_writer_for"]
+        prod_driver = prod_targets.graph_writer["_graph_writer_for"]
+        assert local_driver["uri"] == "bolt://local:7687"
+        assert prod_driver["uri"] == "bolt://prod:7687"
         # Passwords reach the pool intact and distinct.
-        assert local_targets.neo4j_driver["password"] == "local-pwd"
-        assert prod_targets.neo4j_driver["password"] == "prod-pwd"
+        assert local_driver["password"] == "local-pwd"
+        assert prod_driver["password"] == "prod-pwd"

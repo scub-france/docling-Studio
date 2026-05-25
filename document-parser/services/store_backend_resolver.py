@@ -28,14 +28,15 @@ acceptance criteria.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from domain.value_objects import StoreKind
 
 if TYPE_CHECKING:
     from domain.models import Store
-    from infra.neo4j.driver import Neo4jDriver
+    from domain.ports import GraphWriter
     from infra.neo4j.driver_pool import Neo4jDriverPool
     from infra.opensearch_pool import OpenSearchClientPool
     from infra.opensearch_store import OpenSearchStore
@@ -48,14 +49,17 @@ logger = logging.getLogger(__name__)
 class IngestionTargets:
     """Resolved backends for a single ingest call.
 
-    Exactly one of `vector_store` / `neo4j_driver` is non-None today
+    Exactly one of `vector_store` / `graph_writer` is non-None today
     (a store has one kind). Carrying both as Optional makes the
     dispatch shape uniform with the legacy multi-backend ingest path
-    inside `IngestionService.ingest`.
+    inside `IngestionService.ingest`. The Neo4j-backed `graph_writer`
+    is now a domain-port handle (#audit-01) — the resolver owns the
+    `Neo4jDriver` -> `Neo4jGraphWriter` wrap so the service layer
+    never sees the raw driver.
     """
 
     vector_store: OpenSearchStore | None = None
-    neo4j_driver: Neo4jDriver | None = None
+    graph_writer: GraphWriter | None = None
 
 
 class StoreBackendNotConfiguredError(RuntimeError):
@@ -77,6 +81,7 @@ class StoreBackendResolver:
         store_repo: SqliteStoreRepository,
         neo4j_pool: Neo4jDriverPool,
         opensearch_pool: OpenSearchClientPool,
+        graph_writer_factory: Callable[[Any], GraphWriter],
         env_neo4j_uri: str = "",
         env_neo4j_user: str = "neo4j",
         env_neo4j_password: str = "",
@@ -85,6 +90,10 @@ class StoreBackendResolver:
         self._stores = store_repo
         self._neo4j_pool = neo4j_pool
         self._opensearch_pool = opensearch_pool
+        # Injected by main.py with `Neo4jGraphWriter` — kept here as an
+        # opaque factory so services/ never has to runtime-import infra
+        # (#audit-01). The factory takes a Neo4jDriver and returns a port.
+        self._make_graph_writer = graph_writer_factory
         self._env_neo4j_uri = env_neo4j_uri
         self._env_neo4j_user = env_neo4j_user
         self._env_neo4j_password = env_neo4j_password
@@ -138,4 +147,6 @@ class StoreBackendResolver:
         # back to the cluster default "neo4j" when unspecified.
         database = (store.config or {}).get("database", "neo4j")
         driver = await self._neo4j_pool.get(uri, user, password, database=database)
-        return IngestionTargets(neo4j_driver=driver)
+        # Wrap the raw driver in the injected `GraphWriter` factory so the
+        # IngestionService consumes a port, not infra.
+        return IngestionTargets(graph_writer=self._make_graph_writer(driver))

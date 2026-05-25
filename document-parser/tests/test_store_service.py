@@ -372,10 +372,11 @@ class TestTestConnection:
         from services.store_backend_resolver import IngestionTargets
 
         service, resolver = store_with_resolver
-        neo = MagicMock()
-        neo.driver = MagicMock()
-        neo.driver.verify_connectivity = AsyncMock(return_value=None)
-        resolver.resolve.return_value = IngestionTargets(neo4j_driver=neo)
+        # `GraphWriter` port stub — `test_connection` now calls
+        # `.ping()` instead of reaching into the underlying driver.
+        graph_writer = MagicMock()
+        graph_writer.ping = AsyncMock(return_value=True)
+        resolver.resolve.return_value = IngestionTargets(graph_writer=graph_writer)
         await service.create_store(
             name="neo",
             slug="neo",
@@ -388,7 +389,7 @@ class TestTestConnection:
         ok, err = await service.test_connection("neo")
         assert ok is True
         assert err is None
-        neo.driver.verify_connectivity.assert_awaited_once()
+        graph_writer.ping.assert_awaited_once()
 
     async def test_returns_ok_false_when_resolver_raises(self, store_with_resolver):
         from services.store_backend_resolver import StoreBackendNotConfiguredError

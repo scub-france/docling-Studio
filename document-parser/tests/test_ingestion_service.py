@@ -213,7 +213,7 @@ class TestIngestTargetsOverride:
         override.ensure_index.return_value = None
         override.delete_document.return_value = 0
         override.index_chunks.return_value = 3
-        targets = IngestionTargets(vector_store=override, neo4j_driver=None)
+        targets = IngestionTargets(vector_store=override, graph_writer=None)
 
         result = await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
 
@@ -227,33 +227,26 @@ class TestIngestTargetsOverride:
         mock_vector_store.index_chunks.assert_not_awaited()
         assert result.chunks_indexed == 3
 
-    async def test_targets_neo4j_driver_wins_over_service_default(
+    async def test_targets_graph_writer_wins_over_service_default(
         self,
         service: IngestionService,
         mock_vector_store: AsyncMock,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A non-None targets.neo4j_driver triggers the Neo4j mirror
-        write through the resolved driver, not through the service's
-        own (which is None by default in the fixture).
+        """A non-None `targets.graph_writer` triggers the graph mirror
+        write through the resolved port, not through the service's own
+        (None by default in the fixture). #audit-01 — the port replaces
+        the raw Neo4j driver that used to be threaded through here.
         """
         from services.store_backend_resolver import IngestionTargets
 
-        write_chunks_calls: list[dict] = []
-
-        async def fake_write_chunks(neo, *, doc_id, chunks_json):
-            write_chunks_calls.append({"neo": neo, "doc_id": doc_id, "chunks_json": chunks_json})
-
-        monkeypatch.setattr("infra.neo4j.write_chunks", fake_write_chunks)
-
-        neo_override = object()  # sentinel — the writer is mocked, we just track identity
-        targets = IngestionTargets(vector_store=mock_vector_store, neo4j_driver=neo_override)
+        graph_writer_mock = AsyncMock()
+        targets = IngestionTargets(vector_store=mock_vector_store, graph_writer=graph_writer_mock)
 
         await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
 
-        assert len(write_chunks_calls) == 1
-        assert write_chunks_calls[0]["neo"] is neo_override
-        assert write_chunks_calls[0]["doc_id"] == "doc-1"
+        graph_writer_mock.write_chunks.assert_awaited_once()
+        kwargs = graph_writer_mock.write_chunks.await_args.kwargs
+        assert kwargs["doc_id"] == "doc-1"
 
     async def test_targets_none_falls_back_to_service_defaults(
         self, service: IngestionService, mock_vector_store: AsyncMock
@@ -276,7 +269,7 @@ class TestIngestTargetsOverride:
         """
         from services.store_backend_resolver import IngestionTargets
 
-        targets = IngestionTargets(vector_store=None, neo4j_driver=None)
+        targets = IngestionTargets(vector_store=None, graph_writer=None)
         result = await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
 
         # Vector store path is entirely skipped despite the

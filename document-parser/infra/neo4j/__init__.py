@@ -32,6 +32,7 @@ discussion in #225 and consider a prototype on a single writer first.
 from infra.neo4j.chunk_writer import ChunkWriteResult, write_chunks
 from infra.neo4j.driver import Neo4jDriver, close_driver, get_driver
 from infra.neo4j.driver_pool import Neo4jDriverPool, get_pool, reset_pool
+from infra.neo4j.graph_adapter import Neo4jGraphReader, Neo4jGraphWriter
 from infra.neo4j.queries import fetch_graph
 from infra.neo4j.schema import bootstrap_schema
 from infra.neo4j.tree_reader import (
@@ -45,6 +46,8 @@ __all__ = [
     "ChunkWriteResult",
     "Neo4jDriver",
     "Neo4jDriverPool",
+    "Neo4jGraphReader",
+    "Neo4jGraphWriter",
     "TreeWriteResult",
     "bootstrap_schema",
     "close_driver",

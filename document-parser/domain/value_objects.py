@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 # US Letter page dimensions (points) — fallback when page size is unknown
 DEFAULT_PAGE_WIDTH: float = 612.0
@@ -198,3 +199,31 @@ class ReasoningResult:
     answer: str
     iterations: list[ReasoningIteration]
     converged: bool
+
+
+# ---------------------------------------------------------------------------
+# Graph payload (#audit-01) — wire-ready cytoscape projection of a document.
+# Moved here from `infra.neo4j.queries` so it can be the return type of the
+# `GraphReader` and `DocumentGraphProjector` domain ports without dragging
+# Neo4j typing into the domain layer.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GraphPayload:
+    """Cytoscape-shaped projection of a document's structure.
+
+    Two adapters produce this payload today: `Neo4jGraphReader` (reads from
+    the graph store after the Maintain step) and `DoclingGraphProjector`
+    (projects from raw `DoclingDocument` JSON for the reasoning-trace path,
+    no Neo4j needed). The shape is identical so the API layer can serialize
+    either source uniformly.
+    """
+
+    doc_id: str
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
+    node_count: int
+    edge_count: int
+    truncated: bool
+    page_count: int

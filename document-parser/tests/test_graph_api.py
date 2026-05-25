@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 
 from api.graph import router
 from domain.models import AnalysisJob
+from infra.docling_graph import DoclingGraphProjector
+from services.graph_service import GraphService
 
 FIXTURE = {
     "pages": {"1": {"page_no": 1, "size": {"width": 595, "height": 842}}},
@@ -61,7 +63,14 @@ def client(mock_analysis_repo: AsyncMock) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.state.analysis_repo = mock_analysis_repo
-    app.state.neo4j = None  # /reasoning-graph must not need Neo4j
+    # `/reasoning-graph` is decoupled from Neo4j by design — only the
+    # projector is required. Pass `graph_reader=None` to prove `/graph`
+    # 503-s cleanly while `/reasoning-graph` still serves (#audit-01).
+    app.state.graph_service = GraphService(
+        analysis_repo=mock_analysis_repo,
+        graph_reader=None,
+        graph_projector=DoclingGraphProjector(),
+    )
     return TestClient(app)
 
 

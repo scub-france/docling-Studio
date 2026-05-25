@@ -83,7 +83,7 @@ def _build_repos() -> tuple[SqliteDocumentRepository, SqliteAnalysisRepository]:
 def _build_analysis_service(
     document_repo: SqliteDocumentRepository,
     analysis_repo: SqliteAnalysisRepository,
-    neo4j_driver=None,
+    graph_writer=None,
 ) -> AnalysisService:
     converter = _build_converter()
     chunker = _build_chunker()
@@ -99,7 +99,7 @@ def _build_analysis_service(
         conversion_timeout=settings.conversion_timeout,
         max_concurrent=settings.max_concurrent_analyses,
         config=config,
-        neo4j_driver=neo4j_driver,
+        graph_writer=graph_writer,
     )
 
 
@@ -142,7 +142,7 @@ async def _init_neo4j():
         return None
 
 
-def _build_ingestion_service(neo4j_driver=None) -> IngestionService | None:
+def _build_ingestion_service(graph_writer=None) -> IngestionService | None:
     """Build the ingestion service (#199).
 
     Available as soon as `EMBEDDING_URL` is set AND at least one store
@@ -156,8 +156,8 @@ def _build_ingestion_service(neo4j_driver=None) -> IngestionService | None:
         return None
 
     has_opensearch = bool(settings.opensearch_url)
-    has_neo4j = neo4j_driver is not None
-    if not has_opensearch and not has_neo4j:
+    has_graph = graph_writer is not None
+    if not has_opensearch and not has_graph:
         logger.info(
             "Ingestion disabled (no store backend configured — set OPENSEARCH_URL or NEO4J_URI)"
         )
@@ -183,9 +183,9 @@ def _build_ingestion_service(neo4j_driver=None) -> IngestionService | None:
         "Ingestion enabled (embedding=%s, opensearch=%s, neo4j=%s)",
         settings.embedding_url,
         settings.opensearch_url or "off",
-        "on" if has_neo4j else "off",
+        "on" if has_graph else "off",
     )
-    return IngestionService(embedding, vector_store, config, neo4j_driver=neo4j_driver)
+    return IngestionService(embedding, vector_store, config, graph_writer=graph_writer)
 
 
 def _build_document_service(
@@ -255,15 +255,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.analysis_repo = analysis_repo
     app.state.document_repo = document_repo
     app.state.neo4j = await _init_neo4j()
+    # Wrap the env-based driver in the `GraphWriter` port adapter so the
+    # service layer never touches the raw driver (#audit-01). None when
+    # Neo4j isn't wired in — both services keep the soft-fail behavior.
+    if app.state.neo4j is not None:
+        from infra.neo4j.graph_adapter import Neo4jGraphReader, Neo4jGraphWriter
+
+        app.state.graph_writer = Neo4jGraphWriter(app.state.neo4j)
+        app.state.graph_reader = Neo4jGraphReader(app.state.neo4j)
+    else:
+        app.state.graph_writer = None
+        app.state.graph_reader = None
     app.state.analysis_service = _build_analysis_service(
-        document_repo, analysis_repo, neo4j_driver=app.state.neo4j
+        document_repo, analysis_repo, graph_writer=app.state.graph_writer
     )
     app.state.document_service = _build_document_service(document_repo, analysis_repo)
     store_repo = SqliteStoreRepository()
     link_repo = SqliteDocumentStoreLinkRepository()
     app.state.store_repo = store_repo
     app.state.document_store_link_repo = link_repo
-    ingestion_service = _build_ingestion_service(neo4j_driver=app.state.neo4j)
+    ingestion_service = _build_ingestion_service(graph_writer=app.state.graph_writer)
     app.state.ingestion_service = ingestion_service
     if ingestion_service is not None:
         app.include_router(ingestion_router)
@@ -274,6 +285,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # the transitional fallback path for the seeded `default` store +
     # any pre-#279 store row that doesn't carry its own credentials.
     from infra.neo4j.driver_pool import get_pool as get_neo4j_pool
+    from infra.neo4j.graph_adapter import Neo4jGraphWriter
     from infra.opensearch_pool import get_pool as get_opensearch_pool
     from services.store_backend_resolver import StoreBackendResolver
 
@@ -281,6 +293,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         store_repo=store_repo,
         neo4j_pool=get_neo4j_pool(),
         opensearch_pool=get_opensearch_pool(),
+        # Injected as a factory so services/ never has to import infra
+        # at runtime (#audit-01). main.py owns the binding.
+        graph_writer_factory=Neo4jGraphWriter,
         env_neo4j_uri=settings.neo4j_uri,
         env_neo4j_user=settings.neo4j_user,
         env_neo4j_password=settings.neo4j_password,
@@ -300,17 +315,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     chunk_edit_repo = SqliteChunkEditRepository()
     chunk_push_repo = SqliteChunkPushRepository()
     app.state.chunk_repo = chunk_repo
+    # `DocumentTreeReader` adapter — pure stateless shim, can be a singleton.
+    from infra.docling_tree import DoclingTreeReader
+
+    app.state.tree_reader = DoclingTreeReader()
     app.state.chunk_service = ChunkService(
         chunk_repo=chunk_repo,
         chunk_edit_repo=chunk_edit_repo,
         chunk_push_repo=chunk_push_repo,
         document_repo=document_repo,
         analysis_repo=analysis_repo,
+        tree_reader=app.state.tree_reader,
         chunker=_build_chunker(),
         ingestion_service=ingestion_service,
         store_repo=store_repo,
         link_repo=link_repo,
         backend_resolver=backend_resolver,
+    )
+
+    # 0.6.1 (#audit-01) — GraphService orchestrates the two /graph endpoints
+    # so api/graph.py stops reaching into infra. The reader is None when
+    # Neo4j isn't configured; the projector is always available (pure
+    # function from document_json).
+    from infra.docling_graph import DoclingGraphProjector
+    from services.graph_service import GraphService
+
+    app.state.graph_service = GraphService(
+        analysis_repo=analysis_repo,
+        graph_reader=app.state.graph_reader,
+        graph_projector=DoclingGraphProjector(),
     )
     # The analysis service still carries the chunk promoter wiring for
     # legacy callers / tests, but the analysis flow no longer invokes it

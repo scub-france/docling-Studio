@@ -274,3 +274,27 @@ def iter_pages(doc_data: dict[str, Any]) -> Iterator[dict[str, Any]]:
             "width": size.get("width"),
             "height": size.get("height"),
         }
+
+
+# ---------------------------------------------------------------------------
+# Adapter class — implements `domain.ports.DocumentTreeReader` (#audit-01).
+# Wraps the module-level free functions so services can depend on the port
+# rather than reaching into infra at call sites. The free functions stay
+# public so other infra modules (`docling_graph`, `neo4j.tree_writer`) can
+# keep using them at module level — they're peers, not consumers.
+# ---------------------------------------------------------------------------
+
+
+class DoclingTreeReader:
+    """Stateless adapter for the `DocumentTreeReader` port."""
+
+    def iter_items(self, doc_data: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]:
+        return iter_items(doc_data)
+
+    def is_inline_group(self, item: dict[str, Any]) -> bool:
+        return is_inline_group(item)
+
+    def build_collapse_index(
+        self, doc_data: dict[str, Any]
+    ) -> tuple[set[str], dict[str, dict[str, Any]]]:
+        return build_collapse_index(doc_data)

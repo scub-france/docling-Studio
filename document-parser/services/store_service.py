@@ -332,8 +332,10 @@ class StoreService:
                 if not ok:
                     return False, "OpenSearch ping returned not-ok"
                 return True, None
-            if targets.neo4j_driver is not None:
-                await targets.neo4j_driver.driver.verify_connectivity()
+            if targets.graph_writer is not None:
+                ok = await targets.graph_writer.ping()
+                if not ok:
+                    return False, "Graph-store ping returned not-ok"
                 return True, None
         except Exception as exc:
             return False, str(exc)

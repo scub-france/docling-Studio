@@ -6,7 +6,8 @@ Infrastructure adapters (local Docling, Docling Serve, etc.) implement these.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
         ConversionOptions,
         ConversionResult,
         DocumentLifecycleState,
+        GraphPayload,
         LLMProviderType,
         ReasoningResult,
     )
@@ -305,6 +307,107 @@ class LLMProvider(Protocol):
         usable. Implementations should be cheap (no model load, no inference).
         """
         ...
+
+
+@runtime_checkable
+class DocumentTreeReader(Protocol):
+    """Port for walking a `DoclingDocument` JSON tree (#audit-01).
+
+    Exposes the Docling-shape navigation primitives (item iteration,
+    inline-group filter, collapse index for nested structures) so callers
+    in `services/` can stay format-agnostic and never reach into
+    `infra/docling_tree.py` directly. The adapter encapsulates every
+    Docling-specific assumption (label taxonomy, parent.$ref/cref shape,
+    InlineGroup collapsing, etc.).
+    """
+
+    def iter_items(self, doc_data: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]:
+        """Yield `(source_list_key, item)` for every item in
+        texts/tables/pictures/groups."""
+        ...
+
+    def is_inline_group(self, item: dict[str, Any]) -> bool:
+        """True iff `item` is a Docling InlineGroup (paragraph of mixed
+        style runs collapsed into a single Paragraph projection)."""
+        ...
+
+    def build_collapse_index(
+        self, doc_data: dict[str, Any]
+    ) -> tuple[set[str], dict[str, dict[str, Any]]]:
+        """Return `(skip_refs, inline_meta)` — refs to omit from any
+        projection and per-InlineGroup aggregated metadata (text + provs).
+        """
+        ...
+
+
+@runtime_checkable
+class GraphReader(Protocol):
+    """Port for reading a document's graph projection from the graph store.
+
+    Returns a wire-ready `GraphPayload` — the adapter owns both the query
+    and the shape conversion so the service layer never sees driver types.
+    Returns `None` when the document is unknown to the graph store.
+    """
+
+    async def fetch(self, doc_id: str, *, max_pages: int = 200) -> GraphPayload | None: ...
+
+
+@runtime_checkable
+class GraphWriter(Protocol):
+    """Port for writing a document and its chunks into a graph store.
+
+    Two distinct write paths exist by design: `write_document_tree` runs
+    after analysis (full DoclingDocument tree), `write_chunks` runs after
+    ingestion (chunks linked to the tree). Adapters that don't support
+    both paths still must implement them (raise `NotImplementedError`
+    rather than silently no-op so the caller can decide whether to fail).
+
+    `ping()` mirrors the `VectorStore` port for the test-connection use
+    case — `StoreService.test_connection` calls it through the resolver-
+    produced `IngestionTargets.graph_writer` so the service layer never
+    needs to touch the underlying driver.
+    """
+
+    async def write_document_tree(
+        self,
+        *,
+        doc_id: str,
+        filename: str,
+        document_json: str,
+    ) -> None: ...
+
+    async def write_chunks(
+        self,
+        *,
+        doc_id: str,
+        chunks_json: str,
+    ) -> None: ...
+
+    async def ping(self) -> bool:
+        """Cheap reachability probe — True if the graph store responds.
+        Should not throw on connection failure; let the adapter map errors
+        into False so the caller can return a clean (ok=False, reason)."""
+        ...
+
+
+@runtime_checkable
+class DocumentGraphProjector(Protocol):
+    """Port for projecting a `GraphPayload` from raw `DoclingDocument` JSON.
+
+    Used by the `/reasoning-graph` endpoint, which serves a graph view
+    without requiring Neo4j to be wired in — the projection is built from
+    the SQLite `document_json` blob. The adapter owns the Docling-shape
+    parsing so the service stays infra-agnostic.
+    """
+
+    def project(
+        self,
+        document_json: str,
+        *,
+        doc_id: str,
+        title: str | None = None,
+        max_pages: int = 200,
+    ) -> GraphPayload: ...
 
 
 @runtime_checkable

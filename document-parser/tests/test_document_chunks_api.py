@@ -213,7 +213,7 @@ class TestDiff:
 class TestPush:
     def test_200(self, client, mock_service):
         mock_service.push_to_store = AsyncMock(
-            return_value={"jobId": "p1", "summary": {"embeds": 3, "tokens": 30}}
+            return_value={"pushId": "p1", "summary": {"embeds": 3, "tokens": 30}}
         )
         resp = client.post(
             "/api/documents/d-1/chunks/push",
@@ -221,7 +221,7 @@ class TestPush:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["jobId"] == "p1"
+        assert body["pushId"] == "p1"
         assert body["summary"]["embeds"] == 3
 
 

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         ChunkRepository,
         DocumentChunker,
         DocumentRepository,
+        DocumentTreeReader,
     )
     from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
     from persistence.store_repo import SqliteStoreRepository
@@ -152,6 +153,7 @@ class ChunkService:
         chunk_push_repo: ChunkPushRepository,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
+        tree_reader: DocumentTreeReader,
         chunker: DocumentChunker | None = None,
         ingestion_service: IngestionService | None = None,
         store_repo: SqliteStoreRepository | None = None,
@@ -164,6 +166,10 @@ class ChunkService:
         self._pushes = chunk_push_repo
         self._documents = document_repo
         self._analyses = analysis_repo
+        # `DocumentTreeReader` port (#audit-01) — replaces the local
+        # `from infra.docling_tree import ...` smell hiding inside two
+        # tree-walking helpers. Required so the tree views stay rendable.
+        self._tree = tree_reader
         self._chunker = chunker
         self._ingestion = ingestion_service
         # Optional — used by `push_to_store` to resolve the slug coming
@@ -796,7 +802,7 @@ class ChunkService:
         except json.JSONDecodeError:
             logger.exception("Invalid document_json for analysis %s", job.id)
             return []
-        return _build_tree_nodes(doc_data)
+        return _build_tree_nodes(doc_data, self._tree)
 
     # -- guards
 
@@ -871,7 +877,7 @@ def _compute_chunkset_hash(chunks: list[Chunk]) -> str:
     return h.hexdigest()
 
 
-def _build_tree_nodes(doc_data: dict) -> list[dict]:
+def _build_tree_nodes(doc_data: dict, tree_reader: DocumentTreeReader) -> list[dict]:
     """Project a Docling document JSON into a hierarchical `[DocTreeNode]` outline.
 
     Two stacking rules combine to follow the document's natural structure:
@@ -888,11 +894,9 @@ def _build_tree_nodes(doc_data: dict) -> list[dict]:
     shared `build_collapse_index` helper — keeps the projection in sync
     with the Neo4j tree writer and the in-memory graph payload.
     """
-    from infra.docling_tree import build_collapse_index, iter_items
-
-    skip_refs, inline_meta = build_collapse_index(doc_data)
+    skip_refs, inline_meta = tree_reader.build_collapse_index(doc_data)
     by_ref: dict[str, dict] = {}
-    for _, item in iter_items(doc_data):
+    for _, item in tree_reader.iter_items(doc_data):
         ref = item.get("self_ref")
         if ref:
             by_ref[ref] = item
@@ -919,11 +923,11 @@ def _build_tree_nodes(doc_data: dict) -> list[dict]:
                 level = 0 if label_type == "title" else max(int(item.get("level") or 1), 1)
                 while len(stack) > 1 and stack[-1][0] >= level:
                     stack.pop()
-                node = _make_node(ref, label_type, item, inline_meta)
+                node = _make_node(ref, label_type, item, inline_meta, tree_reader)
                 stack[-1][1].append(node)
                 stack.append((level, node["children"]))
             else:
-                node = _build_item_subtree(ref, item, by_ref, skip_refs, inline_meta)
+                node = _build_item_subtree(ref, item, by_ref, skip_refs, inline_meta, tree_reader)
                 stack[-1][1].append(node)
 
     walk(body.get("children"))
@@ -936,6 +940,7 @@ def _build_item_subtree(
     by_ref: dict[str, dict],
     skip_refs: set[str],
     inline_meta: dict[str, dict],
+    tree_reader: DocumentTreeReader,
 ) -> dict:
     """Build a leaf or nested subtree for a non-heading item.
 
@@ -945,7 +950,7 @@ def _build_item_subtree(
     descendants pruned upstream by `build_collapse_index`.
     """
     label_type = (item.get("label") or "").lower() or "text"
-    node = _make_node(ref, label_type, item, inline_meta)
+    node = _make_node(ref, label_type, item, inline_meta, tree_reader)
     if label_type in {"list", "group", "form_area", "key_value_area"}:
         for ch in item.get("children") or []:
             child_ref = ch.get("$ref") or ch.get("cref")
@@ -955,28 +960,34 @@ def _build_item_subtree(
             if child_item is None:
                 continue
             node["children"].append(
-                _build_item_subtree(child_ref, child_item, by_ref, skip_refs, inline_meta)
+                _build_item_subtree(
+                    child_ref, child_item, by_ref, skip_refs, inline_meta, tree_reader
+                )
             )
     return node
 
 
-def _make_node(ref: str, label_type: str, item: dict, inline_meta: dict[str, dict]) -> dict:
+def _make_node(
+    ref: str,
+    label_type: str,
+    item: dict,
+    inline_meta: dict[str, dict],
+    tree_reader: DocumentTreeReader,
+) -> dict:
     return {
         "ref": ref,
         "type": label_type,
-        "label": _display_label(item, inline_meta),
+        "label": _display_label(item, inline_meta, tree_reader),
         "children": [],
     }
 
 
-def _display_label(item: dict, inline_meta: dict[str, dict]) -> str:
+def _display_label(item: dict, inline_meta: dict[str, dict], tree_reader) -> str:
     """Pick the most human-readable label for the tree node."""
-    from infra.docling_tree import is_inline_group
-
     ref = item.get("self_ref") or ""
     label_type = (item.get("label") or "").lower()
 
-    if is_inline_group(item):
+    if tree_reader.is_inline_group(item):
         meta = inline_meta.get(ref)
         if meta and meta.get("text"):
             return _truncate(meta["text"])

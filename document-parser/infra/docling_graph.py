@@ -176,3 +176,29 @@ def build_graph_payload(
         truncated=False,
         page_count=page_count,
     )
+
+
+# ---------------------------------------------------------------------------
+# Adapter class — implements `domain.ports.DocumentGraphProjector`
+# (#audit-01). Thin shim around `build_graph_payload` so the GraphService
+# can depend on the port without reaching into infra.
+# ---------------------------------------------------------------------------
+
+
+class DoclingGraphProjector:
+    """Stateless adapter for the `DocumentGraphProjector` port."""
+
+    def project(
+        self,
+        document_json: str,
+        *,
+        doc_id: str,
+        title: str | None = None,
+        max_pages: int = 200,
+    ) -> GraphPayload:
+        return build_graph_payload(
+            document_json,
+            doc_id=doc_id,
+            title=title,
+            max_pages=max_pages,
+        )

@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         DocumentChunker,
         DocumentConverter,
         DocumentRepository,
+        GraphWriter,
     )
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ class AnalysisService:
         conversion_timeout: int = 600,
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
         config: AnalysisConfig | None = None,
-        neo4j_driver=None,
+        graph_writer: GraphWriter | None = None,
     ):
         self._converter = converter
         self._chunker = chunker
@@ -98,7 +99,9 @@ class AnalysisService:
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._background_tasks: set[asyncio.Task] = set()
         self._config = config or AnalysisConfig()
-        self._neo4j = neo4j_driver
+        # `GraphWriter` port (#audit-01) — was a raw `Neo4jDriver` until
+        # the hex-arch fix. None when no graph store is wired in.
+        self._graph_writer = graph_writer
         # Duck-typed callable injected at startup. Wired in main.py to
         # `ChunkService.promote_from_analysis_if_empty` so the canonical
         # chunkset (#205) is populated on the first successful analysis,
@@ -489,29 +492,27 @@ class AnalysisService:
         )
         await self._transition_document(job.document_id, target_state)
 
-        await self._write_tree_to_neo4j(job, result.document_json)
+        await self._write_tree_to_graph(job, result.document_json)
 
         logger.info("Analysis completed: %s (%d pages)", job_id, result.page_count)
 
-    async def _write_tree_to_neo4j(self, job, document_json: str | None) -> None:
-        """Mirror the DoclingDocument tree into Neo4j if configured.
+    async def _write_tree_to_graph(self, job, document_json: str | None) -> None:
+        """Mirror the DoclingDocument tree into the graph store if configured.
 
-        Silent no-op when Neo4j isn't wired in. Logs but does not fail the
-        analysis when the write fails, unless `config.neo4j_required` is set.
+        Silent no-op when no `GraphWriter` is wired in. Logs but does not
+        fail the analysis when the write fails, unless `config.neo4j_required`
+        is set (the flag keeps its historical name for env-var compatibility).
         """
-        if self._neo4j is None or not document_json:
+        if self._graph_writer is None or not document_json:
             return
         try:
-            from infra.neo4j import write_document
-
-            await write_document(
-                self._neo4j,
+            await self._graph_writer.write_document_tree(
                 doc_id=job.document_id,
                 filename=job.document_filename or job.document_id,
                 document_json=document_json,
             )
         except Exception:
-            logger.exception("Neo4j TreeWriter failed for doc %s", job.document_id)
+            logger.exception("GraphWriter TreeWrite failed for doc %s", job.document_id)
             if self._config.neo4j_required:
                 raise
 

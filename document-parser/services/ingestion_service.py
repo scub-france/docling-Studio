@@ -24,7 +24,7 @@ from domain.vector_schema import (
 )
 
 if TYPE_CHECKING:
-    from domain.ports import EmbeddingService, VectorStore
+    from domain.ports import EmbeddingService, GraphWriter, VectorStore
     from services.store_backend_resolver import IngestionTargets
 
 logger = logging.getLogger(__name__)
@@ -62,12 +62,15 @@ class IngestionService:
         embedding_service: EmbeddingService,
         vector_store: VectorStore | None,
         config: IngestionConfig | None = None,
-        neo4j_driver=None,
+        graph_writer: GraphWriter | None = None,
     ) -> None:
         self._embedding = embedding_service
         self._vector_store = vector_store
         self._config = config or IngestionConfig()
-        self._neo4j = neo4j_driver
+        # `GraphWriter` port (#audit-01) — replaces the raw Neo4j driver
+        # that used to be threaded through here. None when no graph store
+        # is wired in. Per-call overrides arrive through `IngestionTargets`.
+        self._graph_writer = graph_writer
 
     async def ensure_index(self) -> None:
         """Ensure the vector index exists with the correct mapping.
@@ -99,7 +102,7 @@ class IngestionService:
             chunks_json: JSON-serialized list of chunk dicts.
             binary_hash: Optional hash of the source file for provenance.
             targets: Per-call override for the vector_store /
-                neo4j_driver pair (#279). When None, the
+                graph_writer pair (#279). When None, the
                 service-level backends are used — preserves the pre-
                 #279 single-cluster path. When provided, per-store
                 dispatch wins.
@@ -107,7 +110,7 @@ class IngestionService:
         Returns:
             IngestionResult with the number of chunks indexed.
         """
-        vector_store, neo4j = self._resolve_call_targets(targets)
+        vector_store, graph_writer = self._resolve_call_targets(targets)
         await self._ensure_index_on(vector_store)
 
         chunks_data: list[dict] = json.loads(chunks_json)
@@ -129,7 +132,7 @@ class IngestionService:
         )
 
         indexed = await self._write_to_vector_store(vector_store, doc_id, indexed_chunks)
-        await self._mirror_to_neo4j(neo4j, doc_id, chunks_json)
+        await self._mirror_to_graph(graph_writer, doc_id, chunks_json)
 
         return IngestionResult(
             doc_id=doc_id,
@@ -141,12 +144,12 @@ class IngestionService:
 
     def _resolve_call_targets(
         self, targets: IngestionTargets | None
-    ) -> tuple[VectorStore | None, object | None]:
+    ) -> tuple[VectorStore | None, GraphWriter | None]:
         """Pick between the call-level override and the service-level
-        defaults. Returns `(vector_store, neo4j_driver)`."""
+        defaults. Returns `(vector_store, graph_writer)`."""
         if targets is None:
-            return self._vector_store, self._neo4j
-        return targets.vector_store, targets.neo4j_driver
+            return self._vector_store, self._graph_writer
+        return targets.vector_store, targets.graph_writer
 
     async def _ensure_index_on(self, vector_store: VectorStore | None) -> None:
         """Idempotent index bootstrap on the resolved vector store."""
@@ -214,15 +217,19 @@ class IngestionService:
         logger.info("Indexed %d/%d chunks for doc %s", indexed, len(indexed_chunks), doc_id)
         return indexed
 
-    async def _mirror_to_neo4j(self, neo4j_driver, doc_id: str, chunks_json: str) -> None:
-        if neo4j_driver is None:
+    async def _mirror_to_graph(
+        self, graph_writer: GraphWriter | None, doc_id: str, chunks_json: str
+    ) -> None:
+        """Mirror chunks into the graph store through the `GraphWriter`
+        port. Silent no-op when no graph store is wired in; failures are
+        logged but do not abort ingestion (the vector store is still
+        authoritative for search)."""
+        if graph_writer is None:
             return
         try:
-            from infra.neo4j import write_chunks
-
-            await write_chunks(neo4j_driver, doc_id=doc_id, chunks_json=chunks_json)
+            await graph_writer.write_chunks(doc_id=doc_id, chunks_json=chunks_json)
         except Exception:
-            logger.exception("Neo4j ChunkWriter failed for doc %s", doc_id)
+            logger.exception("GraphWriter ChunkWrite failed for doc %s", doc_id)
 
     async def delete_document(self, doc_id: str) -> int:
         """Remove all indexed chunks for a document.
