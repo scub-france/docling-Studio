@@ -12,6 +12,7 @@ API contract based on docling-serve source code:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import mimetypes
@@ -85,21 +86,27 @@ class ServeConverter:
         *,
         page_range: tuple[int, int] | None = None,
     ) -> ConversionResult:
-        """Convert a document by uploading it to Docling Serve."""
+        """Convert a document by uploading it to Docling Serve.
+
+        The PDF is read into memory through `asyncio.to_thread` so the
+        blocking file read never freezes the FastAPI event loop while a
+        large document is in flight to Docling Serve.
+        """
         path = Path(file_path)
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
 
         form_data = _build_form_data(options, page_range=page_range)
         url = f"{self._base_url}{_API_PREFIX}/convert/file"
 
+        file_bytes = await asyncio.to_thread(path.read_bytes)
+
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            with open(path, "rb") as f:
-                response = await client.post(
-                    url,
-                    files={"files": (path.name, f, content_type)},
-                    data=form_data,
-                    headers=self._headers(),
-                )
+            response = await client.post(
+                url,
+                files={"files": (path.name, file_bytes, content_type)},
+                data=form_data,
+                headers=self._headers(),
+            )
 
         if response.status_code >= 400:
             logger.error(

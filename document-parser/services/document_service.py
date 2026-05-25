@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import os
@@ -64,6 +65,9 @@ class DocumentService:
         """Save uploaded file to disk and persist metadata.
 
         Writes the file in fixed-size chunks to keep peak memory usage low.
+        The blocking disk write and the poppler subprocess (`pdfinfo`) are
+        offloaded to a worker thread so the FastAPI event loop stays free
+        for other requests during large uploads.
         """
         if self._max_file_size > 0 and len(file_content) > self._max_file_size:
             raise ValueError(f"File too large (max {self._config.max_file_size_mb} MB)")
@@ -71,26 +75,22 @@ class DocumentService:
         if not file_content[:4].startswith(_PDF_MAGIC):
             raise ValueError("Invalid file: not a PDF document")
 
-        os.makedirs(self._upload_dir, exist_ok=True)
-
         ext = ".pdf"  # Content already validated as PDF
         safe_name = f"{uuid.uuid4()}{ext}"
         file_path = os.path.join(self._upload_dir, safe_name)
 
-        # Write in chunks to avoid doubling memory usage for large files
-        with open(file_path, "wb") as f:
-            for offset in range(0, len(file_content), _UPLOAD_CHUNK_SIZE):
-                f.write(file_content[offset : offset + _UPLOAD_CHUNK_SIZE])
-
-        # Count PDF pages
-        page_count = _count_pages(file_content)
+        # Disk write + poppler subprocess — both blocking. Offload together
+        # so we cross the thread boundary once instead of twice.
+        page_count = await asyncio.to_thread(
+            _persist_and_count, self._upload_dir, file_path, file_content
+        )
 
         if (
             self._max_page_count > 0
             and page_count is not None
             and page_count > self._max_page_count
         ):
-            os.unlink(file_path)
+            await asyncio.to_thread(os.unlink, file_path)
             raise ValueError(
                 f"Too many pages ({page_count}). Maximum allowed: {self._max_page_count}"
             )
@@ -149,6 +149,20 @@ class DocumentService:
         buf = io.BytesIO()
         images[0].save(buf, format="PNG")
         return buf.getvalue()
+
+
+def _persist_and_count(upload_dir: str, file_path: str, file_content: bytes) -> int | None:
+    """Write the uploaded bytes to disk and return the page count.
+
+    Synchronous helper meant to be invoked through `asyncio.to_thread` so
+    the chunked write loop and the poppler subprocess never block the
+    FastAPI event loop.
+    """
+    os.makedirs(upload_dir, exist_ok=True)
+    with open(file_path, "wb") as f:
+        for offset in range(0, len(file_content), _UPLOAD_CHUNK_SIZE):
+            f.write(file_content[offset : offset + _UPLOAD_CHUNK_SIZE])
+    return _count_pages(file_content)
 
 
 def _count_pages(file_content: bytes) -> int | None:
