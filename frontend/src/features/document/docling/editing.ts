@@ -54,6 +54,10 @@ export interface DoclingCreateGroupOptions {
   contentLayer?: DoclingContentLayer
 }
 
+export interface DoclingMutationOptions {
+  normalizeRefs?: boolean
+}
+
 export interface DoclingIndexEntry {
   ref: string
   item: DoclingNode
@@ -86,6 +90,8 @@ type ItemCollectionKey = (typeof ITEM_COLLECTION_KEYS)[number]
 type RootCollectionKey = (typeof ROOT_COLLECTION_KEYS)[number]
 
 let tempRefCounter = 0
+const CANONICAL_REF_PATTERN = /^#(?:\/([\w-]+)(?:\/(\d+))?)?$/
+const doclingIndexCache = new WeakMap<DoclingDocument, DoclingIndex>()
 
 /** Thrown when a frontend Docling edit would leave the document inconsistent. */
 export class DoclingEditError extends Error {
@@ -98,7 +104,7 @@ export class DoclingEditError extends Error {
 /** Parse the raw JSON and enforce additional structural invariants. */
 export function parseDoclingDocument(value: unknown): DoclingDocument {
   const parsed = doclingDocument.parse(value)
-  buildDoclingIndex(parsed)
+  cacheDoclingIndex(parsed, computeDoclingIndex(parsed))
   return parsed
 }
 
@@ -109,12 +115,28 @@ export function validateDoclingDocument(doc: DoclingDocument): DoclingDocument {
 
 /** Deep clone a document and re-validate the clone. */
 export function cloneDoclingDocument(doc: DoclingDocument): DoclingDocument {
-  return parseDoclingDocument(structuredClone(doc))
+  const clone = structuredClone(doc)
+  return hasNonCanonicalRefs(clone) ? validateDraftDoclingDocument(clone) : parseDoclingDocument(clone)
 }
 
 /** Stable JSON output for persistence, debugging, or draft export. */
 export function stringifyDoclingDocument(doc: DoclingDocument): string {
   return JSON.stringify(doc, null, 2)
+}
+
+/** Normalize collection refs into canonical `#/collection/N` form for export. */
+export function exportDoclingDocument(doc: DoclingDocument): DoclingDocument {
+  return finalizeDoclingDocument(cloneDoclingDocument(doc), { normalizeRefs: true })
+}
+
+/**
+ * Validate an in-session draft document that may contain temporary non-canonical
+ * refs. This enforces graph consistency without requiring Docling export refs.
+ */
+export function validateDraftDoclingDocument(doc: DoclingDocument): DoclingDocument {
+  invalidateDoclingIndex(doc)
+  cacheDoclingIndex(doc, computeDoclingIndex(doc))
+  return doc
 }
 
 /**
@@ -123,6 +145,15 @@ export function stringifyDoclingDocument(doc: DoclingDocument): string {
  * and duplicate-free child lists.
  */
 export function buildDoclingIndex(doc: DoclingDocument): DoclingIndex {
+  const cached = doclingIndexCache.get(doc)
+  if (cached) {
+    return cached
+  }
+
+  return cacheDoclingIndex(doc, computeDoclingIndex(doc))
+}
+
+function computeDoclingIndex(doc: DoclingDocument): DoclingIndex {
   const itemsByRef = new Map<string, DoclingIndexEntry>()
   const childrenByParentRef = new Map<string, readonly DoclingRef[]>()
   const collectionEntriesByRef = new Map<string, { key: ItemCollectionKey; index: number }>()
@@ -253,6 +284,7 @@ export function editDoclingText(
   doc: DoclingDocument,
   itemRef: string,
   text: string,
+  options: DoclingMutationOptions = {},
 ): DoclingDocument {
   const next = cloneDoclingDocument(doc)
   const item = requireTextItem(next, itemRef)
@@ -263,7 +295,7 @@ export function editDoclingText(
     provenance.charspan = [0, text.length]
   }
 
-  return finalizeDoclingDocument(next)
+  return finalizeDoclingDocument(next, options)
 }
 
 /**
@@ -275,6 +307,7 @@ export function moveDoclingItem(
   itemRef: string,
   targetParentRef: string,
   targetIndex?: number,
+  options: DoclingMutationOptions = {},
 ): DoclingDocument {
   if (isRootRef(itemRef)) {
     throw new DoclingEditError(`Cannot move root item ${itemRef}`)
@@ -312,7 +345,7 @@ export function moveDoclingItem(
   targetChildren.splice(resolvedIndex, 0, { $ref: itemRef })
   child.parent = { $ref: targetParentRef }
 
-  return finalizeDoclingDocument(next)
+  return finalizeDoclingDocument(next, options)
 }
 
 /** Backwards-compatible append-to-parent helper built on `moveDoclingItem()`. */
@@ -320,9 +353,10 @@ export function reparentDoclingItem(
   doc: DoclingDocument,
   childRef: string,
   targetParentRef: string,
+  options: DoclingMutationOptions = {},
 ): DoclingDocument {
   const targetChildren = requireEditableParentChildren(doc, targetParentRef)
-  return moveDoclingItem(doc, childRef, targetParentRef, targetChildren.length)
+  return moveDoclingItem(doc, childRef, targetParentRef, targetChildren.length, options)
 }
 
 /** Merge two adjacent text siblings into the leading item. */
@@ -331,6 +365,7 @@ export function mergeAdjacentDoclingTexts(
   leadingRef: string,
   trailingRef: string,
   spacer = ' ',
+  options: DoclingMutationOptions = {},
 ): DoclingDocument {
   assertAdjacentTextSiblings(doc, leadingRef, trailingRef)
 
@@ -354,7 +389,9 @@ export function mergeAdjacentDoclingTexts(
   removeChildRef(siblings, trailingRef)
   removeItemFromCollection(next, trailingRef)
 
-  return finalizeDoclingDocument(next, { normalizeRefs: true })
+  return finalizeDoclingDocument(next, {
+    normalizeRefs: options.normalizeRefs ?? true,
+  })
 }
 
 /** Split one text node into two adjacent text nodes. */
@@ -362,6 +399,7 @@ export function splitDoclingText(
   doc: DoclingDocument,
   itemRef: string,
   offset: number,
+  options: DoclingMutationOptions = {},
 ): DoclingDocument {
   const next = cloneDoclingDocument(doc)
   const item = requireTextItem(next, itemRef)
@@ -413,13 +451,16 @@ export function splitDoclingText(
   next.texts.splice(collectionIndex + 1, 0, trailing)
   siblings.splice(itemIndex + 1, 0, { $ref: trailing.self_ref })
 
-  return finalizeDoclingDocument(next, { normalizeRefs: true })
+  return finalizeDoclingDocument(next, {
+    normalizeRefs: options.normalizeRefs ?? true,
+  })
 }
 
 /** Insert a new text node under the body or a group. */
 export function insertDoclingText(
   doc: DoclingDocument,
   options: DoclingInsertTextOptions,
+  mutationOptions: DoclingMutationOptions = {},
 ): DoclingDocument {
   const next = cloneDoclingDocument(doc)
   const parentChildren = requireEditableParentChildren(next, options.parentRef)
@@ -436,13 +477,16 @@ export function insertDoclingText(
   next.texts.push(text)
   parentChildren.splice(clampInsertionIndex(parentChildren, options.index), 0, { $ref: text.self_ref })
 
-  return finalizeDoclingDocument(next, { normalizeRefs: true })
+  return finalizeDoclingDocument(next, {
+    normalizeRefs: mutationOptions.normalizeRefs ?? true,
+  })
 }
 
 /** Create an empty group under the body or another group. */
 export function createDoclingGroup(
   doc: DoclingDocument,
   options: DoclingCreateGroupOptions,
+  mutationOptions: DoclingMutationOptions = {},
 ): DoclingDocument {
   const next = cloneDoclingDocument(doc)
   const parentChildren = requireEditableParentChildren(next, options.parentRef)
@@ -459,11 +503,17 @@ export function createDoclingGroup(
   next.groups.push(group)
   parentChildren.splice(clampInsertionIndex(parentChildren, options.index), 0, { $ref: group.self_ref })
 
-  return finalizeDoclingDocument(next, { normalizeRefs: true })
+  return finalizeDoclingDocument(next, {
+    normalizeRefs: mutationOptions.normalizeRefs ?? true,
+  })
 }
 
 /** Delete an item and its descendants, then renormalize all collection refs. */
-export function deleteDoclingItem(doc: DoclingDocument, itemRef: string): DoclingDocument {
+export function deleteDoclingItem(
+  doc: DoclingDocument,
+  itemRef: string,
+  options: DoclingMutationOptions = {},
+): DoclingDocument {
   if (isRootRef(itemRef)) {
     throw new DoclingEditError(`Cannot delete root item ${itemRef}`)
   }
@@ -485,7 +535,9 @@ export function deleteDoclingItem(doc: DoclingDocument, itemRef: string): Doclin
     next[key] = collection.filter((candidate) => !refsToDelete.has(candidate.self_ref)) as never
   }
 
-  return finalizeDoclingDocument(next, { normalizeRefs: true })
+  return finalizeDoclingDocument(next, {
+    normalizeRefs: options.normalizeRefs ?? true,
+  })
 }
 
 function requireNode(doc: DoclingDocument, ref: string): DoclingNode {
@@ -666,10 +718,44 @@ function finalizeDoclingDocument(
   doc: DoclingDocument,
   options: { normalizeRefs?: boolean } = {},
 ): DoclingDocument {
-  if (options.normalizeRefs) {
+  invalidateDoclingIndex(doc)
+  if (options.normalizeRefs ?? false) {
     normalizeDoclingReferences(doc)
+    return parseDoclingDocument(doc)
   }
-  return parseDoclingDocument(doc)
+  return validateDraftDoclingDocument(doc)
+}
+
+function cacheDoclingIndex(doc: DoclingDocument, index: DoclingIndex): DoclingIndex {
+  doclingIndexCache.set(doc, index)
+  return index
+}
+
+function invalidateDoclingIndex(doc: DoclingDocument): void {
+  doclingIndexCache.delete(doc)
+}
+
+function hasNonCanonicalRefs(doc: DoclingDocument): boolean {
+  const refs: string[] = [doc.body.self_ref, doc.furniture.self_ref]
+  const nodes = [doc.body as DoclingNode, doc.furniture as DoclingNode]
+
+  for (const key of ITEM_COLLECTION_KEYS) {
+    for (const item of doc[key] as DoclingNode[]) {
+      refs.push(item.self_ref)
+      nodes.push(item)
+    }
+  }
+
+  for (const node of nodes) {
+    if (node.parent) {
+      refs.push(node.parent.$ref)
+    }
+    for (const child of node.children ?? []) {
+      refs.push(child.$ref)
+    }
+  }
+
+  return refs.some((ref) => !CANONICAL_REF_PATTERN.test(ref))
 }
 
 function collectDescendantRefs(doc: DoclingDocument, ref: string): Set<string> {

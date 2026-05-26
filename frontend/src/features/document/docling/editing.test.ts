@@ -8,6 +8,7 @@ import {
   type DoclingDocument,
   DoclingEditError,
   editDoclingText,
+  exportDoclingDocument,
   getDoclingItem,
   insertDoclingText,
   mergeAdjacentDoclingTexts,
@@ -155,5 +156,41 @@ describe('docling editing core', () => {
     session.reset()
     expect(session.hasChanges).toBe(false)
     expect(session.document.groups).toHaveLength(1)
+  })
+
+  it('keeps stable draft refs and renormalizes only on export', () => {
+    const session = new DoclingDraftSession(sampleDoclingDocument)
+
+    session.apply({
+      type: 'insert-text',
+      parentRef: '#/groups/0',
+      index: 1,
+      text: 'Inserted in session',
+      label: 'paragraph',
+    })
+
+    const stableDraftRefs = session.document.groups[0].children.map((item) => item.$ref)
+    expect(stableDraftRefs.some((ref) => ref.includes('__temp_'))).toBe(true)
+
+    const exported = session.exportDocument()
+    expect(exported.groups[0].children.every((ref) => !ref.$ref.includes('__temp_'))).toBe(true)
+    expect(exported.texts.every((item, index) => item.self_ref === `#/texts/${index}`)).toBe(true)
+  })
+
+  it('exports canonical refs from direct non-normalized edits', () => {
+    const draft = insertDoclingText(
+      makeDocument(),
+      {
+        parentRef: '#/body',
+        text: 'Tail note',
+        label: 'paragraph',
+      },
+      { normalizeRefs: false },
+    )
+
+    expect(draft.texts.some((item) => item.self_ref.includes('__temp_'))).toBe(true)
+
+    const exported = exportDoclingDocument(draft)
+    expect(exported.texts.at(-1)?.self_ref).toBe(`#/texts/${exported.texts.length - 1}`)
   })
 })

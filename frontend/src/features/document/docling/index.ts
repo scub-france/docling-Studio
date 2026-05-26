@@ -5,6 +5,7 @@ export {
   createDoclingGroup,
   deleteDoclingItem,
   DoclingEditError,
+  exportDoclingDocument,
   cloneDoclingDocument,
   editDoclingText,
   getDoclingItem,
@@ -20,6 +21,7 @@ export {
 export type {
   DoclingContentLayer,
   DoclingCreateGroupOptions,
+  DoclingMutationOptions,
   DoclingGroupItem,
   DoclingIndex,
   DoclingIndexEntry,
@@ -29,5 +31,15 @@ export type {
   DoclingRef,
   DoclingTextItem,
 } from './editing'
-export { applyDoclingEditOperation, DoclingDraftSession } from './session'
-export type { DoclingEditOperation } from './session'
+export {
+  applyDoclingEditOperation,
+  createDoclingCommand,
+  createEditorState,
+  DoclingDraftSession,
+} from './session'
+export type {
+  DoclingCommand,
+  DoclingEditorState,
+  DoclingEditOperation,
+  DoclingNodeId,
+} from './session'

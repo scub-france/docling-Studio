@@ -30,7 +30,7 @@ Using the exported JSON Schema plus a generated Zod 4 model gives us:
 - `docling-document.schema.json`: checked-in JSON Schema exported from Python
 - `docling-document.generated.ts`: generated Zod 4 model and inferred type
 - `editing.ts`: pure document transforms and structural validation helpers
-- `session.ts`: frontend-only draft editing session with undo/redo history
+- `session.ts`: command-based draft editing session and editor state helpers
 
 ## Edit helpers
 
@@ -56,19 +56,31 @@ Using the exported JSON Schema plus a generated Zod 4 model gives us:
 - no unreachable items outside the body/furniture roots
 - no parent/child cycles
 
-Collection-changing edits renormalize `#/groups/N` and `#/texts/N` refs before
-returning so later items keep stable, schema-shaped references.
+Direct helper calls still return canonical exported documents. Inside a draft
+session, refs stay stable for the life of the session and are only renormalized
+when exporting the final `DoclingDocument`.
 
 ## Draft sessions
 
 `DoclingDraftSession` is the frontend-only business-logic layer for standalone
-editing work. It holds:
+editing work. It now uses a command history instead of whole-document undo
+snapshots and holds:
 
-- a validated base document
-- the current draft document
-- undo/redo stacks
-- typed `apply()` support via `DoclingEditOperation`
+- the current working `DoclingEditorState`
+- command-based undo/redo stacks
+- typed `apply()` support via `DoclingEditOperation` or `DoclingCommand`
 - `reset()` and `checkpoint()` lifecycle helpers
+- `exportDocument()` for canonical ref normalization at save/export time
+
+The session-level node identifier is currently the stable in-session ref string.
+That means existing refs like `#/texts/2` remain stable while editing, and newly
+created items receive temporary refs. Only `exportDocument()` converts those
+back to canonical sequential refs.
+
+For efficiency, validated `DoclingIndex` instances are cached per finalized
+document object. Draft mutations invalidate that cache, so the session can reuse
+the already-validated index for each new editor state without rebuilding it a
+second time.
 
 These helpers intentionally mirror the current experimental backend semantics:
 
@@ -77,6 +89,8 @@ These helpers intentionally mirror the current experimental backend semantics:
 - editable parents are currently limited to the document body and group items
 - every helper validates the resulting document through Zod before returning it
 - every helper also validates graph-level structure, not only field shape
+- command history stores operation-specific undo metadata instead of complete
+  document snapshots
 
 ## Usage
 
@@ -98,6 +112,7 @@ const moved = moveDoclingItem(merged, '#/texts/13', '#/groups/0', 0)
 const session = new DoclingDraftSession(doc)
 session.apply({ type: 'edit-text', itemRef: '#/texts/12', text: 'Updated text' })
 session.undo()
+const exported = session.exportDocument()
 ```
 
 The generated file is intentionally checked in so the frontend can type-check
