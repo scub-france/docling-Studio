@@ -106,9 +106,9 @@
       </div>
     </div>
 
-    <div v-if="viewMode === 'scroll'" class="preview-stage" ref="stageRef">
+    <div class="preview-stage" ref="stageRef">
       <section
-        v-for="page in pages"
+        v-for="page in renderedPages"
         :key="page.page_number"
         class="preview-page"
         :data-e2e="`preview-page-${page.page_number}`"
@@ -117,44 +117,6 @@
         <header class="preview-page-header">
           <span class="preview-page-label">Page {{ page.page_number }}</span>
           <span class="preview-page-meta">{{ Math.round(page.width) }} x {{ Math.round(page.height) }}</span>
-        </header>
-        <div class="preview-frame">
-          <img
-            :src="getPreviewUrl(documentId, page.page_number)"
-            :alt="`Page ${page.page_number}`"
-            class="preview-image"
-            :ref="(el) => registerImage(page.page_number, el as HTMLImageElement | null)"
-            @load="onImageLoad(page.page_number)"
-          />
-          <BboxCanvas
-            v-if="loadedImages[page.page_number]"
-            :image-el="loadedImages[page.page_number] ?? null"
-            :page-width="page.width"
-            :page-height="page.height"
-            :elements="page.elements"
-            :hidden-types="hiddenTypes"
-            :highlighted-refs="highlightedRefs"
-            :show-labels="showLabels"
-            @hover-element="(el) => emit('hoverElement', el)"
-            @click-element="(el) => emit('clickElement', el)"
-          />
-        </div>
-      </section>
-    </div>
-
-    <div v-else class="preview-stage" ref="stageRef">
-      <section
-        v-for="page in pagedPages"
-        :key="page.page_number"
-        class="preview-page"
-        :data-e2e="`preview-page-${page.page_number}`"
-        :ref="(el) => registerPageCard(page.page_number, el as HTMLElement | null)"
-      >
-        <header class="preview-page-header">
-          <span class="preview-page-label">Page {{ page.page_number }}</span>
-          <span class="preview-page-meta">
-            {{ Math.round(page.width) }} x {{ Math.round(page.height) }}
-          </span>
         </header>
         <div class="preview-frame">
           <img
@@ -231,7 +193,10 @@ const pageInputSize = computed(() => Math.max(DEFAULT_PAGE_INPUT_SIZE, String(to
 const currentPageData = computed<Page | null>(() => {
   return props.pages.find((page) => page.page_number === props.currentPage) ?? null
 })
-const pagedPages = computed<Page[]>(() => (currentPageData.value ? [currentPageData.value] : []))
+const renderedPages = computed<Page[]>(() => {
+  if (viewMode.value === 'scroll') return [...props.pages]
+  return currentPageData.value ? [currentPageData.value] : []
+})
 
 function registerImage(pageNumber: number, el: HTMLImageElement | null): void {
   imageRefs[pageNumber] = el
@@ -265,7 +230,7 @@ function onImageLoad(pageNumber: number): void {
 function onPageChange(page: number): void {
   if (page < 1 || page > totalPages.value) return
   emit('update:currentPage', page)
-  scrollToPage(page)
+  if (viewMode.value === 'scroll') scrollToPage(page)
 }
 
 function scrollToPage(pageNumber: number): void {
@@ -304,6 +269,7 @@ function setupObserver(): void {
   )
 
   for (const page of props.pages) {
+    if (viewMode.value !== 'scroll' && page.page_number !== props.currentPage) continue
     const card = pageCardRefs[page.page_number]
     if (!card) continue
     card.dataset.pageNumber = String(page.page_number)
