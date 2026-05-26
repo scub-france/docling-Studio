@@ -235,10 +235,19 @@ def _extract_pages_from_docling_document(doc: dict) -> list[PageDetail]:
 
 
 def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
-    """Add an element from a DoclingDocument array to the correct page."""
+    """Add an element from a DoclingDocument array to the correct page.
+
+    Carries `self_ref` ("#/texts/0", "#/tables/3", ...) through so the
+    Linked-view canvas can correlate chunks (whose `docItems[].selfRef`
+    is the same ref) with the element bboxes drawn on the page preview.
+    Local-mode parity: `LocalConverter._process_content_item` already
+    populates `self_ref`; the remote path was silently dropping it,
+    leaving the overlay empty on every doc converted through Docling Serve.
+    """
     label = item.get("label", "text")
     element_type = _LABEL_MAP.get(label, "text")
     content = item.get("text", "") or ""
+    self_ref = item.get("self_ref", "") or ""
 
     for prov in item.get("prov", []):
         page_no = prov.get("page_no", 1)
@@ -253,7 +262,13 @@ def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
         bbox = _extract_bbox(bbox_data, pages[page_no].height)
 
         pages[page_no].elements.append(
-            PageElement(type=element_type, bbox=bbox, content=content, level=0)
+            PageElement(
+                type=element_type,
+                bbox=bbox,
+                content=content,
+                level=0,
+                self_ref=self_ref,
+            )
         )
 
 

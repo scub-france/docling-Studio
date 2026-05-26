@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Backend test collection unblocked** (#audit-09): dead `test_local_converter.py` deleted (the SUT `_encode_picture_b64` was removed); was hidden behind `.gitignore` rather than fixed.
 - **CI auto-close hardened** (#audit-10): commits payload moved into the `env:` block of the workflow to avoid shell interpolation of commit messages with quotes/backticks.
 - **Frontend package version bumped to 0.6.1** (#audit-11): was stuck at 0.5.0.
+- **Remote-mode bbox overlay restored** (#audit-remote-bbox): `ServeConverter` was silently dropping `self_ref` on every element parsed from the Docling Serve response, leaving the Linked-view canvas overlay empty for every document converted through Docling Serve. Local-mode parity was already correct (`LocalConverter` carries it); the remote path now does too.
 
 ### Security
 

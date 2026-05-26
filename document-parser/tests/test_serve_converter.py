@@ -108,6 +108,7 @@ class TestParseResponse:
                     "pages": {"1": {"size": {"width": 612.0, "height": 792.0}}},
                     "texts": [
                         {
+                            "self_ref": "#/texts/0",
                             "label": "title",
                             "text": "Title",
                             "prov": [
@@ -124,6 +125,7 @@ class TestParseResponse:
                             ],
                         },
                         {
+                            "self_ref": "#/texts/1",
                             "label": "paragraph",
                             "text": "Text",
                             "prov": [
@@ -150,7 +152,45 @@ class TestParseResponse:
         assert result.pages[0].elements[0].type == "title"
         assert result.pages[0].elements[0].content == "Title"
         assert result.pages[0].elements[0].bbox == [10, 20, 200, 40]
+        # `self_ref` is the linchpin for chunk <-> bbox correlation on the
+        # Linked-view canvas (see frontend `linkedView.ts`). The remote
+        # converter was dropping it pre-#audit-remote-bbox, leaving the
+        # overlay empty on every Docling-Serve-converted document.
+        assert result.pages[0].elements[0].self_ref == "#/texts/0"
         assert result.pages[0].elements[1].type == "text"
+        assert result.pages[0].elements[1].self_ref == "#/texts/1"
+
+    def test_self_ref_missing_falls_back_to_empty_string(self):
+        """Docling Serve responses without `self_ref` (legacy / partial)
+        must not crash — fall back to '' so downstream code keeps the
+        empty-string contract that `PageElement.self_ref` defaults to."""
+        data = {
+            "document": {
+                "json_content": {
+                    "pages": {"1": {"size": {"width": 612.0, "height": 792.0}}},
+                    "texts": [
+                        {
+                            "label": "paragraph",
+                            "text": "no ref here",
+                            "prov": [
+                                {
+                                    "page_no": 1,
+                                    "bbox": {
+                                        "l": 0,
+                                        "t": 0,
+                                        "r": 100,
+                                        "b": 20,
+                                        "coord_origin": "TOPLEFT",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+            }
+        }
+        result = _parse_response(data)
+        assert result.pages[0].elements[0].self_ref == ""
 
     def test_multi_page(self):
         data = {
