@@ -1,20 +1,7 @@
 <template>
   <div class="preview-with-overlay" data-e2e="preview-with-overlay">
     <div v-if="totalPages > 1" class="page-paginator" data-e2e="page-paginator">
-      <button
-        v-for="p in totalPages"
-        :key="p"
-        class="page-pill"
-        :class="{ active: p === currentPage }"
-        :data-e2e="`page-pill-${p}`"
-        @click="onPageChange(p)"
-      >
-        {{ p }}
-      </button>
-      <span class="page-paginator-meta">
-        {{ t('workspace.pageOf', { page: currentPage, total: totalPages }) }}
-      </span>
-      <div class="page-paginator-nav">
+      <div class="page-paginator-nav page-paginator-nav--compact">
         <button
           type="button"
           class="page-nav-btn"
@@ -26,6 +13,22 @@
         >
           ‹
         </button>
+        <label class="page-input-group" :aria-label="t('workspace.pageNumber')">
+          <input
+            v-model="pageInput"
+            type="text"
+            inputmode="numeric"
+            class="page-input"
+            :style="{ width: `${pageInputSize}ch` }"
+            :aria-label="t('workspace.pageNumber')"
+            data-e2e="page-input"
+            @blur="commitPageInput"
+            @keydown.enter.prevent="commitPageInput"
+            @keydown.esc.prevent="resetPageInput"
+          />
+          <span class="page-input-separator">/</span>
+          <span class="page-input-total">{{ totalPages }}</span>
+        </label>
         <button
           type="button"
           class="page-nav-btn"
@@ -82,6 +85,7 @@ import { getPreviewUrl } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
 
 const { t } = useI18n()
+const DEFAULT_PAGE_INPUT_SIZE = 4
 
 const props = defineProps<{
   documentId: string
@@ -102,8 +106,10 @@ const stageRef = ref<HTMLDivElement | null>(null)
 const frameRef = ref<HTMLDivElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
 const imageEl = ref<HTMLImageElement | null>(null)
+const pageInput = ref('1')
 
 const totalPages = computed(() => props.pages.length)
+const pageInputSize = computed(() => Math.max(DEFAULT_PAGE_INPUT_SIZE, String(totalPages.value).length))
 
 const currentPageData = computed<Page | null>(() => {
   return props.pages.find((p) => p.page_number === props.currentPage) ?? null
@@ -113,6 +119,21 @@ const previewUrl = computed(() => {
   if (!props.documentId) return null
   return getPreviewUrl(props.documentId, props.currentPage)
 })
+
+function resetPageInput(): void {
+  pageInput.value = String(props.currentPage)
+}
+
+function commitPageInput(): void {
+  const parsed = Number.parseInt(pageInput.value, 10)
+  if (!Number.isFinite(parsed)) {
+    resetPageInput()
+    return
+  }
+  const nextPage = Math.min(totalPages.value, Math.max(1, parsed))
+  pageInput.value = String(nextPage)
+  if (nextPage !== props.currentPage) onPageChange(nextPage)
+}
 
 function onImageLoad(): void {
   imageEl.value = imageRef.value
@@ -170,6 +191,14 @@ function centerHighlighted(): void {
 }
 
 watch(
+  () => props.currentPage,
+  () => {
+    resetPageInput()
+  },
+  { immediate: true },
+)
+
+watch(
   () => props.highlightedRefs,
   () => {
     nextTick(centerHighlighted)
@@ -196,41 +225,46 @@ watch(
   padding: 4px 0;
 }
 
-.page-pill {
-  min-width: 24px;
+.page-paginator-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.page-paginator-nav--compact {
+  margin-left: 0;
+}
+
+.page-input-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 2px 8px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-family: 'IBM Plex Mono', monospace;
   color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.page-pill:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.page-pill.active {
-  background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.page-paginator-meta {
-  margin-left: 8px;
   font-size: 11px;
-  color: var(--text-muted);
   font-family: 'IBM Plex Mono', monospace;
 }
 
-.page-paginator-nav {
-  margin-left: auto;
-  display: inline-flex;
-  gap: 4px;
+.page-input {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+}
+
+.page-input:focus {
+  outline: none;
+}
+
+.page-input-separator,
+.page-input-total {
+  color: var(--text-muted);
 }
 
 .page-nav-btn {
