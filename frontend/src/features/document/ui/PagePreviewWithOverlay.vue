@@ -13,7 +13,7 @@
         >
           ‹
         </button>
-        <label class="page-input-group" :aria-label="t('workspace.pageNumber')">
+        <label class="page-input-group">
           <input
             v-model="pageInput"
             type="text"
