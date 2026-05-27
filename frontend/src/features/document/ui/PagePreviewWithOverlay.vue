@@ -248,6 +248,11 @@ watch(
   font-family: 'IBM Plex Mono', monospace;
 }
 
+.page-input-group:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 .page-input {
   min-width: 0;
   padding: 0;
