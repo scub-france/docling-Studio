@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDocumentStore } from './store'
 import sampleDoclingDocument from './docling/__fixtures__/sample-docling-document.json'
+import { parseDoclingDocument, projectDoclingPages } from './docling'
 
 vi.mock('./api', () => ({
   fetchDocument: vi.fn(),
@@ -24,11 +25,14 @@ vi.mock('../analysis/api', () => ({
 import * as api from './api'
 import * as chunksApi from '../chunks/api'
 import * as analysisApi from '../analysis/api'
+import { useToastStore } from '../../shared/toast/store'
 
 describe('useDocumentStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    useToastStore().clear()
+    globalThis.localStorage?.clear()
   })
 
   it('starts with empty state', () => {
@@ -324,6 +328,50 @@ describe('useDocumentStore', () => {
     expect(store.workspaceDraftSession).not.toBeNull()
     expect(store.workspaceError).toBeNull()
     expect(store.workspaceDraftSession?.document.origin.binary_hash).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  it('loadWorkspace() warns once when backend pagesJson differs from the frontend projection', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocumentVersions.mockResolvedValue([mkVersion({ analysisId: 'a1' })])
+    analysisApi.fetchAnalysis.mockResolvedValue(
+      mkAnalysis({
+        pagesJson: JSON.stringify([
+          {
+            page_number: 1,
+            width: 612,
+            height: 792,
+            elements: [],
+          },
+        ]),
+      }),
+    )
+
+    const store = useDocumentStore()
+    const toastStore = useToastStore()
+
+    await store.loadWorkspace('d1')
+    expect(toastStore.items).toHaveLength(1)
+    expect(toastStore.items[0]?.level).toBe('warning')
+    expect(toastStore.items[0]?.message).toContain('projection de page')
+    expect(toastStore.items[0]?.detail).toContain('Element count mismatch')
+    expect(toastStore.items[0]?.detail).toContain('docling-pages-parity:a1')
+
+    await store.reloadWorkspaceVersions('d1')
+    expect(toastStore.items).toHaveLength(1)
+  })
+
+  it('loadWorkspace() does not warn when backend pagesJson matches the frontend projection', async () => {
+    const matchingPagesJson = JSON.stringify(projectDoclingPages(parseDoclingDocument(sampleDoclingDocument)))
+
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocumentVersions.mockResolvedValue([mkVersion({ analysisId: 'a1' })])
+    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ pagesJson: matchingPagesJson }))
+
+    const store = useDocumentStore()
+    const toastStore = useToastStore()
+
+    await store.loadWorkspace('d1')
+    expect(toastStore.items).toEqual([])
   })
 
   // ---------------------------------------------------------------------------

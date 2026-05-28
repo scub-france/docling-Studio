@@ -225,6 +225,8 @@ const messages: Messages = {
     'parse.localDraftDirty': 'Des modifications locales non enregistrées sont actives pour cette analyse.',
     'parse.localDraftBlocked': 'Les modifications locales doivent être annulées ou enregistrées avant de changer d’analyse.',
     'parse.discardLocalDraft': 'Annuler les modifications locales',
+    'parse.pagesParityMismatch': 'La projection de page dérivée côté frontend ne correspond pas au pagesJson du backend pour cette analyse.',
+    'parse.pagesParityDebugKey': 'Clé de debug locale',
 
     // Chunking
     'studio.prepare': 'Préparer',
@@ -430,6 +432,7 @@ const messages: Messages = {
     'properties.mergeWithNextText': 'Fusionner avec le texte suivant',
     'properties.mergingText': 'Fusion…',
     'properties.cancel': 'Annuler',
+    'toast.dismiss': 'Fermer la notification',
     'properties.save': 'Enregistrer',
     'properties.saving': 'Enregistrement\u2026',
     'workspace.pageOf': 'Page {page} sur {total}',
@@ -866,6 +869,8 @@ const messages: Messages = {
     'parse.localDraftDirty': 'Unsaved local edits are active for this analysis.',
     'parse.localDraftBlocked': 'Local document edits must be discarded or saved before switching analyses.',
     'parse.discardLocalDraft': 'Discard local edits',
+    'parse.pagesParityMismatch': 'The frontend-derived page projection does not match the backend pagesJson for this analysis.',
+    'parse.pagesParityDebugKey': 'Local debug key',
 
     'studio.prepare': 'Prepare',
     'studio.ingest': 'Ingest',
@@ -1063,6 +1068,7 @@ const messages: Messages = {
     'properties.mergeWithNextText': 'Merge with next text',
     'properties.mergingText': 'Merging…',
     'properties.cancel': 'Cancel',
+    'toast.dismiss': 'Dismiss notification',
     'properties.save': 'Save',
     'properties.saving': 'Saving…',
     'workspace.pageOf': 'Page {page} of {total}',

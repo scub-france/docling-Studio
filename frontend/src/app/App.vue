@@ -44,13 +44,14 @@
         <RouterView />
       </main>
     </div>
+    <AppToastStack />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { RouterView, useRouter } from 'vue-router'
-import { AppSidebar } from '../shared/ui/index'
+import { AppSidebar, AppToastStack } from '../shared/ui/index'
 import AppBreadcrumb from '../shared/breadcrumb/AppBreadcrumb.vue'
 import { useBreadcrumbStore } from '../shared/breadcrumb/store'
 import { useSettingsStore } from '../features/settings/store'

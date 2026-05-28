@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Analysis, Document, DocumentVersion, Page } from '../../shared/types'
 import { appMaxFileSizeMb } from '../../shared/appConfig'
+import { useI18n } from '../../shared/i18n'
+import { useToastStore } from '../../shared/toast/store'
 import { fetchAnalysis } from '../analysis/api'
 import { pushChunksToStore } from '../chunks/api'
 import {
@@ -15,6 +17,8 @@ import type { DoclingDocument, DoclingRef, DoclingTextItem } from './docling'
 import * as api from './api'
 
 export const useDocumentStore = defineStore('document', () => {
+  const { t } = useI18n()
+  const toastStore = useToastStore()
   const documents = ref<Document[]>([])
   const selectedId = ref<string | null>(null)
   const loading = ref(false)
@@ -34,6 +38,7 @@ export const useDocumentStore = defineStore('document', () => {
   const workspaceDraftSession = ref<DoclingDraftSession | null>(null)
   const workspaceLoading = ref(false)
   const workspaceError = ref<string | null>(null)
+  const warnedProjectionMismatchIds = new Set<string>()
 
   const workspaceCurrentVersion = computed<DocumentVersion | null>(() => {
     if (!workspaceCurrentVersionId.value) return null
@@ -98,10 +103,126 @@ export const useDocumentStore = defineStore('document', () => {
 
     try {
       workspaceDraftSession.value = createWorkspaceDraftSession(analysis)
+      maybeWarnPagesProjectionMismatch(analysis, workspaceDraftSession.value?.document ?? null)
     } catch (e) {
       workspaceError.value =
         (e as Error).message || 'Failed to initialize local document editing for this analysis'
     }
+  }
+
+  function maybeWarnPagesProjectionMismatch(
+    analysis: Analysis,
+    document: DoclingDocument | null,
+  ): void {
+    if (!document || !analysis.id || warnedProjectionMismatchIds.has(analysis.id)) {
+      return
+    }
+    if (!analysis.pagesJson) {
+      return
+    }
+
+    let backendPages: Page[] | null = null
+    let projectedPages: Page[] | null = null
+
+    try {
+      backendPages = JSON.parse(analysis.pagesJson) as Page[]
+      projectedPages = projectDoclingPages(document)
+      if (JSON.stringify(backendPages) === JSON.stringify(projectedPages)) {
+        return
+      }
+    } catch {
+      // Treat parse failures as parity failures: the server payload cannot be
+      // compared to the frontend projection, so callers should know.
+    }
+
+    warnedProjectionMismatchIds.add(analysis.id)
+    const debugKey = savePagesProjectionDebugPayload(analysis.id, analysis.pagesJson, projectedPages)
+    const detail = formatPagesProjectionDiff(backendPages, projectedPages, debugKey)
+    toastStore.push('warning', t('parse.pagesParityMismatch'), 10000, detail)
+  }
+
+  function savePagesProjectionDebugPayload(
+    analysisId: string,
+    backendPagesJson: string | null,
+    projectedPages: Page[] | null,
+  ): string {
+    const key = `docling-pages-parity:${analysisId}`
+    try {
+      globalThis.localStorage?.setItem(
+        key,
+        JSON.stringify(
+          {
+            analysisId,
+            backendPagesJson,
+            frontendProjectedPages: projectedPages,
+            createdAt: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+      )
+    } catch {
+      // localStorage is best-effort only.
+    }
+    return key
+  }
+
+  function formatPagesProjectionDiff(
+    backendPages: Page[] | null,
+    projectedPages: Page[] | null,
+    debugKey: string,
+  ): string {
+    if (!backendPages || !projectedPages) {
+      return `${t('parse.pagesParityDebugKey')}: ${debugKey}\nUnable to parse one side of the comparison.`
+    }
+
+    const diff = summarizePagesDiff(backendPages, projectedPages)
+    return `${diff}\n${t('parse.pagesParityDebugKey')}: ${debugKey}`
+  }
+
+  function summarizePagesDiff(backendPages: Page[], projectedPages: Page[]): string {
+    if (backendPages.length !== projectedPages.length) {
+      return `Page count mismatch: backend=${backendPages.length}, frontend=${projectedPages.length}`
+    }
+
+    for (let pageIndex = 0; pageIndex < backendPages.length; pageIndex += 1) {
+      const backendPage = backendPages[pageIndex]
+      const projectedPage = projectedPages[pageIndex]
+      if (!projectedPage) {
+        return `Missing frontend page at index ${pageIndex}`
+      }
+      if (backendPage.page_number !== projectedPage.page_number) {
+        return `Page number mismatch at index ${pageIndex}: backend=${backendPage.page_number}, frontend=${projectedPage.page_number}`
+      }
+      if (backendPage.width !== projectedPage.width || backendPage.height !== projectedPage.height) {
+        return `Page size mismatch on page ${backendPage.page_number}: backend=${backendPage.width}x${backendPage.height}, frontend=${projectedPage.width}x${projectedPage.height}`
+      }
+      if (backendPage.elements.length !== projectedPage.elements.length) {
+        return `Element count mismatch on page ${backendPage.page_number}: backend=${backendPage.elements.length}, frontend=${projectedPage.elements.length}`
+      }
+
+      for (let elementIndex = 0; elementIndex < backendPage.elements.length; elementIndex += 1) {
+        const backendElement = backendPage.elements[elementIndex]
+        const projectedElement = projectedPage.elements[elementIndex]
+        if (!projectedElement) {
+          return `Missing frontend element ${elementIndex} on page ${backendPage.page_number}`
+        }
+        if (JSON.stringify(backendElement) !== JSON.stringify(projectedElement)) {
+          return [
+            `First mismatch on page ${backendPage.page_number}, element ${elementIndex}`,
+            `backend: ${compactJson(backendElement)}`,
+            `frontend: ${compactJson(projectedElement)}`,
+          ].join('\n')
+        }
+      }
+    }
+
+    return 'Mismatch detected but no summarized difference could be isolated.'
+  }
+
+  function compactJson(value: unknown): string {
+    const raw = JSON.stringify(value)
+    return raw.length <= 220 ? raw : `${raw.slice(0, 217)}...`
   }
 
   function guardWorkspaceDraftReplacement(): boolean {
