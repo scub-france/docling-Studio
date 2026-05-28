@@ -64,47 +64,6 @@
         </div>
       </div>
     </div>
-        <button
-          type="button"
-          class="page-nav-btn"
-          :disabled="currentPage <= 1"
-          :title="t('workspace.pagePrev')"
-          :aria-label="t('workspace.pagePrev')"
-          data-e2e="page-prev"
-          @click="onPageChange(currentPage - 1)"
-        >
-          ‹
-        </button>
-        <label class="page-input-group">
-          <input
-            v-model="pageInput"
-            type="text"
-            inputmode="numeric"
-            class="page-input"
-            :style="{ width: `${pageInputSize}ch` }"
-            :aria-label="t('workspace.pageNumber')"
-            data-e2e="page-input"
-            @blur="commitPageInput"
-            @keydown.enter.prevent="commitPageInput"
-            @keydown.esc.prevent="resetPageInput"
-          />
-          <span class="page-input-separator">/</span>
-          <span class="page-input-total">{{ totalPages }}</span>
-        </label>
-        <button
-          type="button"
-          class="page-nav-btn"
-          :disabled="currentPage >= totalPages"
-          :title="t('workspace.pageNext')"
-          :aria-label="t('workspace.pageNext')"
-          data-e2e="page-next"
-          @click="onPageChange(currentPage + 1)"
-        >
-          ›
-        </button>
-      </div>
-      </div>
-    </div>
 
     <div class="preview-stage" ref="stageRef">
       <section
