@@ -193,7 +193,15 @@ function onPageChange(page: number): void {
 
 function scrollToPage(pageNumber: number): void {
   const card = pageCardRefs[pageNumber]
-  if (!card) return
+  const stage = stageRef.value
+  if (!card || !stage) return
+
+  // Avoid jumping if the page is already reasonably visible
+  const isVisible =
+    card.offsetTop >= stage.scrollTop &&
+    card.offsetTop + card.clientHeight <= stage.scrollTop + stage.clientHeight
+
+  if (isVisible) return
   card.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
@@ -262,8 +270,21 @@ function centerHighlighted(): void {
     const rect = bboxToRect(target.bbox, scale)
     if (rect.w <= 0 || rect.h <= 0) return
 
-    const targetLeft = card.offsetLeft + rect.x + rect.w / 2 - stage.clientWidth / 2
-    const targetTop = card.offsetTop + rect.y + rect.h / 2 - stage.clientHeight / 2
+    const imgTop = img.offsetTop + card.offsetTop
+    const imgLeft = img.offsetLeft + card.offsetLeft
+
+    const targetLeft = imgLeft + rect.x + rect.w / 2 - stage.clientWidth / 2
+    const targetTop = imgTop + rect.y + rect.h / 2 - stage.clientHeight / 2
+
+    // Check if the target is already reasonably visible to avoid jumps when
+    // clicking an element that is already in view.
+    const isVisible =
+      imgTop + rect.y >= stage.scrollTop &&
+      imgTop + rect.y + rect.h <= stage.scrollTop + stage.clientHeight &&
+      imgLeft + rect.x >= stage.scrollLeft &&
+      imgLeft + rect.x + rect.w <= stage.scrollLeft + stage.clientWidth
+
+    if (isVisible) return
 
     stage.scrollTo({
       left: Math.max(0, targetLeft),
