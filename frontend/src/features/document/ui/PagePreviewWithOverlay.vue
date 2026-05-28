@@ -95,7 +95,7 @@
             :highlighted-refs="highlightedRefs"
             :show-labels="showLabels"
             @hover-element="(el) => emit('hoverElement', el)"
-            @click-element="(el) => emit('clickElement', el)"
+            @click-element="onClickElement"
           />
         </div>
       </section>
@@ -149,6 +149,8 @@ let pageObserver: IntersectionObserver | null = null
 const totalPages = computed(() => props.pages.length)
 const pageInputSize = computed(() => pageInputWidthCh(totalPages.value))
 
+let suppressNextHighlightScroll = false
+
 const currentPageData = computed<Page | null>(() => {
   return props.pages.find((page) => page.page_number === props.currentPage) ?? null
 })
@@ -183,6 +185,11 @@ function registerPageCard(pageNumber: number, el: HTMLElement | null): void {
 function onImageLoad(pageNumber: number): void {
   loadedImages[pageNumber] = imageRefs[pageNumber] ?? null
   nextTick(centerHighlighted)
+}
+
+function onClickElement(el: PageElement): void {
+  suppressNextHighlightScroll = true
+  emit('clickElement', el)
 }
 
 function onPageChange(page: number): void {
@@ -323,6 +330,10 @@ watch(viewMode, async (mode) => {
 watch(
   () => props.highlightedRefs,
   () => {
+    if (suppressNextHighlightScroll) {
+      suppressNextHighlightScroll = false
+      return
+    }
     nextTick(centerHighlighted)
   },
   { deep: true },
