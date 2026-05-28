@@ -1,83 +1,117 @@
 <template>
   <div class="preview-with-overlay" data-e2e="preview-with-overlay">
-    <div v-if="totalPages > 1" class="page-paginator" data-e2e="page-paginator">
-      <div class="page-paginator-nav page-paginator-nav--compact">
+    <div class="preview-toolbar">
+      <div v-if="totalPages > 1" class="preview-mode-switch" data-e2e="preview-mode-switch">
         <button
           type="button"
-          class="page-nav-btn"
-          :disabled="currentPage <= 1"
-          :title="t('workspace.pagePrev')"
-          :aria-label="t('workspace.pagePrev')"
-          data-e2e="page-prev"
-          @click="onPageChange(currentPage - 1)"
+          class="preview-mode-btn"
+          :class="{ active: viewMode === 'page' }"
+          data-e2e="preview-mode-page"
+          @click="viewMode = 'page'"
         >
-          ‹
+          {{ t('workspace.previewMode.page') }}
         </button>
-        <label class="page-input-group">
-          <input
-            v-model="pageInput"
-            type="text"
-            inputmode="numeric"
-            class="page-input"
-            :style="{ width: `${pageInputSize}ch` }"
-            :aria-label="t('workspace.pageNumber')"
-            data-e2e="page-input"
-            @blur="commitPageInput"
-            @keydown.enter.prevent="commitPageInput"
-            @keydown.esc.prevent="resetPageInput"
-          />
-          <span class="page-input-separator">/</span>
-          <span class="page-input-total">{{ totalPages }}</span>
-        </label>
         <button
           type="button"
-          class="page-nav-btn"
-          :disabled="currentPage >= totalPages"
-          :title="t('workspace.pageNext')"
-          :aria-label="t('workspace.pageNext')"
-          data-e2e="page-next"
-          @click="onPageChange(currentPage + 1)"
+          class="preview-mode-btn"
+          :class="{ active: viewMode === 'scroll' }"
+          data-e2e="preview-mode-scroll"
+          @click="viewMode = 'scroll'"
         >
-          ›
+          {{ t('workspace.previewMode.scroll') }}
         </button>
+      </div>
+      <div v-if="totalPages > 1" class="page-paginator" data-e2e="page-paginator">
+        <div class="page-paginator-nav">
+          <button
+            type="button"
+            class="page-nav-btn"
+            :disabled="currentPage <= 1"
+            :title="t('workspace.pagePrev')"
+            :aria-label="t('workspace.pagePrev')"
+            data-e2e="page-prev"
+            @click="onPageChange(currentPage - 1)"
+          >
+            ‹
+          </button>
+          <label class="page-input-group">
+            <input
+              v-model="pageInput"
+              type="text"
+              inputmode="numeric"
+              class="page-input"
+              :style="{ width: `${pageInputSize}ch` }"
+              :aria-label="t('workspace.pageNumber')"
+              data-e2e="page-input"
+              @blur="commitPageInput"
+              @keydown.enter.prevent="commitPageInput"
+              @keydown.esc.prevent="resetPageInput"
+            />
+            <span class="page-input-separator">/</span>
+            <span class="page-input-total">{{ totalPages }}</span>
+          </label>
+          <button
+            type="button"
+            class="page-nav-btn"
+            :disabled="currentPage >= totalPages"
+            :title="t('workspace.pageNext')"
+            :aria-label="t('workspace.pageNext')"
+            data-e2e="page-next"
+            @click="onPageChange(currentPage + 1)"
+          >
+            ›
+          </button>
+        </div>
       </div>
     </div>
+
     <div class="preview-stage" ref="stageRef">
-      <div class="preview-frame" ref="frameRef">
-        <img
-          v-if="previewUrl"
-          ref="imageRef"
-          :src="previewUrl"
-          :alt="`Page ${currentPage}`"
-          class="preview-image"
-          @load="onImageLoad"
-        />
-        <BboxCanvas
-          v-if="imageEl && currentPageData"
-          :image-el="imageEl"
-          :page-width="currentPageData.width"
-          :page-height="currentPageData.height"
-          :elements="currentPageData.elements"
-          :hidden-types="hiddenTypes"
-          :highlighted-refs="highlightedRefs"
-          :show-labels="showLabels"
-          @hover-element="(el) => emit('hoverElement', el)"
-          @click-element="(el) => emit('clickElement', el)"
-        />
-      </div>
+      <section
+        v-for="page in renderedPages"
+        :key="page.page_number"
+        class="preview-page"
+        :data-e2e="`preview-page-${page.page_number}`"
+        :ref="(el) => registerPageCard(page.page_number, el as HTMLElement | null)"
+      >
+        <header class="preview-page-header">
+          <span class="preview-page-label">Page {{ page.page_number }}</span>
+          <span class="preview-page-meta">{{ Math.round(page.width) }} x {{ Math.round(page.height) }}</span>
+        </header>
+        <div class="preview-frame">
+          <img
+            :src="getPreviewUrl(documentId, page.page_number)"
+            :alt="`Page ${page.page_number}`"
+            class="preview-image"
+            :ref="(el) => registerImage(page.page_number, el as HTMLImageElement | null)"
+            @load="onImageLoad(page.page_number)"
+          />
+          <BboxCanvas
+            v-if="loadedImages[page.page_number]"
+            :image-el="loadedImages[page.page_number] ?? null"
+            :page-width="page.width"
+            :page-height="page.height"
+            :elements="page.elements"
+            :hidden-types="hiddenTypes"
+            :highlighted-refs="highlightedRefs"
+            :show-labels="showLabels"
+            @hover-element="(el) => emit('hoverElement', el)"
+            @click-element="onClickElement"
+          />
+        </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * Composite of preview image + bbox overlay canvas + paginator (#264).
+ * Composite of page preview + stacked preview modes with bbox overlays (#264).
  *
- * Zoom is intentionally out of scope for this first cut (open question in
- * design doc §11); the image fills the container width. Adding zoom later
- * is contained to this component.
+ * Supports both a classic single-page view and a stacked scroll view.
+ * `currentPage` remains the external selection source for side panels.
+ * In scroll mode it is synchronized to the page mostly visible in the viewport.
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { Page, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToRect, computeScale } from '../bboxScaling'
@@ -103,22 +137,32 @@ const emit = defineEmits<{
 }>()
 
 const stageRef = ref<HTMLDivElement | null>(null)
-const frameRef = ref<HTMLDivElement | null>(null)
-const imageRef = ref<HTMLImageElement | null>(null)
-const imageEl = ref<HTMLImageElement | null>(null)
+const imageRefs = reactive<Record<number, HTMLImageElement | null>>({})
+const loadedImages = reactive<Record<number, HTMLImageElement | null>>({})
+const pageCardRefs = reactive<Record<number, HTMLElement | null>>({})
+const visiblePage = ref<number | null>(null)
+const viewMode = ref<'page' | 'scroll'>('scroll')
 const pageInput = ref('1')
+
+let pageObserver: IntersectionObserver | null = null
 
 const totalPages = computed(() => props.pages.length)
 const pageInputSize = computed(() => Math.max(DEFAULT_PAGE_INPUT_SIZE, String(totalPages.value).length))
 
+let suppressNextHighlightScroll = false
+
 const currentPageData = computed<Page | null>(() => {
-  return props.pages.find((p) => p.page_number === props.currentPage) ?? null
+  return props.pages.find((page) => page.page_number === props.currentPage) ?? null
+})
+const renderedPages = computed<Page[]>(() => {
+  if (viewMode.value === 'scroll') return [...props.pages]
+  return currentPageData.value ? [currentPageData.value] : []
 })
 
-const previewUrl = computed(() => {
-  if (!props.documentId) return null
-  return getPreviewUrl(props.documentId, props.currentPage)
-})
+function registerImage(pageNumber: number, el: HTMLImageElement | null): void {
+  imageRefs[pageNumber] = el
+  if (!el) loadedImages[pageNumber] = null
+}
 
 function resetPageInput(): void {
   pageInput.value = String(props.currentPage)
@@ -135,76 +179,177 @@ function commitPageInput(): void {
   if (nextPage !== props.currentPage) onPageChange(nextPage)
 }
 
-function onImageLoad(): void {
-  imageEl.value = imageRef.value
-  // Center the highlighted element if one is already pending (e.g. the
-  // user clicked a tree node that triggered a page change — the canvas
-  // wasn't mounted yet).
+function registerPageCard(pageNumber: number, el: HTMLElement | null): void {
+  pageCardRefs[pageNumber] = el
+}
+
+function onImageLoad(pageNumber: number): void {
+  loadedImages[pageNumber] = imageRefs[pageNumber] ?? null
   nextTick(centerHighlighted)
 }
 
+function onClickElement(el: PageElement): void {
+  suppressNextHighlightScroll = true
+  emit('clickElement', el)
+}
+
 function onPageChange(page: number): void {
-  // Reset the image ref so BboxCanvas hides until the new image loads;
-  // prevents drawing stale element coords over a different page image.
-  imageEl.value = null
+  if (page < 1 || page > totalPages.value) return
   emit('update:currentPage', page)
+  if (viewMode.value === 'scroll') scrollToPage(page)
+}
+
+function scrollToPage(pageNumber: number): void {
+  const card = pageCardRefs[pageNumber]
+  const stage = stageRef.value
+  if (!card || !stage) return
+
+  // Avoid jumping if the page is already reasonably visible
+  const isVisible =
+    card.offsetTop >= stage.scrollTop &&
+    card.offsetTop + card.clientHeight <= stage.scrollTop + stage.clientHeight
+
+  if (isVisible) return
+  card.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
+
+function setupObserver(): void {
+  if (viewMode.value !== 'scroll') {
+    pageObserver?.disconnect()
+    pageObserver = null
+    return
+  }
+  pageObserver?.disconnect()
+  const stage = stageRef.value
+  if (!stage) return
+
+  pageObserver = new IntersectionObserver(
+    (entries) => {
+      let best: { page: number; ratio: number } | null = null
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const page = Number((entry.target as HTMLElement).dataset.pageNumber)
+        if (!page || (best && entry.intersectionRatio <= best.ratio)) continue
+        best = { page, ratio: entry.intersectionRatio }
+      }
+      if (!best || best.page === visiblePage.value) return
+      visiblePage.value = best.page
+      emit('update:currentPage', best.page)
+    },
+    {
+      root: stage,
+      threshold: [0.25, 0.5, 0.75],
+    },
+  )
+
+  for (const page of props.pages) {
+    if (viewMode.value !== 'scroll' && page.page_number !== props.currentPage) continue
+    const card = pageCardRefs[page.page_number]
+    if (!card) continue
+    card.dataset.pageNumber = String(page.page_number)
+    pageObserver.observe(card)
+  }
 }
 
 /**
- * Scroll the preview stage so the first highlighted element sits at the
- * vertical and horizontal center of the viewport. No-op when no
- * highlight is set, the image is not loaded yet, or the highlight
- * doesn't resolve to an element on the current page.
+ * Scroll the preview stage so the first highlighted element sits near the
+ * center of the viewport. No-op when no highlight is set or the target page
+ * image is not loaded yet.
  */
 function centerHighlighted(): void {
   const refs = props.highlightedRefs
-  const page = currentPageData.value
-  const img = imageEl.value
   const stage = stageRef.value
-  const frame = frameRef.value
-  if (!refs || refs.size === 0 || !page || !img || !stage || !frame) return
+  if (!refs || refs.size === 0 || !stage) return
 
-  const target = page.elements.find((e) => !!e.self_ref && refs.has(e.self_ref))
-  if (!target) return
+  for (const page of props.pages) {
+    const target = page.elements.find((element) => !!element.self_ref && refs.has(element.self_ref))
+    if (!target) continue
 
-  const scale = computeScale(img.clientWidth, img.clientHeight, page.width, page.height)
-  const rect = bboxToRect(target.bbox, scale)
-  if (rect.w <= 0 || rect.h <= 0) return
+    if (viewMode.value === 'page' && page.page_number !== props.currentPage) {
+      emit('update:currentPage', page.page_number)
+      return
+    }
 
-  // Position of the bbox center inside the stage's scrollable space.
-  // The frame is centered horizontally (`margin: 0 auto`) inside the
-  // stage's padding box, so we offset by the frame's position relative
-  // to the stage.
-  const frameLeft = frame.offsetLeft
-  const frameTop = frame.offsetTop
-  const cx = frameLeft + rect.x + rect.w / 2
-  const cy = frameTop + rect.y + rect.h / 2
+    const img = loadedImages[page.page_number]
+    const card = pageCardRefs[page.page_number]
+    if (!img || !card) return
 
-  const targetLeft = cx - stage.clientWidth / 2
-  const targetTop = cy - stage.clientHeight / 2
+    const scale = computeScale(img.clientWidth, img.clientHeight, page.width, page.height)
+    const rect = bboxToRect(target.bbox, scale)
+    if (rect.w <= 0 || rect.h <= 0) return
 
-  stage.scrollTo({
-    left: Math.max(0, targetLeft),
-    top: Math.max(0, targetTop),
-    behavior: 'smooth',
-  })
+    const imgTop = img.offsetTop + card.offsetTop
+    const imgLeft = img.offsetLeft + card.offsetLeft
+
+    const targetLeft = imgLeft + rect.x + rect.w / 2 - stage.clientWidth / 2
+    const targetTop = imgTop + rect.y + rect.h / 2 - stage.clientHeight / 2
+
+    // Check if the target is already reasonably visible to avoid jumps when
+    // clicking an element that is already in view.
+    const isVisible =
+      imgTop + rect.y >= stage.scrollTop &&
+      imgTop + rect.y + rect.h <= stage.scrollTop + stage.clientHeight &&
+      imgLeft + rect.x >= stage.scrollLeft &&
+      imgLeft + rect.x + rect.w <= stage.scrollLeft + stage.clientWidth
+
+    if (isVisible) return
+
+    stage.scrollTo({
+      left: Math.max(0, targetLeft),
+      top: Math.max(0, targetTop),
+      behavior: 'smooth',
+    })
+    return
+  }
 }
 
 watch(
   () => props.currentPage,
-  () => {
+  (page) => {
     resetPageInput()
+    if (!page || viewMode.value !== 'scroll' || page === visiblePage.value) return
+    nextTick(() => scrollToPage(page))
   },
   { immediate: true },
 )
 
 watch(
+  () => props.pages,
+  async () => {
+    await nextTick()
+    setupObserver()
+  },
+  { deep: true },
+)
+
+watch(viewMode, async (mode) => {
+  await nextTick()
+  setupObserver()
+  if (mode === 'scroll' && props.currentPage) scrollToPage(props.currentPage)
+})
+
+watch(
   () => props.highlightedRefs,
   () => {
+    if (suppressNextHighlightScroll) {
+      suppressNextHighlightScroll = false
+      return
+    }
     nextTick(centerHighlighted)
   },
   { deep: true },
 )
+
+onMounted(() => {
+  nextTick(() => {
+    setupObserver()
+    if (props.currentPage) scrollToPage(props.currentPage)
+  })
+})
+
+onBeforeUnmount(() => {
+  pageObserver?.disconnect()
+})
 </script>
 
 <style scoped>
@@ -216,12 +361,50 @@ watch(
   overflow: hidden;
 }
 
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preview-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.preview-mode-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.preview-mode-btn:hover {
+  color: var(--text);
+}
+
+.preview-mode-btn.active {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
 .page-paginator {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   padding: 4px 0;
 }
 
@@ -302,8 +485,39 @@ watch(
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 8px;
+  padding: 12px;
   min-height: 0;
+}
+
+.preview-page {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-page + .preview-page {
+  margin-top: 18px;
+}
+
+.preview-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.preview-page-label,
+.preview-page-meta {
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.preview-page-label {
+  color: var(--text);
+}
+
+.preview-page-meta {
+  color: var(--text-muted);
 }
 
 .preview-frame {
@@ -312,6 +526,10 @@ watch(
   width: fit-content;
   max-width: 100%;
   margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-surface);
 }
 
 .preview-image {
