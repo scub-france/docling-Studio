@@ -102,6 +102,7 @@ export interface DocumentEditCommandInput {
 export interface DocumentEditSession {
   analysisId: string
   pages: Page[]
+  tree: DocTreeNode[]
   pendingCommands: DocumentEditCommand[]
 }
 
@@ -115,6 +116,7 @@ export interface DocumentEditCommitResult {
     backend: unknown
   }>
   pages: Page[]
+  tree: DocTreeNode[]
 }
 
 export interface ChunkingOptions {

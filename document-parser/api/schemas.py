@@ -125,6 +125,7 @@ class DocumentEditCommandResponse(_CamelModel):
 class DocumentEditSessionResponse(_CamelModel):
     analysis_id: str
     pages: list[dict] = Field(default_factory=list)
+    tree: list[dict] = Field(default_factory=list)
     pending_commands: list[DocumentEditCommandResponse] = Field(default_factory=list)
 
 
@@ -147,6 +148,7 @@ class DocumentEditCommitResponse(_CamelModel):
     consistent: bool
     differences: list[dict] = Field(default_factory=list)
     pages: list[dict] = Field(default_factory=list)
+    tree: list[dict] = Field(default_factory=list)
 
 
 class PipelineOptionsRequest(BaseModel):

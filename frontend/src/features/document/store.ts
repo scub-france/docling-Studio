@@ -6,6 +6,7 @@ import type {
   DocumentEditCommand,
   DocumentEditCommandInput,
   DocumentEditCommitResult,
+  DocTreeNode,
   DocumentVersion,
   PageElement,
   Page,
@@ -32,6 +33,7 @@ export const useDocumentStore = defineStore('document', () => {
   // Cached analysis row for the active version (analysisId resolution).
   const workspaceActiveAnalysis = ref<Analysis | null>(null)
   const workspaceDraftPages = ref<Page[] | null>(null)
+  const workspaceDraftTree = ref<DocTreeNode[] | null>(null)
   const pendingDocumentCommands = ref<DocumentEditCommand[]>([])
   const documentEditSaving = ref(false)
   const documentEditCommitting = ref(false)
@@ -144,6 +146,7 @@ export const useDocumentStore = defineStore('document', () => {
     workspaceCurrentVersionId.value = null
     workspaceActiveAnalysis.value = null
     workspaceDraftPages.value = null
+    workspaceDraftTree.value = null
     pendingDocumentCommands.value = []
     try {
       const [doc, versions] = await Promise.all([
@@ -228,11 +231,13 @@ export const useDocumentStore = defineStore('document', () => {
   async function hydrateDocumentEditSession(docId: string): Promise<void> {
     pendingDocumentCommands.value = []
     workspaceDraftPages.value = null
+    workspaceDraftTree.value = null
     if (!workspaceActiveAnalysis.value?.hasDocumentJson) return
     try {
       const session = await api.fetchDocumentEditSession(docId)
       pendingDocumentCommands.value = session.pendingCommands
       workspaceDraftPages.value = session.pendingCommands.length ? session.pages : null
+      workspaceDraftTree.value = session.pendingCommands.length ? session.tree : null
     } catch (e) {
       workspaceError.value = (e as Error).message || 'Failed to load document edit session'
     }
@@ -244,6 +249,7 @@ export const useDocumentStore = defineStore('document', () => {
     payload: DocumentEditCommandInput['payload'],
   ): Promise<void> {
     const previousDraft = clonePages(workspaceDraftPages.value ?? workspaceBasePages.value)
+    const previousDraftTree = cloneTree(workspaceDraftTree.value)
     workspaceDraftPages.value = updatePageElementLocally(previousDraft, targetRef, payload)
     documentEditSaving.value = true
     try {
@@ -255,9 +261,11 @@ export const useDocumentStore = defineStore('document', () => {
         },
       ])
       workspaceDraftPages.value = session.pages
+      workspaceDraftTree.value = session.tree
       pendingDocumentCommands.value = session.pendingCommands
     } catch (e) {
       workspaceDraftPages.value = pendingDocumentCommands.value.length ? previousDraft : null
+      workspaceDraftTree.value = pendingDocumentCommands.value.length ? previousDraftTree : null
       workspaceError.value = (e as Error).message || 'Failed to update page element'
       throw e
     } finally {
@@ -271,6 +279,7 @@ export const useDocumentStore = defineStore('document', () => {
     try {
       const result = await api.commitDocumentEdits(docId, workspaceDraftPages.value)
       workspaceDraftPages.value = result.committed ? null : result.pages
+      workspaceDraftTree.value = result.committed ? null : result.tree
       if (result.committed && workspaceActiveAnalysis.value) {
         workspaceActiveAnalysis.value = await fetchAnalysis(workspaceActiveAnalysis.value.id)
         pendingDocumentCommands.value = []
@@ -288,6 +297,7 @@ export const useDocumentStore = defineStore('document', () => {
     try {
       await api.discardDocumentEdits(docId)
       workspaceDraftPages.value = null
+      workspaceDraftTree.value = null
       pendingDocumentCommands.value = []
     } catch (e) {
       workspaceError.value = (e as Error).message || 'Failed to discard document edits'
@@ -307,6 +317,7 @@ export const useDocumentStore = defineStore('document', () => {
     workspaceCurrentVersion,
     workspaceActiveAnalysis,
     workspaceDraftPages,
+    workspaceDraftTree,
     pendingDocumentCommands,
     documentEditSaving,
     documentEditCommitting,
@@ -336,6 +347,14 @@ function clonePages(pages: Page[]): Page[] {
   return pages.map((page) => ({
     ...page,
     elements: page.elements.map((element) => ({ ...element })),
+  }))
+}
+
+function cloneTree(tree: DocTreeNode[] | null): DocTreeNode[] | null {
+  if (!tree) return null
+  return tree.map((node) => ({
+    ...node,
+    children: cloneTree(node.children) ?? [],
   }))
 }
 

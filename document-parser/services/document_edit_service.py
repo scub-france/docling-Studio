@@ -15,11 +15,18 @@ from docling_core.types.doc.labels import DocItemLabel
 
 from domain.models import DocumentEdit
 from domain.value_objects import DocumentEditAction, DocumentEditStatus
+from infra.docling_tree import DoclingTreeReader
 from infra.local_converter import _extract_pages_detail
+from services.chunk_service import _build_tree_nodes
 
 if TYPE_CHECKING:
     from domain.models import AnalysisJob, Document
-    from domain.ports import AnalysisRepository, DocumentEditRepository, DocumentRepository
+    from domain.ports import (
+        AnalysisRepository,
+        DocumentEditRepository,
+        DocumentRepository,
+        DocumentTreeReader,
+    )
 
 
 def _utcnow() -> datetime:
@@ -53,11 +60,13 @@ class DocumentEditService:
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
         edit_repo: DocumentEditRepository,
+        tree_reader: DocumentTreeReader | None = None,
         actor: str = "user",
     ) -> None:
         self._documents = document_repo
         self._analyses = analysis_repo
         self._edits = edit_repo
+        self._tree = tree_reader or DoclingTreeReader()
         self._actor = actor
 
     async def get_session(self, document_id: str) -> dict[str, Any]:
@@ -69,6 +78,7 @@ class DocumentEditService:
         return {
             "analysisId": analysis.id,
             "pages": self._render_pages(document),
+            "tree": self._render_tree(document),
             "pendingCommands": [self._edit_to_dict(edit) for edit in edits],
         }
 
@@ -86,12 +96,13 @@ class DocumentEditService:
             self._command_to_edit(document_id, analysis.id, command, actor=actor or self._actor)
             for command in commands
         ]
-        preview = self._preview_from(analysis, [*pending, *new_edits])
+        preview_document = self._preview_document(analysis, [*pending, *new_edits])
         for edit in new_edits:
             await self._edits.insert(edit)
         return {
             "analysisId": analysis.id,
-            "pages": preview,
+            "pages": self._render_pages(preview_document),
+            "tree": self._render_tree(preview_document),
             "pendingCommands": [self._edit_to_dict(cmd) for cmd in [*pending, *new_edits]],
         }
 
@@ -104,11 +115,18 @@ class DocumentEditService:
         analysis = await self._require_analysis(document_id)
         pending = await self._edits.find_pending_for_document(document_id)
         if not pending:
-            return {"committed": True, "consistent": True, "differences": [], "pages": []}
+            return {
+                "committed": True,
+                "consistent": True,
+                "differences": [],
+                "pages": [],
+                "tree": [],
+            }
 
         document = self._load_doc(analysis.document_json)
         self._apply_edits(document, pending)
         backend_pages = self._render_pages(document)
+        backend_tree = self._render_tree(document)
         differences = _diff_pages(frontend_pages, backend_pages)
         if differences:
             return {
@@ -116,6 +134,7 @@ class DocumentEditService:
                 "consistent": False,
                 "differences": differences,
                 "pages": backend_pages,
+                "tree": backend_tree,
             }
 
         analysis.document_json = json.dumps(document.export_to_dict())
@@ -130,6 +149,7 @@ class DocumentEditService:
             "consistent": True,
             "differences": [],
             "pages": backend_pages,
+            "tree": backend_tree,
         }
 
     async def discard(self, document_id: str) -> int:
@@ -153,9 +173,14 @@ class DocumentEditService:
     def _preview_from(
         self, analysis: AnalysisJob, edits: list[DocumentEdit]
     ) -> list[dict[str, Any]]:
+        return self._render_pages(self._preview_document(analysis, edits))
+
+    def _preview_document(
+        self, analysis: AnalysisJob, edits: list[DocumentEdit]
+    ) -> DoclingDocument:
         document = self._load_doc(analysis.document_json)
         self._apply_edits(document, edits)
-        return self._render_pages(document)
+        return document
 
     def _load_doc(self, raw_document_json: str | None) -> DoclingDocument:
         if not raw_document_json:
@@ -299,6 +324,9 @@ class DocumentEditService:
     def _render_pages(self, document: DoclingDocument) -> list[dict[str, Any]]:
         pages, _skipped = _extract_pages_detail(SimpleNamespace(document=document))
         return [asdict(page) for page in pages]
+
+    def _render_tree(self, document: DoclingDocument) -> list[dict[str, Any]]:
+        return _build_tree_nodes(document.export_to_dict(), self._tree)
 
     def _edit_to_dict(self, edit: DocumentEdit) -> dict[str, Any]:
         return {

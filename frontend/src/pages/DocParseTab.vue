@@ -166,6 +166,7 @@ const treeLoading = ref(false)
 const treeError = ref<string | null>(null)
 const filter = ref('')
 const selectedNodeRef = ref<string | null>(null)
+const effectiveTree = computed<DocTreeNode[]>(() => documentStore.workspaceDraftTree ?? tree.value)
 
 const currentPageData = computed(() => {
   return documentStore.workspacePages.find((p) => p.page_number === currentPage.value) ?? null
@@ -193,12 +194,12 @@ const linkedChunk = computed<DocChunk | null>(() => {
   return chunkForElement(selectedElement.value, currentPage.value, chunksStore.chunks)
 })
 
-const nodeCount = computed(() => countNodes(tree.value))
+const nodeCount = computed(() => countNodes(effectiveTree.value))
 
 const filteredNodes = computed<DocTreeNode[]>(() => {
   const needle = filter.value.trim().toLowerCase()
-  if (!needle) return tree.value
-  return filterTree(tree.value, needle)
+  if (!needle) return effectiveTree.value
+  return filterTree(effectiveTree.value, needle)
 })
 
 const highlightedRefs = computed<ReadonlySet<string>>(() => {

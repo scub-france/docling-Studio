@@ -42,6 +42,7 @@ async def get_session(doc_id: str, service: ServiceDep) -> DocumentEditSessionRe
     return DocumentEditSessionResponse(
         analysis_id=payload["analysisId"],
         pages=payload["pages"],
+        tree=payload["tree"],
         pending_commands=[DocumentEditCommandResponse(**cmd) for cmd in payload["pendingCommands"]],
     )
 
@@ -63,6 +64,7 @@ async def apply_commands(
     return DocumentEditSessionResponse(
         analysis_id=payload["analysisId"],
         pages=payload["pages"],
+        tree=payload["tree"],
         pending_commands=[DocumentEditCommandResponse(**cmd) for cmd in payload["pendingCommands"]],
     )
 

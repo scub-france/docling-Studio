@@ -10,6 +10,10 @@ vi.mock('./api', () => ({
   rechunkDocument: vi.fn(),
   fetchDocumentVersions: vi.fn(),
   restoreDocumentVersion: vi.fn(),
+  fetchDocumentEditSession: vi.fn(),
+  applyDocumentEditCommands: vi.fn(),
+  commitDocumentEdits: vi.fn(),
+  discardDocumentEdits: vi.fn(),
 }))
 
 vi.mock('../chunks/api', () => ({
@@ -28,6 +32,12 @@ describe('useDocumentStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    api.fetchDocumentEditSession.mockResolvedValue({
+      analysisId: 'a1',
+      pages: [],
+      tree: [],
+      pendingCommands: [],
+    })
   })
 
   it('starts with empty state', () => {
@@ -219,6 +229,33 @@ describe('useDocumentStore', () => {
     ...overrides,
   })
 
+  const mkTreeNode = (overrides = {}) => ({
+    ref: '#/texts/12',
+    type: 'title',
+    label: 'Draft heading',
+    children: [],
+    ...overrides,
+  })
+
+  const mkEditSession = (overrides = {}) => ({
+    analysisId: 'a1',
+    pages: [],
+    tree: [mkTreeNode()],
+    pendingCommands: [
+      {
+        id: 'cmd-1',
+        analysisId: 'a1',
+        action: 'update_page_element' as const,
+        targetRef: '#/texts/12',
+        payload: { content: 'Updated content' },
+        actor: 'user',
+        at: '2026-05-30T12:00:00Z',
+        status: 'pending' as const,
+      },
+    ],
+    ...overrides,
+  })
+
   it('loadWorkspace() loads doc + auto-pins the latest version + fetches its analysis', async () => {
     api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
     api.fetchDocumentVersions.mockResolvedValue([
@@ -351,5 +388,62 @@ describe('useDocumentStore', () => {
     await store.reloadWorkspaceVersions('d1')
     expect(store.workspaceCurrentVersionId).toBe('v2')
     expect(store.workspaceActiveAnalysis?.id).toBe('a2')
+  })
+
+  it('hydrateDocumentEditSession() stores draft tree when pending commands exist', async () => {
+    const store = useDocumentStore()
+    store.workspaceActiveAnalysis = mkAnalysis()
+    api.fetchDocumentEditSession.mockResolvedValue(mkEditSession())
+
+    await store.hydrateDocumentEditSession('d1')
+
+    expect(store.workspaceDraftTree).toEqual([mkTreeNode()])
+    expect(store.pendingDocumentCommands).toHaveLength(1)
+  })
+
+  it('hydrateDocumentEditSession() clears draft tree when no pending commands exist', async () => {
+    const store = useDocumentStore()
+    store.workspaceActiveAnalysis = mkAnalysis()
+    store.workspaceDraftTree = [mkTreeNode({ label: 'Old draft' })]
+    api.fetchDocumentEditSession.mockResolvedValue(
+      mkEditSession({ tree: [mkTreeNode({ label: 'Committed tree' })], pendingCommands: [] }),
+    )
+
+    await store.hydrateDocumentEditSession('d1')
+
+    expect(store.workspaceDraftTree).toBeNull()
+    expect(store.pendingDocumentCommands).toEqual([])
+  })
+
+  it('discardPendingDocumentEdits() clears draft tree and pending commands', async () => {
+    const store = useDocumentStore()
+    store.workspaceDraftTree = [mkTreeNode()]
+    store.pendingDocumentCommands = mkEditSession().pendingCommands
+    api.discardDocumentEdits.mockResolvedValue(null)
+
+    await store.discardPendingDocumentEdits('d1')
+
+    expect(store.workspaceDraftTree).toBeNull()
+    expect(store.pendingDocumentCommands).toEqual([])
+  })
+
+  it('commitPendingDocumentEdits() adopts backend draft tree on inconsistent commit', async () => {
+    const store = useDocumentStore()
+    store.workspaceDraftPages = [
+      { page_number: 1, width: 600, height: 800, elements: [] },
+    ]
+    store.workspaceDraftTree = [mkTreeNode({ label: 'Frontend draft' })]
+    api.commitDocumentEdits.mockResolvedValue({
+      committed: false,
+      consistent: false,
+      differences: [{ ref: '#/texts/12', field: 'content', frontend: 'A', backend: 'B' }],
+      pages: [{ page_number: 1, width: 600, height: 800, elements: [] }],
+      tree: [mkTreeNode({ label: 'Backend truth' })],
+    })
+
+    const result = await store.commitPendingDocumentEdits('d1')
+
+    expect(result?.committed).toBe(false)
+    expect(store.workspaceDraftTree).toEqual([mkTreeNode({ label: 'Backend truth' })])
   })
 })
