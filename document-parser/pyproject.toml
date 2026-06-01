@@ -16,8 +16,6 @@ dependencies = [
   "opensearch-py[async]>=2.6.0,<3.0.0",
   "neo4j>=5.15.0,<6.0.0",
   "cryptography>=43.0.0,<46.0.0",
-  "docling-agent==0.1.0",
-  "mellea==0.4.2",
 ]
 
 [dependency-groups]
@@ -29,6 +27,15 @@ dev = [
 ]
 local = [
   "docling>=2.80.0,<3.0.0",
+]
+# Opt-in reasoning stack (R&D). Pulled in only when the image is built
+# with --build-arg WITH_REASONING=true (see document-parser/Dockerfile +
+# docs/design/254-docker-slim-post-uv.md). The runtime adapter
+# infra/docling_agent_reasoning.deps_present() degrades gracefully when
+# these are absent — the /api/reasoning endpoint surfaces 503 instead.
+reasoning = [
+  "docling-agent==0.1.0",
+  "mellea==0.4.2",
 ]
 
 [tool.uv]

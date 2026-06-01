@@ -776,11 +776,9 @@ source = { virtual = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "cryptography" },
-    { name = "docling-agent" },
     { name = "docling-core", extra = ["chunking"] },
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "mellea" },
     { name = "neo4j" },
     { name = "opensearch-py", extra = ["async"] },
     { name = "pdf2image" },
@@ -800,16 +798,18 @@ dev = [
 local = [
     { name = "docling" },
 ]
+reasoning = [
+    { name = "docling-agent" },
+    { name = "mellea" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0,<1.0.0" },
     { name = "cryptography", specifier = ">=43.0.0,<46.0.0" },
-    { name = "docling-agent", specifier = "==0.1.0" },
     { name = "docling-core", extras = ["chunking"], specifier = ">=2.0.0,<3.0.0" },
     { name = "fastapi", specifier = ">=0.115.0,<1.0.0" },
     { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
-    { name = "mellea", specifier = "==0.4.2" },
     { name = "neo4j", specifier = ">=5.15.0,<6.0.0" },
     { name = "opensearch-py", extras = ["async"], specifier = ">=2.6.0,<3.0.0" },
     { name = "pdf2image", specifier = ">=1.17.0,<2.0.0" },
@@ -827,6 +827,10 @@ dev = [
     { name = "ruff", specifier = ">=0.11.0,<1.0.0" },
 ]
 local = [{ name = "docling", specifier = ">=2.80.0,<3.0.0" }]
+reasoning = [
+    { name = "docling-agent", specifier = "==0.1.0" },
+    { name = "mellea", specifier = "==0.4.2" },
+]
 
 [[package]]
 name = "et-xmlfile"
