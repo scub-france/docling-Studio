@@ -1,23 +1,59 @@
+# Docker build context for the root `Dockerfile` (context: repo root).
+# Filters everything not consumed by either the `frontend-build` stage
+# (npm sources) or the `base` stage (Python sources + nginx template).
+
+# VCS / IDE / OS noise
 .git/
 .github/
+.gitignore
+.gitattributes
+.idea/
+.vscode/
+.editorconfig
+.DS_Store
+*.iml
+
+# Claude Code session + worktree storage — never belongs in an image
+.claude/
+
+# Markdown & top-level docs (README, CHANGELOG, etc.)
 *.md
 LICENSE
+
+# Local env / secrets
 .env
 .env.*
 
-# Frontend build artifacts
+# Frontend build artefacts (the frontend-build stage runs `npm ci` from sources)
 frontend/node_modules/
 frontend/dist/
 
-# Backend dev artifacts
+# Backend dev / cache / runtime artefacts
 document-parser/.venv/
 document-parser/__pycache__/
 document-parser/*.pyc
+document-parser/*.iml
 document-parser/.pytest_cache/
 document-parser/.mypy_cache/
 document-parser/.ruff_cache/
 document-parser/data/
 document-parser/uploads/
+document-parser/CLAUDE.md
+document-parser/conftest.py
+document-parser/pytest.ini
+document-parser/tests/
 
-# E2E tests (JVM/Maven — not needed in Docker images)
+# Repository-level dirs that never belong in either runtime image
+docs/
 e2e/
+experiments/
+site/
+mkdocs.yml
+node_modules/
+
+# Trivy / compose / docker tooling (used by CI/dev, not by the image itself)
+.trivyignore.yaml
+docker-compose*.yml
+
+# Stray frontend artefact from an earlier setup — never used by the backend
+document-parser/package-lock.json

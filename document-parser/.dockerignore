@@ -1,12 +1,41 @@
+# Docker build context for `document-parser/Dockerfile` (context: ./document-parser).
+# Keeps the COPY . . layer slim — anything not needed at runtime is filtered here.
+
+# Python caches & venv
 .venv/
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-.git/
-.gitignore
-.env
-*.log
+
+# Linter / type-checker / test caches
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+
+# Git / docker / IDE / OS noise
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+*.iml
+.idea/
+.vscode/
+.DS_Store
+CLAUDE.md
+
+# Local-only artefacts (runtime mounts — never source)
+.env
+.env.*
+*.log
+data/
+uploads/
+
+# Tests + fixtures aren't needed in the runtime image.
+# (Tests still run via `uv run pytest` in CI, against a checkout — not the image.)
+tests/
+conftest.py
+pytest.ini
+
+# Stray frontend artefact from an earlier setup — never used by the backend
+package-lock.json
