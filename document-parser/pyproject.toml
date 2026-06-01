@@ -44,6 +44,15 @@ reasoning = [
   "docling-agent==0.1.0",
   "mellea==0.4.2",
 ]
+# Opt-in reasoning stack (R&D). Pulled in only when the image is built
+# with --build-arg WITH_REASONING=true (see document-parser/Dockerfile +
+# docs/design/254-docker-slim-post-uv.md). The runtime adapter
+# infra/docling_agent_reasoning.deps_present() degrades gracefully when
+# these are absent — the /api/reasoning endpoint surfaces 503 instead.
+reasoning = [
+  "docling-agent==0.1.0",
+  "mellea==0.4.2",
+]
 
 [tool.uv]
 package = false
