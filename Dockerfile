@@ -69,6 +69,14 @@ ENV CONVERSION_ENGINE=remote
 # --- Local: full Docling in-process ---
 FROM base AS local
 
+# Pre-fetch the Docling model checkpoints into the image so the very
+# first /api/convert is instant (no inline HuggingFace download with
+# the user staring at a spinner). Costs ~+1.3 GB on the image.
+# Opt out with `--build-arg BAKE_MODELS=false` to ship the slim variant;
+# in that mode docling downloads on first call and you'll want to
+# mount /home/appuser/.cache/docling as a volume to persist them.
+ARG BAKE_MODELS=true
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -79,6 +87,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # separate --index-url step. `uv sync --group local` resolves them
 # straight to the +cpu builds locked in uv.lock.
 RUN uv sync --frozen --no-dev --group local
+
+RUN if [ "$BAKE_MODELS" = "true" ]; then \
+        mkdir -p /home/appuser/.cache/docling \
+        && docling-tools models download \
+             --output-dir /home/appuser/.cache/docling/models --quiet \
+        && chown -R appuser:appuser /home/appuser/.cache; \
+    fi
 
 RUN chown -R appuser:appuser /app \
     && chown -R appuser:appuser /usr/local/lib/python3.12/site-packages/rapidocr/models

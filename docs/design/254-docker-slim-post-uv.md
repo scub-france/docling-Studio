@@ -137,7 +137,7 @@ COPY .                   COPY site-packages
 - Le cache uv (`/root/.cache/uv`) reste dans la stage builder et n'atteint jamais l'image runtime.
 - Un build-arg `WITH_REASONING=false` (défaut) gate l'install des deps reasoning dans le builder-local.
 
-Optionnel (à décider en cours d'implémentation, gardé en option non-bloquante) : build-arg `BAKE_MODELS=false` (défaut) pour pré-télécharger les modèles Docling dans la stage local quand `true`. Compromis taille (+1.3 GB) vs cold-start (économise un download au premier run).
+Build-arg `BAKE_MODELS=true` **par défaut** dans la stage local : `docling-tools models download --output-dir /home/appuser/.cache/docling/models` pré-télécharge les checkpoints (layout heron, tableformer, CodeFormulaV2, DocumentFigureClassifier, RapidOCR — ~1.3 GB) à la build. Le tradeoff : +1.3 GB sur l'image standard contre **first-convert instantané** au lieu de 2-5 min de spinner silencieux côté user. Opt-out via `--build-arg BAKE_MODELS=false` pour les déploiements size-conscious (l'opérateur monte alors `/home/appuser/.cache/docling` comme volume pour persister les downloads).
 
 ### 5.4 Services
 
@@ -186,17 +186,12 @@ No change.
 
 ### Env vars / config
 
-No new runtime env vars. Un nouveau **build-arg** sur la cible `local` du Dockerfile :
+No new runtime env vars. Build-args sur la cible `local` du Dockerfile :
 
 | Name | Default | Allowed | Notes |
 |------|---------|---------|-------|
 | `WITH_REASONING` | `false` | `true` / `false` | Déclenche `uv sync --frozen --group reasoning` dans le builder-local. Opt in pour produire une image `local-reasoning`. Off garde l'image standard slim. |
-
-Optionnel (à confirmer) :
-
-| Name | Default | Allowed | Notes |
-|------|---------|---------|-------|
-| `BAKE_MODELS` | `false` | `true` / `false` | Pré-fetch les checkpoints Docling dans la cache HF de appuser. Off laisse le premier run télécharger à la demande. |
+| `BAKE_MODELS` | `true` | `true` / `false` | Pré-fetch les checkpoints Docling (`docling-tools models download`) dans `/home/appuser/.cache/docling/models` à la build (~+1.3 GB). Default `true` pour un first-convert instantané. Opt-out pour les déploiements size-conscious — monter alors le dir comme volume pour persister entre restarts. |
 
 Compose forwards `WITH_REASONING` depuis l'env host (`WITH_REASONING=true docker compose up --build`).
 
@@ -245,15 +240,15 @@ Not in scope. Le change n'affecte aucun comportement user-facing.
 
 ### Performance / load — image size measurements
 
-**Baseline post-uv à mesurer.** Tableau à compléter après la première mesure :
+Mesures arm64 (référence taguées dans le daemon Docker local : `docling-studio-backend:baseline-*` et `:after-*` reprises du 0.6.1 design doc, et `docling-doc-parser:slim-*` produites par cette branche).
 
-| Variant                                | Baseline (post-uv)  | After     | Δ      |
-|----------------------------------------|--------------------:|----------:|-------:|
-| `latest-local` (standard)              | TBD                 | TBD       | TBD    |
-| `latest-local` (`WITH_REASONING=true`) | n/a                 | TBD       | n/a    |
-| `latest-remote`                        | TBD                 | TBD       | TBD    |
+| Variant                                       | Pre-#254 baseline | 0.6.1 best | **Cette branche** | Δ vs baseline |
+|-----------------------------------------------|------------------:|-----------:|------------------:|--------------:|
+| `latest-remote`                               | 5.85 GB           | 585 MB     | **537 MB**        | **−91 %**     |
+| `latest-local` (`BAKE_MODELS=true`, default)  | n/a               | 3.19 GB    | **3.1 GB**        | **−49 %**     |
+| `latest-local` (`BAKE_MODELS=false`, slim)    | 6.09 GB           | 1.89 GB    | **1.72 GB**       | **−72 %**     |
 
-Build durations (cold cache) : à mesurer. Warm rebuild après un edit Python : doit tomber sous-seconde (couches uv réutilisées).
+Build durations cold cache (apple silicon, M-series) : `remote` ≈ 30 s, `local` slim ≈ 1 min, `local` baked ≈ 1 min 40 s (HF download ~40 s pour ~1.3 GB sur lien rapide).
 
 ## 10. Rollout & observability
 
