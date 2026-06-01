@@ -242,11 +242,14 @@ Not in scope. Le change n'affecte aucun comportement user-facing.
 
 Mesures arm64 (référence taguées dans le daemon Docker local : `docling-studio-backend:baseline-*` et `:after-*` reprises du 0.6.1 design doc, et `docling-doc-parser:slim-*` produites par cette branche).
 
-| Variant                                       | Pre-#254 baseline | 0.6.1 best | **Cette branche** | Δ vs baseline |
-|-----------------------------------------------|------------------:|-----------:|------------------:|--------------:|
-| `latest-remote`                               | 5.85 GB           | 585 MB     | **537 MB**        | **−91 %**     |
-| `latest-local` (`BAKE_MODELS=true`, default)  | n/a               | 3.19 GB    | **3.1 GB**        | **−49 %**     |
-| `latest-local` (`BAKE_MODELS=false`, slim)    | 6.09 GB           | 1.89 GB    | **1.72 GB**       | **−72 %**     |
+| Variant                                                                   | Pre-#254 baseline | 0.6.1 best | **Cette branche** | Δ vs baseline |
+|---------------------------------------------------------------------------|------------------:|-----------:|------------------:|--------------:|
+| `latest-remote`                                                           | 5.85 GB           | 585 MB     | **537 MB**        | **−91 %**     |
+| `latest-local` (`BAKE_MODELS=true`, default)                              | n/a               | 3.19 GB    | **3.1 GB**        | **−49 %**     |
+| `latest-local` (`BAKE_MODELS=false`, slim)                                | 6.09 GB           | 1.89 GB    | **1.72 GB**       | **−72 %**     |
+| `latest-local` (`BAKE_MODELS=false`, `WITH_REASONING=true`)               | n/a               | n/a        | **1.92 GB**       | n/a           |
+
+Reasoning stack mesuré : `+200 MB` (docling-agent + mellea + ollama client + deps transitives). Plus modeste que prévu — la séparation reste pertinente pour la propreté de surface (HF Space remote n'embarque pas de LLM SDK code R&D) mais n'est pas le levier taille principal. Le gros gain vient de torch+cpu et du `.dockerignore` durci.
 
 Build durations cold cache (apple silicon, M-series) : `remote` ≈ 30 s, `local` slim ≈ 1 min, `local` baked ≈ 1 min 40 s (HF download ~40 s pour ~1.3 GB sur lien rapide).
 

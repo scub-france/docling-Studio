@@ -76,6 +76,10 @@ FROM base AS local
 # in that mode docling downloads on first call and you'll want to
 # mount /home/appuser/.cache/docling as a volume to persist them.
 ARG BAKE_MODELS=true
+# Opt in to the R&D reasoning stack (docling-agent + mellea + their
+# transitive LLM SDK weight). Off by default — `/api/reasoning` 503s
+# gracefully when the deps aren't present (see infra/docling_agent_reasoning.py).
+ARG WITH_REASONING=false
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
@@ -85,8 +89,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # torch + torchvision come from the PyTorch CPU index via the
 # [tool.uv.sources] section of document-parser/pyproject.toml — no
 # separate --index-url step. `uv sync --group local` resolves them
-# straight to the +cpu builds locked in uv.lock.
-RUN uv sync --frozen --no-dev --group local
+# straight to the +cpu builds locked in uv.lock. The reasoning group
+# is only pulled in when WITH_REASONING=true.
+RUN if [ "$WITH_REASONING" = "true" ]; then \
+        uv sync --frozen --no-dev --group local --group reasoning; \
+    else \
+        uv sync --frozen --no-dev --group local; \
+    fi
 
 RUN if [ "$BAKE_MODELS" = "true" ]; then \
         mkdir -p /home/appuser/.cache/docling \
