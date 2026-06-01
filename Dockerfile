@@ -74,8 +74,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN uv pip install --python /usr/local/bin/python --index-url https://download.pytorch.org/whl/cpu torch torchvision \
-    && uv sync --frozen --no-dev --group local
+# torch + torchvision come from the PyTorch CPU index via the
+# [tool.uv.sources] section of document-parser/pyproject.toml — no
+# separate --index-url step. `uv sync --group local` resolves them
+# straight to the +cpu builds locked in uv.lock.
+RUN uv sync --frozen --no-dev --group local
 
 RUN chown -R appuser:appuser /app \
     && chown -R appuser:appuser /usr/local/lib/python3.12/site-packages/rapidocr/models

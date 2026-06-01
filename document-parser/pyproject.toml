@@ -27,6 +27,13 @@ dev = [
 ]
 local = [
   "docling>=2.80.0,<3.0.0",
+  # `torch` + `torchvision` are pulled transitively by docling; we declare
+  # them explicitly so we can redirect them to the PyTorch CPU index via
+  # [tool.uv.sources] below. Without this, `uv sync --group local` would
+  # resolve to the default (CUDA) build from PyPI — ~3 GB of useless
+  # CUDA + triton in the latest-local image. See docs/design/254-docker-slim-post-uv.md.
+  "torch",
+  "torchvision",
 ]
 # Opt-in reasoning stack (R&D). Pulled in only when the image is built
 # with --build-arg WITH_REASONING=true (see document-parser/Dockerfile +
@@ -40,6 +47,18 @@ reasoning = [
 
 [tool.uv]
 package = false
+
+# PyTorch CPU wheels — declared as an explicit index so it is consulted
+# only for packages that explicitly source from it (cf. [tool.uv.sources]
+# below). Avoids polluting the resolution of every other dep.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
 
 [tool.ruff]
 target-version = "py312"
