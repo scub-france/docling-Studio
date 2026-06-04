@@ -105,6 +105,13 @@ jobs:
         timeout-minutes: 10
         env:
           RATE_LIMIT_RPM: "0"
+          # Skip Docling model bake in CI: GHA runners share IP pools and
+          # parallel HF Hub downloads (this image + embedding-service) hit
+          # the anonymous 429 rate limit. Tests download models inline on
+          # first /api/convert — the historical pre-#254 behaviour. GHCR
+          # publication (release.yml) keeps BAKE_MODELS=true so end users
+          # still get instant first-convert from the pulled image.
+          BAKE_MODELS: "false"
 
       - name: Wait for health
         run: |
@@ -177,6 +184,9 @@ jobs:
           # (#257 made it default-off). Enable it for e2e until those tests
           # are rewritten against /docs/:id in 0.7.0. Mirrors release-gate.yml.
           STUDIO_MODE_ENABLED: "true"
+          # Skip Docling model bake in CI — see API E2E job above for the
+          # full rationale (HF anonymous rate limits on shared GHA IPs).
+          BAKE_MODELS: "false"
 
       - name: Wait for health
         run: |

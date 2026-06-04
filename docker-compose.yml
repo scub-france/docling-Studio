@@ -89,6 +89,15 @@ services:
     build:
       context: ./document-parser
       target: ${CONVERSION_MODE:-local}
+      args:
+        # Pre-fetch Docling model checkpoints at build time (+~1.3 GB).
+        # Default true gives an instant first /api/convert. Override to
+        # false in environments that can't tolerate the HF Hub download
+        # at build time (e.g. CI runners with shared IP pools that hit
+        # anonymous rate limits while embedding-service downloads its
+        # own model in parallel).
+        BAKE_MODELS: ${BAKE_MODELS:-true}
+        WITH_REASONING: ${WITH_REASONING:-false}
     expose:
       - "8000"
     volumes:

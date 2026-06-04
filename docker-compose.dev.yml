@@ -90,6 +90,10 @@ services:
     build:
       context: ./document-parser
       target: ${CONVERSION_MODE:-local}
+      args:
+        # See docker-compose.yml for the full rationale on these build-args.
+        BAKE_MODELS: ${BAKE_MODELS:-true}
+        WITH_REASONING: ${WITH_REASONING:-false}
     ports:
       - "8000:8000"
     volumes:
