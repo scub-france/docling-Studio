@@ -21,3 +21,30 @@ vulnerabilities:
       base image. Not reachable from the backend (no SSH client code path).
       Re-evaluate when Debian publishes a backport or when we move off slim.
     expired_at: 2026-08-31
+  - id: CVE-2026-42496
+    # perl-base 5.40.1-6 (Debian 13 trixie). Perl ships with the
+    # python:3.12-slim base for dpkg/apt tooling, NOT for application use.
+    # Backend code does not execute Perl at runtime: no perl scripts, no
+    # IPC::Open* / Archive::Tar / Encode invocations from FastAPI handlers,
+    # and image layers only use Python + uv. The Archive::Tar path-traversal
+    # vector requires a crafted tarball to be unpacked by perl — we unpack
+    # via Python (zipfile / tarfile) or docling-core, not via the Perl tool.
+    statement: >-
+      perl-archive-tar path traversal via crafted symlinks. perl-base is
+      pulled by dpkg/apt in python:3.12-slim and is never invoked from
+      application code (no Perl handlers, no Archive::Tar usage). No
+      upstream fix yet, no Debian 13 backport. Re-evaluate when Debian
+      publishes a backport or when we move off slim.
+    expired_at: 2026-09-30
+  - id: CVE-2026-8376
+    # perl-base 5.40.1-6 (Debian 13 trixie). Same reachability argument as
+    # CVE-2026-42496: heap buffer overflow triggers when perl compiles a
+    # malicious regex, but we never execute perl at runtime — only dpkg
+    # and apt use it during image build, and they don't process untrusted
+    # regex sources.
+    statement: >-
+      perl heap buffer overflow during regex compile (no upstream fix yet,
+      no Debian 13 backport). perl-base is build-tooling in python:3.12-slim;
+      no Perl interpreter is reached from the application surface and no
+      untrusted regex is fed to perl. Re-evaluate alongside CVE-2026-42496.
+    expired_at: 2026-09-30
