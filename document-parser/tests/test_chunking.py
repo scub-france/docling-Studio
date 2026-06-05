@@ -478,11 +478,23 @@ class TestRemoteChunkingPath:
 
     @pytest.mark.asyncio
     async def test_rechunk_with_serve_document_json(self):
-        """AnalysisService.rechunk() works with a LocalChunker even in remote mode."""
-        from infra.local_chunker import LocalChunker
+        """AnalysisService.rechunk() works with the DocumentChunker port even in remote mode.
+
+        The chunker is mocked at the port boundary — instantiating a real
+        ``LocalChunker`` would force docling-core to load the ``HybridChunker``
+        tokenizer from HuggingFace Hub, which (a) makes a unit test depend on
+        public network and (b) gets 429-rate-limited on shared CI runners.
+        Real chunker integration is covered by ``test_local_chunker.py`` and
+        the e2e suite.
+        """
         from services.analysis_service import AnalysisService
 
-        chunker = LocalChunker()
+        # Mock the DocumentChunker port — return a deterministic ChunkResult
+        # so we can still assert update_chunks was called with a list shape.
+        chunker = AsyncMock()
+        chunker.chunk = AsyncMock(
+            return_value=[ChunkResult(text="stub", source_page=1, token_count=1)]
+        )
         analysis_repo = AsyncMock()
         document_repo = AsyncMock()
         converter = AsyncMock()  # ServeConverter mock — not used for rechunking
