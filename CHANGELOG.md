@@ -4,6 +4,31 @@ All notable changes to Docling Studio will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] - 2026-06-05
+
+### Changed
+
+- **Backend + embedding-service migrated from pip to uv** (#254, `4d9bcf6`): `document-parser/requirements*.txt` and `embedding-service/requirements.txt` removed; `uv.lock` plus `pyproject.toml`'s `[project]` / `[dependency-groups]` blocks are now the single source of truth. Dev workflow becomes `uv sync --group dev` (backend) / `uv sync --group local` (local Docling). PyTorch is redirected to the explicit CPU index via `[tool.uv.sources]` to avoid pulling the ~3 GB CUDA wheels into `latest-local`.
+- **`latest-local` ships with Docling model checkpoints baked at build time** (#254, `9d62337`): suppresses the cold-start HF Hub download on the first `/api/convert`. End users get an instant first-convert from the pulled GHCR image.
+- **`.dockerignore` hardened** (#254, `fe1dc16`): tests, audit reports, `.claude/`, `docker-compose*.yml` and other build-irrelevant paths excluded — leaner build context, smaller intermediate layers.
+- **Reasoning stack made opt-in via `WITH_REASONING` build-arg** (#254, `d1ed61e`, `bb2fe2b`): `docling-agent` and `mellea` moved out of `[project.dependencies]` into `[dependency-groups.reasoning]`. The default `latest-local` image no longer carries them — `/api/reasoning` responds `503` (graceful degrade). Building with `--build-arg WITH_REASONING=true` restores the 0.6.1 behaviour.
+
+### Fixed
+
+- **Remote-mode bbox overlay — second pass** (`3936166`, follow-up to the 0.6.1 fix): a code path the 0.6.1 patch missed still dropped `self_ref` in `ServeConverter`. The Linked-view canvas overlay now lights up consistently in remote mode.
+- **Architecture test excludes generated files** (`d29360d`): `tests/test_architecture.py` no longer scans `uploads/`, `data/` or other runtime artifacts — keeps the layering rules clean without false positives.
+
+### CI
+
+- **`STUDIO_MODE_ENABLED` opted in on the main CI too** (`8a61c22`): the `@critical` UI suite needs the legacy `/studio` surface; previously only `release-gate.yml` set the flag, leaving `ci.yml` E2E UI silently exercising the wrong surface.
+- **Docling model bake skipped during CI builds** (`051ac4a`, `#audit-10`): both `ci.yml` E2E jobs and both `release-gate.yml` E2E jobs (`e2e-api`, `e2e-ui`) now build the image with `BAKE_MODELS=false` to avoid HuggingFace Hub 429 rate limits on shared GHA runners. `release.yml` keeps `BAKE_MODELS=true` so the published image still carries the baked checkpoints.
+- **Unit test no longer pulls HF tokenizer** (`#audit-10`): `test_rechunk_with_serve_document_json` was instantiating a real `LocalChunker`, forcing `HybridChunker` to download `sentence-transformers/all-MiniLM-L6-v2`. Now mocks the `DocumentChunker` port — same intent, no public network in a unit test.
+
+### BREAKING CHANGES
+
+- **Backend dev workflow migrated to uv**: `pip install -r document-parser/requirements*.txt` / `pip install -r embedding-service/requirements.txt` no longer work — these files are gone. Use `uv sync` (`--group dev` for tests, `--group local` for local Docling mode). Any third-party CI / IDE bootstrap script that relies on the old `requirements*.txt` layout must migrate.
+- **Reasoning runtime made opt-in**: building `latest-local` without `--build-arg WITH_REASONING=true` produces an image where `/api/reasoning` responds `503`. Operators who depended on the 0.6.1 default-on reasoning stack must add the build-arg to their pipeline.
+
 ## [0.6.1] - 2026-05-25
 
 ### Added
