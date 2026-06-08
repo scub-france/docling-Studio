@@ -101,17 +101,17 @@ jobs:
           python e2e/generate-test-data.py
 
       - name: Start stack
-        run: docker compose up -d --wait --build
+        run: docker compose --profile remote up -d --wait --build
         timeout-minutes: 10
         env:
           RATE_LIMIT_RPM: "0"
-          # Skip Docling model bake in CI: GHA runners share IP pools and
-          # parallel HF Hub downloads (this image + embedding-service) hit
-          # the anonymous 429 rate limit. Tests download models inline on
-          # first /api/convert — the historical pre-#254 behaviour. GHCR
-          # publication (release.yml) keeps BAKE_MODELS=true so end users
-          # still get instant first-convert from the pulled image.
-          BAKE_MODELS: "false"
+          # Run E2E against the remote Docling Serve container instead of
+          # building a local image that bakes/downloads ~1.3 GB of HF
+          # checkpoints. Removes our last HuggingFace Hub dependency in
+          # CI (we used to 429 here on shared-IP GHA runners). The
+          # docling-serve service is in the `remote` compose profile —
+          # see docker-compose.yml.
+          CONVERSION_MODE: remote
 
       - name: Wait for health
         run: |
@@ -124,7 +124,7 @@ jobs:
             sleep 5
           done
           echo "Backend failed to start"
-          docker compose logs
+          docker compose --profile remote logs
           exit 1
 
       - name: Run E2E tests
@@ -144,7 +144,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down
+        run: docker compose --profile remote down
 
   e2e-ui:
     name: E2E UI tests (Karate UI)
@@ -176,7 +176,7 @@ jobs:
           python e2e/generate-test-data.py
 
       - name: Start stack
-        run: docker compose up -d --wait --build
+        run: docker compose --profile remote up -d --wait --build
         timeout-minutes: 10
         env:
           RATE_LIMIT_RPM: "0"
@@ -184,9 +184,9 @@ jobs:
           # (#257 made it default-off). Enable it for e2e until those tests
           # are rewritten against /docs/:id in 0.7.0. Mirrors release-gate.yml.
           STUDIO_MODE_ENABLED: "true"
-          # Skip Docling model bake in CI — see API E2E job above for the
-          # full rationale (HF anonymous rate limits on shared GHA IPs).
-          BAKE_MODELS: "false"
+          # Same remote-Docling-Serve setup as the API E2E job above —
+          # no HF dependency on this runner.
+          CONVERSION_MODE: remote
 
       - name: Wait for health
         run: |
@@ -199,7 +199,7 @@ jobs:
             sleep 5
           done
           echo "Backend failed to start"
-          docker compose logs
+          docker compose --profile remote logs
           exit 1
 
       - name: Run critical UI tests
@@ -218,4 +218,4 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down
+        run: docker compose --profile remote down

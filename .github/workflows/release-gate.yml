@@ -520,16 +520,17 @@ jobs:
           python e2e/generate-test-data.py
 
       - name: Start stack
-        run: docker compose up -d --wait --build
+        run: docker compose --profile remote up -d --wait --build
         timeout-minutes: 10
         env:
           RATE_LIMIT_RPM: "0"
-          # Skip Docling model bake in CI: GHA runners share IP pools and
-          # parallel HF Hub downloads hit the anonymous 429 rate limit.
-          # Tests download models inline on first /api/convert — same
-          # rationale as ci.yml. release.yml keeps BAKE_MODELS=true so end
-          # users still get instant first-convert from the pulled image.
-          BAKE_MODELS: "false"
+          # Run release-gate E2E API against the remote Docling Serve
+          # container. The quay.io image ships with models baked at the
+          # source so there is no HF Hub call from our build or runtime —
+          # this is what eliminated the 429 cascade we hit when the local
+          # mode tried to bake checkpoints during release-gate. See
+          # docker-compose.yml `remote` profile + commit dd1962e.
+          CONVERSION_MODE: remote
 
       - name: Wait for health
         run: |
@@ -542,7 +543,7 @@ jobs:
             sleep 5
           done
           echo "Backend failed to start"
-          docker compose logs
+          docker compose --profile remote logs
           exit 1
 
       - name: Run E2E API tests (full scope)
@@ -560,7 +561,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down
+        run: docker compose --profile remote down
 
   e2e-ui:
     name: E2E UI tests (@critical)
@@ -590,7 +591,7 @@ jobs:
           python e2e/generate-test-data.py
 
       - name: Start stack
-        run: docker compose up -d --wait --build
+        run: docker compose --profile remote up -d --wait --build
         timeout-minutes: 10
         env:
           RATE_LIMIT_RPM: "0"
@@ -598,9 +599,9 @@ jobs:
           # (#257 made it default-off). Enable it for e2e until those tests
           # are rewritten against /docs/:id in 0.7.0.
           STUDIO_MODE_ENABLED: "true"
-          # Skip Docling model bake in CI — see e2e-api job above. Required
-          # to avoid HF Hub 429 during release-gate runs.
-          BAKE_MODELS: "false"
+          # Same remote-Docling-Serve setup as the e2e-api job above —
+          # no HF dependency on this runner.
+          CONVERSION_MODE: remote
 
       - name: Wait for health
         run: |
@@ -613,7 +614,7 @@ jobs:
             sleep 5
           done
           echo "Backend failed to start"
-          docker compose logs
+          docker compose --profile remote logs
           exit 1
 
       - name: Debug — surface flags wired through
@@ -621,7 +622,7 @@ jobs:
           echo "=== /api/health response ==="
           curl -s http://localhost:3000/api/health | python3 -m json.tool
           echo "=== document-parser container env (surface flags) ==="
-          docker compose exec -T document-parser env | grep -E "STUDIO_MODE|RAG_PIPELINE" || true
+          docker compose --profile remote exec -T document-parser env | grep -E "STUDIO_MODE|RAG_PIPELINE" || true
 
       - name: Run critical UI tests
         run: >
@@ -639,7 +640,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down
+        run: docker compose --profile remote down
 
   # ──────────────────────────────────────────────────────────────────────────
   # Phase 4 — Release summary (comment on PR)
