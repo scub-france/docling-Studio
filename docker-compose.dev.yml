@@ -98,12 +98,17 @@ services:
     image: quay.io/docling-project/docling-serve-cpu:v1.21.0
     ports:
       - "5001:5001"
+    # Same race-safe healthcheck as docker-compose.yml — probe a route from
+    # `/openapi.json` so we only report healthy after FastAPI lifespan
+    # startup wires up `/v1/convert/*`.
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5001/version || exit 1"]
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:5001/openapi.json | grep -q '/v1/convert/file'
       interval: 15s
       timeout: 10s
-      retries: 20
-      start_period: 60s
+      retries: 30
+      start_period: 90s
     deploy:
       resources:
         limits:

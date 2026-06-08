@@ -358,11 +358,12 @@ jobs:
           severity: CRITICAL
           output: /tmp/trivy-critical-${{ matrix.target }}.txt
           trivyignores: .trivyignore.yaml
-          # `latest` instead of the action default — the previously hardcoded
-          # v0.69.3 was yanked from GitHub releases mid-run (2026-04-29) and
-          # broke the gate. Following Trivy stable is safer than chasing a
-          # specific tag that can vanish.
-          version: latest
+          # Pinned: `latest` was the previous workaround (after v0.69.3 got
+          # yanked in 2026-04), but `aquasecurity/setup-trivy` started failing
+          # to resolve `latest` around 2026-06-08 ("unable to find 'latest'").
+          # Re-pinning to a known-good explicit tag. Bump when a new stable
+          # ships and 'latest' resolution is still broken.
+          version: v0.71.0
 
       - name: Run Trivy — HIGH (informational)
         if: always()
@@ -374,7 +375,9 @@ jobs:
           severity: HIGH
           output: /tmp/trivy-high-${{ matrix.target }}.txt
           trivyignores: .trivyignore.yaml
-          version: latest
+          # Keep in sync with the CRITICAL step above — same setup-trivy
+          # `version: latest` resolution bug.
+          version: v0.71.0
 
       - name: Annotate HIGH vulnerabilities
         if: always()
