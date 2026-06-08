@@ -6,12 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [0.6.2] - 2026-06-05
 
+### Added
+
+- **Docling Serve container wired into compose** (`#audit-10`, `dd1962e`, `bc9b4f8`): new `docling-serve` service under the `remote` compose profile, pinned to `quay.io/docling-project/docling-serve-cpu:v1.21.0`. Pairs with `CONVERSION_MODE=remote` so the backend image stays slim and talks to a Docling Serve container over HTTP — no HF Hub dep on the build or runtime path. CI/release-gate E2E jobs now use this combo.
+- **HuggingFace dependency map** (`docs/architecture/huggingface-dependency-map.md`): exhaustive list of every HF call site in the project, the single sanctioned touch point (`release.yml` → `latest-local`), and the maintenance rule that every new HF dep must be opt-in.
+
 ### Changed
 
 - **Backend + embedding-service migrated from pip to uv** (#254, `4d9bcf6`): `document-parser/requirements*.txt` and `embedding-service/requirements.txt` removed; `uv.lock` plus `pyproject.toml`'s `[project]` / `[dependency-groups]` blocks are now the single source of truth. Dev workflow becomes `uv sync --group dev` (backend) / `uv sync --group local` (local Docling). PyTorch is redirected to the explicit CPU index via `[tool.uv.sources]` to avoid pulling the ~3 GB CUDA wheels into `latest-local`.
 - **`latest-local` ships with Docling model checkpoints baked at build time** (#254, `9d62337`): suppresses the cold-start HF Hub download on the first `/api/convert`. End users get an instant first-convert from the pulled GHCR image.
 - **`.dockerignore` hardened** (#254, `fe1dc16`): tests, audit reports, `.claude/`, `docker-compose*.yml` and other build-irrelevant paths excluded — leaner build context, smaller intermediate layers.
 - **Reasoning stack made opt-in via `WITH_REASONING` build-arg** (#254, `d1ed61e`, `bb2fe2b`): `docling-agent` and `mellea` moved out of `[project.dependencies]` into `[dependency-groups.reasoning]`. The default `latest-local` image no longer carries them — `/api/reasoning` responds `503` (graceful degrade). Building with `--build-arg WITH_REASONING=true` restores the 0.6.1 behaviour.
+- **`BAKE_MODELS` and `BAKE_MODEL` default to `false`** (`#audit-10`): both `document-parser/Dockerfile` and `embedding-service/Dockerfile` now opt out of HuggingFace Hub by default at build time. The only sanctioned bake is `release.yml` → `latest-local` GHCR image, which sets `BAKE_MODELS=true` explicitly on the `local` matrix entry. See the new HF dependency map for details.
 
 ### Fixed
 
@@ -28,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Backend dev workflow migrated to uv**: `pip install -r document-parser/requirements*.txt` / `pip install -r embedding-service/requirements.txt` no longer work — these files are gone. Use `uv sync` (`--group dev` for tests, `--group local` for local Docling mode). Any third-party CI / IDE bootstrap script that relies on the old `requirements*.txt` layout must migrate.
 - **Reasoning runtime made opt-in**: building `latest-local` without `--build-arg WITH_REASONING=true` produces an image where `/api/reasoning` responds `503`. Operators who depended on the 0.6.1 default-on reasoning stack must add the build-arg to their pipeline.
+- **`BAKE_MODELS` default flipped from `true` to `false`** in both `document-parser/Dockerfile` and `embedding-service/Dockerfile`. Operators who build their own `local` image from source and rely on the "instant first `/api/convert`" behaviour must now pass `--build-arg BAKE_MODELS=true` explicitly. The published `ghcr.io/.../docling-studio:latest-local` image is unaffected — `release.yml` opts in. Pulling that image (the documented path) continues to work as before. See `docs/architecture/huggingface-dependency-map.md` for the rationale and the full HF call-site map.
 
 ## [0.6.1] - 2026-05-25
 

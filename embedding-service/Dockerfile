@@ -12,9 +12,26 @@ RUN pip install --no-cache-dir uv==0.11.6
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-# Pre-download default model into the image
+# Optionally pre-download the default sentence-transformers model into
+# the image. Default is `false` so no build ever depends on HuggingFace
+# Hub by accident — on shared CI runner IP pools (and parallel builds
+# of the docling-studio backend) this is exactly what produced the
+# anonymous 429 rate-limit cascade traced in audit 0.6.2 #10.
+#
+# When false, the model is downloaded on first /embed call and lives
+# under ~/.cache/huggingface inside the container — mount that path
+# as a volume to persist across image rebuilds.
+#
+# When true, sentence-transformers fetches the model at build time
+# (~90 MB for all-MiniLM-L6-v2). Reserve this for release-publishing
+# pipelines that want a self-contained image (none today; this opt-in
+# exists so operators publishing their own embedding image can keep
+# the historical bake-at-build behaviour).
 ARG EMBEDDING_MODEL=all-MiniLM-L6-v2
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL}')"
+ARG BAKE_MODEL=false
+RUN if [ "$BAKE_MODEL" = "true" ]; then \
+        python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL}')"; \
+    fi
 
 COPY main.py .
 

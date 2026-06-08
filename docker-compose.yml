@@ -70,6 +70,15 @@ services:
     profiles: ["ingestion"]
     build:
       context: ./embedding-service
+      args:
+        # Pre-fetch the sentence-transformers model at build time. Same
+        # rationale + opt-in pattern as document-parser's BAKE_MODELS:
+        # default false so no compose build touches HuggingFace Hub by
+        # accident. The first /embed call downloads the model into the
+        # container's ~/.cache/huggingface. Mount that path as a volume
+        # if you want to survive rebuilds without re-downloading.
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+        BAKE_MODEL: ${BAKE_MODEL:-false}
     environment:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
       EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-64}
@@ -121,13 +130,16 @@ services:
       target: ${CONVERSION_MODE:-local}
       args:
         # Pre-fetch Docling model checkpoints at build time (+~1.3 GB).
-        # Only meaningful when CONVERSION_MODE=local. Default true gives
-        # an instant first /api/convert in dev. Override to false in
-        # environments that can't tolerate the HF Hub download at build
-        # time (e.g. CI runners with shared IP pools that hit anonymous
-        # rate limits) — or, better, switch to CONVERSION_MODE=remote
-        # and start the `docling-serve` service alongside this one.
-        BAKE_MODELS: ${BAKE_MODELS:-true}
+        # Only meaningful when CONVERSION_MODE=local. Default false so
+        # no `docker compose build` ever depends on HuggingFace Hub by
+        # accident. To get the "instant first /api/convert" experience
+        # locally, either: (a) start the docling-serve container with
+        # `--profile remote`, or (b) opt in with `BAKE_MODELS=true
+        # docker compose build` and accept the HF Hub download at build
+        # time. End-user GHCR image `latest-local` is published with
+        # bake=true by release.yml — the single sanctioned HF touch
+        # point. See docs/architecture/huggingface-dependency-map.md.
+        BAKE_MODELS: ${BAKE_MODELS:-false}
         WITH_REASONING: ${WITH_REASONING:-false}
     expose:
       - "8000"

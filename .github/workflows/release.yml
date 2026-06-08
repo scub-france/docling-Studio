@@ -53,7 +53,17 @@ jobs:
           target: ${{ matrix.target }}
           push: true
           platforms: linux/amd64,linux/arm64
-          build-args: APP_VERSION=${{ steps.version.outputs.value }}
+          # `latest-local` is the ONLY published image that bakes
+          # Docling model checkpoints from HuggingFace Hub — end users
+          # pull a self-contained image with an instant first /api/convert.
+          # The `remote` variant talks to docling-serve over HTTP and has
+          # no HF dependency. All other builds (CI E2E, dev compose,
+          # operators rebuilding from source) default to BAKE_MODELS=false
+          # to keep the project HF-free outside this one sanctioned path.
+          # See docs/architecture/huggingface-dependency-map.md.
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
+            BAKE_MODELS=${{ matrix.target == 'local' && 'true' || 'false' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.target }}

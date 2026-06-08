@@ -70,6 +70,10 @@ services:
   embedding:
     build:
       context: ./embedding-service
+      args:
+        # See docker-compose.yml — same opt-in pattern, HF-off by default.
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+        BAKE_MODEL: ${BAKE_MODEL:-false}
     ports:
       - "8001:8001"
     environment:
@@ -112,7 +116,7 @@ services:
       target: ${CONVERSION_MODE:-local}
       args:
         # See docker-compose.yml for the full rationale on these build-args.
-        BAKE_MODELS: ${BAKE_MODELS:-true}
+        BAKE_MODELS: ${BAKE_MODELS:-false}
         WITH_REASONING: ${WITH_REASONING:-false}
     ports:
       - "8000:8000"
