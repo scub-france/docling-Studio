@@ -68,12 +68,13 @@ def main() -> None:
         os.makedirs(output_dir, exist_ok=True)
         print(f"Generating test data in {output_dir}")
 
-        # `small.pdf` was 1 page until 2026-06-08 — docling-serve v1.21.0
-        # returns HTTP 404 ("Task result not found") on single-page PDFs
-        # produced by fpdf2, see upstream issue
-        # https://github.com/docling-project/docling-serve/issues/466. Two
-        # pages dodges the edge case while keeping the fixture small (~2.5 KB).
-        _make_pdf(2, os.path.join(output_dir, "small.pdf"))
+        # `small.pdf` MUST stay at 1 page — `documents/upload.feature::
+        # "Upload valid single-page PDF"` asserts `response.pageCount == 1`
+        # against this fixture. Tests that hit the docling-serve cpu
+        # pipeline must use medium.pdf or larger to dodge the upstream
+        # 1-page-PDF / "Task result not found" bug
+        # (https://github.com/docling-project/docling-serve/issues/466).
+        _make_pdf(1, os.path.join(output_dir, "small.pdf"))
         _make_pdf(5, os.path.join(output_dir, "medium.pdf"))
         _make_pdf(25, os.path.join(output_dir, "large.pdf"))
         _make_non_pdf(os.path.join(output_dir, "not-a-pdf.txt"))

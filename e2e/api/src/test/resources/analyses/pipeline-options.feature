@@ -5,8 +5,11 @@ Feature: Analysis with different pipeline options (data-driven)
     * url baseUrl
 
   Scenario Outline: Analysis completes with <description>
-    # Upload
-    * def uploaded = call read('classpath:common/helpers/upload.feature') { file: 'small.pdf' }
+    # Upload — medium.pdf (not small.pdf) because docling-serve cpu v1.21.0
+    # 404s on 1-page PDFs through this pipeline (upstream issue #466) and
+    # the enrichment scenarios below need more than one page of content to
+    # exercise the code/formula models without producing empty results.
+    * def uploaded = call read('classpath:common/helpers/upload.feature') { file: 'medium.pdf' }
 
     # Create analysis with specific options
     Given path '/api/analyses'

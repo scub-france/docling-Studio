@@ -14,14 +14,5 @@
   {
     "description": "table structure disabled",
     "options": { "doTableStructure": false }
-  },
-  {
-    "description": "all enrichments enabled",
-    "options": {
-      "doOcr": true,
-      "doTableStructure": true,
-      "doCodeEnrichment": true,
-      "doFormulaEnrichment": true
-    }
   }
 ]
