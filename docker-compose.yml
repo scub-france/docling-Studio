@@ -112,16 +112,22 @@ services:
     image: quay.io/docling-project/docling-serve-cpu:v1.21.0
     expose:
       - "5001"
-    # `/version` is registered by FastAPI immediately at import time, so it
-    # answers OK long before docling-serve has finished its lifespan startup
-    # (model load + converter init + `/v1/convert/*` registration). Probing
-    # `/openapi.json` for the actual convert route makes the container only
-    # report healthy once the route is reachable — fixes the race where the
-    # first E2E request hit 404 before the converter was wired up.
+    # docling-serve registers `/v1/convert/*` decorators at import time
+    # (so they show up in `/openapi.json` immediately) but the handler
+    # actually returns 404 until the lifespan startup wires up the
+    # converter pipeline. Neither `/version` nor `/openapi.json` catches
+    # that — only invoking the endpoint does.
+    #
+    # The probe POSTs an empty body to `/v1/convert/file` and matches
+    # the HTTP code: 422 = form validation rejected the missing file
+    # (handler is live), 400/405 = also "alive". 404 = handler not
+    # ready yet, 000 = connection refused or timeout — both fail.
+    # No `$$` escaping needed because we use --write-out instead of
+    # shell substitution.
     healthcheck:
       test:
         - CMD-SHELL
-        - curl -sf http://localhost:5001/openapi.json | grep -q '/v1/convert/file'
+        - "curl -s -X POST --max-time 5 -o /dev/null -w 'status=%{http_code}' http://localhost:5001/v1/convert/file | grep -qE 'status=(200|400|405|422)'"
       interval: 15s
       timeout: 10s
       retries: 30

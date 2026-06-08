@@ -98,13 +98,13 @@ services:
     image: quay.io/docling-project/docling-serve-cpu:v1.21.0
     ports:
       - "5001:5001"
-    # Same race-safe healthcheck as docker-compose.yml — probe a route from
-    # `/openapi.json` so we only report healthy after FastAPI lifespan
-    # startup wires up `/v1/convert/*`.
+    # Same race-safe healthcheck as docker-compose.yml — actually invoke
+    # `/v1/convert/file` and match HTTP code (422 = form validation = ready,
+    # 404 = handler not yet wired up).
     healthcheck:
       test:
         - CMD-SHELL
-        - curl -sf http://localhost:5001/openapi.json | grep -q '/v1/convert/file'
+        - "curl -s -X POST --max-time 5 -o /dev/null -w 'status=%{http_code}' http://localhost:5001/v1/convert/file | grep -qE 'status=(200|400|405|422)'"
       interval: 15s
       timeout: 10s
       retries: 30
