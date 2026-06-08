@@ -549,6 +549,9 @@ jobs:
           docker compose --profile remote logs
           exit 1
 
+      - name: Warm up docling-serve
+        run: bash .github/scripts/warmup-docling-serve.sh
+
       - name: Run E2E API tests (full scope)
         run: |
           mvn test -f e2e/api/pom.xml \
@@ -626,6 +629,9 @@ jobs:
           curl -s http://localhost:3000/api/health | python3 -m json.tool
           echo "=== document-parser container env (surface flags) ==="
           docker compose --profile remote exec -T document-parser env | grep -E "STUDIO_MODE|RAG_PIPELINE" || true
+
+      - name: Warm up docling-serve
+        run: bash .github/scripts/warmup-docling-serve.sh
 
       - name: Run critical UI tests
         run: >

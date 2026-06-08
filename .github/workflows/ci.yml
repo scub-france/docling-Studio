@@ -127,6 +127,9 @@ jobs:
           docker compose --profile remote logs
           exit 1
 
+      - name: Warm up docling-serve
+        run: bash .github/scripts/warmup-docling-serve.sh
+
       - name: Run E2E tests
         run: |
           KARATE_TAGS="@smoke"
@@ -201,6 +204,9 @@ jobs:
           echo "Backend failed to start"
           docker compose --profile remote logs
           exit 1
+
+      - name: Warm up docling-serve
+        run: bash .github/scripts/warmup-docling-serve.sh
 
       - name: Run critical UI tests
         run: >
