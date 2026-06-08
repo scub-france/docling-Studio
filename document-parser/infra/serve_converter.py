@@ -35,6 +35,18 @@ logger = logging.getLogger(__name__)
 
 _API_PREFIX = "/v1"
 
+# Docling Serve registers the `/v1/convert/*` route decorators at FastAPI
+# import time but returns 404 from the actual handler until its lifespan
+# startup has wired up the converter pipeline (~30s after first launch).
+# Neither `/version` nor `/openapi.json` nor an empty `POST /v1/convert/file`
+# (which validates form schema and answers 422) detects this — only a real
+# multipart upload triggers it. We retry the upload up to 5 times with
+# exponential backoff to absorb that startup window. The retry is scoped
+# tight (only 404 from this endpoint) so a real "route gone" regression
+# would still surface after the backoff exhausts.
+_SERVE_STARTUP_RETRY_ATTEMPTS = 5
+_SERVE_STARTUP_RETRY_BASE_DELAY = 2.0  # 2, 4, 8, 16, 32s — total ~62s max
+
 # Docling Serve label → our element type
 _LABEL_MAP = {
     "table": "table",
@@ -100,13 +112,13 @@ class ServeConverter:
 
         file_bytes = await asyncio.to_thread(path.read_bytes)
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                url,
-                files={"files": (path.name, file_bytes, content_type)},
-                data=form_data,
-                headers=self._headers(),
-            )
+        response = await self._post_convert_with_startup_retry(
+            url=url,
+            filename=path.name,
+            content_type=content_type,
+            file_bytes=file_bytes,
+            form_data=form_data,
+        )
 
         if response.status_code >= 400:
             logger.error(
@@ -119,6 +131,54 @@ class ServeConverter:
         result_data = response.json()
 
         return _parse_response(result_data)
+
+    async def _post_convert_with_startup_retry(
+        self,
+        *,
+        url: str,
+        filename: str,
+        content_type: str,
+        file_bytes: bytes,
+        form_data: dict[str, str | list[str]],
+    ) -> httpx.Response:
+        """POST the multipart upload, retrying on 404 to absorb docling-serve startup.
+
+        See the module-level note on `_SERVE_STARTUP_RETRY_*` constants.
+        """
+        last_response: httpx.Response | None = None
+        for attempt in range(1, _SERVE_STARTUP_RETRY_ATTEMPTS + 1):
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    url,
+                    files={"files": (filename, file_bytes, content_type)},
+                    data=form_data,
+                    headers=self._headers(),
+                )
+            last_response = response
+            if response.status_code != 404:
+                return response
+            if attempt == _SERVE_STARTUP_RETRY_ATTEMPTS:
+                logger.error(
+                    "Docling Serve still returning 404 after %d attempts at %s — "
+                    "giving up. Either the route really is gone or startup took "
+                    "longer than ~62s.",
+                    attempt,
+                    url,
+                )
+                return response
+            delay = _SERVE_STARTUP_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+            logger.warning(
+                "Docling Serve returned 404 for %s (attempt %d/%d) — "
+                "likely startup race, retrying in %.0fs",
+                url,
+                attempt,
+                _SERVE_STARTUP_RETRY_ATTEMPTS,
+                delay,
+            )
+            await asyncio.sleep(delay)
+        # Defensive — the loop always returns or sleeps, but mypy needs this.
+        assert last_response is not None
+        return last_response
 
     async def health_check(self) -> bool:
         """Check if Docling Serve is reachable."""
