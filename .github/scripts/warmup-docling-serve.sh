@@ -51,11 +51,22 @@ MAX_ATTEMPTS=60
 SLEEP_SECONDS=5
 
 for i in $(seq 1 "$MAX_ATTEMPTS"); do
+  # Mirror the exact form-data shape that ServeConverter sends so the
+  # warm-up exercises the same code path the tests will trigger. A
+  # narrower probe (e.g. `to_formats=md` only) can succeed while the
+  # multi-format path still 404s — observed on PR #302 / run #80086164951
+  # where docling-serve replied 200 to a markdown-only warm-up at
+  # T+4s but then 404'd on the multi-format real request at T+108s.
   code=$(docker compose --profile remote exec -T "$SERVICE" sh -c "
     curl -s -o /dev/null -w '%{http_code}' \
       -X POST \
       -F 'files=@$DEST_IN_CONTAINER' \
       -F 'to_formats=md' \
+      -F 'to_formats=html' \
+      -F 'to_formats=json' \
+      -F 'do_ocr=true' \
+      -F 'do_table_structure=true' \
+      -F 'table_mode=accurate' \
       http://localhost:5001/v1/convert/file
   ")
   echo "Attempt $i/$MAX_ATTEMPTS: $SERVICE responded $code"

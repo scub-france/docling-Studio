@@ -558,6 +558,10 @@ jobs:
             -DbaseUrl=http://localhost:3000 \
             -Dkarate.options="--tags @smoke,@regression,@e2e"
 
+      - name: Dump docling-serve logs
+        if: always()
+        run: docker compose --profile remote logs --no-color --tail 200 docling-serve
+
       - name: Upload Karate reports
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -639,6 +643,10 @@ jobs:
           -DbaseUrl=http://localhost:3000
           -DuiBaseUrl=http://localhost:3000
           -Dkarate.options="--tags @critical"
+
+      - name: Dump docling-serve logs
+        if: always()
+        run: docker compose --profile remote logs --no-color --tail 200 docling-serve
 
       - name: Upload Karate UI reports
         if: always()
