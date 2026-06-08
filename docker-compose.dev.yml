@@ -85,6 +85,26 @@ services:
         limits:
           memory: 2g
 
+  # --- Docling Serve (remote conversion engine) ---
+  # Same opt-in pattern as docker-compose.yml — see that file for the full
+  # rationale. Activate with `docker compose -f docker-compose.dev.yml \
+  # --profile remote up` plus `CONVERSION_MODE=remote`.
+  docling-serve:
+    profiles: ["remote"]
+    image: quay.io/docling-project/docling-serve-cpu:v1.21.0
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/version || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+
   # --- Backend (FastAPI with hot-reload) ---
   document-parser:
     build:
@@ -102,7 +122,8 @@ services:
       - db_data:/app/data
     environment:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
-      DOCLING_SERVE_URL: ${DOCLING_SERVE_URL:-}
+      # Defaults match docker-compose.yml — see that file's rationale.
+      DOCLING_SERVE_URL: ${DOCLING_SERVE_URL:-http://docling-serve:5001}
       DOCLING_SERVE_API_KEY: ${DOCLING_SERVE_API_KEY:-}
       RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-100}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
