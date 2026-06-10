@@ -153,6 +153,12 @@
     <div v-if="selectedIds.size > 0" class="bulk-bar" data-e2e="bulk-bar">
       <span class="bulk-count">{{ t('docs.selected', { n: selectedIds.size }) }}</span>
       <div class="bulk-actions">
+        <DownloadDropdown
+          v-if="selectedIds.size === 1"
+          :doc-id="Array.from(selectedIds)[0]"
+          button-class="btn-sm"
+          direction="up"
+        />
         <button class="btn-sm" @click="bulkRechunk">{{ t('docs.bulkRechunk') }}</button>
         <button class="btn-sm" @click="openPushModal">{{ t('docs.bulkPush') }}</button>
         <button class="btn-sm btn-sm--danger" @click="bulkDelete">
@@ -206,6 +212,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { useDocumentStore } from '../features/document/store'
 import StatusBadge from '../features/document/ui/StatusBadge.vue'
+import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import type { Document, DocumentLifecycleState } from '../shared/types'

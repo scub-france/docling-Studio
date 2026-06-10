@@ -86,6 +86,18 @@ class SqliteAnalysisRepository:
             row = await cursor.fetchone()
             return _row_to_job(row) if row else None
 
+    async def find_latest_completed(self, document_id: str) -> AnalysisJob | None:
+        """Latest COMPLETED analysis for a doc, regardless of which fields are populated."""
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"{_SELECT_WITH_DOC} WHERE aj.document_id = ? "
+                "AND aj.status = 'COMPLETED' "
+                "ORDER BY aj.completed_at DESC LIMIT 1",
+                (document_id,),
+            )
+            row = await cursor.fetchone()
+            return _row_to_job(row) if row else None
+
     async def find_latest_completed_by_document(self, document_id: str) -> AnalysisJob | None:
         """Latest COMPLETED analysis with a non-null `document_json` for a doc.
 

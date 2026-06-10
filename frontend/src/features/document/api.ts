@@ -27,6 +27,10 @@ export function getPreviewUrl(id: string, page = 1, dpi = 150): string {
   return `/api/documents/${id}/preview?page=${page}&dpi=${dpi}`
 }
 
+export function getExportUrl(id: string, format: 'pdf' | 'md' | 'json'): string {
+  return `/api/documents/${id}/export?format=${format}`
+}
+
 /**
  * Camel-case chunking options for the rechunk endpoint (#268). The
  * backend `ChunkingOptionsRequest` accepts both snake_case and camelCase

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -53,7 +53,7 @@ def _to_response(version) -> DocumentVersionResponse:
     )
 
 
-def _raise_for(error: VersionServiceError) -> None:
+def _raise_for(error: VersionServiceError) -> NoReturn:
     raise HTTPException(status_code=error.http_status, detail=str(error))
 
 

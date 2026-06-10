@@ -38,6 +38,7 @@
               {{ t(`workspace.tabs.${view.key}`) }}
             </button>
           </div>
+          <DownloadDropdown :doc-id="id" />
           <!-- History drawer trigger (#267) — visible on every view. -->
           <button
             type="button"
@@ -104,6 +105,7 @@ import type { Crumb } from '../shared/breadcrumb/types'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocWorkspaceHeader from '../features/document/ui/DocWorkspaceHeader.vue'
+import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
 import HistoryDrawer from '../features/document/ui/HistoryDrawer.vue'
 import DocParseTab from './DocParseTab.vue'
 import DocChunkTab from './DocChunkTab.vue'
