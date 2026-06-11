@@ -52,6 +52,17 @@ def mock_document_related_repos(client):
     app.state.store_repo = original_store_repo
 
 
+@pytest.fixture
+def mock_export_service(client):
+    """Inject a mock ExportService into app.state for export endpoint tests."""
+    mock_svc = MagicMock()
+    mock_svc.export = AsyncMock()
+    original = getattr(app.state, "export_service", None)
+    app.state.export_service = mock_svc
+    yield mock_svc
+    app.state.export_service = original
+
+
 class TestHealthEndpoint:
     def test_health(self, client):
         resp = client.get("/api/health")
@@ -206,6 +217,71 @@ class TestDocumentEndpoints:
 
         resp = client.delete("/api/documents/missing")
         assert resp.status_code == 404
+
+    def test_export_document_pdf(self, client, mock_export_service, tmp_path):
+        pdf_path = tmp_path / "report.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n")
+        mock_export_service.export.return_value.file_path = str(pdf_path)
+        mock_export_service.export.return_value.media_type = "application/pdf"
+        mock_export_service.export.return_value.filename = "report.pdf"
+        mock_export_service.export.return_value.content = None
+
+        resp = client.get("/api/documents/d1/export?format=pdf")
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.headers["content-disposition"] == 'attachment; filename="report.pdf"'
+
+    def test_export_document_markdown(self, client, mock_export_service):
+        mock_export_service.export.return_value.file_path = None
+        mock_export_service.export.return_value.content = "# Title"
+        mock_export_service.export.return_value.media_type = "text/markdown; charset=utf-8"
+        mock_export_service.export.return_value.filename = "report.md"
+
+        resp = client.get("/api/documents/d1/export?format=md")
+
+        assert resp.status_code == 200
+        assert resp.text == "# Title"
+        assert resp.headers["content-type"] == "text/markdown; charset=utf-8"
+        assert resp.headers["content-disposition"] == 'attachment; filename="report.md"'
+
+    def test_export_document_json(self, client, mock_export_service):
+        mock_export_service.export.return_value.file_path = None
+        mock_export_service.export.return_value.content = '{"ok":true}'
+        mock_export_service.export.return_value.media_type = "application/json"
+        mock_export_service.export.return_value.filename = "report.json"
+
+        resp = client.get("/api/documents/d1/export?format=json")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        assert resp.headers["content-disposition"] == 'attachment; filename="report.json"'
+
+    def test_export_document_unsupported_format_returns_422(self, client):
+        resp = client.get("/api/documents/d1/export?format=docx")
+        assert resp.status_code == 422
+
+    def test_export_document_no_analysis_returns_404(self, client, mock_export_service):
+        from services.export_service import ExportNotFoundError
+
+        mock_export_service.export.side_effect = ExportNotFoundError(
+            "No completed analysis found for this document"
+        )
+
+        resp = client.get("/api/documents/d1/export?format=md")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "No completed analysis found for this document"}
+
+    def test_export_document_json_unavailable_returns_404(self, client, mock_export_service):
+        from services.export_service import ExportNotFoundError
+
+        mock_export_service.export.side_effect = ExportNotFoundError("JSON content not available")
+
+        resp = client.get("/api/documents/d1/export?format=json")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "JSON content not available"}
 
 
 class TestAnalysisEndpoints:

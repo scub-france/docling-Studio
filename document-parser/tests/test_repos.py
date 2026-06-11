@@ -239,6 +239,38 @@ class TestAnalysisRepo:
         found = await analysis_repo.find_latest_completed_by_document("doc-1")
         assert found is None
 
+    async def test_find_latest_completed_prefers_newest_completed_even_without_json(
+        self, document_repo, analysis_repo
+    ):
+        await self._insert_doc(document_repo)
+
+        older_with_json = AnalysisJob(id="job-json", document_id="doc-1")
+        await analysis_repo.insert(older_with_json)
+        older_with_json.mark_running()
+        older_with_json.mark_completed(
+            markdown="old",
+            html="<p>old</p>",
+            pages_json="[]",
+            document_json='{"v":1}',
+        )
+        await analysis_repo.update_status(older_with_json)
+
+        latest_no_json = AnalysisJob(id="job-latest", document_id="doc-1")
+        await analysis_repo.insert(latest_no_json)
+        latest_no_json.mark_running()
+        latest_no_json.mark_completed(
+            markdown="latest",
+            html="<p>latest</p>",
+            pages_json="[]",
+        )
+        await analysis_repo.update_status(latest_no_json)
+
+        found = await analysis_repo.find_latest_completed("doc-1")
+
+        assert found is not None
+        assert found.id == "job-latest"
+        assert found.content_markdown == "latest"
+
     async def test_delete_by_document(self, document_repo, analysis_repo):
         await self._insert_doc(document_repo)
         for i in range(3):
