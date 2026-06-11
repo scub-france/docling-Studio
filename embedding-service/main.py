@@ -25,14 +25,21 @@ app = FastAPI(title="Docling Studio — Embedding Service", version="0.4.0")
 model: SentenceTransformer | None = None
 
 
+def _embedding_dimension(current_model: SentenceTransformer) -> int:
+    dimension = current_model.get_sentence_embedding_dimension()
+    if dimension is None:
+        raise RuntimeError("Embedding model did not report a dimension")
+    return dimension
+
+
 @app.on_event("startup")
 async def _load_model() -> None:
-    global model  # noqa: PLW0603
+    global model
     logger.info("Loading sentence-transformers model '%s' …", MODEL_NAME)
     t0 = time.monotonic()
     model = SentenceTransformer(MODEL_NAME)
     elapsed = time.monotonic() - t0
-    dim = model.get_sentence_embedding_dimension()
+    dim = _embedding_dimension(model)
     logger.info("Model loaded in %.1fs — dimension=%d", elapsed, dim)
 
 
@@ -73,7 +80,7 @@ async def embed(request: EmbedRequest) -> EmbedResponse:
     return EmbedResponse(
         embeddings=vectors.tolist(),
         model=MODEL_NAME,
-        dimension=model.get_sentence_embedding_dimension(),
+        dimension=_embedding_dimension(model),
     )
 
 
@@ -85,5 +92,5 @@ async def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         model=MODEL_NAME,
-        dimension=model.get_sentence_embedding_dimension(),
+        dimension=_embedding_dimension(model),
     )
