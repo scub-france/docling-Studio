@@ -46,6 +46,16 @@ CONVERSION_MODE=remote docker compose -f docker-compose.dev.yml up
 
 If you prefer running services directly on your machine:
 
+Recommended first-time bootstrap:
+
+```bash
+bash ./scripts/initial_setup.sh
+```
+
+This installs frontend dependencies, syncs the Python dev environments for `document-parser` and `embedding-service`, installs `pre-commit`, and registers the repository hooks.
+The commit hooks auto-fix Ruff and frontend formatting issues, then run the `document-parser` architecture test suite when backend layers change.
+On pull requests, CI enforces `80%` coverage on changed backend lines only.
+
 ### Backend (Python 3.12+)
 
 ```bash
@@ -68,6 +78,18 @@ npm install
 npm run dev
 ```
 
+### Git hooks (recommended)
+
+The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check before each push.
+
+```bash
+bash ./scripts/initial_setup.sh
+
+# Or install only the hooks manually
+uv tool install pre-commit
+pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
+```
+
 ## Code Quality
 
 ### Backend — Ruff
@@ -76,6 +98,25 @@ We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting Python co
 
 ```bash
 cd document-parser
+uv run ruff check .          # lint
+uv run ruff check . --fix    # lint with auto-fix
+uv run ruff format .         # format
+```
+
+### Backend patch coverage
+
+Pull requests must keep changed backend lines at `>=80%` coverage. The gate is patch-based, so it applies only to lines changed in the PR, not the whole legacy codebase.
+
+You can run the same check locally with:
+
+```bash
+bash ./scripts/check_backend_patch_coverage.sh origin/main
+```
+
+For the embedding service:
+
+```bash
+cd embedding-service
 uv run ruff check .          # lint
 uv run ruff check . --fix    # lint with auto-fix
 uv run ruff format .         # format

@@ -143,6 +143,16 @@ docker compose --profile ingestion -f docker-compose.yml -f docker-compose.inges
 
 ### Local Development
 
+Recommended first-time setup:
+
+```bash
+bash ./scripts/initial_setup.sh
+```
+
+The script installs frontend dependencies, syncs the Python dev environments used by the hooks, installs `pre-commit`, and wires the repo's `pre-commit` / `pre-push` hooks.
+On commit, the hooks auto-fix Ruff and frontend formatting issues and run the `document-parser` architecture tests when backend layers change.
+On pull requests, CI also enforces `80%` coverage on changed backend lines only.
+
 **Backend** (Python 3.12+):
 ```bash
 cd document-parser
@@ -161,6 +171,15 @@ uv run uvicorn main:app --reload --port 8000
 cd frontend
 npm install
 npm run dev
+```
+
+**Git hooks**:
+```bash
+bash ./scripts/initial_setup.sh
+
+# Or install just the hooks manually
+uv tool install pre-commit
+pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
 ```
 
 ### Running Tests

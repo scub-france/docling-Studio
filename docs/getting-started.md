@@ -47,6 +47,14 @@ docker compose --profile ingestion \
 
 ## Local Development
 
+Recommended first-time setup:
+
+```bash
+bash ./scripts/initial_setup.sh
+```
+
+This installs frontend dependencies, syncs the Python dev environments used by the repo hooks, installs `pre-commit`, and registers the `pre-commit` / `pre-push` hooks.
+
 === "Backend (Python 3.12+)"
 
     ```bash

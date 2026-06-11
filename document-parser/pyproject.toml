@@ -20,8 +20,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+  "diff-cover>=9.7.0,<10.0.0",
   "pytest>=8.0.0,<9.0.0",
   "pytest-asyncio>=0.23.0,<1.0.0",
+  "pytest-cov>=6.2.0,<7.0.0",
   "pytestarch>=2.0.0,<3.0.0",
   "ruff>=0.11.0,<1.0.0",
 ]
@@ -90,3 +92,10 @@ known-first-party = ["api", "domain", "persistence", "services"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.coverage.run]
+branch = true
+source = ["api", "domain", "infra", "main", "persistence", "services"]
+
+[tool.coverage.report]
+skip_empty = true

@@ -33,6 +33,9 @@ __pycache__/
 *.pyc
 .venv/
 *.egg-info/
+.pre-commit-cache/
+.coverage
+coverage.xml
 
 # Excalidraw working files
 docs/excalidraw/
@@ -55,4 +58,3 @@ e2e/**/target/
 docs/claude-code-commands.md
 docs/design/TEMPLATE.md
 docs/git-workflow/autonomy-mode.md
-
