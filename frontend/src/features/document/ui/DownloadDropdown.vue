@@ -47,6 +47,7 @@
 
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 
 import { useI18n } from '../../../shared/i18n'
 import { getExportUrl } from '../api'
@@ -94,7 +95,7 @@ function closeAndFocusTrigger() {
   buttonRef.value?.focus()
 }
 
-function setMenuItemRef(el: Element | null, index: number) {
+function setMenuItemRef(el: Element | ComponentPublicInstance | null, index: number) {
   itemRefs.value[index] = el instanceof HTMLButtonElement ? el : null
 }
 
