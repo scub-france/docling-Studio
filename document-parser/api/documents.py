@@ -7,12 +7,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from api import deps  # noqa: TC001
 from api.schemas import DocStoreLinkResponse, DocumentResponse
 from services.document_service import DocumentService
+from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
 
 if TYPE_CHECKING:
     from domain.ports import DocumentStoreLinkRepository, StoreRepository
@@ -133,57 +134,27 @@ async def delete_document(doc_id: str, service: deps.DocumentServiceDep) -> None
 @router.get("/{doc_id}/export")
 async def export_document(
     doc_id: str,
-    service: deps.DocumentServiceDep,
-    request: Request,
-    format: str = Query("pdf", description="Format to export (pdf, md, json)"),
+    service: deps.ExportServiceDep,
+    format: ExportFormat = Query(ExportFormat.PDF, description="Format to export"),
 ) -> Response:
     """Export the document in the specified format."""
-    doc = await service.find_by_id(doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        export = await service.export(doc_id, format)
+    except ExportNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    if format == "pdf":
-        try:
-            return FileResponse(
-                doc.storage_path,
-                media_type="application/pdf",
-                filename=doc.filename,
-            )
-        except Exception as exc:
-            logger.exception("Unexpected error exporting PDF for %s", doc_id)
-            raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
-
-    analysis_repo = getattr(request.app.state, "analysis_repo", None)
-    if not analysis_repo:
-        raise HTTPException(status_code=503, detail="Analysis repository not available")
-
-    latest_analysis = await analysis_repo.find_latest_completed(doc_id)
-    if not latest_analysis:
-        raise HTTPException(
-            status_code=404,
-            detail="No completed analysis found for this document",
+    if export.file_path is not None:
+        return FileResponse(
+            export.file_path,
+            media_type=export.media_type,
+            filename=export.filename,
         )
 
-    if format == "md":
-        if not latest_analysis.content_markdown:
-            raise HTTPException(status_code=404, detail="Markdown content not available")
-        filename = f"{Path(doc.filename).stem}.md" if doc.filename else f"{doc_id}.md"
-        return Response(
-            content=latest_analysis.content_markdown,
-            media_type="text/markdown",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    elif format == "json":
-        if not latest_analysis.document_json:
-            raise HTTPException(status_code=404, detail="JSON content not available")
-        filename = f"{Path(doc.filename).stem}.json" if doc.filename else f"{doc_id}.json"
-        return Response(
-            content=latest_analysis.document_json,
-            media_type="application/json",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+    return Response(
+        content=export.content or "",
+        media_type=export.media_type,
+        headers={"Content-Disposition": build_content_disposition(export.filename)},
+    )
 
 
 @router.get("/{doc_id}/preview")

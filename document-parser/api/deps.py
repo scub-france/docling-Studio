@@ -15,6 +15,7 @@ from domain.ports import (
 from services.analysis_service import AnalysisService
 from services.chunk_service import ChunkService
 from services.document_service import DocumentService
+from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.ingestion_service import IngestionService
 from services.store_service import StoreService
@@ -97,6 +98,13 @@ def get_analysis_repo(request: Request) -> AnalysisRepository:
 
 
 AnalysisRepoDep = Annotated[AnalysisRepository, Depends(get_analysis_repo)]
+
+
+def get_export_service(request: Request) -> ExportService:
+    return request.app.state.export_service
+
+
+ExportServiceDep = Annotated[ExportService, Depends(get_export_service)]
 
 
 def get_store_repo(request: Request) -> StoreRepository:

@@ -36,6 +36,7 @@ from persistence.store_repo import SqliteStoreRepository
 from services.analysis_service import AnalysisConfig, AnalysisService
 from services.chunk_service import ChunkService
 from services.document_service import DocumentConfig, DocumentService
+from services.export_service import ExportService
 from services.ingestion_service import IngestionConfig, IngestionService
 from services.store_service import StoreService
 
@@ -204,6 +205,13 @@ def _build_document_service(
     )
 
 
+def _build_export_service(
+    document_repo: SqliteDocumentRepository,
+    analysis_repo: SqliteAnalysisRepository,
+) -> ExportService:
+    return ExportService(document_repo=document_repo, analysis_repo=analysis_repo)
+
+
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
@@ -270,6 +278,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         document_repo, analysis_repo, graph_writer=app.state.graph_writer
     )
     app.state.document_service = _build_document_service(document_repo, analysis_repo)
+    app.state.export_service = _build_export_service(document_repo, analysis_repo)
     store_repo = SqliteStoreRepository()
     link_repo = SqliteDocumentStoreLinkRepository()
     app.state.store_repo = store_repo
