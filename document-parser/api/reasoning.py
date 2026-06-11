@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from domain.ports import ReasoningParseError, ReasoningRunner
+from api import deps  # noqa: TC001
+from domain.ports import ReasoningParseError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["reasoning"])
@@ -50,9 +51,11 @@ class ReasoningResultResponse(BaseModel):
 
 @router.post("/{doc_id}/reasoning", response_model=ReasoningResultResponse)
 async def run_reasoning(
-    doc_id: str, body: ReasoningRunRequest, request: Request
+    doc_id: str,
+    body: ReasoningRunRequest,
+    runner: deps.ReasoningRunnerDep,
+    analysis_repo: deps.AnalysisRepoDep,
 ) -> ReasoningResultResponse:
-    runner: ReasoningRunner | None = getattr(request.app.state, "reasoning_runner", None)
     if runner is None or not runner.is_available:
         raise HTTPException(
             status_code=503,
@@ -63,11 +66,6 @@ async def run_reasoning(
 
     if not body.query.strip():
         raise HTTPException(status_code=400, detail="Query must not be empty")
-
-    analysis_repo = getattr(request.app.state, "analysis_repo", None)
-    if analysis_repo is None:
-        raise HTTPException(status_code=500, detail="AnalysisRepository not wired")
-
     latest = await analysis_repo.find_latest_completed_by_document(doc_id)
     if latest is None or not latest.document_json:
         raise HTTPException(

@@ -36,6 +36,22 @@ def mock_document_service(client):
     app.state.document_service = original
 
 
+@pytest.fixture(autouse=True)
+def mock_document_related_repos(client):
+    """Provide the repos expected by document routes using shared deps."""
+    original_link_repo = getattr(app.state, "document_store_link_repo", None)
+    original_store_repo = getattr(app.state, "store_repo", None)
+    link_repo = MagicMock()
+    link_repo.find_for_document = AsyncMock(return_value=[])
+    store_repo = MagicMock()
+    store_repo.find_all = AsyncMock(return_value=[])
+    app.state.document_store_link_repo = link_repo
+    app.state.store_repo = store_repo
+    yield
+    app.state.document_store_link_repo = original_link_repo
+    app.state.store_repo = original_store_repo
+
+
 class TestHealthEndpoint:
     def test_health(self, client):
         resp = client.get("/api/health")

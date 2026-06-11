@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from services.graph_service import GraphService, GraphServiceError
+from api import deps  # noqa: TC001
+from services.graph_service import GraphServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["graph"])
@@ -53,14 +54,6 @@ class GraphResponse(BaseModel):
     page_count: int
 
 
-def _service(request: Request) -> GraphService:
-    """Resolve `GraphService` from the app state, 500-ing if unwired."""
-    svc = getattr(request.app.state, "graph_service", None)
-    if svc is None:
-        raise HTTPException(status_code=500, detail="GraphService not wired")
-    return svc
-
-
 def _to_response(payload) -> GraphResponse:
     return GraphResponse(
         doc_id=payload.doc_id,
@@ -74,23 +67,23 @@ def _to_response(payload) -> GraphResponse:
 
 
 @router.get("/{doc_id}/graph", response_model=GraphResponse)
-async def get_document_graph(doc_id: str, request: Request) -> GraphResponse:
+async def get_document_graph(doc_id: str, service: deps.GraphServiceDep) -> GraphResponse:
     try:
-        payload = await _service(request).fetch_document_graph(doc_id)
+        payload = await service.fetch_document_graph(doc_id)
     except GraphServiceError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     return _to_response(payload)
 
 
 @router.get("/{doc_id}/reasoning-graph", response_model=GraphResponse)
-async def get_reasoning_graph(doc_id: str, request: Request) -> GraphResponse:
+async def get_reasoning_graph(doc_id: str, service: deps.GraphServiceDep) -> GraphResponse:
     """Graph projection built from SQLite `document_json` — no Neo4j needed.
 
     Serves the reasoning-trace viewer, which only needs the element/page/edge
     structure to overlay iterations onto.
     """
     try:
-        payload = await _service(request).project_reasoning_graph(doc_id)
+        payload = await service.project_reasoning_graph(doc_id)
     except GraphServiceError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     return _to_response(payload)

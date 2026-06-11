@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query
 
+from api import deps  # noqa: TC001
 from api.schemas import (
     AnalysisResponse,
     ChunkBboxResponse,
@@ -15,17 +15,9 @@ from api.schemas import (
     RechunkRequest,
     UpdateChunkTextRequest,
 )
-from services.analysis_service import AnalysisService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
-
-
-def _get_service(request: Request) -> AnalysisService:
-    return request.app.state.analysis_service
-
-
-ServiceDep = Annotated[AnalysisService, Depends(_get_service)]
 
 
 def _to_response(job) -> AnalysisResponse:
@@ -49,7 +41,9 @@ def _to_response(job) -> AnalysisResponse:
 
 
 @router.post("", response_model=AnalysisResponse)
-async def create_analysis(body: CreateAnalysisRequest, service: ServiceDep) -> AnalysisResponse:
+async def create_analysis(
+    body: CreateAnalysisRequest, service: deps.AnalysisServiceDep
+) -> AnalysisResponse:
     """Create a new analysis job for a document."""
     if not body.documentId or not body.documentId.strip():
         raise HTTPException(status_code=400, detail="documentId is required")
@@ -76,7 +70,7 @@ async def create_analysis(body: CreateAnalysisRequest, service: ServiceDep) -> A
 
 @router.get("", response_model=list[AnalysisResponse])
 async def list_analyses(
-    service: ServiceDep,
+    service: deps.AnalysisServiceDep,
     document_id: str | None = Query(default=None, alias="documentId"),
 ) -> list[AnalysisResponse]:
     """List analysis jobs, optionally filtered by documentId."""
@@ -88,7 +82,7 @@ async def list_analyses(
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)
-async def get_analysis(analysis_id: str, service: ServiceDep) -> AnalysisResponse:
+async def get_analysis(analysis_id: str, service: deps.AnalysisServiceDep) -> AnalysisResponse:
     """Get a single analysis job."""
     job = await service.find_by_id(analysis_id)
     if not job:
@@ -98,7 +92,7 @@ async def get_analysis(analysis_id: str, service: ServiceDep) -> AnalysisRespons
 
 @router.post("/{analysis_id}/rechunk", response_model=list[ChunkResponse])
 async def rechunk_analysis(
-    analysis_id: str, body: RechunkRequest, service: ServiceDep
+    analysis_id: str, body: RechunkRequest, service: deps.AnalysisServiceDep
 ) -> list[ChunkResponse]:
     """Re-chunk a completed analysis with new chunking options."""
     try:
@@ -119,7 +113,10 @@ async def rechunk_analysis(
 
 @router.patch("/{analysis_id}/chunks/{chunk_index}", response_model=list[ChunkResponse])
 async def update_chunk_text(
-    analysis_id: str, chunk_index: int, body: UpdateChunkTextRequest, service: ServiceDep
+    analysis_id: str,
+    chunk_index: int,
+    body: UpdateChunkTextRequest,
+    service: deps.AnalysisServiceDep,
 ) -> list[ChunkResponse]:
     """Update the text of a single chunk by index."""
     try:
@@ -142,7 +139,7 @@ async def update_chunk_text(
 
 @router.delete("/{analysis_id}/chunks/{chunk_index}", response_model=list[ChunkResponse])
 async def delete_chunk(
-    analysis_id: str, chunk_index: int, service: ServiceDep
+    analysis_id: str, chunk_index: int, service: deps.AnalysisServiceDep
 ) -> list[ChunkResponse]:
     """Soft-delete a chunk by index (marks it as deleted)."""
     try:
@@ -164,7 +161,7 @@ async def delete_chunk(
 
 
 @router.delete("/{analysis_id}", status_code=204, response_model=None)
-async def delete_analysis(analysis_id: str, service: ServiceDep) -> None:
+async def delete_analysis(analysis_id: str, service: deps.AnalysisServiceDep) -> None:
     """Delete an analysis job."""
     deleted = await service.delete(analysis_id)
     if not deleted:

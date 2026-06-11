@@ -11,10 +11,11 @@ delegates to `ChunkService` — no direct repo / persistence access.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import NoReturn
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query
 
+from api import deps  # noqa: TC001
 from api.schemas import (
     AddChunkRequest,
     ChunkBboxResponse,
@@ -32,22 +33,11 @@ from api.schemas import (
     UpdateChunkRequest,
 )
 from services.chunk_service import (
-    ChunkService,
     ChunkServiceError,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
-
-
-def _get_service(request: Request) -> ChunkService:
-    svc = getattr(request.app.state, "chunk_service", None)
-    if svc is None:
-        raise HTTPException(status_code=503, detail="Chunk service not available")
-    return svc
-
-
-ServiceDep = Annotated[ChunkService, Depends(_get_service)]
 
 
 def _to_response(chunk) -> DocChunkResponse:
@@ -68,7 +58,7 @@ def _to_response(chunk) -> DocChunkResponse:
     )
 
 
-def _raise_for(error: ChunkServiceError) -> None:
+def _raise_for(error: ChunkServiceError) -> NoReturn:
     raise HTTPException(status_code=error.http_status, detail=str(error))
 
 
@@ -78,7 +68,7 @@ def _raise_for(error: ChunkServiceError) -> None:
 
 
 @router.get("/{doc_id}/chunks", response_model=list[DocChunkResponse])
-async def list_chunks(doc_id: str, service: ServiceDep) -> list[DocChunkResponse]:
+async def list_chunks(doc_id: str, service: deps.ChunkServiceDep) -> list[DocChunkResponse]:
     """List the canonical chunkset for a document, ordered by sequence."""
     try:
         chunks = await service.list_chunks(doc_id)
@@ -88,7 +78,9 @@ async def list_chunks(doc_id: str, service: ServiceDep) -> list[DocChunkResponse
 
 
 @router.post("/{doc_id}/chunks", response_model=DocChunkResponse, status_code=201)
-async def add_chunk(doc_id: str, body: AddChunkRequest, service: ServiceDep) -> DocChunkResponse:
+async def add_chunk(
+    doc_id: str, body: AddChunkRequest, service: deps.ChunkServiceDep
+) -> DocChunkResponse:
     """Insert a new chunk (optionally after `afterId`)."""
     if not body.text:
         raise HTTPException(status_code=400, detail="text is required")
@@ -104,7 +96,7 @@ async def update_chunk(
     doc_id: str,
     chunk_id: str,
     body: UpdateChunkRequest,
-    service: ServiceDep,
+    service: deps.ChunkServiceDep,
 ) -> DocChunkResponse:
     """Update a chunk's text or title (mapped to first heading)."""
     if body.text is None and body.title is None:
@@ -120,7 +112,7 @@ async def update_chunk(
 
 
 @router.delete("/{doc_id}/chunks/{chunk_id}", status_code=204, response_model=None)
-async def delete_chunk(doc_id: str, chunk_id: str, service: ServiceDep) -> None:
+async def delete_chunk(doc_id: str, chunk_id: str, service: deps.ChunkServiceDep) -> None:
     """Soft-delete a chunk."""
     try:
         await service.delete_chunk(doc_id, chunk_id)
@@ -133,7 +125,7 @@ async def split_chunk(
     doc_id: str,
     chunk_id: str,
     body: SplitChunkRequest,
-    service: ServiceDep,
+    service: deps.ChunkServiceDep,
 ) -> list[DocChunkResponse]:
     """Split a chunk in two at `cursorOffset` characters."""
     try:
@@ -145,7 +137,7 @@ async def split_chunk(
 
 @router.post("/{doc_id}/chunks/merge", response_model=DocChunkResponse)
 async def merge_chunks(
-    doc_id: str, body: MergeChunksRequest, service: ServiceDep
+    doc_id: str, body: MergeChunksRequest, service: deps.ChunkServiceDep
 ) -> DocChunkResponse:
     """Merge contiguous chunks into one. Order in `ids` is irrelevant — the
     service sorts by sequence."""
@@ -165,7 +157,7 @@ async def merge_chunks(
 async def rechunk_document(
     doc_id: str,
     body: DocRechunkRequest | None,
-    service: ServiceDep,
+    service: deps.ChunkServiceDep,
 ) -> list[DocChunkResponse]:
     """Re-run the chunker on the latest analysis JSON; replace canonical."""
     options = body.chunking_options.model_dump() if body and body.chunking_options else None
@@ -177,7 +169,7 @@ async def rechunk_document(
 
 
 @router.get("/{doc_id}/tree", response_model=list[DocTreeNodeResponse])
-async def get_tree(doc_id: str, service: ServiceDep) -> list[DocTreeNodeResponse]:
+async def get_tree(doc_id: str, service: deps.ChunkServiceDep) -> list[DocTreeNodeResponse]:
     """Outline of the document built from the latest completed analysis.
 
     Returns `[]` if no analysis is available yet.
@@ -192,7 +184,7 @@ async def get_tree(doc_id: str, service: ServiceDep) -> list[DocTreeNodeResponse
 @router.get("/{doc_id}/diff", response_model=list[ChunkDiffResponse])
 async def diff_against_store(
     doc_id: str,
-    service: ServiceDep,
+    service: deps.ChunkServiceDep,
     store: str = Query(..., min_length=1),
 ) -> list[ChunkDiffResponse]:
     """Diff the canonical chunkset against the last push to `store`."""
@@ -207,7 +199,7 @@ async def diff_against_store(
 async def push_chunks(
     doc_id: str,
     body: PushChunksRequest,
-    service: ServiceDep,
+    service: deps.ChunkServiceDep,
 ) -> PushChunksResponse:
     """Push the canonical chunkset to a store and record a `ChunkPush`."""
     try:
@@ -223,7 +215,7 @@ async def push_chunks(
 @router.get("/{doc_id}/chunks/pushes", response_model=ChunkPushListResponse)
 async def list_chunk_pushes(
     doc_id: str,
-    service: ServiceDep,
+    service: deps.ChunkServiceDep,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> ChunkPushListResponse:

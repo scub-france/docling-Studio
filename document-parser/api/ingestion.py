@@ -3,46 +3,26 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
+from api import deps  # noqa: TC001
 from api.schemas import (
     IngestionResponse,
     IngestionStatusResponse,
     SearchResponse,
     SearchResultItem,
 )
-from services.analysis_service import AnalysisService
-from services.ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ingestion", tags=["ingestion"])
 
 
-def _get_ingestion_service(request: Request) -> IngestionService:
-    svc = request.app.state.ingestion_service
-    if svc is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Ingestion not available (EMBEDDING_URL and OPENSEARCH_URL required)",
-        )
-    return svc
-
-
-def _get_analysis_service(request: Request) -> AnalysisService:
-    return request.app.state.analysis_service
-
-
-IngestionDep = Annotated[IngestionService, Depends(_get_ingestion_service)]
-AnalysisDep = Annotated[AnalysisService, Depends(_get_analysis_service)]
-
-
 @router.post("/{analysis_id}", response_model=IngestionResponse)
 async def ingest_analysis(
     analysis_id: str,
-    ingestion: IngestionDep,
-    analysis: AnalysisDep,
+    ingestion: deps.IngestionServiceDep,
+    analysis: deps.AnalysisServiceDep,
 ) -> IngestionResponse:
     """Ingest a completed analysis into the vector index.
 
@@ -75,7 +55,7 @@ async def ingest_analysis(
 
 
 @router.delete("/{doc_id}", status_code=204, response_model=None)
-async def delete_ingested_document(doc_id: str, ingestion: IngestionDep) -> None:
+async def delete_ingested_document(doc_id: str, ingestion: deps.IngestionServiceDep) -> None:
     """Delete all indexed chunks for a document."""
     await ingestion.delete_document(doc_id)
 
@@ -93,7 +73,7 @@ async def ingestion_status(request: Request) -> IngestionStatusResponse:
 
 @router.get("/search", response_model=SearchResponse)
 async def search_chunks(
-    ingestion: IngestionDep,
+    ingestion: deps.IngestionServiceDep,
     q: str = Query(..., min_length=1, description="Search query"),
     doc_id: str | None = Query(None, description="Filter by document ID"),
     k: int = Query(20, ge=1, le=100, description="Max results"),

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Response
 
+from api import deps  # noqa: TC001
 from api.schemas import (
     StoreCreateRequest,
     StoreDocEntryResponse,
@@ -17,19 +17,11 @@ from api.schemas import (
 )
 from domain.value_objects import StoreKind
 from services.store_service import (
-    StoreService,
     StoreServiceError,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/stores", tags=["stores"])
-
-
-def _get_service(request: Request) -> StoreService:
-    return request.app.state.store_service
-
-
-ServiceDep = Annotated[StoreService, Depends(_get_service)]
 
 
 def _parse_kind(value: str) -> StoreKind:
@@ -86,7 +78,7 @@ def _doc_entry_to_response(entry) -> StoreDocEntryResponse:
 
 
 @router.get("", response_model=list[StoreInfoResponse])
-async def list_stores(service: ServiceDep) -> list[StoreInfoResponse]:
+async def list_stores(service: deps.StoreServiceDep) -> list[StoreInfoResponse]:
     views = await service.list_stores()
     return [_info_to_response(v) for v in views]
 
@@ -94,7 +86,7 @@ async def list_stores(service: ServiceDep) -> list[StoreInfoResponse]:
 @router.post("", response_model=StoreResponse, status_code=201)
 async def create_store(
     payload: StoreCreateRequest,
-    service: ServiceDep,
+    service: deps.StoreServiceDep,
 ) -> StoreResponse:
     kind = _parse_kind(payload.kind)
     try:
@@ -115,7 +107,7 @@ async def create_store(
 
 
 @router.get("/{slug}", response_model=StoreResponse)
-async def get_store(slug: str, service: ServiceDep) -> StoreResponse:
+async def get_store(slug: str, service: deps.StoreServiceDep) -> StoreResponse:
     try:
         store = await service.get_by_slug(slug)
     except StoreServiceError as exc:
@@ -127,7 +119,7 @@ async def get_store(slug: str, service: ServiceDep) -> StoreResponse:
 async def update_store(
     slug: str,
     payload: StoreUpdateRequest,
-    service: ServiceDep,
+    service: deps.StoreServiceDep,
 ) -> StoreResponse:
     kind = _parse_kind(payload.kind) if payload.kind is not None else None
     try:
@@ -151,7 +143,7 @@ async def update_store(
 @router.post("/{slug}/test-connection", response_model=StoreTestConnectionResponse)
 async def test_store_connection(
     slug: str,
-    service: ServiceDep,
+    service: deps.StoreServiceDep,
 ) -> StoreTestConnectionResponse:
     """Probe the store's backend (#279).
 
@@ -173,7 +165,7 @@ async def test_store_connection(
 
 
 @router.delete("/{slug}", status_code=204)
-async def delete_store(slug: str, service: ServiceDep) -> Response:
+async def delete_store(slug: str, service: deps.StoreServiceDep) -> Response:
     try:
         await service.delete_store(slug)
     except StoreServiceError as exc:
@@ -184,7 +176,7 @@ async def delete_store(slug: str, service: ServiceDep) -> Response:
 @router.get("/{slug}/documents", response_model=list[StoreDocEntryResponse])
 async def list_store_documents(
     slug: str,
-    service: ServiceDep,
+    service: deps.StoreServiceDep,
 ) -> list[StoreDocEntryResponse]:
     try:
         entries = await service.list_documents(slug)
@@ -197,7 +189,7 @@ async def list_store_documents(
 async def remove_store_document(
     slug: str,
     doc_id: str,
-    service: ServiceDep,
+    service: deps.StoreServiceDep,
 ) -> Response:
     try:
         await service.remove_document(slug, doc_id)

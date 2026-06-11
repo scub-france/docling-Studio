@@ -14,25 +14,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Annotated, NoReturn
+from typing import NoReturn
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 
+from api import deps  # noqa: TC001
 from api.schemas import DocumentVersionResponse
-from services.version_service import VersionService, VersionServiceError
+from services.version_service import VersionServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
-
-
-def _get_service(request: Request) -> VersionService:
-    svc = getattr(request.app.state, "version_service", None)
-    if svc is None:
-        raise HTTPException(status_code=503, detail="Version service not available")
-    return svc
-
-
-ServiceDep = Annotated[VersionService, Depends(_get_service)]
 
 
 def _to_response(version) -> DocumentVersionResponse:
@@ -58,7 +49,9 @@ def _raise_for(error: VersionServiceError) -> NoReturn:
 
 
 @router.get("/{doc_id}/versions", response_model=list[DocumentVersionResponse])
-async def list_versions(doc_id: str, service: ServiceDep) -> list[DocumentVersionResponse]:
+async def list_versions(
+    doc_id: str, service: deps.VersionServiceDep
+) -> list[DocumentVersionResponse]:
     """List frozen versions for a document, newest-first."""
     try:
         versions = await service.list_for_document(doc_id)
@@ -72,7 +65,7 @@ async def list_versions(doc_id: str, service: ServiceDep) -> list[DocumentVersio
     response_model=DocumentVersionResponse,
 )
 async def restore_version(
-    doc_id: str, version_id: str, service: ServiceDep
+    doc_id: str, version_id: str, service: deps.VersionServiceDep
 ) -> DocumentVersionResponse:
     """Restore a frozen version — overwrites the live chunkset with the
     version's snapshot. The active-analysis pointer is managed
