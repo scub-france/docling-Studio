@@ -64,7 +64,7 @@ A richer trace model was designed and validated in **docling-lens** (standalone 
 ## 3. Non-goals
 
 - **SSE / streaming of steps during a run.** The UI and store are shaped so steps *can* append incrementally (the handoff shows live streaming), but the transport in this issue stays a single blocking POST. Consequences for the during-run UI are specced in §5.6 (warming state; the handoff's live append / auto-scroll / "N steps so far" counter are dropped with this non-goal). Streaming is a follow-up issue (transport + cancellation + fork-side hooks).
-- **Compact density (248px / 28px rows).** The handoff exposes a Comfortable/Compact density option; this issue ships the 308px Comfortable layout only. Follow-up if requested. *(To confirm at design review.)*
+- **Compact density (248px / 28px rows).** The handoff exposes a Comfortable/Compact density option; this issue ships the 308px Comfortable layout only. Follow-up if requested.
 - **Trace persistence.** Conversation turns and traces are session state (Pinia); they vanish on reload. Persisting runs (SQLite or Neo4j) is a separate design.
 - **Real token counts.** `tokensIn` / `tokensOut` ship as `0` until mellea exposes usage stats; the UI hides token meta when `tokenCount === 0` (per handoff). Fork/upstream concern.
 - **Multi-document reasoning.** `run_with_trace(sources=[...])` supports several documents with a merged `final_answer`; Studio keeps the single-document assumption and reads `per_document[0]`.
@@ -562,7 +562,7 @@ All design-review questions were resolved on 2026-06-10 (decisions folded into �
 - ~~`WITH_REASONING` CI job~~ → **in scope**: dedicated `e2e-ui-reasoning` job in `ci.yml` running the `@reasoning-on` tag (§9).
 - ~~`experiments/reasoning-trace/` sidecar~~ → **kept**, with a README note on the import-UI removal + new wire shape (§5.7).
 - ~~Default right-panel tab~~ → **Properties default**; Ask is optional, opt-in by click — amends the handoff prototype (§5.6).
-- Remaining marker: the Compact-density drop in §3 carries a *"to confirm at design review"* tag — strike it when the doc moves to Accepted.
+- ~~Compact-density drop~~ → confirmed: ship Comfortable-only, Compact is a follow-up (§3).
 
 ## 12. References
 

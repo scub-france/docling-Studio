@@ -106,16 +106,14 @@ class TestHealthEndpoint:
         assert data["ragPipelineEnabled"] is True
 
     def test_health_exposes_doc_mode_flags(self, client):
-        """0.6.0 (#210, renamed in #257): /api/health surfaces inspect/linked/ask sub-flags."""
+        """0.6.0 (#210, renamed in #257): /api/health surfaces inspect/linked sub-flags."""
         resp = client.get("/api/health")
         data = resp.json()
         assert "inspectModeEnabled" in data
         assert "linkedModeEnabled" in data
-        assert "askModeEnabled" in data
         # Sub-flag defaults preserve current behaviour (all enabled).
         assert data["inspectModeEnabled"] is True
         assert data["linkedModeEnabled"] is True
-        assert data["askModeEnabled"] is True
 
 
 class TestDocumentEndpoints:

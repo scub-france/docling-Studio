@@ -1,13 +1,11 @@
 """Pure helpers over a serialized `DoclingDocument` dict.
 
-No I/O, no Neo4j. Shared between:
-- `infra.neo4j.tree_writer` — persists the tree into Neo4j during the Maintain
-  step (IngestionPipeline).
-- `infra.docling_graph` — builds an in-memory `GraphPayload` from the SQLite
-  `document_json` blob for the reasoning-trace viewer.
+No I/O, no Neo4j. Used by `infra.neo4j.tree_writer`, which persists the tree
+into Neo4j during the Maintain step (IngestionPipeline), and by the
+`DoclingTreeReader` adapter below.
 
 Keep this module the single source of truth for how we read Docling's own
-structure, so the two consumers can't drift.
+structure, so consumers can't drift.
 """
 
 from __future__ import annotations
@@ -280,8 +278,8 @@ def iter_pages(doc_data: dict[str, Any]) -> Iterator[dict[str, Any]]:
 # Adapter class — implements `domain.ports.DocumentTreeReader` (#audit-01).
 # Wraps the module-level free functions so services can depend on the port
 # rather than reaching into infra at call sites. The free functions stay
-# public so other infra modules (`docling_graph`, `neo4j.tree_writer`) can
-# keep using them at module level — they're peers, not consumers.
+# public so `infra.neo4j.tree_writer` can keep using them at module level —
+# a peer, not a consumer.
 # ---------------------------------------------------------------------------
 
 

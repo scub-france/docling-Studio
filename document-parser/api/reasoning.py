@@ -1,111 +1,91 @@
-"""Reasoning API — HTTP layer over a `ReasoningRunner` port.
+"""Reasoning API — HTTP layer over `ReasoningService`.
 
-`POST /api/documents/:id/reasoning` invokes the wired-up `ReasoningRunner`
-against the stored `DoclingDocument` and returns a `ReasoningResultResponse`
-in the same shape the v1 import dialog already consumes — so the frontend
-overlay code is fully reused.
+`POST /api/documents/:id/reasoning` runs the wired-up reasoning service
+against the document's latest completed analysis and returns a camelCase
+`ReasoningTraceResponse` (the Parse-view trace timeline contract, #303).
 
 This module has zero coupling to docling-agent / mellea / docling-core. The
-runner (concrete adapter in `infra/docling_agent_reasoning.py`) is set on
-`app.state.reasoning_runner` at boot when `REASONING_ENABLED=true` and the
-deps are importable. Otherwise it stays `None` and we 503.
-
-Sync blocking call offloaded to a thread by the adapter so we don't stall
-the event loop. No streaming at this step (see design doc §7 for v2 SSE plan).
+service (set on `app.state.reasoning_service` at boot) owns the runner and
+the analysis lookup; the router only maps DTOs and translates the service's
+typed errors into HTTP status codes.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Request
 
-from api import deps  # noqa: TC001
+from api.schemas import (
+    ReasoningRunRequest,
+    ReasoningStepResponse,
+    ReasoningTraceResponse,
+)
 from domain.ports import ReasoningParseError
+from services.reasoning_service import ReasoningService, ReasoningServiceError
+
+if TYPE_CHECKING:
+    from domain.value_objects import ReasoningTrace
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["reasoning"])
 
 
-class ReasoningRunRequest(BaseModel):
-    query: str
-    # Optional per-run override; falls back to the runner's default model.
-    model_id: str | None = None
+def _service(request: Request) -> ReasoningService:
+    svc = getattr(request.app.state, "reasoning_service", None)
+    if svc is None:
+        raise HTTPException(status_code=500, detail="ReasoningService not wired")
+    return svc
 
 
-class ReasoningIterationResponse(BaseModel):
-    iteration: int
-    section_ref: str
-    reason: str
-    section_text_length: int
-    can_answer: bool
-    response: str
+def _to_response(trace: ReasoningTrace) -> ReasoningTraceResponse:
+    return ReasoningTraceResponse(
+        answer=trace.answer,
+        converged=trace.converged,
+        steps=[
+            ReasoningStepResponse(
+                id=step.id,
+                kind=step.kind.value,
+                title=step.title,
+                summary=step.summary,
+                duration_ms=step.duration_ms,
+                token_count=step.token_count,
+                citations=step.citations,
+                payload=step.payload,
+            )
+            for step in trace.steps
+        ],
+        total_duration_ms=trace.total_duration_ms,
+        tokens_in=trace.tokens_in,
+        tokens_out=trace.tokens_out,
+        model_id=trace.model_id,
+    )
 
 
-class ReasoningResultResponse(BaseModel):
-    answer: str
-    iterations: list[ReasoningIterationResponse]
-    converged: bool
-
-
-@router.post("/{doc_id}/reasoning", response_model=ReasoningResultResponse)
+@router.post("/{doc_id}/reasoning", response_model=ReasoningTraceResponse)
 async def run_reasoning(
-    doc_id: str,
-    body: ReasoningRunRequest,
-    runner: deps.ReasoningRunnerDep,
-    analysis_repo: deps.AnalysisRepoDep,
-) -> ReasoningResultResponse:
-    if runner is None or not runner.is_available:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Live reasoning disabled (REASONING_ENABLED=false or docling-agent not installed)"
-            ),
-        )
-
-    if not body.query.strip():
-        raise HTTPException(status_code=400, detail="Query must not be empty")
-    latest = await analysis_repo.find_latest_completed_by_document(doc_id)
-    if latest is None or not latest.document_json:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No completed analysis with document_json for {doc_id}",
-        )
-
+    doc_id: str, body: ReasoningRunRequest, request: Request
+) -> ReasoningTraceResponse:
     try:
-        result = await runner.run(
-            document_json=latest.document_json,
-            query=body.query,
-            model_id=body.model_id,
-        )
-    except ReasoningParseError as e:
+        trace = await _service(request).run(doc_id, body.query, body.model_id)
+    except ReasoningServiceError as exc:
+        # 503 (unavailable) / 400 (empty query) / 404 (no analysis) — the
+        # service carries the status hint.
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except ReasoningParseError as exc:
         # The upstream LLM couldn't produce a parseable answer after retries.
         # 502 Bad Gateway — not our fault — with guidance the UI can show.
         raise HTTPException(
             status_code=502,
             detail=(
-                f"The model '{e.model_id}' couldn't produce a parseable "
+                f"The model '{exc.model_id}' couldn't produce a parseable "
                 "answer after retries. Try a different model (e.g. "
                 "mistral-small3.2) or rephrase the question."
             ),
-        ) from e
-    except Exception as e:
-        logger.exception("Reasoning loop failed for doc %s", doc_id)
-        raise HTTPException(status_code=500, detail=f"Reasoning loop failed: {e}") from e
+        ) from exc
+    except Exception as exc:
+        logger.exception("Reasoning run failed for doc %s", doc_id)
+        raise HTTPException(status_code=500, detail=f"Reasoning run failed: {exc}") from exc
 
-    return ReasoningResultResponse(
-        answer=result.answer,
-        iterations=[
-            ReasoningIterationResponse(
-                iteration=it.iteration,
-                section_ref=it.section_ref,
-                reason=it.reason,
-                section_text_length=it.section_text_length,
-                can_answer=it.can_answer,
-                response=it.response,
-            )
-            for it in result.iterations
-        ],
-        converged=result.converged,
-    )
+    return _to_response(trace)

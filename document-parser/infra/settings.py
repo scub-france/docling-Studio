@@ -72,7 +72,6 @@ class Settings:
     # Sub-flags effective only when rag_pipeline_enabled is true.
     inspect_mode_enabled: bool = True
     linked_mode_enabled: bool = True
-    ask_mode_enabled: bool = True
 
     def __post_init__(self) -> None:
         errors: list[str] = []
@@ -183,8 +182,6 @@ class Settings:
             inspect_mode_enabled=os.environ.get("INSPECT_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
             linked_mode_enabled=os.environ.get("LINKED_MODE_ENABLED", "true").lower()
-            in ("1", "true", "yes", "on"),
-            ask_mode_enabled=os.environ.get("ASK_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
         )
 

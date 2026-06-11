@@ -4,17 +4,19 @@ Implements `ReasoningRunner` for an `OllamaProvider`-backed `LLMProvider`.
 Encapsulates everything that talks to docling-agent / mellea so neither the
 domain nor the API layer depends on those packages.
 
-Why we still call the private `_rag_loop`: `DoclingRAGAgent.run()` wraps the
-answer in a synthetic `DoclingDocument` and discards the iteration trace.
-Tracked upstream at https://github.com/docling-project/docling-agent/issues/26
-— switch to the public surface once the issue lands.
+Consumes the fork's **public** `run_with_trace(task, document)` surface
+(`pjmalandrino/docling-agent@dev/rag-run-with-trace`, upstream PR
+docling-project/docling-agent#39) — the v1 adapter reached into the private
+`_rag_loop`. The fork's timing commit adds `duration_ms`/`model_id` to the
+`RAGIteration`/`RAGResult` models; this adapter still reads them defensively
+(`getattr`) so it keeps working against a pinned SHA without them and against
+the eventual upstream release.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 
 from domain.ports import LLMProvider, ReasoningParseError
 from domain.value_objects import (
@@ -41,24 +43,18 @@ def deps_present() -> bool:
 class DoclingAgentReasoningRunner:
     """ReasoningRunner adapter wrapping docling-agent + mellea.
 
-    The provider's host is committed to the process-wide `OLLAMA_HOST` env
-    var at construction time — Ollama's Python client reads it on session
-    creation. Setting it once at boot (instead of per-request) eliminates the
-    cross-request race the previous implementation exposed.
+    The Ollama host is carried on a per-instance `BackendConfig` and threaded
+    into the agent's backend at call time — no process-wide `OLLAMA_HOST` env
+    mutation, so concurrent runs can't race on a shared global.
     """
 
     def __init__(self, provider: LLMProvider) -> None:
         if provider.type is not LLMProviderType.OLLAMA:
             raise NotImplementedError(
-                f"docling-agent v0.1.0 only supports Ollama, got provider type "
-                f"{provider.type!r}. See "
-                f"https://github.com/docling-project/docling-agent/issues/26"
+                f"The reasoning runner only supports Ollama, got provider type {provider.type!r}."
             )
         self._provider = provider
         self._deps_ok = deps_present()
-        # Commit the host at boot — concurrent `run()` calls then share the
-        # same value with no racy mutation.
-        os.environ["OLLAMA_HOST"] = provider.host
 
     @property
     def is_available(self) -> bool:
@@ -78,21 +74,28 @@ class DoclingAgentReasoningRunner:
         # runner is only ever instantiated when `deps_present()` is True, but
         # this also makes the import surface explicit).
         from docling_agent.agents import DoclingRAGAgent
+        from docling_agent.backends import create_backend
+        from docling_agent.task_model import BackendConfig, ModelConfig
         from docling_core.types.doc.document import DoclingDocument
-        from mellea.backends.model_ids import ModelIdentifier
 
         raw_model_id = model_id or self._provider.default_model_id
-        # `DoclingRAGAgent` (pydantic) validates `model_id` strictly against
-        # `ModelIdentifier` from mellea. Wrapping on the Ollama axis is the
-        # only realizable path today (cf. LLMProvider docstring).
-        wrapped_model_id = ModelIdentifier(ollama_name=raw_model_id)
 
         try:
             doc = DoclingDocument.model_validate_json(document_json)
         except Exception as e:
             raise RuntimeError(f"Failed to parse document_json: {e}") from e
 
-        agent = DoclingRAGAgent(model_id=wrapped_model_id, tools=[])
+        # Per-instance Ollama backend — the host lives on the config, not in a
+        # shared env var. `reasoning` is the role the RAG loop reads; `writing`
+        # mirrors it so the merge step (multi-doc, unused here) stays coherent.
+        backend = create_backend(
+            BackendConfig(
+                type="ollama",
+                base_url=self._provider.host,
+                models=ModelConfig(reasoning=raw_model_id, writing=raw_model_id),
+            )
+        )
+        agent = DoclingRAGAgent(tools=[], backend=backend)
         logger.info(
             "Reasoning run: model_id=%s ollama_host=%s query=%r",
             raw_model_id,
@@ -101,17 +104,15 @@ class DoclingAgentReasoningRunner:
         )
 
         try:
-            # `_rag_loop` is sync + LLM-heavy (N * model latency). Offload to
-            # a worker thread so concurrent calls don't block the event loop.
-            # Private API kept until docling-agent#26 lands.
-            raw_result = await asyncio.to_thread(agent._rag_loop, query=query, doc=doc)
+            # `run_with_trace` is sync + LLM-heavy (N * model latency). Offload
+            # to a worker thread so concurrent calls don't block the event loop.
+            run_result = await asyncio.to_thread(agent.run_with_trace, task=query, document=doc)
         except IndexError as e:
-            # docling-agent v0.1.0 bug: `_attempt_answer` / `_select_section`
-            # call `find_json_dicts(answer.value)[0]` without handling an
-            # empty list. When the model can't produce a parseable JSON after
-            # 3 rejection-sampling retries + 3 `select_from_failure` retries,
-            # the list is empty and `[0]` raises IndexError. Translate to a
-            # domain-level error the API can map to 502.
+            # docling-agent's `_attempt_answer` still ends with an unguarded
+            # `find_json_dicts(answer)[0]`. When the model can't produce a
+            # parseable JSON after rejection-sampling retries, the list is
+            # empty and `[0]` raises IndexError. Translate to a domain-level
+            # error the API maps to 502.
             logger.warning(
                 "docling-agent produced no parseable JSON for model=%s query=%r",
                 raw_model_id,
@@ -122,8 +123,28 @@ class DoclingAgentReasoningRunner:
                 reason="no parseable answer after retries",
             ) from e
 
+        # Single-document reasoning: read the first (only) per-document result.
+        rag_result = run_result.per_document[0]
+
+        # Defensive mapping — the fork at the pinned SHA may not carry
+        # `duration_ms`/`model_id` yet (the timing commit adds them; the
+        # eventual upstream release may not). getattr keeps this adapter green
+        # either way; the trace timeline degrades gracefully when timing is 0.
         return ReasoningResult(
-            answer=raw_result.answer,
-            iterations=[ReasoningIteration(**it.model_dump()) for it in raw_result.iterations],
-            converged=raw_result.converged,
+            answer=rag_result.answer,
+            iterations=[
+                ReasoningIteration(
+                    iteration=it.iteration,
+                    section_ref=it.section_ref,
+                    reason=it.reason,
+                    section_text_length=it.section_text_length,
+                    can_answer=it.can_answer,
+                    response=it.response,
+                    duration_ms=getattr(it, "duration_ms", 0),
+                )
+                for it in rag_result.iterations
+            ],
+            converged=rag_result.converged,
+            duration_ms=getattr(rag_result, "duration_ms", 0),
+            model_id=getattr(rag_result, "model_id", "") or raw_model_id,
         )

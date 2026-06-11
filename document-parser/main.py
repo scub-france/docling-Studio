@@ -256,10 +256,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_db()
     await _check_store_secret_key()
     document_repo, analysis_repo = _build_repos()
-    # Exposed on app.state so routers that need direct repo access (e.g. the
-    # reasoning-graph endpoint, which reads `document_json` from SQLite to
-    # build the graph without touching Neo4j) can reach them without going
-    # through a service.
+    # Exposed on app.state for service construction (e.g. ReasoningService,
+    # wired further below) and for tests that stub it. Routers reach analyses
+    # through their service, never this attribute directly.
     app.state.analysis_repo = analysis_repo
     app.state.document_repo = document_repo
     app.state.neo4j = await _init_neo4j()
@@ -342,17 +341,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         backend_resolver=backend_resolver,
     )
 
-    # 0.6.1 (#audit-01) — GraphService orchestrates the two /graph endpoints
-    # so api/graph.py stops reaching into infra. The reader is None when
-    # Neo4j isn't configured; the projector is always available (pure
-    # function from document_json).
-    from infra.docling_graph import DoclingGraphProjector
+    # 0.6.1 (#audit-01) — GraphService serves the /graph endpoint so
+    # api/graph.py stops reaching into infra. The reader is None when Neo4j
+    # isn't configured (the endpoint then 503s).
     from services.graph_service import GraphService
 
-    app.state.graph_service = GraphService(
+    app.state.graph_service = GraphService(graph_reader=app.state.graph_reader)
+
+    # Reasoning service (#303) — wraps the runner (built at module scope below,
+    # None when REASONING_ENABLED=false) + the analysis repo. Services may not
+    # import infra, so the default model id is injected from settings here.
+    from services.reasoning_service import ReasoningService
+
+    app.state.reasoning_service = ReasoningService(
+        runner=getattr(app.state, "reasoning_runner", None),
         analysis_repo=analysis_repo,
-        graph_reader=app.state.graph_reader,
-        graph_projector=DoclingGraphProjector(),
+        default_model_id=settings.reasoning_model_id,
     )
     # The analysis service still carries the chunk promoter wiring for
     # legacy callers / tests, but the analysis flow no longer invokes it
@@ -509,5 +513,4 @@ async def health() -> HealthResponse:
         # 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257).
         inspect_mode_enabled=settings.inspect_mode_enabled,
         linked_mode_enabled=settings.linked_mode_enabled,
-        ask_mode_enabled=settings.ask_mode_enabled,
     )
