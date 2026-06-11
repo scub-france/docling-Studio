@@ -1,66 +1,66 @@
-/**
- * Types mirroring the `docling-agent` reasoning-trace output (upstream type
- * name: `RAGResult`).
- *
- * The JSON imported by the user is produced either by:
- *   - the R&D sidecar (`experiments/reasoning-trace/inspect_doc.py`), or
- *   - any external `docling-agent` run that was serialized to JSON.
- *
- * Since `docling-agent` uses plain pydantic (no alias generator), field names
- * are **snake_case** here. This is one of the rare spots in the frontend where
- * we don't normalize to camelCase — keeping the shape 1:1 with upstream means
- * a schema drift upstream gives us a clean type error rather than silent
- * re-mapping.
- *
- * Source of truth: docling-project/docling-agent @ docling_agent/agent/rag_models.py
- */
+// Wire mirrors for the reasoning trace contract (#303). camelCase end-to-end
+// — the backend serializes via `_CamelModel`, and `steps[].payload` keys are
+// camelCase by construction in the domain `trace_builder` (the UI binds
+// `payload.canAnswer`). See docs/design/303-reasoning-trace-v2-parse-view.md §7.
 
-export interface ReasoningIteration {
-  iteration: number
-  section_ref: string
-  reason: string
-  section_text_length: number
-  can_answer: boolean
-  response: string
-}
-
-export interface ReasoningResult {
-  answer: string
-  iterations: ReasoningIteration[]
-  converged: boolean
-}
+export type ReasoningStepKind =
+  | 'plan'
+  | 'retrieve'
+  | 'rerank'
+  | 'read'
+  | 'verify'
+  | 'answer'
+  | 'map'
 
 /**
- * Envelope written by the R&D sidecar. The viewer also accepts a bare
- * `ReasoningResult` (see `parseImportedTrace` in the store).
+ * Raw iteration fields carried alongside a step. The agent's chunkless RAG
+ * loop only emits `read` steps today; `canAnswer` drives the answered/explored
+ * chip, `sectionRef` is the cited element. The remaining fields are present on
+ * backend-produced traces but optional here so partial fixtures stay valid.
  */
-export interface SidecarEnvelope {
-  job_id?: string
-  filename?: string
-  query?: string
-  model?: { ollama_name?: string | null; hf_model_name?: string | null }
-  max_iterations?: number
-  result: ReasoningResult
-}
-
-/**
- * One iteration after matching its `section_ref` against the currently-loaded
- * Cytoscape graph. `present=false` means the section ref has no corresponding
- * node (doc not through Maintain, or a different version of the doc).
- */
-export interface ResolvedIteration {
-  iteration: number
-  sectionRef: string
-  nodeId: string
-  present: boolean
-  reason: string
+export interface ReasoningStepPayload {
   canAnswer: boolean
-  response: string
-  sectionTextLength: number
+  iteration: number
+  sectionRef?: string
+  reason?: string
+  sectionTextLength?: number
+  response?: string
+  durationMs?: number
 }
 
-export interface OverlayResult {
-  resolved: ResolvedIteration[]
-  presentCount: number
-  missingCount: number
+export interface ReasoningStep {
+  id: string
+  kind: ReasoningStepKind
+  title: string
+  summary: string
+  durationMs: number
+  tokenCount: number
+  citations: string[]
+  payload: ReasoningStepPayload
+}
+
+export interface ReasoningTrace {
+  answer: string
+  converged: boolean
+  steps: ReasoningStep[]
+  totalDurationMs: number
+  tokensIn: number
+  tokensOut: number
+  modelId: string
+}
+
+export type TurnStatus = 'running' | 'converged' | 'error'
+
+/**
+ * A conversation turn — the user's question plus the trace it produced.
+ * `trace` is null while a turn is `running` (single-shot transport; the store
+ * keeps an append-shaped path so SSE can light steps up incrementally later).
+ */
+export interface ConversationTurn {
+  id: string
+  time: string
+  status: TurnStatus
+  question: string
+  trace: ReasoningTrace | null
+  errorMessage?: string
 }

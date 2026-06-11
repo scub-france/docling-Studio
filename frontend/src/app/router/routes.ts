@@ -51,21 +51,16 @@ export const routes: RouteRecordRaw[] = [
     name: ROUTES.SEARCH,
     component: () => import('../../pages/SearchPage.vue'),
   },
+  // #303 — the standalone /reasoning workspace was retired; reasoning now
+  // lives inside the doc workspace's Parse view. Redirect circulating deep
+  // links so shared URLs don't 404 (mode defaults to parse on /docs/:id).
   {
-    // Reasoning-trace tunnel. Route is always registered; the page shows
-    // an empty state when the `reasoning` feature flag is off (same pattern
-    // as /search does for ingestion).
     path: '/reasoning',
-    name: ROUTES.REASONING,
-    component: () => import('../../pages/ReasoningPage.vue'),
+    redirect: '/docs',
   },
   {
-    // Deep-link into a specific document's reasoning workspace, e.g. shared
-    // by Peter to a teammate.
     path: '/reasoning/:docId',
-    name: ROUTES.REASONING_DOC,
-    component: () => import('../../pages/ReasoningPage.vue'),
-    props: true,
+    redirect: (to) => `/docs/${to.params.docId}`,
   },
   {
     path: '/settings',

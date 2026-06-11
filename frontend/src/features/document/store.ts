@@ -21,6 +21,20 @@ export const useDocumentStore = defineStore('document', () => {
   const workspaceLoading = ref(false)
   const workspaceError = ref<string | null>(null)
 
+  // #303 — Citation focus, shared across the Parse-view surfaces. The
+  // reasoning feature writes it (clicking a trace step); the PDF preview,
+  // the structure tree and the properties panel read it. `focusTick` bumps
+  // on every `focusElement` call — including re-clicking the same ref — so
+  // same-value watchers re-fire and "re-click to re-scroll" works (the v1
+  // trap was watching `focusedRef` alone, which no-ops on an unchanged value).
+  const focusedRef = ref<string | null>(null)
+  const focusTick = ref(0)
+
+  function focusElement(ref_: string | null): void {
+    focusedRef.value = ref_
+    focusTick.value += 1
+  }
+
   const workspaceCurrentVersion = computed<DocumentVersion | null>(() => {
     if (!workspaceCurrentVersionId.value) return null
     return workspaceVersions.value.find((v) => v.id === workspaceCurrentVersionId.value) ?? null
@@ -217,6 +231,9 @@ export const useDocumentStore = defineStore('document', () => {
     setWorkspaceAnalysis(analysis: Analysis | null): void {
       workspaceActiveAnalysis.value = analysis
     },
+    focusedRef,
+    focusTick,
+    focusElement,
     clearError,
     load,
     loadWorkspace,

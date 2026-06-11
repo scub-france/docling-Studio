@@ -35,6 +35,5 @@ describe('resolveSurface', () => {
   it('leaves surface-neutral routes untouched', () => {
     expect(resolveSurface(ROUTES.HOME, { studio: false, rag: true })).toBeNull()
     expect(resolveSurface(ROUTES.SETTINGS, { studio: false, rag: true })).toBeNull()
-    expect(resolveSurface(ROUTES.REASONING, { studio: false, rag: true })).toBeNull()
   })
 })
