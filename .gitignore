@@ -58,3 +58,6 @@ e2e/**/target/
 docs/claude-code-commands.md
 docs/design/TEMPLATE.md
 docs/git-workflow/autonomy-mode.md
+
+# Local repo health reports
+.repo-health/

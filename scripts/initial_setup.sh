@@ -32,7 +32,7 @@ printf '==> Ensuring pre-commit is installed\n'
 uv tool install pre-commit
 
 printf '==> Installing git hooks\n'
-pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
+pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
 
 printf '\nInitial setup complete.\n'
 printf 'Run the frontend with: npm --prefix %s/frontend run dev\n' "$ROOT_DIR"

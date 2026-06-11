@@ -80,14 +80,47 @@ npm run dev
 
 ### Git hooks (recommended)
 
-The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check before each push.
+The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs targeted backend/frontend tests, blocks local/generated artifacts, scans for likely secrets, enforces Conventional Commit messages, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check before each push.
 
 ```bash
 bash ./scripts/initial_setup.sh
 
 # Or install only the hooks manually
 uv tool install pre-commit
-pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
+pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+```
+
+### Background repo health report
+
+If you want a local `report.json` that refreshes in the background while you work, install the repo health scheduler:
+
+```bash
+bash ./scripts/install_repo_health_agent.sh install
+```
+
+On macOS this installs a `launchd` job. On Linux it installs a user `systemd` timer. Both call the same shell reporter and write `.repo-health/report.json`. The generator skips a run when `HEAD` and the working tree fingerprint have not changed since the last report.
+
+Useful commands:
+
+```bash
+bash ./scripts/install_repo_health_agent.sh status
+bash ./scripts/install_repo_health_agent.sh uninstall
+```
+
+Portable fallback on any machine with Bash:
+
+```bash
+bash ./scripts/run_repo_health_watch.sh 300
+```
+
+The generated report is local-only and gitignored. It currently includes:
+
+```text
+- document-parser Ruff lint
+- document-parser pytest suite
+- frontend ESLint
+- frontend type-check
+- frontend Vitest run
 ```
 
 ## Code Quality

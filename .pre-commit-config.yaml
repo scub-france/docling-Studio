@@ -2,6 +2,7 @@ minimum_pre_commit_version: "3.7.0"
 default_install_hook_types:
   - pre-commit
   - pre-push
+  - commit-msg
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -9,11 +10,35 @@ repos:
     hooks:
       - id: check-yaml
       - id: check-json
+      - id: check-added-large-files
+        args:
+          - --maxkb=1024
+      - id: detect-private-key
       - id: end-of-file-fixer
       - id: trailing-whitespace
 
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - --exclude-files
+          - ^(frontend/package-lock\.json|document-parser/uv\.lock|embedding-service/uv\.lock)$
+
   - repo: local
     hooks:
+      - id: block-local-generated-artifacts
+        name: block local/generated artifacts
+        entry: bash ./scripts/check_tracked_local_artifacts.sh
+        language: system
+        files: .
+      - id: commit-msg-conventional
+        name: conventional commit message
+        entry: bash ./scripts/check_commit_message.sh
+        language: system
+        stages:
+          - commit-msg
+        always_run: true
       - id: document-parser-ruff-check
         name: document-parser ruff check --fix
         entry: uv run --directory document-parser ruff check --fix .
@@ -35,6 +60,12 @@ repos:
         files: ^document-parser/(api|domain|infra|persistence|services|tests/test_architecture\.py).*
         exclude: ^document-parser/local-experiments/
         pass_filenames: false
+      - id: document-parser-targeted-tests
+        name: document-parser targeted tests
+        entry: bash ./scripts/run_document_parser_targeted_tests.sh
+        language: system
+        files: ^document-parser/((api|domain|infra|persistence|services)/.*\.py|main\.py|tests/.*\.py)$
+        exclude: ^document-parser/local-experiments/
       - id: embedding-service-ruff-check
         name: embedding-service ruff check --fix
         entry: uv run --directory embedding-service ruff check --fix .
@@ -59,6 +90,11 @@ repos:
         language: system
         files: ^frontend/src/.*\.(css|js|json|md|scss|ts|vue)$
         pass_filenames: false
+      - id: frontend-targeted-tests
+        name: frontend targeted tests
+        entry: bash ./scripts/run_frontend_targeted_tests.sh
+        language: system
+        files: ^frontend/src/.*\.(js|ts|vue)$
       - id: frontend-type-check
         name: frontend type-check
         entry: npm --prefix frontend run type-check
