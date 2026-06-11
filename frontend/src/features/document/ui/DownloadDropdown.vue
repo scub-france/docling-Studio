@@ -1,81 +1,154 @@
 <template>
   <div class="download-dropdown" ref="dropdownRef">
     <button
+      ref="buttonRef"
       type="button"
       :class="['download-btn', buttonClass]"
-      title="Download"
+      :title="t('docs.download')"
+      :aria-expanded="open ? 'true' : 'false'"
+      aria-haspopup="menu"
+      :aria-controls="menuId"
       data-e2e="download-btn"
       @click="toggle"
+      @keydown.down.prevent="openAndFocus(0)"
+      @keydown.up.prevent="openAndFocus(downloadOptions.length - 1)"
+      @keydown.enter.prevent="toggle"
+      @keydown.esc.prevent="close"
     >
-      ↓ Download
+      {{ t('docs.download') }}
     </button>
-    <div v-if="open" class="dropdown-menu" :class="`dropdown-menu--${direction}`">
-      <a :href="getExportUrl(docId, 'pdf')" class="dropdown-item" download>
-        PDF Document
-      </a>
-      <a :href="getExportUrl(docId, 'md')" class="dropdown-item" download>
-        Markdown
-      </a>
-      <a
-        href="#"
+    <div
+      v-if="open"
+      :id="menuId"
+      class="dropdown-menu"
+      :class="`dropdown-menu--${direction}`"
+      role="menu"
+      :aria-label="t('docs.download')"
+      @keydown.esc.prevent="closeAndFocusTrigger"
+      @keydown.down.prevent="focusNextItem"
+      @keydown.up.prevent="focusPreviousItem"
+      @keydown.home.prevent="focusItem(0)"
+      @keydown.end.prevent="focusItem(downloadOptions.length - 1)"
+    >
+      <button
+        v-for="(option, index) in downloadOptions"
+        :key="option.format"
+        :ref="(el) => setMenuItemRef(el, index)"
+        type="button"
         class="dropdown-item"
-        @click.prevent="downloadFormat('json')"
+        role="menuitem"
+        @click="downloadFormat(option.format)"
       >
-        Docling JSON
-      </a>
+        {{ t(option.labelKey) }}
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+
+import { useI18n } from '../../../shared/i18n'
 import { getExportUrl } from '../api'
 
-const props = withDefaults(defineProps<{
-  docId: string
-  buttonClass?: string
-  direction?: 'up' | 'down'
-}>(), {
-  direction: 'down'
-})
+type ExportFormat = 'pdf' | 'md' | 'json'
 
+const props = withDefaults(
+  defineProps<{
+    docId: string
+    buttonClass?: string
+    direction?: 'up' | 'down'
+  }>(),
+  {
+    direction: 'down',
+  },
+)
+
+const { t } = useI18n()
 const open = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+const buttonRef = ref<HTMLButtonElement | null>(null)
+const itemRefs = ref<Array<HTMLButtonElement | null>>([])
+const menuId = `download-menu-${props.docId}`
+
+const downloadOptions: Array<{ format: ExportFormat; labelKey: string }> = [
+  { format: 'pdf', labelKey: 'docs.downloadPdf' },
+  { format: 'md', labelKey: 'docs.downloadMarkdown' },
+  { format: 'json', labelKey: 'docs.downloadJson' },
+]
 
 function toggle() {
-  open.value = !open.value
+  if (open.value) {
+    close()
+    return
+  }
+  void openAndFocus(0)
 }
 
 function close() {
   open.value = false
 }
 
-async function downloadFormat(format: 'pdf' | 'md' | 'json') {
+function closeAndFocusTrigger() {
+  close()
+  buttonRef.value?.focus()
+}
+
+function setMenuItemRef(el: Element | null, index: number) {
+  itemRefs.value[index] = el instanceof HTMLButtonElement ? el : null
+}
+
+async function openAndFocus(index: number) {
+  open.value = true
+  await nextTick()
+  focusItem(index)
+}
+
+function focusItem(index: number) {
+  itemRefs.value[index]?.focus()
+}
+
+function focusNextItem() {
+  const index = itemRefs.value.findIndex((item) => item === document.activeElement)
+  focusItem((index + 1 + downloadOptions.length) % downloadOptions.length)
+}
+
+function focusPreviousItem() {
+  const index = itemRefs.value.findIndex((item) => item === document.activeElement)
+  focusItem((index - 1 + downloadOptions.length) % downloadOptions.length)
+}
+
+async function downloadFormat(format: ExportFormat) {
   try {
     const url = getExportUrl(props.docId, format)
     const response = await fetch(url)
-    
+
     if (!response.ok) {
       if (response.status === 404 && format === 'json') {
-        window.alert('Docling JSON is not available. Please reparse the document.')
+        window.alert(t('docs.downloadJsonUnavailable'))
       } else {
-        window.alert(`Failed to download ${format} format.`)
+        window.alert(t('docs.downloadFailed', { format: t(formatLabelKey(format)) }))
       }
+      close()
       return
     }
 
-    // Trigger download programmatic
     const blob = await response.blob()
     const downloadUrl = window.URL.createObjectURL(blob)
-    
-    // Read filename from Content-Disposition header if available
+
     let filename = `${props.docId}.${format}`
     const disposition = response.headers.get('content-disposition')
-    if (disposition && disposition.indexOf('attachment') !== -1) {
-      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
-      const matches = filenameRegex.exec(disposition)
-      if (matches != null && matches[1]) { 
-        filename = matches[1].replace(/['"]/g, '')
+    if (disposition?.includes('attachment')) {
+      const utf8FilenameRegex = /filename\*=utf-8''([^;\n]+)/i
+      const utf8Match = utf8FilenameRegex.exec(disposition)
+      if (utf8Match?.[1]) {
+        filename = decodeURIComponent(utf8Match[1])
+      } else {
+        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
+        const matches = filenameRegex.exec(disposition)
+        if (matches?.[1]) {
+          filename = matches[1].replace(/['"]/g, '')
+        }
       }
     }
 
@@ -90,7 +163,19 @@ async function downloadFormat(format: 'pdf' | 'md' | 'json') {
     close()
   } catch (err) {
     console.error('Download error:', err)
-    window.alert(`An error occurred while downloading the ${format} format.`)
+    window.alert(t('docs.downloadUnexpectedError', { format: t(formatLabelKey(format)) }))
+    close()
+  }
+}
+
+function formatLabelKey(format: ExportFormat): string {
+  switch (format) {
+    case 'pdf':
+      return 'docs.downloadPdf'
+    case 'md':
+      return 'docs.downloadMarkdown'
+    case 'json':
+      return 'docs.downloadJson'
   }
 }
 
@@ -159,16 +244,22 @@ onUnmounted(() => {
 }
 
 .dropdown-item {
+  width: 100%;
   padding: 6px 12px;
   font-size: 12px;
+  text-align: left;
   color: var(--text);
-  text-decoration: none;
+  background: transparent;
+  border: 0;
   transition: background var(--transition);
   display: block;
+  cursor: pointer;
 }
 
-.dropdown-item:hover {
+.dropdown-item:hover,
+.dropdown-item:focus-visible {
   background: var(--bg-hover);
   color: var(--accent);
+  outline: none;
 }
 </style>
