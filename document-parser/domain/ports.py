@@ -393,26 +393,6 @@ class GraphWriter(Protocol):
 
 
 @runtime_checkable
-class DocumentGraphProjector(Protocol):
-    """Port for projecting a `GraphPayload` from raw `DoclingDocument` JSON.
-
-    Used by the `/reasoning-graph` endpoint, which serves a graph view
-    without requiring Neo4j to be wired in — the projection is built from
-    the SQLite `document_json` blob. The adapter owns the Docling-shape
-    parsing so the service stays infra-agnostic.
-    """
-
-    def project(
-        self,
-        document_json: str,
-        *,
-        doc_id: str,
-        title: str | None = None,
-        max_pages: int = 200,
-    ) -> GraphPayload: ...
-
-
-@runtime_checkable
 class ReasoningRunner(Protocol):
     """Port for live reasoning over a previously-converted document.
 

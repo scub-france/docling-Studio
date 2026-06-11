@@ -1,17 +1,13 @@
 """Graph API — returns a cytoscape-shaped view of the document structure.
 
-Two endpoints:
-- `/graph` — read from the graph store (Neo4j). Rich graph (elements +
-  chunks + pages + merges). Requires the Maintain step
-  (IngestionPipeline) to have run for the document.
-- `/reasoning-graph` — built on-the-fly from the SQLite `document_json`
-  blob. No graph-store dependency. Lighter graph (no chunks) but enough
-  to render the reasoning-trace overlay on top of `GraphView`.
+`/graph` reads from the graph store (Neo4j): a rich graph (elements + chunks
++ pages + merges) requiring the Maintain step (IngestionPipeline) to have run
+for the document.
 
-Both endpoints are thin shims over `GraphService` — the router only
-translates between domain errors and HTTP status codes, and serializes
-the domain `GraphPayload` into the camelCase-friendly `GraphResponse`.
-No infra imports (#audit-01).
+The endpoint is a thin shim over `GraphService` — the router only translates
+between domain errors and HTTP status codes, and serializes the domain
+`GraphPayload` into the camelCase-friendly `GraphResponse`. No infra imports
+(#audit-01).
 """
 
 from __future__ import annotations
@@ -70,20 +66,6 @@ def _to_response(payload) -> GraphResponse:
 async def get_document_graph(doc_id: str, service: deps.GraphServiceDep) -> GraphResponse:
     try:
         payload = await service.fetch_document_graph(doc_id)
-    except GraphServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
-    return _to_response(payload)
-
-
-@router.get("/{doc_id}/reasoning-graph", response_model=GraphResponse)
-async def get_reasoning_graph(doc_id: str, service: deps.GraphServiceDep) -> GraphResponse:
-    """Graph projection built from SQLite `document_json` — no Neo4j needed.
-
-    Serves the reasoning-trace viewer, which only needs the element/page/edge
-    structure to overlay iterations onto.
-    """
-    try:
-        payload = await service.project_reasoning_graph(doc_id)
     except GraphServiceError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     return _to_response(payload)

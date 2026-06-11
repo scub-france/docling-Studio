@@ -54,7 +54,6 @@ class HealthResponse(_CamelModel):
     # so frontends pointed at an older backend keep every mode visible.
     inspect_mode_enabled: bool = True
     linked_mode_enabled: bool = True
-    ask_mode_enabled: bool = True
 
 
 class DocStoreLinkResponse(_CamelModel):
@@ -491,3 +490,51 @@ class DocumentVersionResponse(_CamelModel):
     chunks_snapshot_size: int = 0  # number of chunks captured, not the raw JSON
     summary: str = ""
     created_at: str | datetime
+
+
+# ---------------------------------------------------------------------------
+# Reasoning (#303) — Parse-view trace timeline contract.
+# ---------------------------------------------------------------------------
+
+
+class ReasoningRunRequest(_CamelModel):
+    """Body for `POST /api/documents/{id}/reasoning`.
+
+    `modelId` is an optional per-run override; it falls back to the runner's
+    configured default model. `_CamelModel` accepts both `modelId` (wire) and
+    `model_id` (populate_by_name).
+    """
+
+    query: str
+    model_id: str | None = None
+
+
+class ReasoningStepResponse(_CamelModel):
+    """One projected reasoning step rendered as a trace-timeline row.
+
+    `payload` carries the raw iteration fields with **camelCase keys** built
+    in `domain.trace_builder` — Pydantic does not alias dict contents, so it
+    is serialized verbatim (the UI binds `payload.canAnswer`, etc.).
+    """
+
+    id: str
+    kind: str  # ReasoningStepKind value: plan|retrieve|rerank|read|verify|answer|map
+    title: str
+    summary: str
+    duration_ms: int = 0
+    token_count: int = 0
+    citations: list[str] = Field(default_factory=list)
+    payload: dict = Field(default_factory=dict)
+
+
+class ReasoningTraceResponse(_CamelModel):
+    """Wire shape for a completed reasoning run — answer + ordered steps +
+    run-level timing/usage/model metadata."""
+
+    answer: str
+    converged: bool
+    steps: list[ReasoningStepResponse]
+    total_duration_ms: int
+    tokens_in: int = 0
+    tokens_out: int = 0
+    model_id: str = ""

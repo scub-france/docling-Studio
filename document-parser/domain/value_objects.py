@@ -189,6 +189,7 @@ class ReasoningIteration:
     section_text_length: int
     can_answer: bool
     response: str
+    duration_ms: int = 0  # 0 when upstream didn't capture per-iteration timing
 
 
 @dataclass(frozen=True)
@@ -199,13 +200,68 @@ class ReasoningResult:
     answer: str
     iterations: list[ReasoningIteration]
     converged: bool
+    duration_ms: int = 0  # agent-side LLM time for the run; 0 if unknown
+    model_id: str = ""  # model self-description; "" if unknown
+
+
+class ReasoningStepKind(StrEnum):
+    """Kind tag for a projected reasoning step — mirrors the frontend's TS
+    union 1:1 (`features/reasoning/types.ts`).
+
+    docling-agent's chunkless RAG loop only emits READ steps today; the other
+    kinds are reserved so future agent phases (planning, reranking, explicit
+    verify/answer) extend the wire contract without breaking consumers.
+    """
+
+    PLAN = "plan"
+    RETRIEVE = "retrieve"
+    RERANK = "rerank"
+    READ = "read"
+    VERIFY = "verify"
+    ANSWER = "answer"
+    MAP = "map"
+
+
+@dataclass(frozen=True)
+class ReasoningStep:
+    """Debugger-facing projection of one reasoning step — what the trace
+    timeline renders as a row. Built from a `ReasoningIteration` by the pure
+    `domain.trace_builder` projection.
+
+    `payload` carries the iteration's raw fields with **camelCase keys** (the
+    wire contract the UI binds to, e.g. `payload.canAnswer`); Pydantic does
+    not alias dict contents, so the builder constructs them already-cased.
+    """
+
+    id: str  # "s1", "s2", …
+    kind: ReasoningStepKind
+    title: str  # the LLM's stated reason, truncated to <=96 chars
+    summary: str  # answer attempt, or "Insufficient — …" when it moved on
+    duration_ms: int = 0
+    token_count: int = 0  # reserved until mellea exposes usage stats
+    citations: list[str] = field(default_factory=list)  # docling self_refs
+    payload: dict[str, Any] = field(default_factory=dict)  # camelCase keys (wire-destined)
+
+
+@dataclass(frozen=True)
+class ReasoningTrace:
+    """The full projected trace the API serves — answer + ordered steps +
+    run-level timing/usage/model metadata."""
+
+    answer: str
+    converged: bool
+    steps: list[ReasoningStep]
+    total_duration_ms: int
+    tokens_in: int = 0
+    tokens_out: int = 0
+    model_id: str = ""
 
 
 # ---------------------------------------------------------------------------
 # Graph payload (#audit-01) — wire-ready cytoscape projection of a document.
 # Moved here from `infra.neo4j.queries` so it can be the return type of the
-# `GraphReader` and `DocumentGraphProjector` domain ports without dragging
-# Neo4j typing into the domain layer.
+# `GraphReader` domain port without dragging Neo4j typing into the domain
+# layer.
 # ---------------------------------------------------------------------------
 
 
@@ -213,11 +269,8 @@ class ReasoningResult:
 class GraphPayload:
     """Cytoscape-shaped projection of a document's structure.
 
-    Two adapters produce this payload today: `Neo4jGraphReader` (reads from
-    the graph store after the Maintain step) and `DoclingGraphProjector`
-    (projects from raw `DoclingDocument` JSON for the reasoning-trace path,
-    no Neo4j needed). The shape is identical so the API layer can serialize
-    either source uniformly.
+    Produced by `Neo4jGraphReader` (reads from the graph store after the
+    Maintain step) and serialized uniformly by the `/graph` API layer.
     """
 
     doc_id: str
