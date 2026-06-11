@@ -51,14 +51,14 @@ On pull requests, CI enforces `80%` coverage on changed backend lines only.
 
 ### Git hooks
 
-The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check before each push.
+The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs targeted backend/frontend tests, blocks local/generated artifacts, scans for likely secrets, enforces Conventional Commit messages, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check before each push.
 
 ```bash
 bash ./scripts/initial_setup.sh
 
 # Or install only the hooks manually
 uv tool install pre-commit
-pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
+pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
 ```
 
 ### Backend — Ruff
