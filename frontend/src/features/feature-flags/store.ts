@@ -23,7 +23,6 @@ interface HealthResponse {
   // older backend image without these fields keeps working: missing → true.
   inspectModeEnabled?: boolean
   linkedModeEnabled?: boolean
-  askModeEnabled?: boolean
 }
 
 export type FeatureFlag =
@@ -35,7 +34,6 @@ export type FeatureFlag =
   | 'ragPipeline'
   | 'inspectMode'
   | 'linkedMode'
-  | 'askMode'
 
 interface FeatureFlagDef {
   description: string
@@ -51,7 +49,6 @@ interface FeatureFlagContext {
   ragPipelineEnabled: boolean
   inspectModeEnabled: boolean
   linkedModeEnabled: boolean
-  askModeEnabled: boolean
 }
 
 const featureRegistry: Record<FeatureFlag, FeatureFlagDef> = {
@@ -97,10 +94,6 @@ const featureRegistry: Record<FeatureFlag, FeatureFlagDef> = {
     description: 'Doc workspace Linked mode (preview + aligned chunks panel)',
     isEnabled: (ctx) => ctx.ragPipelineEnabled && ctx.linkedModeEnabled,
   },
-  askMode: {
-    description: 'Doc workspace Ask mode (agentic reasoning over the doc)',
-    isEnabled: (ctx) => ctx.ragPipelineEnabled && ctx.askModeEnabled,
-  },
 }
 
 export const useFeatureFlagStore = defineStore('feature-flags', () => {
@@ -118,7 +111,6 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
   // so a backend without these fields behaves like the legacy one.
   const inspectModeEnabled = ref(true)
   const linkedModeEnabled = ref(true)
-  const askModeEnabled = ref(true)
   const appVersion = ref<string>(__APP_VERSION__)
   const loaded = ref(false)
   const error = ref<string | null>(null)
@@ -132,7 +124,6 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
     ragPipelineEnabled: ragPipelineEnabled.value,
     inspectModeEnabled: inspectModeEnabled.value,
     linkedModeEnabled: linkedModeEnabled.value,
-    askModeEnabled: askModeEnabled.value,
   }))
 
   function isEnabled(flag: FeatureFlag): boolean {
@@ -167,7 +158,6 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
         // visible.
         inspectModeEnabled.value = data.inspectModeEnabled ?? true
         linkedModeEnabled.value = data.linkedModeEnabled ?? true
-        askModeEnabled.value = data.askModeEnabled ?? true
         appMaxFileSizeMb.value = maxFileSizeMb.value
         appMaxPageCount.value = maxPageCount.value
         if (data.version) appVersion.value = data.version
@@ -214,7 +204,6 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
     ragPipelineEnabled,
     inspectModeEnabled,
     linkedModeEnabled,
-    askModeEnabled,
     appVersion,
     loaded,
     error,

@@ -185,30 +185,26 @@ describe('useFeatureFlagStore', () => {
       ragPipelineEnabled: false,
       inspectModeEnabled: true,
       linkedModeEnabled: true,
-      askModeEnabled: true,
     })
     const store = useFeatureFlagStore()
     await store.load()
     expect(store.isEnabled('inspectMode')).toBe(false)
     expect(store.isEnabled('linkedMode')).toBe(false)
-    expect(store.isEnabled('askMode')).toBe(false)
   })
 
   // 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257).
-  it('exposes inspectMode / linkedMode / askMode flags from /api/health', async () => {
+  it('exposes inspectMode / linkedMode flags from /api/health', async () => {
     mockApiFetch.mockResolvedValue({
       status: 'ok',
       engine: 'local',
       ragPipelineEnabled: true,
       inspectModeEnabled: false,
       linkedModeEnabled: true,
-      askModeEnabled: true,
     })
     const store = useFeatureFlagStore()
     await store.load()
     expect(store.isEnabled('inspectMode')).toBe(false)
     expect(store.isEnabled('linkedMode')).toBe(true)
-    expect(store.isEnabled('askMode')).toBe(true)
   })
 
   it('falls back to all-modes-enabled when /api/health omits the new fields', async () => {
@@ -217,7 +213,6 @@ describe('useFeatureFlagStore', () => {
     await store.load()
     expect(store.isEnabled('inspectMode')).toBe(true)
     expect(store.isEnabled('linkedMode')).toBe(true)
-    expect(store.isEnabled('askMode')).toBe(true)
   })
 
   it('modeFlags() maps backend flags to current DocMode keys (#264 / #225)', async () => {

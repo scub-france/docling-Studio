@@ -38,9 +38,19 @@ describe('router', () => {
     expect(router.resolve('/documents').name).toBe(ROUTES.DOCUMENTS)
     expect(router.resolve('/history').name).toBe(ROUTES.HISTORY)
     expect(router.resolve('/search').name).toBe(ROUTES.SEARCH)
-    expect(router.resolve('/reasoning').name).toBe(ROUTES.REASONING)
-    expect(router.resolve('/reasoning/abc').name).toBe(ROUTES.REASONING_DOC)
     expect(router.resolve('/settings').name).toBe(ROUTES.SETTINGS)
+  })
+
+  it('redirects the retired /reasoning links into the doc workspace (#303)', () => {
+    const router = buildRouter()
+    // Static redirect to /docs.
+    expect(router.resolve('/reasoning').matched[0]?.redirect).toBe('/docs')
+    // /reasoning/:docId → /docs/:docId via a redirect function.
+    const fn = router.resolve('/reasoning/abc').matched[0]?.redirect as
+      | ((to: { params: { docId: string } }) => string)
+      | undefined
+    expect(typeof fn).toBe('function')
+    expect(fn?.({ params: { docId: 'abc' } })).toBe('/docs/abc')
   })
 
   it('passes the document id to the doc workspace as a prop', () => {

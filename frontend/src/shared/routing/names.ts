@@ -18,8 +18,6 @@ export const ROUTES = {
   ANALYSIS_DETAIL: 'analysis-detail',
   DOCUMENTS: 'documents',
   SEARCH: 'search',
-  REASONING: 'reasoning',
-  REASONING_DOC: 'reasoning-doc',
   SETTINGS: 'settings',
   NOT_FOUND: 'not-found',
 

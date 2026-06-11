@@ -64,30 +64,13 @@
 import type { Core } from 'cytoscape'
 import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import { useI18n } from '../../../shared/i18n'
-import { reasoningOverlayStyles } from '../../reasoning/graphReasoningOverlay'
 import { fetchDocumentGraph, type GraphNode, type GraphPayload } from '../graphApi'
 import { LEGEND_CHIPS, findChip } from '../legendFilters'
 import { computeSectionParents, explicitParentMap, mergeParentMaps } from '../sectionParenting'
 import NodeDetailsPanel from './NodeDetailsPanel.vue'
 
-// `fetcher` is optional so Maintain can keep using the Neo4j-backed endpoint
-// (`fetchDocumentGraph`, the default) while the reasoning-trace page can
-// inject a SQLite-backed fetcher that returns the same `GraphPayload` shape
-// without requiring Neo4j. Keeping this at the component boundary means the
-// rendering pipeline below doesn't care where the graph came from.
-const props = withDefaults(
-  defineProps<{
-    docId: string | null
-    fetcher?: (docId: string) => Promise<GraphPayload>
-  }>(),
-  { fetcher: fetchDocumentGraph },
-)
-const emit = defineEmits<{
-  /** Emitted on node tap with the element's `self_ref` (null when the tap
-   * cleared the selection, or when the tapped node has no self_ref —
-   * Document / Page / Chunk). Consumers can mirror the selection elsewhere
-   * (e.g. the ReasoningWorkspace syncs it to the PDF viewer). */
-  nodeFocus: [selfRef: string | null]
+const props = defineProps<{
+  docId: string | null
 }>()
 const { t } = useI18n()
 
@@ -96,9 +79,8 @@ const payload = ref<GraphPayload | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const empty = ref(false)
-// Exposed via defineExpose so parent components (e.g. the reasoning trace
-// overlay) can read the live Cytoscape instance reactively. Null while the
-// graph is loading / empty / unmounted.
+// The live Cytoscape instance — null while the graph is loading / empty /
+// unmounted. Internal to this component.
 const cy = ref<Core | null>(null)
 
 // Legend-driven visibility: user clicks a chip → its key lands here and the
@@ -188,7 +170,7 @@ async function load(): Promise<void> {
   error.value = null
   empty.value = false
   try {
-    payload.value = await props.fetcher(props.docId)
+    payload.value = await fetchDocumentGraph(props.docId)
     if (!payload.value.nodes.length) {
       empty.value = true
       return
@@ -327,8 +309,6 @@ async function renderGraph(): Promise<void> {
         selector: 'edge[type = "DERIVED_FROM"]',
         style: { 'line-color': '#DC2626', 'target-arrow-color': '#DC2626' },
       },
-      // Reasoning-trace overlay: visited-node class + synthetic REASONING_NEXT edges.
-      ...reasoningOverlayStyles,
       // Legend-driven visibility: chips toggle the `.hidden` class on
       // matching nodes. `display: none` cascades to connected edges for free.
       { selector: 'node.hidden', style: { display: 'none' } },
@@ -400,17 +380,12 @@ async function renderGraph(): Promise<void> {
     // Visual feedback — clear previous selection class first.
     cy.value?.nodes('.nd-selected').removeClass('nd-selected')
     evt.target.addClass('nd-selected')
-    // Let the outer workspace mirror the selection (e.g. into the PDF view).
-    // Nodes without a `self_ref` (Document / Page / Chunk) emit `null` so
-    // the consumer can reset its focus.
-    emit('nodeFocus', raw.self_ref ?? null)
   })
-  // Click on background → close details panel + clear cross-view focus.
+  // Click on background → close details panel.
   cy.value.on('tap', (evt) => {
     if (evt.target === cy.value) {
       selectedNode.value = null
       cy.value?.nodes('.nd-selected').removeClass('nd-selected')
-      emit('nodeFocus', null)
     }
   })
 
@@ -470,18 +445,6 @@ function navigateToNode(target: GraphNode): void {
   }
 }
 
-/**
- * Mirror an external selection (e.g. user clicked a bbox in the PDF view)
- * onto the graph: select the matching node, scroll it into view, update
- * the details panel. No-op if the element isn't in the current graph
- * (common for a PDF-only element that the reasoning graph didn't emit).
- */
-function selectBySelfRef(selfRef: string): void {
-  const node = payload.value?.nodes.find((n) => n.self_ref === selfRef) ?? null
-  if (!node) return
-  navigateToNode(node)
-}
-
 function disposeGraph(): void {
   if (cy.value) {
     cy.value.destroy()
@@ -535,7 +498,7 @@ watch(
 
 // Let parent components observe the live Cytoscape instance (e.g. the
 // reasoning-trace overlay reads it via `graphViewRef.value?.cy`).
-defineExpose({ cy, load, selectBySelfRef })
+defineExpose({ load })
 </script>
 
 <style scoped>
