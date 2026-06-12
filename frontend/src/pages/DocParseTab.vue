@@ -73,24 +73,35 @@
         />
       </aside>
       <div class="parse-stage">
-        <PagePreviewWithOverlay
-          v-if="documentStore.workspacePages.length"
-          :document-id="docId"
-          :pages="documentStore.workspacePages"
-          :current-page="currentPage"
-          :hidden-types="hiddenTypes"
-          :show-labels="true"
-          :highlighted-refs="highlightedRefs"
-          @update:current-page="(p) => (currentPage = p)"
-          @hover-element="onHoverElement"
-          @click-element="onClickElement"
+        <div class="parse-preview">
+          <PagePreviewWithOverlay
+            v-if="documentStore.workspacePages.length"
+            :document-id="docId"
+            :pages="documentStore.workspacePages"
+            :current-page="currentPage"
+            :hidden-types="hiddenTypes"
+            :show-labels="true"
+            :highlighted-refs="highlightedRefs"
+            @update:current-page="(p) => (currentPage = p)"
+            @hover-element="onHoverElement"
+            @click-element="onClickElement"
+          />
+          <div v-else-if="documentStore.workspaceLoading" class="parse-state">
+            <span class="spinner" />
+          </div>
+          <div v-else class="parse-state parse-state--empty">
+            <p>{{ t('parse.noAnalysis') }}</p>
+          </div>
+        </div>
+        <TraceTimeline
+          v-if="reasoningAvailable"
+          class="parse-trace-dock"
+          :trace="reasoningStore.activeTrace"
+          :running="reasoningStore.running"
+          :selected-step-id="reasoningStore.selectedStepId"
+          :doc-loaded="docLoaded"
+          @select-step="reasoningStore.selectStep"
         />
-        <div v-else-if="documentStore.workspaceLoading" class="parse-state">
-          <span class="spinner" />
-        </div>
-        <div v-else class="parse-state parse-state--empty">
-          <p>{{ t('parse.noAnalysis') }}</p>
-        </div>
       </div>
       <aside class="properties-drawer" :class="{ 'properties-drawer--closed': !propertiesOpen }">
         <button
@@ -100,8 +111,40 @@
         >
           {{ propertiesOpen ? '›' : '‹' }}
         </button>
+        <div v-if="propertiesOpen && reasoningAvailable" class="parse-tabs">
+          <button
+            type="button"
+            class="parse-tab-btn"
+            :class="{ active: rightTab === 'props' }"
+            data-e2e="props-tab"
+            @click="rightTab = 'props'"
+          >
+            {{ t('props.tab') }}
+          </button>
+          <button
+            type="button"
+            class="parse-tab-btn"
+            :class="{ active: rightTab === 'ask' }"
+            data-e2e="ask-tab"
+            @click="rightTab = 'ask'"
+          >
+            {{ t('ask.tab') }}
+            <span v-if="reasoningStore.turns.length" class="parse-tab-pill">{{
+              reasoningStore.turns.length
+            }}</span>
+          </button>
+        </div>
+        <ConversationPanel
+          v-if="propertiesOpen && reasoningAvailable && rightTab === 'ask'"
+          :turns="reasoningStore.turns"
+          :selected-turn-id="reasoningStore.selectedTurnId"
+          :doc-loaded="docLoaded"
+          :running="reasoningStore.running"
+          @select-turn="reasoningStore.selectTurn"
+          @run="onRunReasoning"
+        />
         <ElementProperties
-          v-if="propertiesOpen"
+          v-else-if="propertiesOpen"
           :element="selectedElementData?.element ?? null"
           :page-width="selectedElementPage?.width ?? 0"
           :page-height="selectedElementPage?.height ?? 0"
@@ -140,6 +183,10 @@ import DocTreeRail from '../features/document/ui/DocTreeRail.vue'
 import ElementProperties from '../features/document/ui/ElementProperties.vue'
 import LayersBar from '../features/document/ui/LayersBar.vue'
 import PagePreviewWithOverlay from '../features/document/ui/PagePreviewWithOverlay.vue'
+import { useFeatureFlagStore } from '../features/feature-flags/store'
+import { useReasoningStore } from '../features/reasoning/store'
+import ConversationPanel from '../features/reasoning/ui/ConversationPanel.vue'
+import TraceTimeline from '../features/reasoning/ui/TraceTimeline.vue'
 import { useI18n } from '../shared/i18n'
 
 const props = defineProps<{ docId: string; analysisId?: string }>()
@@ -148,6 +195,19 @@ const { t } = useI18n()
 const documentStore = useDocumentStore()
 const chunksStore = useChunksStore()
 const analysisStore = useAnalysisStore()
+const reasoningStore = useReasoningStore()
+const featureFlags = useFeatureFlagStore()
+
+// Reasoning is backend-gated (REASONING_ENABLED + docling-agent importable).
+// When off, the Parse view is pixel-identical to before: no Ask tab, no dock.
+const reasoningAvailable = computed(() => featureFlags.isEnabled('reasoning'))
+// Right panel defaults to Properties; Ask is opt-in (#303 design decision).
+const rightTab = ref<'props' | 'ask'>('props')
+const docLoaded = computed(() => documentStore.workspacePages.length > 0)
+
+function onRunReasoning(query: string, model: string | undefined): void {
+  void reasoningStore.run(props.docId, query, model)
+}
 
 function analysisChunks(analysis: Analysis): DocChunk[] {
   if (!analysis.chunksJson) return []
@@ -265,11 +325,10 @@ async function loadTree(): Promise<void> {
 }
 
 function onTreeSelect(ref: string): void {
-  selectedNodeRef.value = ref
-  const pageOfRef = findPageOfRef(documentStore.workspacePages, ref)
-  if (pageOfRef !== null && pageOfRef !== currentPage.value) {
-    currentPage.value = pageOfRef
-  }
+  // Route through the shared focus (drives the bbox highlight, page flip and
+  // Properties via the focusTick watcher) and reverse-select a citing step.
+  documentStore.focusElement(ref)
+  reasoningStore.selectStepByCitation(ref)
 }
 
 function onHoverElement(_el: PageElement | null): void {
@@ -277,7 +336,9 @@ function onHoverElement(_el: PageElement | null): void {
 }
 
 function onClickElement(el: PageElement, _pageNumber: number): void {
-  if (el.self_ref) selectedNodeRef.value = el.self_ref
+  if (!el.self_ref) return
+  documentStore.focusElement(el.self_ref)
+  reasoningStore.selectStepByCitation(el.self_ref)
 }
 
 async function onSaveChunk(chunkId: string, text: string): Promise<void> {
@@ -286,6 +347,7 @@ async function onSaveChunk(chunkId: string, text: string): Promise<void> {
 }
 
 onMounted(async () => {
+  reasoningStore.reset(props.docId)
   if (props.analysisId) {
     documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
     await loadTree()
@@ -305,6 +367,9 @@ watch(
   async (id) => {
     selectedNodeRef.value = null
     filter.value = ''
+    rightTab.value = 'props'
+    reasoningStore.reset(id)
+    documentStore.focusElement(null)
     if (props.analysisId) {
       documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
       await loadTree()
@@ -313,6 +378,24 @@ watch(
     }
     const first = documentStore.workspacePages[0]?.page_number
     if (first) currentPage.value = first
+  },
+)
+
+// #303 — citation focus bridge. The reasoning store writes focusedRef (clicking
+// a trace step); the Parse surfaces (tree / bbox) write it too. This watcher
+// mirrors it onto the local selection so the bbox highlight, the tree
+// highlight, the page flip and the Properties panel all react. Re-fires on
+// focusTick (re-click re-scrolls). Never switches the active right-panel tab.
+watch(
+  () => documentStore.focusTick,
+  () => {
+    const ref = documentStore.focusedRef
+    selectedNodeRef.value = ref
+    if (!ref) return
+    const pageOfRef = findPageOfRef(documentStore.workspacePages, ref)
+    if (pageOfRef !== null && pageOfRef !== currentPage.value) {
+      currentPage.value = pageOfRef
+    }
   },
 )
 
@@ -422,10 +505,25 @@ function findPageOfRef(
   grid-row: 1;
   width: 360px;
   min-width: 0;
+  /* #303 — the drawer stacks the toggle, the Properties|Ask tab strip and
+     the active panel, so it drives the column layout itself. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--border);
   background: var(--bg-surface);
   transition: width 180ms ease;
+}
+
+/* The drawer already draws the separator and owns the height budget — the
+   panels inside it must not redeclare either. */
+.properties-drawer :deep(.element-properties),
+.properties-drawer :deep(.convo) {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  border-left: none;
 }
 
 .properties-drawer--closed {
@@ -538,6 +636,74 @@ function findPageOfRef(
   padding: 12px 16px;
   overflow: hidden;
   min-height: 0;
+}
+
+/* #303 — preview takes the flexible space; the trace dock is a fixed 308px
+   strip below it (Comfortable density). Both scroll internally. */
+.parse-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.parse-trace-dock {
+  flex: 0 0 308px;
+  margin-top: 12px;
+}
+
+/* #303 — right panel is now tabbed (Properties | Ask), inside the
+   collapsible properties drawer. */
+.parse-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.parse-tab-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.parse-tab-btn:hover {
+  color: var(--text);
+}
+
+.parse-tab-btn.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.parse-tab-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+}
+
+.parse-tab-pill {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  background: var(--accent-muted);
+  color: var(--accent-hover);
+  border-radius: 999px;
+  padding: 0 6px;
+  min-width: 16px;
+  text-align: center;
 }
 
 .parse-state {
