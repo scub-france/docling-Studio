@@ -139,8 +139,10 @@ jobs:
 
       - name: Run E2E tests
         run: |
+          BASE_REF="${{ github.base_ref }}"
+          REF_NAME="${{ github.ref }}"
           KARATE_TAGS="@smoke"
-          if [[ "${{ github.base_ref }}" == release/* ]] || [[ "${{ github.ref }}" == refs/heads/release/* ]]; then
+          if [[ "$BASE_REF" == release/* ]] || [[ "$REF_NAME" == refs/heads/release/* ]]; then
             KARATE_TAGS="@smoke,@regression,@e2e"
           fi
           mvn test -f e2e/api/pom.xml -DbaseUrl=http://localhost:3000 -Dkarate.options="--tags ${KARATE_TAGS}"
