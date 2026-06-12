@@ -80,7 +80,7 @@ npm run dev
 
 ### Git hooks (recommended)
 
-The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs targeted backend/frontend tests, blocks local/generated artifacts, scans for likely secrets, enforces Conventional Commit messages, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check before each push.
+The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs targeted backend/frontend tests, blocks local/generated artifacts, scans for likely secrets, validates lockfile updates and workflow/compose changes, enforces Conventional Commit messages, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check, frontend build, and full `document-parser` test suite before each push when those areas changed.
 
 ```bash
 bash ./scripts/initial_setup.sh

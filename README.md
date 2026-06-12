@@ -150,7 +150,8 @@ bash ./scripts/initial_setup.sh
 ```
 
 The script installs frontend dependencies, syncs the Python dev environments used by the hooks, installs `pre-commit`, and wires the repo's `pre-commit` / `pre-push` / `commit-msg` hooks.
-On commit, the hooks auto-fix Ruff and frontend formatting issues, run targeted backend/frontend tests, block local/generated artifacts, scan for likely secrets, enforce Conventional Commit messages, and run the `document-parser` architecture tests when backend layers change.
+On commit, the hooks auto-fix Ruff and frontend formatting issues, run targeted backend/frontend tests, block local/generated artifacts, scan for likely secrets, validate lockfile updates and workflow/compose changes, enforce Conventional Commit messages, and run the `document-parser` architecture tests when backend layers change.
+On push, the hooks also run the full `document-parser` test suite and the frontend build when those areas changed.
 On pull requests, CI also enforces `80%` coverage on changed backend lines only.
 
 **Backend** (Python 3.12+):

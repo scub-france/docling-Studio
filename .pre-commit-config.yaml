@@ -25,6 +25,12 @@ repos:
           - --exclude-files
           - ^(frontend/package-lock\.json|document-parser/uv\.lock|embedding-service/uv\.lock)$
 
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+        files: ^\.github/workflows/.*\.(yml|yaml)$
+
   - repo: local
     hooks:
       - id: block-local-generated-artifacts
@@ -39,6 +45,17 @@ repos:
         stages:
           - commit-msg
         always_run: true
+      - id: lockfile-consistency
+        name: lockfile consistency
+        entry: bash ./scripts/check_lockfile_consistency.sh
+        language: system
+        files: ^(frontend/package(-lock)?\.json|document-parser/(pyproject\.toml|uv\.lock)|embedding-service/(pyproject\.toml|uv\.lock))$
+      - id: docker-compose-validate
+        name: docker compose validate
+        entry: bash ./scripts/check_docker_compose.sh
+        language: system
+        files: ^docker-compose.*\.yml$
+        pass_filenames: false
       - id: document-parser-ruff-check
         name: document-parser ruff check --fix
         entry: uv run --directory document-parser ruff check --fix .
@@ -102,4 +119,21 @@ repos:
         stages:
           - pre-push
         files: ^frontend/src/.*\.(ts|vue)$
+        pass_filenames: false
+      - id: document-parser-full-tests
+        name: document-parser full tests
+        entry: uv run --directory document-parser pytest tests/ -q
+        language: system
+        stages:
+          - pre-push
+        files: ^document-parser/.*\.py$
+        exclude: ^document-parser/local-experiments/
+        pass_filenames: false
+      - id: frontend-build
+        name: frontend build
+        entry: npm --prefix frontend run build
+        language: system
+        stages:
+          - pre-push
+        files: ^frontend/(src/.*\.(css|js|ts|vue)|package(-lock)?\.json|tsconfig.*\.json|vite\.config\..*)$
         pass_filenames: false
