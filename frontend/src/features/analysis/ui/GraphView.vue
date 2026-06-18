@@ -496,8 +496,7 @@ watch(
   },
 )
 
-// Let parent components observe the live Cytoscape instance (e.g. the
-// reasoning-trace overlay reads it via `graphViewRef.value?.cy`).
+// Expose `load` so a parent can trigger a (re)load of the graph imperatively.
 defineExpose({ load })
 </script>
 
