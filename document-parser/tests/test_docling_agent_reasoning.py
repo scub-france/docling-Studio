@@ -279,6 +279,22 @@ class TestRunUpstreamFailure:
         assert exc_info.value.model_id == "granite4:micro-h"
 
     @pytest.mark.asyncio
+    async def test_empty_per_document_translates_to_parse_error(self, stub_fork) -> None:
+        """An empty `per_document` (agent produced no result) → `ReasoningParseError`,
+        not an uncaught IndexError surfacing as a generic 500."""
+
+        def _empty(*, task, document):
+            return SimpleNamespace(query=task, per_document=[], final_answer="")
+
+        stub_fork.agent_instance.run_with_trace.side_effect = _empty
+        runner = _make_runner(default_model_id="granite4:micro-h")
+
+        with pytest.raises(ReasoningParseError) as exc_info:
+            await runner.run(document_json="{}", query="Q")
+
+        assert exc_info.value.model_id == "granite4:micro-h"
+
+    @pytest.mark.asyncio
     async def test_other_exceptions_propagate(self, stub_fork) -> None:
         stub_fork.agent_instance.run_with_trace.side_effect = RuntimeError("Ollama unreachable")
         runner = _make_runner()

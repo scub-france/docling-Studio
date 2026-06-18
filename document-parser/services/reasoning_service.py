@@ -102,7 +102,9 @@ class ReasoningService:
         if latest is None or not latest.document_json:
             raise ReasoningNoAnalysisError(f"No completed analysis with document_json for {doc_id}")
 
-        effective_model = model_id or self._default_model_id
+        # Fallback only — `build_trace` prefers the model id the runner reports
+        # on the result and uses this when that's absent (older fork SHA).
+        fallback_model_id = model_id or self._default_model_id
         t0 = time.perf_counter()
         result = await self._runner.run(
             document_json=latest.document_json,
@@ -113,6 +115,6 @@ class ReasoningService:
 
         return build_trace(
             result=result,
-            model_id=effective_model,
+            model_id=fallback_model_id,
             total_duration_ms=wall_ms,
         )

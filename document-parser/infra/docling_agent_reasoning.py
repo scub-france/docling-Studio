@@ -124,6 +124,18 @@ class DoclingAgentReasoningRunner:
             ) from e
 
         # Single-document reasoning: read the first (only) per-document result.
+        # An empty list means the agent produced nothing for the doc — map it to
+        # a domain parse error (502) instead of letting IndexError surface as 500.
+        if not run_result.per_document:
+            logger.warning(
+                "docling-agent returned no per-document result for model=%s query=%r",
+                raw_model_id,
+                query[:120],
+            )
+            raise ReasoningParseError(
+                model_id=raw_model_id,
+                reason="agent returned no per-document result",
+            )
         rag_result = run_result.per_document[0]
 
         # Defensive mapping — the fork at the pinned SHA may not carry
