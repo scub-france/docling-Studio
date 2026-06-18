@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useDocumentStore } from '../document/store'
 import { runReasoning } from './api'
 import type { ConversationTurn, ReasoningTrace } from './types'
@@ -78,13 +78,18 @@ export const useReasoningStore = defineStore('reasoning', () => {
     const q = query.trim()
     if (!q || running.value) return
     docId.value = id
-    const turn: ConversationTurn = {
+    // `reactive` is load-bearing: the turn is mutated post-await (`turn.trace`,
+    // `turn.status`). A raw object pushed into the reactive array is proxied
+    // only on access — mutating the raw reference bypasses the proxy's set trap,
+    // so the TurnCard / timeline never re-render (turn stays stuck on
+    // 'running'). Wrapping here makes `turn` the proxy, so every mutation fires.
+    const turn: ConversationTurn = reactive({
       id: `turn-${++turnSeq}`,
       time: nowHHMM(),
       status: 'running',
       question: q,
       trace: null,
-    }
+    })
     turns.value.push(turn)
     selectedTurnId.value = turn.id
     selectedStepId.value = null

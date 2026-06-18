@@ -1,9 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { watch } from 'vue'
 import { useDocumentStore } from '../document/store'
 import * as api from './api'
 import { useReasoningStore } from './store'
-import type { ReasoningTrace } from './types'
+import type { ReasoningTrace, TurnStatus } from './types'
 
 vi.mock('./api', () => ({ runReasoning: vi.fn() }))
 
@@ -67,6 +68,26 @@ describe('reasoning store', () => {
     expect(doc.focusTick).toBeGreaterThan(0)
   })
 
+  it('reactively publishes the finalized status to subscribers (regression: a raw-ref turn mutation bypassed the proxy and froze the card on "running")', async () => {
+    vi.mocked(api.runReasoning).mockResolvedValue(trace())
+    const store = useReasoningStore()
+    const statuses: (TurnStatus | undefined)[] = []
+    // flush: 'sync' so each reactive trigger fires the callback immediately —
+    // with the raw-ref bug the finalize never triggers, so 'converged' is never
+    // observed even though store.turns[0].status reads back as 'converged'.
+    const stop = watch(
+      () => store.turns[0]?.status,
+      (s) => statuses.push(s),
+      { flush: 'sync' },
+    )
+
+    await store.run('doc-1', 'q')
+    stop()
+
+    expect(statuses).toContain('running')
+    expect(statuses).toContain('converged')
+  })
+
   it('sets error status + message when the run throws', async () => {
     vi.mocked(api.runReasoning).mockRejectedValue(new Error('boom'))
     const store = useReasoningStore()
@@ -89,6 +110,26 @@ describe('reasoning store', () => {
     await store.run('doc-1', '   ')
     expect(store.turns.length).toBe(0)
     expect(api.runReasoning).not.toHaveBeenCalled()
+  })
+
+  it('ignores a second run while one is already in flight (running guard)', async () => {
+    let resolveFirst!: (t: ReasoningTrace) => void
+    vi.mocked(api.runReasoning).mockReturnValueOnce(
+      new Promise<ReasoningTrace>((resolve) => {
+        resolveFirst = resolve
+      }),
+    )
+    const store = useReasoningStore()
+
+    const first = store.run('doc-1', 'q1') // in flight — running stays true
+    await store.run('doc-1', 'q2') // guarded — returns immediately, no-op
+
+    expect(store.turns.length).toBe(1)
+    expect(api.runReasoning).toHaveBeenCalledTimes(1)
+
+    resolveFirst(trace())
+    await first
+    expect(store.running).toBe(false)
   })
 
   it('re-fires focus (tick bumps) on every selectStep, including a repeat', async () => {
