@@ -1,6 +1,7 @@
 <template>
-  <li class="tree-node" role="treeitem" :aria-expanded="hasChildren ? open : undefined">
+  <li class="tree-node" role="treeitem" :aria-expanded="hasChildren ? isOpen : undefined">
     <button
+      :ref="(el) => registerRow?.(node.ref, el as HTMLElement | null)"
       class="tree-node-row"
       :class="{
         'tree-node-row--selected': selected === node.ref,
@@ -9,7 +10,11 @@
       @click="onRowClick"
     >
       <span class="tree-node-indent" :style="{ width: `${depth * 12}px` }" />
-      <span v-if="hasChildren" class="tree-node-toggle" :class="{ open }" @click.stop="open = !open"
+      <span
+        v-if="hasChildren"
+        class="tree-node-toggle"
+        :class="{ open: isOpen }"
+        @click.stop="toggle"
         >›</span
       >
       <span v-else class="tree-node-toggle-placeholder" />
@@ -24,7 +29,7 @@
       }}</span>
       <span class="tree-node-label" :title="node.label">{{ node.label }}</span>
     </button>
-    <ul v-if="hasChildren && open" class="tree-list" role="group">
+    <ul v-if="hasChildren && isOpen" class="tree-list" role="group">
       <DocTreeNode
         v-for="child in node.children"
         :key="child.ref"
@@ -33,6 +38,8 @@
         :selected="selected"
         :highlight="highlight"
         :default-open="defaultOpen"
+        :revealed-refs="revealedRefs"
+        :register-row="registerRow"
         @select="$emit('select', $event)"
       />
     </ul>
@@ -52,6 +59,10 @@ const props = withDefaults(
     highlight?: string | null
     /** When set, every node mounts in that state (used by Expand/Collapse-all). */
     defaultOpen?: boolean | null
+    /** #303 — ancestor refs of the focused element; a node on the path forces open. */
+    revealedRefs?: ReadonlySet<string>
+    /** #303 — registers this node's row element in the rail's ref-map for scroll. */
+    registerRow?: (ref: string, el: HTMLElement | null) => void
   }>(),
   { depth: 0, defaultOpen: null },
 )
@@ -62,12 +73,21 @@ const emit = defineEmits<{
 
 const open = ref(props.defaultOpen ?? props.depth < 3)
 
+// #303 (design §337) — a node forces itself open when it sits on the reveal
+// path (its ref is in the focused element's ancestor set), otherwise it honours
+// the user's manual toggle / depth default. The rail owns the actual scroll.
+const isOpen = computed(() => open.value || (props.revealedRefs?.has(props.node.ref) ?? false))
+
 const hasChildren = computed(() => props.node.children.length > 0)
 
 const nodeColor = computed(() => colorFor(props.node.type))
 
 function onRowClick(): void {
   emit('select', props.node.ref)
+}
+
+function toggle(): void {
+  open.value = !open.value
 }
 </script>
 
@@ -109,6 +129,12 @@ function onRowClick(): void {
 .tree-node-row--highlight {
   background: var(--warning-muted, rgba(234, 179, 8, 0.1));
   color: var(--text);
+}
+
+/* #303 — the focused row reads as the anchor: accent tint + bold label. */
+.tree-node-row--selected .tree-node-label,
+.tree-node-row--highlight .tree-node-label {
+  font-weight: 600;
 }
 
 .tree-node-toggle {

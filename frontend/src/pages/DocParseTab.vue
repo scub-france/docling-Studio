@@ -65,9 +65,12 @@
           :nodes="filteredNodes"
           :loading="treeLoading"
           :error="treeError"
-          :selected="selectedNodeRef"
-          :highlight="selectedNodeRef"
+          :selected="documentStore.focusedRef"
+          :highlight="documentStore.focusedRef"
           :default-open="treeDefaultOpen"
+          :revealed-refs="revealedRefs"
+          :focused-ref="documentStore.focusedRef"
+          :reveal-tick="documentStore.focusTick"
           @select="onTreeSelect"
           @reload="loadTree"
         />
@@ -82,6 +85,7 @@
             :hidden-types="hiddenTypes"
             :show-labels="true"
             :highlighted-refs="highlightedRefs"
+            :focus-tick="documentStore.focusTick"
             @update:current-page="(p) => (currentPage = p)"
             @hover-element="onHoverElement"
             @click-element="onClickElement"
@@ -94,7 +98,7 @@
           </div>
         </div>
         <TraceTimeline
-          v-if="reasoningAvailable"
+          v-if="reasoningAvailable && rightTab === 'ask'"
           class="parse-trace-dock"
           :trace="reasoningStore.activeTrace"
           :running="reasoningStore.running"
@@ -179,6 +183,7 @@ import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
 import { chunkForElement } from '../features/document/linkedView'
+import { ancestorRefs } from '../features/document/treeReveal'
 import DocTreeRail from '../features/document/ui/DocTreeRail.vue'
 import ElementProperties from '../features/document/ui/ElementProperties.vue'
 import LayersBar from '../features/document/ui/LayersBar.vue'
@@ -257,20 +262,23 @@ const tree = ref<DocTreeNode[]>([])
 const treeLoading = ref(false)
 const treeError = ref<string | null>(null)
 const filter = ref('')
-const selectedNodeRef = ref<string | null>(null)
 
 const allPageElements = computed<PageElement[]>(() =>
   documentStore.workspacePages.flatMap((page) => page.elements),
 )
 
 const selectedElementData = computed<{ element: PageElement; pageNumber: number } | null>(() => {
-  if (!selectedNodeRef.value) return null
-  // Search every page — selectedNodeRef may point to an element on a
+  // `focusedRef` is the single source of truth for selection (#303); the
+  // page number comes along so the panel can render an element that lives
+  // on a page other than the one currently shown (#309 cross-page preview).
+  const ref = documentStore.focusedRef
+  if (!ref) return null
+  // Search every page — the focused ref may point to an element on a
   // different page than the one currently rendered (the click also
   // triggers a page change, but until that lands the panel still wants
   // to show the element's data).
   for (const page of documentStore.workspacePages) {
-    const el = page.elements.find((e) => e.self_ref === selectedNodeRef.value)
+    const el = page.elements.find((e) => e.self_ref === ref)
     if (el) return { element: el, pageNumber: page.page_number }
   }
   return null
@@ -308,9 +316,14 @@ const filteredNodes = computed<DocTreeNode[]>(() => {
 })
 
 const highlightedRefs = computed<ReadonlySet<string>>(() => {
-  if (!selectedNodeRef.value) return new Set()
-  return new Set([selectedNodeRef.value])
+  const ref = documentStore.focusedRef
+  if (!ref) return new Set()
+  return new Set([ref])
 })
+
+// #303 (design §337) — ancestor chain of the focused element; the tree forces
+// these nodes open so the focused row is revealed before the rail scrolls to it.
+const revealedRefs = computed<Set<string>>(() => ancestorRefs(tree.value, documentStore.focusedRef))
 
 async function loadTree(): Promise<void> {
   treeLoading.value = true
@@ -365,7 +378,6 @@ onMounted(async () => {
 watch(
   () => props.docId,
   async (id) => {
-    selectedNodeRef.value = null
     filter.value = ''
     rightTab.value = 'props'
     reasoningStore.reset(id)
@@ -381,16 +393,17 @@ watch(
   },
 )
 
-// #303 — citation focus bridge. The reasoning store writes focusedRef (clicking
-// a trace step); the Parse surfaces (tree / bbox) write it too. This watcher
-// mirrors it onto the local selection so the bbox highlight, the tree
-// highlight, the page flip and the Properties panel all react. Re-fires on
-// focusTick (re-click re-scrolls). Never switches the active right-panel tab.
+// #303 — citation focus bridge. `focusedRef` is the single source of truth for
+// selection: the tree/bbox highlight, the Properties panel and `highlightedRefs`
+// all read it directly. This watcher's only job is the side effect those
+// computeds can't express — flipping the page when the focused element lives on
+// another one. The PDF scroll and tree reveal are driven by `focusTick` inside
+// their own components, so a same-ref re-click still re-scrolls. Never switches
+// the active right-panel tab.
 watch(
   () => documentStore.focusTick,
   () => {
     const ref = documentStore.focusedRef
-    selectedNodeRef.value = ref
     if (!ref) return
     const pageOfRef = findPageOfRef(documentStore.workspacePages, ref)
     if (pageOfRef !== null && pageOfRef !== currentPage.value) {
@@ -408,7 +421,7 @@ watch(
   () => documentStore.workspaceActiveAnalysis?.id,
   (newId, oldId) => {
     if (newId && newId !== oldId) {
-      selectedNodeRef.value = null
+      documentStore.focusElement(null)
       loadTree()
     }
   },
