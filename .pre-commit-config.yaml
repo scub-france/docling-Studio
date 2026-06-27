@@ -22,6 +22,8 @@ repos:
     hooks:
       - id: detect-secrets
         args:
+          - --baseline
+          - .secrets.baseline
           - --exclude-files
           - ^(frontend/package-lock\.json|document-parser/uv\.lock|embedding-service/uv\.lock)$
 
