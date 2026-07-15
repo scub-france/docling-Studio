@@ -41,7 +41,11 @@ local = [
 # infra/docling_agent_reasoning.deps_present() degrades gracefully when
 # these are absent — the /api/reasoning endpoint surfaces 503 instead.
 reasoning = [
-  "docling-agent==0.1.0",
+  # 0.6.0 is the first release carrying the public `run_with_trace()` surface
+  # (docling-project/docling-agent#39) and the `backends` package the adapter
+  # imports. 0.1.0 had neither: it resolved, `deps_present()` passed, and every
+  # Ask 500'd on `ModuleNotFoundError: docling_agent.backends`.
+  "docling-agent==0.6.0",
   "mellea==0.4.2",
 ]
 

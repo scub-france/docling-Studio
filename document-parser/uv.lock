@@ -658,7 +658,7 @@ wheels = [
 
 [[package]]
 name = "docling-agent"
-version = "0.1.0"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -674,9 +674,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/89/1c970ef22518c46b2389cdf50539ecfe1ffc209f0b698b192e887ff032a0/docling_agent-0.1.0.tar.gz", hash = "sha256:511e2918b57af19cf279678d8be413b0dae0ffffeb81d0444d342844a0465bac", size = 42462, upload-time = "2026-04-10T17:15:21.701Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/6b/1d668a08792476daedbd26ee199acf67852cd7f93e52983443fe903f7c10/docling_agent-0.6.0.tar.gz", hash = "sha256:c1b877651d139aeca1aacf3f5152c657c42f90f6ef2c1f70f601bee22df2c93f", size = 66201, upload-time = "2026-06-25T14:36:10.394Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/14/cdd9f55ffa7ecbcde3b8fc45061f7456a09b1bd8040c52f344295d39072f/docling_agent-0.1.0-py3-none-any.whl", hash = "sha256:c50331d6e69e77175f0d8adacbb73724f50d101d2282ada9e4a86b935c772d3e", size = 50148, upload-time = "2026-04-10T17:15:20.244Z" },
+    { url = "https://files.pythonhosted.org/packages/18/cd/5a5185aadcca27ba06ab69f8d70aee8c61b5d1f3ab5a1a7d75cb91c25452/docling_agent-0.6.0-py3-none-any.whl", hash = "sha256:4041fa2bf0be3dfa78582a0cb841926bd663d199bd04a5c9d331117f38ff3b3d", size = 81136, upload-time = "2026-06-25T14:36:09.108Z" },
 ]
 
 [[package]]
@@ -889,7 +889,7 @@ local = [
     { name = "torchvision", index = "https://download.pytorch.org/whl/cpu" },
 ]
 reasoning = [
-    { name = "docling-agent", specifier = "==0.1.0" },
+    { name = "docling-agent", specifier = "==0.6.0" },
     { name = "mellea", specifier = "==0.4.2" },
 ]
 
@@ -3424,13 +3424,13 @@ resolution-markers = [
     "sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx" },
-    { name = "setuptools" },
-    { name = "sympy" },
-    { name = "typing-extensions" },
+    { name = "filelock", marker = "sys_platform == 'darwin'" },
+    { name = "fsspec", marker = "sys_platform == 'darwin'" },
+    { name = "jinja2", marker = "sys_platform == 'darwin'" },
+    { name = "networkx", marker = "sys_platform == 'darwin'" },
+    { name = "setuptools", marker = "sys_platform == 'darwin'" },
+    { name = "sympy", marker = "sys_platform == 'darwin'" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin'" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:2fe228aba290d14b9f31b049be550dbd469c3fd3013d7a19705b30454da97027", upload-time = "2026-07-08T12:26:18Z" },
@@ -3447,13 +3447,13 @@ resolution-markers = [
     "sys_platform != 'darwin'",
 ]
 dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx" },
-    { name = "setuptools" },
-    { name = "sympy" },
-    { name = "typing-extensions" },
+    { name = "filelock", marker = "sys_platform != 'darwin'" },
+    { name = "fsspec", marker = "sys_platform != 'darwin'" },
+    { name = "jinja2", marker = "sys_platform != 'darwin'" },
+    { name = "networkx", marker = "sys_platform != 'darwin'" },
+    { name = "setuptools", marker = "sys_platform != 'darwin'" },
+    { name = "sympy", marker = "sys_platform != 'darwin'" },
+    { name = "typing-extensions", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp312-cp312-linux_s390x.whl", hash = "sha256:ffadde149901c8afa138daa38d898264003cfcf1a3336ca5cd964b5af227d867", upload-time = "2026-07-08T19:28:41Z" },
@@ -3488,9 +3488,9 @@ resolution-markers = [
     "sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" } },
+    { name = "numpy", marker = "sys_platform == 'darwin'" },
+    { name = "pillow", marker = "sys_platform == 'darwin'" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.28.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:e9f54c30cd52e3ef7fd034cc69b7bb7e0964e1c8f8743e018ab92e95b40f9eee", upload-time = "2026-07-08T12:26:40Z" },
@@ -3507,9 +3507,9 @@ resolution-markers = [
     "sys_platform != 'darwin'",
 ]
 dependencies = [
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" } },
+    { name = "numpy", marker = "sys_platform != 'darwin'" },
+    { name = "pillow", marker = "sys_platform != 'darwin'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.28.0%2Bcpu-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:2f768c4f6d5adf6d5535061fd69ec44827608bac0e96e12114942a6fdfce1107", upload-time = "2026-07-08T12:26:39Z" },
