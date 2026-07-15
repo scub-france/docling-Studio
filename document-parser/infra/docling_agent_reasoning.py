@@ -4,19 +4,18 @@ Implements `ReasoningRunner` for an `OllamaProvider`-backed `LLMProvider`.
 Encapsulates everything that talks to docling-agent / mellea so neither the
 domain nor the API layer depends on those packages.
 
-Consumes the fork's **public** `run_with_trace(task, document)` surface
-(`pjmalandrino/docling-agent@dev/rag-run-with-trace`, upstream PR
-docling-project/docling-agent#39) — the v1 adapter reached into the private
-`_rag_loop`. The fork's timing commit adds `duration_ms`/`model_id` to the
-`RAGIteration`/`RAGResult` models; this adapter still reads them defensively
-(`getattr`) so it keeps working against a pinned SHA without them and against
-the eventual upstream release.
+Consumes the **public** `run_with_trace(task, document)` surface, released in
+docling-agent 0.6.0 (docling-project/docling-agent#39) — the v1 adapter reached
+into the private `_rag_loop`. `duration_ms`/`model_id` are read defensively
+(`getattr`): 0.6.0 carries them on neither `RAGResult` nor `RAGIteration`, so
+the trace timeline degrades to 0 until docling-project/docling-agent#42 lands.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from domain.ports import LLMProvider, ReasoningParseError
 from domain.value_objects import (
@@ -25,19 +24,88 @@ from domain.value_objects import (
     ReasoningResult,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 logger = logging.getLogger(__name__)
 
 
+class _Deps(NamedTuple):
+    """The docling-agent / docling-core surface this adapter binds to."""
+
+    rag_agent_cls: type
+    create_backend: Callable[..., Any]
+    backend_config_cls: type
+    model_config_cls: type
+    document_cls: type
+
+
+def _import_deps() -> _Deps:
+    """Import every symbol the adapter needs, and assert the agent really
+    carries the trace surface.
+
+    Single source of truth for the dependency contract: `run()` calls it to do
+    its work and `deps_present()` calls it to decide availability at boot, so
+    the boot check cannot drift from what `run()` actually imports. That drift
+    is what let docling-agent 0.1.0 — which has `agents` but neither `backends`
+    nor `run_with_trace` — pass the old two-module check, advertise
+    `reasoning_available: true`, and then 500 on the first Ask.
+
+    Raises ImportError when a module is missing or when the version resolved is
+    too old to expose `run_with_trace`.
+    """
+    import mellea  # noqa: F401
+    from docling_agent.agents import DoclingRAGAgent
+    from docling_agent.backends import create_backend
+    from docling_agent.task_model import BackendConfig, ModelConfig
+    from docling_core.types.doc.document import DoclingDocument
+
+    if not hasattr(DoclingRAGAgent, "run_with_trace"):
+        raise ImportError(
+            "DoclingRAGAgent has no run_with_trace() — docling-agent >= 0.6.0 is "
+            "required (docling-project/docling-agent#39)"
+        )
+
+    return _Deps(
+        rag_agent_cls=DoclingRAGAgent,
+        create_backend=create_backend,
+        backend_config_cls=BackendConfig,
+        model_config_cls=ModelConfig,
+        document_cls=DoclingDocument,
+    )
+
+
 def deps_present() -> bool:
-    """Import-check for the heavy reasoning deps. Used by the DI wire-up to
-    decide whether to instantiate the runner at all (so the backend boots
-    cleanly when docling-agent + mellea aren't installed)."""
+    """Whether the reasoning stack is importable *and* new enough. Used by the
+    DI wire-up to decide whether to instantiate the runner at all, so a missing
+    or stale docling-agent surfaces as `reasoning_available: false` at boot
+    rather than a 500 on the first Ask."""
     try:
-        import docling_agent.agents  # noqa: F401
-        import mellea  # noqa: F401
-    except ImportError:
+        _import_deps()
+    except ImportError as e:
+        logger.debug("Reasoning deps unusable: %s", e)
         return False
     return True
+
+
+def deps_provenance() -> str:
+    """Which docling-agent actually got resolved, as `version from path`.
+
+    Logged at boot: the install is easy to get wrong (a bare `uvicorn` picks up
+    the ambient interpreter rather than the project venv), and the version alone
+    doesn't say which one won. Never raises — this is diagnostics.
+    """
+    import importlib.metadata as md
+
+    try:
+        import docling_agent
+    except ImportError:
+        return "docling-agent not importable"
+    try:
+        version = md.version("docling-agent")
+    except md.PackageNotFoundError:
+        version = "unknown version"
+    return f"docling-agent {version} from {docling_agent.__file__}"
 
 
 class DoclingAgentReasoningRunner:
@@ -70,32 +138,28 @@ class DoclingAgentReasoningRunner:
         if not self._deps_ok:
             raise RuntimeError("docling-agent / mellea not importable — cannot run reasoning")
 
-        # Lazy imports keep the module loadable when deps are missing (the
-        # runner is only ever instantiated when `deps_present()` is True, but
-        # this also makes the import surface explicit).
-        from docling_agent.agents import DoclingRAGAgent
-        from docling_agent.backends import create_backend
-        from docling_agent.task_model import BackendConfig, ModelConfig
-        from docling_core.types.doc.document import DoclingDocument
+        # Lazy import keeps the module loadable when deps are missing. Shared
+        # with `deps_present()` so the boot check covers exactly what runs here.
+        deps = _import_deps()
 
         raw_model_id = model_id or self._provider.default_model_id
 
         try:
-            doc = DoclingDocument.model_validate_json(document_json)
+            doc = deps.document_cls.model_validate_json(document_json)
         except Exception as e:
             raise RuntimeError(f"Failed to parse document_json: {e}") from e
 
         # Per-instance Ollama backend — the host lives on the config, not in a
         # shared env var. `reasoning` is the role the RAG loop reads; `writing`
         # mirrors it so the merge step (multi-doc, unused here) stays coherent.
-        backend = create_backend(
-            BackendConfig(
+        backend = deps.create_backend(
+            deps.backend_config_cls(
                 type="ollama",
                 base_url=self._provider.host,
-                models=ModelConfig(reasoning=raw_model_id, writing=raw_model_id),
+                models=deps.model_config_cls(reasoning=raw_model_id, writing=raw_model_id),
             )
         )
-        agent = DoclingRAGAgent(tools=[], backend=backend)
+        agent = deps.rag_agent_cls(tools=[], backend=backend)
         logger.info(
             "Reasoning run: model_id=%s ollama_host=%s query=%r",
             raw_model_id,

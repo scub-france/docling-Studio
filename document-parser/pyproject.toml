@@ -37,9 +37,10 @@ local = [
 ]
 # Opt-in reasoning stack (R&D). Pulled in only when the image is built
 # with --build-arg WITH_REASONING=true (see document-parser/Dockerfile +
-# docs/design/254-docker-slim-post-uv.md). The runtime adapter
-# infra/docling_agent_reasoning.deps_present() degrades gracefully when
-# these are absent — the /api/reasoning endpoint surfaces 503 instead.
+# docs/design/254-docker-slim-post-uv.md). When these are absent — or too old
+# to carry the surface the adapter binds to — infra/docling_agent_reasoning
+# .deps_present() returns False, the runner is left unwired and /api/reasoning
+# surfaces 503.
 reasoning = [
   # 0.6.0 is the first release carrying the public `run_with_trace()` surface
   # (docling-project/docling-agent#39) and the `backends` package the adapter

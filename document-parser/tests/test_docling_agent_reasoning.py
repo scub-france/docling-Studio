@@ -4,10 +4,11 @@ docling-agent + mellea + docling-core are NOT installed in the CI test env
 (heavy deps). We stub the modules via `sys.modules` injection so the tests
 cover the real adapter code path without bringing in Ollama or any LLM client.
 
-The adapter consumes the fork's public `run_with_trace(task, document)` and
-builds a per-instance Ollama backend from `BackendConfig` — no private
-`_rag_loop`, no `os.environ["OLLAMA_HOST"]` mutation. Timing/model fields are
-read defensively (`getattr`) so the adapter survives a pinned SHA without them.
+The adapter consumes the public `run_with_trace(task, document)` (docling-agent
+0.6.0) and builds a per-instance Ollama backend from `BackendConfig` — no
+private `_rag_loop`, no `os.environ["OLLAMA_HOST"]` mutation. Timing/model
+fields are read defensively (`getattr`) so the adapter survives the 0.6.0
+models, which carry neither.
 """
 
 from __future__ import annotations
@@ -316,3 +317,61 @@ class TestDepsPresent:
         from infra.docling_agent_reasoning import deps_present
 
         assert deps_present() is False
+
+    def test_deps_present_returns_true_when_whole_surface_is_importable(self, stub_fork) -> None:
+        from infra.docling_agent_reasoning import deps_present
+
+        assert deps_present() is True
+
+    def test_deps_present_returns_false_when_backends_missing(
+        self, stub_fork, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """docling-agent 0.1.0 has `agents` but no `backends` package. The old
+        two-module check passed on `agents` alone and the adapter only blew up
+        at call time — cf. the 500 that motivated the 0.6.0 pin."""
+        monkeypatch.setitem(sys.modules, "docling_agent.backends", None)
+
+        from infra.docling_agent_reasoning import deps_present
+
+        assert deps_present() is False
+
+    def test_deps_present_returns_false_when_agent_lacks_run_with_trace(self, stub_fork) -> None:
+        """Releases before docling-project/docling-agent#39 import cleanly but
+        don't expose the trace surface the adapter binds to."""
+
+        class _PreTraceAgent:
+            """docling-agent < 0.6.0: run(), but no run_with_trace()."""
+
+            def run(self, *a, **kw): ...
+
+        sys.modules["docling_agent.agents"].DoclingRAGAgent = _PreTraceAgent
+
+        from infra.docling_agent_reasoning import deps_present
+
+        assert deps_present() is False
+
+
+class TestDepsProvenance:
+    def test_reports_version_and_resolved_path(self, stub_fork, monkeypatch) -> None:
+        """The boot log has to name *which* docling-agent won, not just that one
+        is importable — a bare `uvicorn` resolves against the ambient
+        interpreter and that is invisible from the version alone."""
+        import importlib.metadata as md
+
+        sys.modules["docling_agent"].__file__ = "/somewhere/docling_agent/__init__.py"
+        monkeypatch.setattr(md, "version", lambda name: "0.6.0")
+
+        from infra.docling_agent_reasoning import deps_provenance
+
+        assert deps_provenance() == (
+            "docling-agent 0.6.0 from /somewhere/docling_agent/__init__.py"
+        )
+
+    def test_does_not_raise_when_docling_agent_is_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "docling_agent", None)
+
+        from infra.docling_agent_reasoning import deps_provenance
+
+        assert deps_provenance() == "docling-agent not importable"
