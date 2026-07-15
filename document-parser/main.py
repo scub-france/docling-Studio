@@ -439,6 +439,7 @@ app.include_router(graph_router)
 from api.reasoning import router as reasoning_router  # noqa: E402
 from infra.docling_agent_reasoning import DoclingAgentReasoningRunner  # noqa: E402
 from infra.docling_agent_reasoning import deps_present as _reasoning_deps_present  # noqa: E402
+from infra.docling_agent_reasoning import deps_provenance as _reasoning_provenance  # noqa: E402
 from infra.llm.ollama_provider import OllamaProvider  # noqa: E402
 
 app.include_router(reasoning_router)
@@ -454,8 +455,10 @@ def _build_reasoning_runner() -> DoclingAgentReasoningRunner | None:
         return None
     if not _reasoning_deps_present():
         logger.warning(
-            "REASONING_ENABLED=true but docling-agent / mellea not importable — "
-            "reasoning runner disabled"
+            "REASONING_ENABLED=true but the reasoning stack is unusable (%s) — runner "
+            "disabled, /api/reasoning will 503. Expected docling-agent >= 0.6.0 + mellea; "
+            "a bare `uvicorn` resolves against the ambient interpreter, not the project venv.",
+            _reasoning_provenance(),
         )
         return None
     if settings.llm_provider_type != "ollama":
@@ -471,6 +474,7 @@ def _build_reasoning_runner() -> DoclingAgentReasoningRunner | None:
         host=settings.ollama_host,
         default_model_id=settings.reasoning_model_id,
     )
+    logger.info("Reasoning runner enabled (%s)", _reasoning_provenance())
     return DoclingAgentReasoningRunner(provider=provider)
 
 
