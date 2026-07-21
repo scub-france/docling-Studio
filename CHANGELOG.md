@@ -9,11 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 
 - **Analyses workspace**: a dedicated Analyses navigation item lists every run and opens its saved visualization independently of the document preview. This makes document source management separate from analysis-result inspection and supports multiple analyses per document.
+- **Reasoning Trace v2 — timeline + Ask panel in the Parse view** (#303): live reasoning now runs inline in the document Parse tab instead of a standalone page. A typed trace timeline renders each step (`PLAN/RETRIEVE/RERANK/READ/VERIFY/ANSWER/MAP`) with per-step durations and citations, degrading gracefully to a uniform "step order" layout when the agent reports no timing. A conversational Ask panel (composer + turn cards) drives the runs. Focusing a step reveals and scrolls the linked element across the PDF, the document tree, and the Parse view.
+- **Backend trace projection** (#303): a pure `domain.trace_builder` projects the raw docling-agent `ReasoningResult` onto the debugger-facing `ReasoningTrace`; a new `ReasoningService` orchestrates the run (query validation, latest-analysis lookup, timing) so `api/reasoning.py` no longer reaches into `app.state` directly. Backed by docling-agent's public `run_with_trace()` API.
 
 ### Changed
 
 - **Simplified document workflow**: the Documents page now focuses on source files, preview, PDF download, and deletion. Chunking and ingestion controls were removed from the document workspace; associated analyses are shown separately and document deletion explicitly confirms the analysis cascade.
 - **Lean development stack**: the default compose profile starts only the frontend and SQLite-backed parser. Optional `ingestion`, `graph`, and `remote` profiles enable their respective dependencies.
+- **Reasoning backend ported to the public `run_with_trace()` surface** (#303): docling-agent pinned to `0.6.0`; an unusable / missing agent is now detected at boot rather than on the first Ask, and an empty agent result maps to a parse error (`502`).
+
+### Removed
+
+- **Standalone v1 reasoning surface retired** (#303): the graph-overlay reasoning workspace and its `/reasoning` page are removed in favour of the Parse-view timeline. The old `/reasoning` and `/reasoning/:docId` routes are kept as redirects so shared URLs don't 404.
 
 ## [0.6.2] - 2026-06-05
 
