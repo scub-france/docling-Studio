@@ -42,8 +42,8 @@ jobs:
         id: versions
         run: |
           uv pip install --python .venv/bin/python --upgrade docling docling-core
-          echo "docling=$(uv run python -c 'import importlib.metadata as m; print(m.version("'"'docling"'"'))')" >> "$GITHUB_OUTPUT"
-          echo "docling_core=$(uv run python -c 'import importlib.metadata as m; print(m.version("'"'docling-core"'"'))')" >> "$GITHUB_OUTPUT"
+          echo "docling=$(uv run python -c 'import importlib.metadata as m; print(m.version("docling"))')" >> "$GITHUB_OUTPUT"
+          echo "docling_core=$(uv run python -c 'import importlib.metadata as m; print(m.version("docling-core"))')" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
         run: uv run pytest tests/ -v
