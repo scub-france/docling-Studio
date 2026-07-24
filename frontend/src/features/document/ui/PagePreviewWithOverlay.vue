@@ -83,9 +83,9 @@ import { useI18n } from '../../../shared/i18n'
 import { bboxToRect, computeScale } from '../bboxScaling'
 import { getPreviewUrl } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
+import { clampPageInput, pageInputWidthCh } from './PagePreviewWithOverlay.logic'
 
 const { t } = useI18n()
-const DEFAULT_PAGE_INPUT_SIZE = 4
 
 const props = defineProps<{
   documentId: string
@@ -109,9 +109,7 @@ const imageEl = ref<HTMLImageElement | null>(null)
 const pageInput = ref('1')
 
 const totalPages = computed(() => props.pages.length)
-const pageInputSize = computed(() =>
-  Math.max(DEFAULT_PAGE_INPUT_SIZE, String(totalPages.value).length),
-)
+const pageInputSize = computed(() => pageInputWidthCh(totalPages.value))
 
 const currentPageData = computed<Page | null>(() => {
   return props.pages.find((p) => p.page_number === props.currentPage) ?? null
@@ -127,12 +125,11 @@ function resetPageInput(): void {
 }
 
 function commitPageInput(): void {
-  const parsed = Number.parseInt(pageInput.value, 10)
-  if (!Number.isFinite(parsed)) {
+  const nextPage = clampPageInput(pageInput.value, totalPages.value)
+  if (nextPage === null) {
     resetPageInput()
     return
   }
-  const nextPage = Math.min(totalPages.value, Math.max(1, parsed))
   pageInput.value = String(nextPage)
   if (nextPage !== props.currentPage) onPageChange(nextPage)
 }
