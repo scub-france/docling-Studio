@@ -46,8 +46,7 @@
               @click="treeDefaultOpen ? onCollapseAll() : onExpandAll()"
             >
               <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M3 5h14M3 10h14M3 15h14" />
-                <path d="M10 2v16" />
+                <path d="M3 4h14M6 10h8M8 16h4" />
               </svg>
             </button>
           </div>
@@ -428,6 +427,15 @@ function findPageOfRef(
   flex-shrink: 0;
 }
 
+.parse-structure.parse-drawer--closed .parse-structure-header {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.parse-structure.parse-drawer--closed .drawer-toggle {
+  margin-left: 0;
+}
+
 .parse-structure-title {
   font-size: 13px;
   font-weight: 600;
@@ -473,7 +481,7 @@ function findPageOfRef(
   height: 15px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: 2;
   stroke-linecap: round;
 }
 
