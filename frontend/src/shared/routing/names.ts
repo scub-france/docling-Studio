@@ -27,11 +27,6 @@ export const ROUTES = {
   DOCS_LIBRARY: 'docs-library',
   DOCS_NEW: 'docs-new',
   DOC_WORKSPACE: 'doc-workspace',
-  STORES_LIST: 'stores-list',
-  STORE_CREATE: 'store-create',
-  STORE_DETAIL: 'store-detail',
-  STORE_EDIT: 'store-edit',
-  STORE_QUERY: 'store-query',
   RUNS: 'runs',
   RUN_DETAIL: 'run-detail',
 } as const

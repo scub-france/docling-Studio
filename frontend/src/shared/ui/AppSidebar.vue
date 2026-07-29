@@ -87,15 +87,6 @@ const DocsIcon: Component = () =>
     }),
   ])
 
-const StoresIcon: Component = () =>
-  h('svg', { viewBox: '0 0 20 20', fill: 'currentColor' }, [
-    h('path', {
-      'fill-rule': 'evenodd',
-      'clip-rule': 'evenodd',
-      d: 'M4 3a1 1 0 011-1h10a1 1 0 011 1v3a1 1 0 01-.293.707l-1.414 1.414a1 1 0 010 1.414l1.414 1.414A1 1 0 0116 11.5V14a1 1 0 01-1 1H5a1 1 0 01-1-1v-2.5a1 1 0 01.293-.707L5.707 9.5 4.293 8.086A1 1 0 014 7.379V3zm2 1v2.879l1.414 1.414a1 1 0 010 1.414L6 11.121V13h8v-1.879l-1.414-1.414a1 1 0 010-1.414L14 6.879V4H6z',
-    }),
-  ])
-
 const RunsIcon: Component = () =>
   h('svg', { viewBox: '0 0 20 20', fill: 'currentColor' }, [
     h('path', {
@@ -154,16 +145,6 @@ const items: NavItem[] = [
     labelKey: 'nav.analyses',
     icon: AnalysesIcon,
     matchPrefixes: ['/analyses'],
-  },
-  {
-    key: 'stores',
-    to: { name: ROUTES.STORES_LIST },
-    labelKey: 'nav.stores',
-    icon: StoresIcon,
-    // 0.6.1 (#225) — paths moved from /index to /ingest. Keep /index in
-    // the prefix list so the sidebar item stays active during a back-
-    // compat redirect, until all caches are warm.
-    matchPrefixes: ['/ingest', '/index'],
   },
   {
     key: 'runs',

@@ -21,9 +21,6 @@ describe('router', () => {
       { path: '/docs/abc', name: ROUTES.DOC_WORKSPACE },
       { path: '/analyses', name: ROUTES.ANALYSES },
       { path: '/analyses/abc', name: ROUTES.ANALYSIS_DETAIL },
-      { path: '/ingest', name: ROUTES.STORES_LIST },
-      { path: '/ingest/foo', name: ROUTES.STORE_DETAIL },
-      { path: '/ingest/foo/query', name: ROUTES.STORE_QUERY },
       { path: '/runs', name: ROUTES.RUNS },
       { path: '/runs/run-42', name: ROUTES.RUN_DETAIL },
     ]
