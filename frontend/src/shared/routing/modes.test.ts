@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ALL_MODES, DEFAULT_MODE, isDocMode, parseMode } from './modes'
 
 describe('isDocMode', () => {
-  it.each(['parse', 'chunk', 'ingest'])('accepts %s', (value) => {
+  it.each(['parse'])('accepts %s', (value) => {
     expect(isDocMode(value)).toBe(true)
   })
 
@@ -33,15 +33,17 @@ describe('parseMode', () => {
     expect(parseMode(['parse'])).toBe(DEFAULT_MODE)
   })
 
-  it.each(['parse', 'chunk', 'ingest'] as const)('respects %s', (mode) => {
+  it.each(['parse'] as const)('respects %s', (mode) => {
     expect(parseMode(mode)).toBe(mode)
   })
 
   it('maps legacy aliases to the current mode names', () => {
-    expect(parseMode('linked')).toBe('chunk')
-    expect(parseMode('chunks')).toBe('chunk')
+    expect(parseMode('linked')).toBe('parse')
+    expect(parseMode('chunks')).toBe('parse')
     expect(parseMode('inspect')).toBe('parse')
-    expect(parseMode('compare')).toBe('ingest')
+    expect(parseMode('compare')).toBe('parse')
+    expect(parseMode('chunk')).toBe('parse')
+    expect(parseMode('ingest')).toBe('parse')
   })
 })
 
@@ -49,8 +51,6 @@ describe('ALL_MODES', () => {
   it('lists every mode exactly once', () => {
     expect(new Set(ALL_MODES).size).toBe(ALL_MODES.length)
     expect(ALL_MODES).toContain('parse')
-    expect(ALL_MODES).toContain('chunk')
-    expect(ALL_MODES).toContain('ingest')
   })
 
   it('puts parse first (default landing)', () => {

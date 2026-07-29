@@ -8,6 +8,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
   const currentAnalysis = ref<Analysis | null>(null)
   const running = ref(false)
   const error = ref<string | null>(null)
+  const loading = ref(false)
   const pollingInterval = ref<ReturnType<typeof setInterval> | null>(null)
   const pollingTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
   const MAX_POLLING_DURATION = 15 * 60 * 1000 // 15 minutes — aligned with backend timeout
@@ -27,12 +28,16 @@ export const useAnalysisStore = defineStore('analysis', () => {
   }
 
   async function load(): Promise<void> {
+    if (loading.value) return
+    loading.value = true
     try {
       error.value = null
       analyses.value = await api.fetchAnalyses()
     } catch (e) {
       error.value = (e as Error).message || 'Failed to load analyses'
       console.error('Failed to load analyses', e)
+    } finally {
+      loading.value = false
     }
   }
 
@@ -147,6 +152,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
     currentChunks,
     running,
     error,
+    loading,
     clearError,
     load,
     run,

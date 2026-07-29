@@ -2,15 +2,18 @@
 # Docling Studio — Development stack
 #
 # Usage:
-#   docker compose -f docker-compose.dev.yml up
+#   COMPOSE_PROFILES=default docker compose -f docker-compose.dev.yml up
+#   COMPOSE_PROFILES=ingestion docker compose -f docker-compose.dev.yml up
 #
-# Includes OpenSearch single-node + Dashboards for search/sync features.
+# The default stack contains only the frontend and SQLite-backed parser.
+# Optional `ingestion` and `graph` profiles add their respective services.
 # Frontend runs Vite dev server with HMR, backend runs with --reload.
 # =============================================================================
 
 services:
   # --- Neo4j (graph-native document structure) ---
   neo4j:
+    profiles: ["graph", "ingestion"]
     image: neo4j:5.15-community
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}
@@ -35,6 +38,7 @@ services:
 
   # --- OpenSearch (single-node, security disabled for local dev) ---
   opensearch:
+    profiles: ["ingestion"]
     image: opensearchproject/opensearch:2
     environment:
       discovery.type: single-node
@@ -56,6 +60,7 @@ services:
 
   # --- OpenSearch Dashboards (index inspection UI) ---
   opensearch-dashboards:
+    profiles: ["ingestion"]
     image: opensearchproject/opensearch-dashboards:2
     environment:
       OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
@@ -68,6 +73,7 @@ services:
 
   # --- Embedding service (sentence-transformers) ---
   embedding:
+    profiles: ["ingestion"]
     build:
       context: ./embedding-service
       args:
@@ -137,24 +143,18 @@ services:
       RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-100}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
       BATCH_PAGE_SIZE: ${BATCH_PAGE_SIZE:-10}
-      OPENSEARCH_URL: http://opensearch:9200
-      EMBEDDING_URL: http://embedding:8001
-      NEO4J_URI: bolt://neo4j:7687
+      OPENSEARCH_URL: ${OPENSEARCH_URL:-}
+      EMBEDDING_URL: ${EMBEDDING_URL:-}
+      NEO4J_URI: ${NEO4J_URI:-}
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme}
       # Fernet sealing-at-rest for store credentials (#279). See .env.example
       # for the one-liner to generate a key. No default on purpose: a dev
       # who creates a sealed store must persist the key in their own .env.
       STORE_SECRET_KEY: ${STORE_SECRET_KEY:-}
+    profiles: ["default", "graph", "ingestion", "remote"]
     command:
       ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-    depends_on:
-      opensearch:
-        condition: service_healthy
-      embedding:
-        condition: service_healthy
-      neo4j:
-        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -162,6 +162,7 @@ services:
 
   # --- Frontend (Vite dev server with HMR) ---
   frontend:
+    profiles: ["default", "graph", "ingestion", "remote"]
     image: node:20-alpine
     working_dir: /app
     ports:
@@ -172,6 +173,9 @@ services:
     environment:
       VITE_APP_VERSION: dev
       VITE_API_PROXY_TARGET: http://document-parser:8000
+      # Polling keeps Vite HMR reliable across Docker Desktop bind mounts.
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
     command: ["sh", "-c", "npm install && npm run dev -- --host"]
     depends_on:
       - document-parser

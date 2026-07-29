@@ -12,11 +12,7 @@ export const useDocumentStore = defineStore('document', () => {
   const loading = ref(false)
   const uploading = ref(false)
   const error = ref<string | null>(null)
-  // 0.6.1 (#264, refactored #267) — Doc workspace orchestration. The
-  // workspace's History timeline is now versioned (frozen pairs of
-  // analysis + chunks snapshot). The active version drives the OCR
-  // side of the workspace (pagesJson, treeJson) — the chunks side is
-  // owned by `chunksStore`.
+  // 0.6.1 (#264, refactored #267) — Doc workspace orchestration.
   const workspaceDoc = ref<Document | null>(null)
   const workspaceVersions = ref<DocumentVersion[]>([])
   const workspaceCurrentVersionId = ref<string | null>(null)
@@ -30,9 +26,7 @@ export const useDocumentStore = defineStore('document', () => {
     return workspaceVersions.value.find((v) => v.id === workspaceCurrentVersionId.value) ?? null
   })
 
-  /** Backwards-compatible alias kept for existing consumers
-   * (DocParseTab, DocChunkTab) — semantically "the analysis row that
-   * powers the workspace right now". Resolved from the active version. */
+  /** Analysis row that powers the workspace right now. */
   const workspaceLatestAnalysis = computed<Analysis | null>(() => workspaceActiveAnalysis.value)
 
   /** Pages parsed lazily from the active analysis's `pagesJson`. */
@@ -220,6 +214,9 @@ export const useDocumentStore = defineStore('document', () => {
     workspacePages,
     workspaceLoading,
     workspaceError,
+    setWorkspaceAnalysis(analysis: Analysis | null): void {
+      workspaceActiveAnalysis.value = analysis
+    },
     clearError,
     load,
     loadWorkspace,

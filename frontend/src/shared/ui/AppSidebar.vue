@@ -114,6 +114,15 @@ const SettingsIcon: Component = () =>
     }),
   ])
 
+const AnalysesIcon: Component = () =>
+  h('svg', { viewBox: '0 0 20 20', fill: 'currentColor' }, [
+    h('path', {
+      'fill-rule': 'evenodd',
+      'clip-rule': 'evenodd',
+      d: 'M3 4a2 2 0 012-2h10a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V4zm3 1a1 1 0 000 2h8a1 1 0 100-2H6zm0 4a1 1 0 100 2h8a1 1 0 100-2H6zm0 4a1 1 0 100 2h5a1 1 0 100-2H6z',
+    }),
+  ])
+
 type NavItem = {
   key: string
   to: RouteLocationRaw
@@ -138,6 +147,13 @@ const items: NavItem[] = [
     icon: DocsIcon,
     primary: true,
     matchPrefixes: ['/docs'],
+  },
+  {
+    key: 'analyses',
+    to: { name: ROUTES.ANALYSES },
+    labelKey: 'nav.analyses',
+    icon: AnalysesIcon,
+    matchPrefixes: ['/analyses'],
   },
   {
     key: 'stores',

@@ -7,7 +7,7 @@
  *
  * #210 layers feature-flag-aware redirection on top: if the requested
  * mode is disabled for the current tenant, the router replaces it with
- * the first enabled mode (priority `parse` > `chunk` > `ingest`).
+ * the first enabled mode (`parse`).
  *
  * Naming history:
  *   - #263 renamed `chunks` to `linked` and dropped `ask`.
@@ -22,23 +22,23 @@
  * working.
  */
 
-export type DocMode = 'parse' | 'chunk' | 'ingest'
+export type DocMode = 'parse'
 
 export const DEFAULT_MODE: DocMode = 'parse'
-export const ALL_MODES: readonly DocMode[] = ['parse', 'chunk', 'ingest'] as const
+export const ALL_MODES: readonly DocMode[] = ['parse'] as const
 
 const LEGACY_ALIASES: Readonly<Record<string, DocMode>> = {
-  // Pre-#264 names.
-  linked: 'chunk',
-  chunks: 'chunk',
+  // Pre-#264 names and removed workspace modes resolve to Parse.
+  linked: 'parse',
+  chunks: 'parse',
   inspect: 'parse',
-  // #225 — Compare slot replaced by Ingest; legacy deep links resolve
-  // to the new view rather than 404'ing.
-  compare: 'ingest',
+  compare: 'parse',
+  chunk: 'parse',
+  ingest: 'parse',
 }
 
 export function isDocMode(value: unknown): value is DocMode {
-  return value === 'parse' || value === 'chunk' || value === 'ingest'
+  return value === 'parse'
 }
 
 export function parseMode(raw: unknown): DocMode {

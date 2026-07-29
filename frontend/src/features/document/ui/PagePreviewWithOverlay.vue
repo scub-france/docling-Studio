@@ -109,7 +109,9 @@ const imageEl = ref<HTMLImageElement | null>(null)
 const pageInput = ref('1')
 
 const totalPages = computed(() => props.pages.length)
-const pageInputSize = computed(() => Math.max(DEFAULT_PAGE_INPUT_SIZE, String(totalPages.value).length))
+const pageInputSize = computed(() =>
+  Math.max(DEFAULT_PAGE_INPUT_SIZE, String(totalPages.value).length),
+)
 
 const currentPageData = computed<Page | null>(() => {
   return props.pages.find((p) => p.page_number === props.currentPage) ?? null

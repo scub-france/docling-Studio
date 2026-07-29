@@ -9,6 +9,7 @@ const messages: Messages = {
     // Sidebar — 0.6.0 doc-centric nav (#209)
     'nav.home': 'Accueil',
     'nav.docs': 'Documents',
+    'nav.analyses': 'Analyses',
     'nav.stores': 'Stores',
     'nav.runs': 'Runs',
     'nav.settings': 'Paramètres',
@@ -53,6 +54,7 @@ const messages: Messages = {
 
     // Document library (#211, #212, #213)
     'docs.title': 'Documents',
+    'docs.preview': 'Aperçu',
     'docs.import': 'Importer',
     'docs.emptyTitle': 'Aucun document',
     'docs.emptySubtitle': 'Importez votre premier document pour commencer.',
@@ -64,6 +66,7 @@ const messages: Messages = {
     'docs.colUpdated': 'Mis à jour',
     'docs.filterSearch': 'Rechercher…',
     'docs.filterClear': 'Effacer les filtres',
+    'docs.openVisualization': 'Ouvrir la visualisation',
     'docs.selected': '{n} sélectionné(s)',
     'docs.download': 'Télécharger',
     'docs.downloadPdf': 'Document PDF',
@@ -77,8 +80,12 @@ const messages: Messages = {
     'docs.bulkRechunk': 'Re-chunker',
     'docs.bulkPush': 'Ingérer dans un store…',
     'docs.bulkDelete': 'Supprimer',
+    'docs.delete': 'Supprimer',
+    'docs.deleteAnalysisLookupFailed':
+      'Impossible de vérifier les analyses associées. Suppression annulée.',
     'docs.bulkCancel': 'Annuler la sélection',
-    'docs.deleteConfirm': 'Supprimer {n} document(s) ? Cette action est irréversible.',
+    'docs.deleteConfirm':
+      'Supprimer {n} document(s) ? Cette action supprimera aussi {analyses} analyse(s) associée(s). Cette action est irréversible.',
     'docs.pushTitle': 'Ingérer dans un store',
     'docs.pushLabel': 'Store cible',
     'docs.pushPlaceholder': 'Nom du store…',
@@ -214,6 +221,20 @@ const messages: Messages = {
 
     // History
     'history.title': 'Historique',
+    'analyses.title': 'Analyses',
+    'analyses.empty': 'Aucune analyse disponible.',
+    'analyses.loading': 'Chargement des analyses...',
+    'analyses.failed': 'Impossible de charger les analyses.',
+    'analyses.open': 'Ouvrir la visualisation',
+    'analyses.delete': 'Supprimer l’analyse',
+    'analyses.deleteConfirm': 'Supprimer cette analyse ? Cette action est irréversible.',
+    'analyses.filterDocument': 'Filtrer par document',
+    'analyses.filterPlaceholder': 'Rechercher un titre...',
+    'analyses.noMatches': 'Aucune analyse ne correspond à cette recherche.',
+    'analyses.datetime': 'Date et heure',
+    'analyses.document': 'Document',
+    'analyses.analysisId': 'ID analyse',
+    'analyses.status': 'Statut',
     'history.tabAnalyses': 'Analyses',
     'history.tabDocuments': 'Documents',
     'history.empty': 'Aucune analyse. Analysez votre premier document pour commencer.',
@@ -409,8 +430,6 @@ const messages: Messages = {
     // Doc workspace (#216, #218 \u2014 switcher refactored in #263, modes renamed
     // in #264, Compare slot replaced by Ingest in #225)
     'workspace.tabs.parse': 'Parse',
-    'workspace.tabs.chunk': 'Chunk',
-    'workspace.tabs.ingest': 'Ingest',
     'workspace.backToLibrary': 'Retour \u00e0 la biblioth\u00e8que',
     'workspace.modeDisabled': 'Mode d\u00e9sactiv\u00e9 pour ce d\u00e9ploiement',
 
@@ -440,6 +459,7 @@ const messages: Messages = {
     'workspace.pageNext': 'Page suivante',
     'workspace.pageNumber': 'Numéro de page',
     'parse.structureTitle': 'Structure',
+    'parse.propertiesTitle': 'Propriétés',
     'parse.structureNodes': '{n} n\u0153uds',
     'parse.filterPlaceholder': 'Filtrer les \u00e9l\u00e9ments\u2026',
     'parse.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse.",
@@ -664,6 +684,7 @@ const messages: Messages = {
     // Sidebar — 0.6.0 doc-centric nav (#209)
     'nav.home': 'Home',
     'nav.docs': 'Docs',
+    'nav.analyses': 'Analyses',
     'nav.stores': 'Stores',
     'nav.runs': 'Runs',
     'nav.settings': 'Settings',
@@ -705,6 +726,7 @@ const messages: Messages = {
 
     // Document library (#211, #212, #213)
     'docs.title': 'Documents',
+    'docs.preview': 'Preview',
     'docs.import': 'Import',
     'docs.emptyTitle': 'No documents yet',
     'docs.emptySubtitle': 'Import your first document to get started.',
@@ -716,6 +738,7 @@ const messages: Messages = {
     'docs.colUpdated': 'Updated',
     'docs.filterSearch': 'Search…',
     'docs.filterClear': 'Clear filters',
+    'docs.openVisualization': 'Open visualization',
     'docs.selected': '{n} selected',
     'docs.download': 'Download',
     'docs.downloadPdf': 'PDF Document',
@@ -727,8 +750,11 @@ const messages: Messages = {
     'docs.bulkRechunk': 'Re-chunk',
     'docs.bulkPush': 'Ingest into store…',
     'docs.bulkDelete': 'Delete',
+    'docs.delete': 'Delete',
+    'docs.deleteAnalysisLookupFailed': 'Unable to check associated analyses. Deletion cancelled.',
     'docs.bulkCancel': 'Cancel selection',
-    'docs.deleteConfirm': 'Delete {n} document(s)? This action cannot be undone.',
+    'docs.deleteConfirm':
+      'Delete {n} document(s)? This also deletes {analyses} associated analysis/analyses. This action cannot be undone.',
     'docs.pushTitle': 'Ingest into store',
     'docs.pushLabel': 'Target store',
     'docs.pushPlaceholder': 'Store name…',
@@ -857,6 +883,20 @@ const messages: Messages = {
     'upload.maxPages': 'Max {n} pages',
 
     'history.title': 'History',
+    'analyses.title': 'Analyses',
+    'analyses.empty': 'No analyses available.',
+    'analyses.loading': 'Loading analyses...',
+    'analyses.failed': 'Unable to load analyses.',
+    'analyses.open': 'Open visualization',
+    'analyses.delete': 'Delete analysis',
+    'analyses.deleteConfirm': 'Delete this analysis? This action cannot be undone.',
+    'analyses.filterDocument': 'Filter by document',
+    'analyses.filterPlaceholder': 'Search title...',
+    'analyses.noMatches': 'No analyses match this search.',
+    'analyses.datetime': 'Datetime',
+    'analyses.document': 'Document name',
+    'analyses.analysisId': 'Analysis ID',
+    'analyses.status': 'Status',
     'history.tabAnalyses': 'Analyses',
     'history.tabDocuments': 'Documents',
     'history.empty': 'No analyses yet. Analyze your first document to get started.',
@@ -1045,8 +1085,6 @@ const messages: Messages = {
     // Doc workspace (#216, #218 — switcher refactored in #263, modes renamed
     // in #264, Compare slot replaced by Ingest in #225)
     'workspace.tabs.parse': 'Parse',
-    'workspace.tabs.chunk': 'Chunk',
-    'workspace.tabs.ingest': 'Ingest',
     'workspace.backToLibrary': 'Back to library',
     'workspace.modeDisabled': 'Mode disabled for this deployment',
 
@@ -1075,6 +1113,7 @@ const messages: Messages = {
     'workspace.pageNext': 'Next page',
     'workspace.pageNumber': 'Page number',
     'parse.structureTitle': 'Structure',
+    'parse.propertiesTitle': 'Properties',
     'parse.structureNodes': '{n} nodes',
     'parse.filterPlaceholder': 'Filter elements…',
     'parse.noAnalysis': 'No analysis yet — run a parse first.',

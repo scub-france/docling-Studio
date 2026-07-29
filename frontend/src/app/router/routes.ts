@@ -31,6 +31,17 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../../pages/HistoryPage.vue'),
   },
   {
+    path: '/analyses',
+    name: ROUTES.ANALYSES,
+    component: () => import('../../pages/AnalysesPage.vue'),
+  },
+  {
+    path: '/analyses/:id',
+    name: ROUTES.ANALYSIS_DETAIL,
+    component: () => import('../../pages/AnalysisDetailPage.vue'),
+    props: true,
+  },
+  {
     path: '/documents',
     name: ROUTES.DOCUMENTS,
     component: () => import('../../pages/DocumentsPage.vue'),

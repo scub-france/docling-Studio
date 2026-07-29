@@ -233,10 +233,10 @@ describe('useFeatureFlagStore', () => {
     // inspect_mode_enabled gates Parse, linked_mode_enabled gates Chunk.
     // Ingest is always navigable (#225) — the view itself surfaces
     // whether push actions are available.
-    expect(store.modeFlags()).toEqual({ parse: true, chunk: false, ingest: true })
+    expect(store.modeFlags()).toEqual({ parse: true })
   })
 
-  it('modeFlags().ingest stays true even when ingestionAvailable is false (#225)', async () => {
+  it('modeFlags() only exposes the Parse workspace mode', async () => {
     mockApiFetch.mockResolvedValue({
       status: 'ok',
       engine: 'local',
@@ -247,7 +247,7 @@ describe('useFeatureFlagStore', () => {
     const store = useFeatureFlagStore()
     await store.load()
     // The tab opens regardless; the empty-state inside informs the user.
-    expect(store.modeFlags().ingest).toBe(true)
+    expect(store.modeFlags()).toEqual({ parse: true })
   })
 
   // load() is now called from two places — main.ts (eager warm-up) and

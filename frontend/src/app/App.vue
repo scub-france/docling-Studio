@@ -20,14 +20,6 @@
         <span class="topbar-logo-text">Docling Studio</span>
       </div>
       <div class="topbar-spacer" />
-      <button class="new-analysis-btn" @click="newAnalysis">
-        <svg viewBox="0 0 20 20" fill="currentColor" class="new-analysis-icon">
-          <path
-            d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-          />
-        </svg>
-        {{ t('topbar.newAnalysis') }}
-      </button>
     </header>
 
     <div v-if="showDisclaimer" class="disclaimer-banner" role="alert">
@@ -49,12 +41,11 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { RouterView, useRouter } from 'vue-router'
+import { RouterView } from 'vue-router'
 import { AppSidebar } from '../shared/ui/index'
 import AppBreadcrumb from '../shared/breadcrumb/AppBreadcrumb.vue'
 import { useBreadcrumbStore } from '../shared/breadcrumb/store'
 import { useSettingsStore } from '../features/settings/store'
-import { useDocumentStore } from '../features/document/store'
 import { useFeatureFlag } from '../features/feature-flags'
 import { useFeatureFlagStore } from '../features/feature-flags/store'
 import { useI18n } from '../shared/i18n'
@@ -63,8 +54,6 @@ useSettingsStore()
 const flagStore = useFeatureFlagStore()
 const breadcrumbStore = useBreadcrumbStore()
 const { t } = useI18n()
-const router = useRouter()
-const documentStore = useDocumentStore()
 
 const sidebarOpen = ref(true)
 const disclaimerEnabled = useFeatureFlag('disclaimer')
@@ -73,11 +62,6 @@ const showDisclaimer = computed(() => disclaimerEnabled.value && !disclaimerDism
 
 function dismissDisclaimer() {
   disclaimerDismissed.value = true
-}
-
-function newAnalysis() {
-  documentStore.selectedId = null
-  router.push('/studio')
 }
 </script>
 
@@ -253,31 +237,6 @@ body {
 
 .topbar-spacer {
   flex: 1;
-}
-
-.new-analysis-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  color: white;
-  background: var(--accent);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition);
-  white-space: nowrap;
-}
-
-.new-analysis-btn:hover {
-  background: var(--accent-hover);
-}
-
-.new-analysis-icon {
-  width: 14px;
-  height: 14px;
 }
 
 .app-body {
