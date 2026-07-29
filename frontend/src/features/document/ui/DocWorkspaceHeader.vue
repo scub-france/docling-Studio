@@ -9,7 +9,6 @@
         />
       </svg>
       <h1 class="workspace-title" :title="doc.filename">{{ doc.filename }}</h1>
-      <StatusBadge :state="doc.lifecycleState" />
       <div class="workspace-header-actions">
         <slot name="actions" />
       </div>
@@ -37,7 +36,6 @@ import { RouterLink } from 'vue-router'
 import type { Document } from '../../../shared/types'
 import { formatSize, formatRelativeTime } from '../../../shared/format'
 import { ROUTES } from '../../../shared/routing/names'
-import StatusBadge from './StatusBadge.vue'
 
 defineProps<{
   doc: Document

@@ -20,37 +20,40 @@
         </button>
       </template>
     </LayersBar>
-    <div class="parse-body">
-      <aside class="parse-structure">
+    <div class="parse-body" :class="{ 'properties-open': propertiesOpen }">
+      <aside class="parse-structure" :class="{ 'parse-drawer--closed': !structureOpen }">
         <header class="parse-structure-header">
-          <h2 class="parse-structure-title">{{ t('parse.structureTitle') }}</h2>
-          <span class="parse-structure-count">
+          <h2 v-if="structureOpen" class="parse-structure-title">
+            {{ t('parse.structureTitle') }}
+          </h2>
+          <button
+            class="drawer-toggle"
+            :aria-label="t('parse.structureTitle')"
+            @click="structureOpen = !structureOpen"
+          >
+            {{ structureOpen ? '‹' : '›' }}
+          </button>
+          <span v-if="structureOpen" class="parse-structure-count">
             {{ t('parse.structureNodes', { n: nodeCount }) }}
           </span>
-          <div class="parse-structure-actions">
+          <div v-if="structureOpen" class="parse-structure-actions">
             <button
               type="button"
               class="tree-action-btn"
-              :title="t('parse.expandAll')"
-              :aria-label="t('parse.expandAll')"
-              data-e2e="tree-expand-all"
-              @click="onExpandAll"
+              :title="treeDefaultOpen ? t('parse.collapseAll') : t('parse.expandAll')"
+              :aria-label="treeDefaultOpen ? t('parse.collapseAll') : t('parse.expandAll')"
+              data-e2e="tree-toggle-all"
+              @click="treeDefaultOpen ? onCollapseAll() : onExpandAll()"
             >
-              ⊕
-            </button>
-            <button
-              type="button"
-              class="tree-action-btn"
-              :title="t('parse.collapseAll')"
-              :aria-label="t('parse.collapseAll')"
-              data-e2e="tree-collapse-all"
-              @click="onCollapseAll"
-            >
-              ⊖
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M3 5h14M3 10h14M3 15h14" />
+                <path d="M10 2v16" />
+              </svg>
             </button>
           </div>
         </header>
         <input
+          v-if="structureOpen"
           v-model="filter"
           type="text"
           class="parse-structure-filter"
@@ -58,6 +61,7 @@
           data-e2e="structure-filter"
         />
         <DocTreeRail
+          v-if="structureOpen"
           :key="treeRemountKey"
           :nodes="filteredNodes"
           :loading="treeLoading"
@@ -89,15 +93,25 @@
           <p>{{ t('parse.noAnalysis') }}</p>
         </div>
       </div>
-      <ElementProperties
-        :element="selectedElement"
-        :page-width="currentPageWidth"
-        :page-height="currentPageHeight"
-        :page-number="currentPage"
-        :linked-chunk="linkedChunk"
-        :saving="chunksStore.saving"
-        @save-chunk="onSaveChunk"
-      />
+      <aside class="properties-drawer" :class="{ 'properties-drawer--closed': !propertiesOpen }">
+        <button
+          class="drawer-toggle properties-toggle"
+          :aria-label="t('parse.propertiesTitle')"
+          @click="propertiesOpen = !propertiesOpen"
+        >
+          {{ propertiesOpen ? '›' : '‹' }}
+        </button>
+        <ElementProperties
+          v-if="propertiesOpen"
+          :element="selectedElement"
+          :page-width="currentPageWidth"
+          :page-height="currentPageHeight"
+          :page-number="currentPage"
+          :linked-chunk="linkedChunk"
+          :saving="chunksStore.saving"
+          @save-chunk="onSaveChunk"
+        />
+      </aside>
     </div>
   </div>
 </template>
@@ -117,6 +131,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import type { DocChunk, DocTreeNode, PageElement } from '../shared/types'
 import { useAnalysisStore } from '../features/analysis/store'
+import { fetchAnalysis } from '../features/analysis/api'
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
@@ -127,7 +142,7 @@ import LayersBar from '../features/document/ui/LayersBar.vue'
 import PagePreviewWithOverlay from '../features/document/ui/PagePreviewWithOverlay.vue'
 import { useI18n } from '../shared/i18n'
 
-const props = defineProps<{ docId: string }>()
+const props = defineProps<{ docId: string; analysisId?: string }>()
 
 const { t } = useI18n()
 const documentStore = useDocumentStore()
@@ -140,6 +155,8 @@ async function onLaunchAnalysis(): Promise<void> {
 }
 
 const currentPage = ref(1)
+const structureOpen = ref(true)
+const propertiesOpen = ref(true)
 const hiddenTypes = ref<Set<string>>(new Set())
 
 // Expand/Collapse all — bumping `treeRemountKey` re-keys the rail so every
@@ -233,11 +250,16 @@ async function onSaveChunk(chunkId: string, text: string): Promise<void> {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    documentStore.loadWorkspace(props.docId),
-    chunksStore.load(props.docId),
-    loadTree(),
-  ])
+  if (props.analysisId) {
+    documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
+    await Promise.all([chunksStore.load(props.docId), loadTree()])
+  } else {
+    await Promise.all([
+      documentStore.loadWorkspace(props.docId),
+      chunksStore.load(props.docId),
+      loadTree(),
+    ])
+  }
   const first = documentStore.workspacePages[0]?.page_number
   if (first) currentPage.value = first
 })
@@ -247,7 +269,12 @@ watch(
   async (id) => {
     selectedNodeRef.value = null
     filter.value = ''
-    await Promise.all([documentStore.loadWorkspace(id), chunksStore.load(id), loadTree()])
+    if (props.analysisId) {
+      documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
+      await Promise.all([chunksStore.load(id), loadTree()])
+    } else {
+      await Promise.all([documentStore.loadWorkspace(id), chunksStore.load(id), loadTree()])
+    }
     const first = documentStore.workspacePages[0]?.page_number
     if (first) currentPage.value = first
   },
@@ -312,9 +339,73 @@ function findPageOfRef(
 
 .parse-body {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 360px;
+  grid-template-columns: auto minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+}
+
+.parse-drawer--closed {
+  width: 38px;
+}
+
+.parse-structure {
+  width: 320px;
+  transition: width 180ms ease;
+}
+
+.parse-structure.parse-drawer--closed {
+  width: 38px;
+}
+
+.drawer-toggle {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 16px;
+}
+
+.drawer-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.properties-drawer {
+  position: relative;
+  grid-column: 3;
+  grid-row: 1;
+  width: 360px;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: var(--bg-surface);
+  transition: width 180ms ease;
+}
+
+.properties-drawer--closed {
+  width: 38px;
+}
+
+.parse-body.properties-open {
+  grid-template-columns: auto minmax(0, 1fr) 360px;
+}
+
+.properties-toggle {
+  margin: 10px;
+}
+
+.properties-drawer:not(.properties-drawer--closed) .properties-toggle {
+  left: 8px;
 }
 
 .parse-structure {
@@ -324,6 +415,8 @@ function findPageOfRef(
   background: var(--bg-surface);
   min-height: 0;
   overflow: hidden;
+  width: 320px;
+  transition: width 180ms ease;
 }
 
 .parse-structure-header {
@@ -373,6 +466,15 @@ function findPageOfRef(
 .tree-action-btn:hover {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.tree-action-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 
 .parse-structure-filter {

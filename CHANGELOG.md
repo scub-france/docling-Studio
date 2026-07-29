@@ -4,6 +4,17 @@ All notable changes to Docling Studio will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Analyses workspace**: a dedicated Analyses navigation item lists every run and opens its saved visualization independently of the document preview. This makes document source management separate from analysis-result inspection and supports multiple analyses per document.
+
+### Changed
+
+- **Simplified document workflow**: the Documents page now focuses on source files, preview, PDF download, and deletion. Chunking and ingestion controls were removed from the document workspace; associated analyses are shown separately and document deletion explicitly confirms the analysis cascade.
+- **Lean development stack**: the default compose profile starts only the frontend and SQLite-backed parser. Optional `ingestion`, `graph`, and `remote` profiles enable their respective dependencies.
+
 ## [0.6.2] - 2026-06-05
 
 ### Added

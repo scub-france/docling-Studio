@@ -3,7 +3,7 @@
     <button
       ref="buttonRef"
       type="button"
-      :class="['download-btn', buttonClass]"
+      :class="['download-btn', buttonClass, { 'download-btn--icon': iconOnly }]"
       :title="t('docs.download')"
       :aria-expanded="open ? 'true' : 'false'"
       aria-haspopup="menu"
@@ -15,7 +15,10 @@
       @keydown.enter.prevent="toggle"
       @keydown.esc.prevent="close"
     >
-      {{ t('docs.download') }}
+      <svg v-if="iconOnly" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" />
+      </svg>
+      <span v-else>{{ t('docs.download') }}</span>
     </button>
     <div
       v-if="open"
@@ -58,6 +61,8 @@ const props = withDefaults(
   defineProps<{
     docId: string
     buttonClass?: string
+    iconOnly?: boolean
+    pdfOnly?: boolean
     direction?: 'up' | 'down'
   }>(),
   {
@@ -72,11 +77,12 @@ const buttonRef = ref<HTMLButtonElement | null>(null)
 const itemRefs = ref<Array<HTMLButtonElement | null>>([])
 const menuId = `download-menu-${props.docId}`
 
-const downloadOptions: Array<{ format: ExportFormat; labelKey: string }> = [
+const allDownloadOptions: Array<{ format: ExportFormat; labelKey: string }> = [
   { format: 'pdf', labelKey: 'docs.downloadPdf' },
   { format: 'md', labelKey: 'docs.downloadMarkdown' },
   { format: 'json', labelKey: 'docs.downloadJson' },
 ]
+const downloadOptions = props.pdfOnly ? allDownloadOptions.slice(0, 1) : allDownloadOptions
 
 function toggle() {
   if (open.value) {
@@ -213,6 +219,31 @@ onUnmounted(() => {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition);
+}
+
+.download-btn--icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+.download-btn--icon:hover {
+  color: var(--accent);
+  background: transparent;
+}
+.download-btn--icon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .download-btn:hover {

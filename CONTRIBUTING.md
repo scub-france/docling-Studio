@@ -19,27 +19,28 @@ Thank you for your interest in contributing to Docling Studio! This guide will h
 
 ### Docker Dev Stack (recommended)
 
-The fastest way to get the full stack running (backend + frontend + OpenSearch):
+The fastest way to start the local frontend and parser:
 
 ```bash
-docker compose -f docker-compose.dev.yml up
+COMPOSE_PROFILES=default docker compose -f docker-compose.dev.yml up
 ```
 
-This starts:
+This starts the frontend and SQLite-backed parser. To include OpenSearch, Dashboards,
+embedding, and Neo4j, use `COMPOSE_PROFILES=ingestion`.
+
+The default stack starts:
 
 | Service | URL | Notes |
 |---------|-----|-------|
 | Frontend (Vite) | http://localhost:3000 | HMR enabled |
 | Backend (FastAPI) | http://localhost:8000 | Auto-reload on file changes |
-| OpenSearch | http://localhost:9200 | Single-node, security disabled |
-| OpenSearch Dashboards | http://localhost:5601 | Index inspection UI |
 
 Source code is bind-mounted — edits on your host are reflected immediately.
 
 To use remote conversion mode instead of local:
 
 ```bash
-CONVERSION_MODE=remote docker compose -f docker-compose.dev.yml up
+COMPOSE_PROFILES=remote CONVERSION_MODE=remote docker compose -f docker-compose.dev.yml up
 ```
 
 ### Manual Setup

@@ -14,75 +14,38 @@
     </div>
 
     <template v-else-if="doc">
-      <!-- Sticky header (#218) -->
       <DocWorkspaceHeader :doc="doc">
         <template #actions>
-          <!-- View switcher (#263) — Parse / Chunk / Compare. Compare is
-               rendered as a disabled placeholder until #270 (0.9.0). -->
-          <div class="view-switcher" role="tablist" data-e2e="view-switcher">
-            <button
-              v-for="view in VIEWS"
-              :key="view.key"
-              class="view-btn"
-              :class="{
-                active: !view.disabled && activeMode === view.key,
-                disabled: view.disabled || !isModeEnabled(view.key),
-              }"
-              role="tab"
-              :aria-selected="!view.disabled && activeMode === view.key"
-              :disabled="view.disabled || !isModeEnabled(view.key)"
-              :title="viewTooltip(view)"
-              :data-e2e="`view-${view.key}`"
-              @click="onViewClick(view)"
-            >
-              {{ t(`workspace.tabs.${view.key}`) }}
-            </button>
-          </div>
-          <DownloadDropdown :doc-id="id" />
-          <!-- History drawer trigger (#267) — visible on every view. -->
-          <button
-            type="button"
-            class="header-action-btn"
-            :title="t('history.title')"
-            data-e2e="history-btn"
-            @click="historyOpen = true"
-          >
-            ↻ {{ t('history.title') }}
+          <button class="analyze-btn" :disabled="analysisStore.running" @click="onLaunchAnalysis">
+            {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
           </button>
         </template>
       </DocWorkspaceHeader>
 
-      <!-- History drawer (#267) — teleported to body. Lists frozen
-           (analysis, chunks) versions; "Set as current" restores. -->
-      <HistoryDrawer
-        :open="historyOpen"
-        :versions="documentStore.workspaceVersions"
-        :current-id="documentStore.workspaceCurrentVersionId"
-        @close="historyOpen = false"
-        @set-current="onSetCurrentVersion"
-      />
-
-      <!-- View content — lazy loaded (#216). :key on docId forces a clean
-           remount when navigating to a different doc, preventing stale state
-           (bbox, selectedPage, etc.) from leaking. -->
-      <div class="tab-content" role="tabpanel" data-e2e="tab-content">
-        <Suspense>
-          <DocParseTab v-if="activeMode === 'parse'" :key="id" :doc-id="id" />
-          <DocChunkTab
-            v-else-if="activeMode === 'chunk'"
-            :key="id"
-            :doc-id="id"
-            :available-stores="doc.stores ?? []"
-            :store-links="doc.storeLinks"
+      <div class="viewer-content" data-e2e="document-viewer">
+        <div class="viewer-toolbar">
+          <span class="viewer-label">{{ t('docs.preview') }}</span>
+          <div class="viewer-nav">
+            <button class="page-btn" :disabled="currentPage <= 1" @click="currentPage--">‹</button>
+            <span
+              >Page {{ currentPage }}<span v-if="doc.pageCount"> / {{ doc.pageCount }}</span></span
+            >
+            <button
+              class="page-btn"
+              :disabled="!!doc.pageCount && currentPage >= doc.pageCount"
+              @click="currentPage++"
+            >
+              ›
+            </button>
+          </div>
+        </div>
+        <div class="viewer-stage">
+          <PagePreview
+            :document-id="id"
+            :page="currentPage"
+            :page-count="doc.pageCount ?? undefined"
           />
-          <DocIngestTab
-            v-else-if="activeMode === 'ingest'"
-            :key="id"
-            :doc-id="id"
-            :store-links="doc.storeLinks"
-            @pushed="loadDoc"
-          />
-        </Suspense>
+        </div>
       </div>
     </template>
   </div>
@@ -90,93 +53,32 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { RouterLink, useRouter, useRoute } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import type { Document } from '../shared/types'
-import { useAnalysisStore } from '../features/analysis/store'
-import { useChunksStore } from '../features/chunks/store'
 import { fetchDocument } from '../features/document/api'
-import { useDocumentStore } from '../features/document/store'
-import { useFeatureFlagStore } from '../features/feature-flags/store'
-import { type DocMode } from '../shared/routing/modes'
-import { resolveMode } from '../shared/routing/resolveMode'
+import { useAnalysisStore } from '../features/analysis/store'
 import { useCrumbs } from '../shared/breadcrumb/store'
 import { truncate } from '../shared/breadcrumb/text'
 import type { Crumb } from '../shared/breadcrumb/types'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocWorkspaceHeader from '../features/document/ui/DocWorkspaceHeader.vue'
-import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
-import HistoryDrawer from '../features/document/ui/HistoryDrawer.vue'
-import DocParseTab from './DocParseTab.vue'
-import DocChunkTab from './DocChunkTab.vue'
-import DocIngestTab from './DocIngestTab.vue'
+import PagePreview from '../features/document/ui/PagePreview.vue'
 
-const props = defineProps<{ id: string; mode: DocMode }>()
+const props = defineProps<{ id: string }>()
 
-const router = useRouter()
-const route = useRoute()
 const { t } = useI18n()
-const flagStore = useFeatureFlagStore()
-const documentStore = useDocumentStore()
-const chunksStore = useChunksStore()
 const analysisStore = useAnalysisStore()
-
-const historyOpen = ref(false)
-
-async function onSetCurrentVersion(versionId: string): Promise<void> {
-  const ok = await documentStore.setWorkspaceVersion(versionId)
-  if (!ok) return
-  // The restore endpoint rewrote the live chunkset from the version's
-  // snapshot — reload so Chunk view re-renders with the restored set.
-  await chunksStore.load(props.id)
-  historyOpen.value = false
-}
-
-// Watch analysisStore.running: when the in-place launch wraps up,
-// reload the workspace versions list (the backend just appended a
-// fresh ANALYSIS version that becomes the auto-pinned active one).
-// Chunks aren't touched on analysis runs — the version snapshot
-// preserves whatever was there.
-watch(
-  () => analysisStore.running,
-  async (now, prev) => {
-    if (prev && !now) {
-      const finished = analysisStore.currentAnalysis
-      if (finished?.status === 'COMPLETED' && finished.documentId === props.id) {
-        await documentStore.reloadWorkspaceVersions(props.id)
-      }
-    }
-  },
-)
-
-// Watch chunksStore.rechunking: when `+ Generate chunks` (rechunk)
-// completes, the backend appends a CHUNKS version. Refresh History
-// so the new entry shows up + is pinned.
-watch(
-  () => chunksStore.rechunking,
-  async (now, prev) => {
-    if (prev && !now && documentStore.workspaceDoc?.id === props.id) {
-      await documentStore.reloadWorkspaceVersions(props.id)
-    }
-  },
-)
 
 const doc = ref<Document | null>(null)
 const loadingDoc = ref(true)
 const docError = ref<string | null>(null)
+const currentPage = ref(1)
 
-const activeMode = ref<DocMode>(props.mode)
-
-// Switcher entries (#225 — Compare slot dropped, Ingest added in its place).
-interface ViewEntry {
-  key: DocMode
-  disabled: boolean
+async function onLaunchAnalysis(): Promise<void> {
+  if (analysisStore.running) return
+  await analysisStore.run(props.id)
 }
-const VIEWS: readonly ViewEntry[] = [
-  { key: 'parse', disabled: false },
-  { key: 'chunk', disabled: false },
-  { key: 'ingest', disabled: false },
-]
 
 const crumbs = computed<Crumb[]>(() => [
   { kind: 'link', label: t('breadcrumb.studio'), to: { name: ROUTES.HOME } },
@@ -185,30 +87,8 @@ const crumbs = computed<Crumb[]>(() => [
     label: doc.value ? truncate(doc.value.filename, 40) : truncate(props.id, 40),
     to: { name: ROUTES.DOC_WORKSPACE, params: { id: props.id } },
   },
-  { kind: 'leaf', label: t(`breadcrumb.mode.${activeMode.value}`) },
 ])
 useCrumbs(crumbs)
-
-function isModeEnabled(key: DocMode): boolean {
-  return flagStore.modeFlags()[key]
-}
-
-function viewTooltip(view: ViewEntry): string | undefined {
-  if (view.disabled) return t('workspace.modeDisabled')
-  if (!isModeEnabled(view.key)) return t('workspace.modeDisabled')
-  return undefined
-}
-
-function onViewClick(view: ViewEntry): void {
-  if (view.disabled) return
-  switchMode(view.key)
-}
-
-function switchMode(m: DocMode): void {
-  if (!isModeEnabled(m)) return
-  activeMode.value = m
-  router.replace({ query: { ...route.query, mode: m } })
-}
 
 async function loadDoc(): Promise<void> {
   loadingDoc.value = true
@@ -228,35 +108,14 @@ async function loadDoc(): Promise<void> {
 }
 
 onMounted(async () => {
-  await flagStore.load()
-
-  const flags = flagStore.modeFlags()
-  const resolved = resolveMode(props.mode, flags)
-  if (!resolved) {
-    router.replace({ name: ROUTES.DOCS_LIBRARY, query: { reason: 'no-mode-enabled' } })
-    return
-  }
-  if (resolved !== props.mode) {
-    router.replace({ query: { ...route.query, mode: resolved } })
-  }
-  activeMode.value = resolved
-
   await loadDoc()
 })
-
-watch(
-  () => props.mode,
-  (m) => {
-    const flags = flagStore.modeFlags()
-    const resolved = resolveMode(m, flags)
-    if (resolved) activeMode.value = resolved
-  },
-)
 
 watch(
   () => props.id,
   (newId, oldId) => {
     if (newId !== oldId) loadDoc()
+    if (newId !== oldId) currentPage.value = 1
   },
 )
 </script>
@@ -295,93 +154,76 @@ watch(
   color: var(--text);
 }
 
-.view-switcher {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--bg-surface);
+.viewer-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 24px 32px;
 }
 
-.view-btn {
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  border-right: 1px solid var(--border);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.view-btn:last-child {
-  border-right: none;
-}
-
-.view-btn:hover:not(.disabled) {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-.view-btn.active {
-  color: var(--accent);
-  background: var(--bg-active);
-}
-
-.view-btn.disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.header-action-btn {
-  display: inline-flex;
+.viewer-toolbar {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  justify-content: space-between;
+  max-width: 900px;
+  margin: 0 auto 12px;
+  color: var(--text-secondary);
   font-size: 12px;
-  background: var(--bg-surface);
+}
+
+.viewer-label {
+  color: var(--text-muted);
+  font:
+    500 11px 'IBM Plex Mono',
+    monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.viewer-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.page-btn {
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--transition);
+  font-size: 18px;
 }
 
-.header-action-btn:hover {
+.page-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.viewer-stage {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.viewer-stage :deep(.page-preview) {
+  min-height: 0;
+}
+
+.analyze-btn {
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-muted);
   color: var(--accent);
-  border-color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
 }
 
-.header-action-btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
-}
-
-.header-action-btn--primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-  color: white;
-  border-color: var(--accent);
-}
-
-.header-action-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.header-spinner {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-.tab-content {
-  flex: 1;
-  overflow: hidden;
+.analyze-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .spinner {
