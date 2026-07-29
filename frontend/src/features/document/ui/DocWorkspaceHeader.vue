@@ -14,17 +14,6 @@
       </div>
     </div>
     <div class="workspace-header-meta">
-      <div v-if="doc.stores?.length" class="workspace-stores">
-        <RouterLink
-          v-for="store in doc.stores"
-          :key="store"
-          :to="{ name: ROUTES.STORE_DETAIL, params: { store } }"
-          class="store-chip"
-          :title="store"
-        >
-          {{ store }}
-        </RouterLink>
-      </div>
       <span v-if="doc.fileSize" class="meta-item">{{ formatSize(doc.fileSize) }}</span>
       <span class="meta-item">{{ formatRelativeTime(doc.lifecycleStateAt ?? doc.createdAt) }}</span>
     </div>
@@ -32,10 +21,8 @@
 </template>
 
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
 import type { Document } from '../../../shared/types'
 import { formatSize, formatRelativeTime } from '../../../shared/format'
-import { ROUTES } from '../../../shared/routing/names'
 
 defineProps<{
   doc: Document
@@ -93,35 +80,6 @@ defineProps<{
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.workspace-stores {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.store-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  font-size: 11px;
-  font-family: 'IBM Plex Mono', monospace;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 100px;
-  color: var(--text-secondary);
-  text-decoration: none;
-  transition: all var(--transition);
-  white-space: nowrap;
-  overflow: hidden;
-  max-width: 120px;
-  text-overflow: ellipsis;
-}
-
-.store-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .meta-item {

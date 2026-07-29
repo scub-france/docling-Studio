@@ -23,7 +23,6 @@ describe('resolveSurface', () => {
 
   it('redirects rag routes to studio when rag off and studio on', () => {
     expect(resolveSurface(ROUTES.DOCS_LIBRARY, { studio: true, rag: false })).toBe(ROUTES.STUDIO)
-    expect(resolveSurface(ROUTES.STORES_LIST, { studio: true, rag: false })).toBe(ROUTES.STUDIO)
     expect(resolveSurface(ROUTES.RUNS, { studio: true, rag: false })).toBe(ROUTES.STUDIO)
   })
 
