@@ -15,6 +15,7 @@ from infra.serve_converter import (
     _build_form_data,
     _extract_bbox,
     _parse_response,
+    _table_to_markdown,
 )
 
 
@@ -308,6 +309,136 @@ class TestParseResponse:
         types = [e.type for e in result.pages[0].elements]
         assert "table" in types
         assert "picture" in types
+
+    def test_table_content_rebuilt_from_grid(self):
+        data = {
+            "document": {
+                "md_content": "",
+                "html_content": "",
+                "json_content": {
+                    "pages": {"1": {"size": {"width": 612.0, "height": 792.0}}},
+                    "texts": [],
+                    "tables": [
+                        {
+                            "label": "table",
+                            "self_ref": "#/tables/0",
+                            "data": {
+                                "grid": [
+                                    [{"text": "Split"}, {"text": "Images"}],
+                                    [{"text": "Train"}, {"text": "693,975"}],
+                                ]
+                            },
+                            "prov": [
+                                {
+                                    "page_no": 1,
+                                    "bbox": {
+                                        "l": 10,
+                                        "t": 10,
+                                        "r": 300,
+                                        "b": 200,
+                                        "coord_origin": "TOPLEFT",
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                    "pictures": [],
+                },
+            }
+        }
+        result = _parse_response(data)
+        table_el = next(e for e in result.pages[0].elements if e.type == "table")
+        assert "| Split | Images |" in table_el.content
+        assert "| Train | 693,975 |" in table_el.content
+
+    def test_table_with_null_data_does_not_crash(self):
+        # A malformed table whose `data` is explicitly null must not abort
+        # the whole parse — the loop has no per-item try/except.
+        data = {
+            "document": {
+                "md_content": "",
+                "html_content": "",
+                "json_content": {
+                    "pages": {"1": {"size": {"width": 612.0, "height": 792.0}}},
+                    "texts": [],
+                    "tables": [
+                        {
+                            "label": "table",
+                            "self_ref": "#/tables/0",
+                            "data": None,
+                            "prov": [
+                                {
+                                    "page_no": 1,
+                                    "bbox": {
+                                        "l": 1,
+                                        "t": 1,
+                                        "r": 2,
+                                        "b": 2,
+                                        "coord_origin": "TOPLEFT",
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                    "pictures": [],
+                },
+            }
+        }
+        result = _parse_response(data)
+        table_el = next(e for e in result.pages[0].elements if e.type == "table")
+        assert table_el.content == ""
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — table grid → markdown
+# ---------------------------------------------------------------------------
+
+
+def _cell(text: str) -> dict:
+    """Minimal Docling grid cell."""
+    return {"text": text}
+
+
+class TestTableToMarkdown:
+    def test_builds_gfm_table_with_header_and_body(self):
+        data = {
+            "num_rows": 3,
+            "num_cols": 2,
+            "grid": [
+                [_cell("Split"), _cell("Images")],
+                [_cell("Train"), _cell("693,975")],
+                [_cell("Val"), _cell("38,850")],
+            ],
+        }
+        md = _table_to_markdown(data)
+        assert md.splitlines() == [
+            "| Split | Images |",
+            "| --- | --- |",
+            "| Train | 693,975 |",
+            "| Val | 38,850 |",
+        ]
+
+    def test_empty_grid_returns_empty_string(self):
+        assert _table_to_markdown({}) == ""
+        assert _table_to_markdown({"grid": []}) == ""
+        assert _table_to_markdown({"grid": [[]]}) == ""
+
+    def test_escapes_pipes_and_flattens_newlines(self):
+        data = {"grid": [[_cell("a|b"), _cell("c\nd")]]}
+        assert _table_to_markdown(data).splitlines()[0] == "| a\\|b | c d |"
+
+    def test_short_rows_padded_to_header_width(self):
+        data = {"grid": [[_cell("A"), _cell("B"), _cell("C")], [_cell("1")]]}
+        assert _table_to_markdown(data).splitlines()[-1] == "| 1 |  |  |"
+
+    def test_non_dict_cells_tolerated(self):
+        data = {"grid": [[_cell("A"), None]]}
+        assert _table_to_markdown(data).splitlines()[0] == "| A |  |"
+
+    def test_none_or_malformed_data_returns_empty(self):
+        assert _table_to_markdown(None) == ""
+        assert _table_to_markdown("nope") == ""
+        assert _table_to_markdown({"grid": None}) == ""
 
 
 # ---------------------------------------------------------------------------
