@@ -61,7 +61,7 @@
         </p>
 
         <!-- Edit mode -->
-        <div v-if="editing" class="props-edit" data-e2e="properties-edit">
+        <div v-if="editable && editing" class="props-edit" data-e2e="properties-edit">
           <textarea
             ref="textareaRef"
             v-model="draftText"
@@ -85,7 +85,7 @@
           </div>
         </div>
         <button
-          v-else
+          v-else-if="editable"
           type="button"
           class="props-edit-btn"
           data-e2e="properties-edit-btn"
@@ -126,6 +126,7 @@ const props = defineProps<{
   pageNumber: number
   linkedChunk: DocChunk | null
   saving?: boolean
+  editable?: boolean
 }>()
 
 const emit = defineEmits<{

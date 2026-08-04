@@ -22,7 +22,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain.models import Chunk, ChunkEdit, ChunkPush, DocumentStoreLink
+from domain.models import AnalysisStatus, Chunk, ChunkEdit, ChunkPush, DocumentStoreLink
 from domain.value_objects import (
     ChunkBbox,
     ChunkDocItem,
@@ -784,17 +784,26 @@ class ChunkService:
                 store_id,
             )
 
-    # -- tree (read from latest analysis document_json)
+    # -- tree (read from an analysis document_json)
 
-    async def get_tree(self, document_id: str) -> list[dict]:
-        """Build a doc tree from the latest completed analysis.
+    async def get_tree(self, document_id: str, analysis_id: str | None = None) -> list[dict]:
+        """Build a doc tree from the requested or latest completed analysis.
 
         Returns a list of `DocTreeNode`-shaped dicts (camelCase). Empty
         list if no analysis is available yet — caller decides if that is
         an error or just "not parsed yet".
         """
         await self._require_doc(document_id)
-        job = await self._analyses.find_latest_completed_by_document(document_id)
+        if analysis_id:
+            job = await self._analyses.find_by_id(analysis_id)
+            if (
+                not job
+                or job.document_id != document_id
+                or job.status != AnalysisStatus.COMPLETED
+            ):
+                raise ChunkNotFoundError(f"Analysis not found: {analysis_id}")
+        else:
+            job = await self._analyses.find_latest_completed_by_document(document_id)
         if not job or not job.document_json:
             return []
         try:

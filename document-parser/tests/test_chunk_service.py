@@ -772,6 +772,45 @@ class TestGetTree:
     async def test_tree_empty_when_no_analysis(self, service, doc):
         assert await service.get_tree(doc.id) == []
 
+    async def test_tree_uses_requested_completed_analysis(self, service, repos, doc):
+        older = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        older.document_json = json.dumps(
+            {
+                "body": {"self_ref": "#/body", "children": [{"$ref": "#/texts/0"}]},
+                "texts": [{"self_ref": "#/texts/0", "label": "title", "text": "Older"}],
+                "tables": [],
+                "pictures": [],
+                "groups": [],
+            }
+        )
+        newer = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        newer.document_json = json.dumps(
+            {
+                "body": {"self_ref": "#/body", "children": [{"$ref": "#/texts/0"}]},
+                "texts": [{"self_ref": "#/texts/0", "label": "title", "text": "Newer"}],
+                "tables": [],
+                "pictures": [],
+                "groups": [],
+            }
+        )
+        await repos["analyses"].insert(older)
+        await repos["analyses"].insert(newer)
+        await repos["analyses"].update_status(older)
+        await repos["analyses"].update_status(newer)
+
+        tree = await service.get_tree(doc.id, older.id)
+
+        assert tree[0]["label"] == "Older"
+
+    async def test_tree_rejects_analysis_from_another_document(self, service, repos, doc):
+        other = Document(filename="other.pdf")
+        await repos["documents"].insert(other)
+        analysis = AnalysisJob(document_id=other.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(analysis)
+
+        with pytest.raises(ChunkNotFoundError):
+            await service.get_tree(doc.id, analysis.id)
+
     async def test_tree_follows_document_hierarchy(self, service, repos, doc):
         """Title → H1 → H2 nest by heading level, leaves under their section."""
         job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
