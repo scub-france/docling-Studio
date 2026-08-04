@@ -54,8 +54,9 @@ export function rechunkDocument(id: string, options?: RechunkOptions): Promise<D
   })
 }
 
-export function fetchDocumentTree(id: string): Promise<DocTreeNode[]> {
-  return apiFetch<DocTreeNode[]>(`/api/documents/${id}/tree`)
+export function fetchDocumentTree(id: string, analysisId?: string): Promise<DocTreeNode[]> {
+  const query = analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : ''
+  return apiFetch<DocTreeNode[]>(`/api/documents/${id}/tree${query}`)
 }
 
 /** Workspace History timeline (#267) — frozen pairs newest-first. */

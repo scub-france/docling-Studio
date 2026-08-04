@@ -192,6 +192,12 @@ class TestTree:
         data = resp.json()
         assert data[0]["label"] == "Titles"
 
+    def test_200_passes_analysis_id(self, client, mock_service):
+        mock_service.get_tree = AsyncMock(return_value=[])
+        resp = client.get("/api/documents/d-1/tree?analysisId=a-1")
+        assert resp.status_code == 200
+        mock_service.get_tree.assert_awaited_once_with("d-1", "a-1")
+
 
 class TestDiff:
     def test_200(self, client, mock_service):

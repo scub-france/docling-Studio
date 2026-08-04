@@ -93,4 +93,12 @@ describe('document API', () => {
     expect(apiFetch).toHaveBeenCalledWith('/api/documents/42/tree')
     expect(result).toEqual(tree)
   })
+
+  it('fetchDocumentTree scopes the tree to an analysis when provided', async () => {
+    apiFetch.mockResolvedValue([])
+
+    await fetchDocumentTree('42', 'analysis 1')
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/documents/42/tree?analysisId=analysis%201')
+  })
 })
