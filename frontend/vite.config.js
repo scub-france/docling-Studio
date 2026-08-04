@@ -11,7 +11,10 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(process.env.VITE_APP_VERSION || pkg.version),
   },
   server: {
+    // host + allowedHosts : rend le dev server joignable depuis le container karate-agent (via host.docker.internal)
+    host: true,
     port: 3000,
+    allowedHosts: ['host.docker.internal'],
     proxy: {
       '/api': {
         target: apiProxyTarget,

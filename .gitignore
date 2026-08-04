@@ -59,3 +59,14 @@ docs/claude-code-commands.md
 docs/design/TEMPLATE.md
 docs/git-workflow/autonomy-mode.md
 
+
+# Demo capture artefacts (scripts/demo) — raw video, narration audio, timing logs.
+# Regenerable, and a 4-minute screen capture has no business in git.
+out/
+e2e/ui/src/test/resources/demo/pace.json
+
+# Local scratch dropped at the repo root — reference papers, and the stub
+# lockfile a stray `npm install` leaves behind (there is no root package.json).
+# Root-scoped so fixtures in subdirectories are unaffected.
+/*.pdf
+/package-lock.json
