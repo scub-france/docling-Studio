@@ -294,6 +294,42 @@ def _extract_pages_from_docling_document(doc: dict) -> list[PageDetail]:
     return sorted(pages_dict.values(), key=lambda p: p.page_number)
 
 
+def _table_to_markdown(data: dict | None) -> str:
+    """Build a GitHub-flavoured markdown table from a Docling table grid.
+
+    The Docling Serve response carries table content as a structured cell
+    grid under `data.grid` (a list of rows, each a list of cell dicts with
+    a `text` field), never as a flat `text` string. The first row is used
+    as the header. Column/row spans cannot be expressed in GFM, so a
+    spanned cell's text is repeated across the positions it covers (the
+    grid already mirrors the cell at each covered slot). Returns "" when
+    `data` is absent/malformed or there is no usable grid.
+    """
+    if not isinstance(data, dict):
+        return ""
+    grid = data.get("grid") or []
+    if not grid or not grid[0]:
+        return ""
+
+    def cell_text(cell: object) -> str:
+        text = (cell.get("text", "") if isinstance(cell, dict) else "") or ""
+        # Escape pipes (column delimiter) and flatten newlines (row delimiter).
+        return text.replace("|", "\\|").replace("\n", " ").strip()
+
+    header = [cell_text(c) for c in grid[0]]
+    cols = len(header)
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * cols) + " |",
+    ]
+    for row in grid[1:]:
+        cells = [cell_text(c) for c in row]
+        # Keep every row rectangular against the header width.
+        cells = (cells + [""] * cols)[:cols]
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
+
 def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
     """Add an element from a DoclingDocument array to the correct page.
 
@@ -307,6 +343,12 @@ def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
     label = item.get("label", "text")
     element_type = _LABEL_MAP.get(label, "text")
     content = item.get("text", "") or ""
+    # Tables carry no `text` field — their content lives in a structured
+    # cell grid under `data.grid`. Rebuild a markdown table so the Parse
+    # view shows it instead of an empty "no text" panel. Local mode gets
+    # this for free via `TableItem.export_to_markdown()`.
+    if element_type == "table" and not content:
+        content = _table_to_markdown(item.get("data", {}))
     self_ref = item.get("self_ref", "") or ""
 
     for prov in item.get("prov", []):
