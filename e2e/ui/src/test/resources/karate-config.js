@@ -19,5 +19,27 @@ function fn() {
     screenshotOnFailure: true
   });
 
+  // Demo capture mode (-Ddemo=true) — a visible Chrome at a fixed geometry so
+  // ffmpeg can crop the same rectangle on every take. Only demo/ask-demo.feature
+  // runs this way; the test suite above is untouched. See scripts/demo/README.md.
+  if (karate.properties['demo'] === 'true') {
+    config.demoWindow = { width: 1440, height: 900 };
+    karate.configure('driver', {
+      type: 'chrome',
+      headless: false,
+      showDriverLog: false,
+      addOptions: [
+        '--window-size=1440,900',
+        '--window-position=0,0',
+        '--hide-crash-restore-bubble',
+        '--disable-infobars',
+        '--disable-session-crashed-bubble',
+        '--disable-features=TranslateUI',
+        '--autoplay-policy=no-user-gesture-required'
+      ],
+      screenshotOnFailure: true
+    });
+  }
+
   return config;
 }

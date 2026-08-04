@@ -1,0 +1,107 @@
+{
+  "_comment": "Voiceover for docs/demo/303-ask-demo-script.md. One entry per camera hold. Keys match pace.json / the delay() keys in e2e/ui/src/test/resources/demo/ask-demo.feature. Edit the text here, re-run render-narration.sh, and the feature's pacing follows automatically — no re-record needed unless the visuals change.",
+  "_structure": "Original shots 5 and 6 are merged. Explaining the RAG loop over a frozen timeline was 43s of dead picture; the loop mechanics now ride on the row clicks, so each sentence lands on the page jumping, the tree opening and Properties filling. Words describe what the viewer is watching happen.",
+  "_voice_register": "Spoken, not written. Short sentences, contractions, plain words — this is read aloud to an audience that may not have English as a first language. If a line only works on the page, it does not belong here. Read every edit out loud before committing it.",
+  "trim": {
+    "_comment": "The Ollama runs take 20–40s of spinner. No demo shows that. assemble.py cuts each wait down to keepSpinnerMs, and the feature's rem4/rem7 arithmetic reads the same value so the narration lands correctly on the trimmed timeline. Both sides MUST agree — that is why it lives here and is copied into pace.json.",
+    "keepSpinnerMs": 6000
+  },
+  "voice": {
+    "_comment": "ElevenLabs voice. Adam = eleven's default male narrator; swap for your own. Find ids with: curl -s -H \"xi-api-key: $ELEVENLABS_API_KEY\" https://api.elevenlabs.io/v1/voices | jq '.voices[] | {name, voice_id}'",
+    "voice_id": "pNInz6obpgDQGcFmaJgB",
+    "model_id": "eleven_multilingual_v2",
+    "stability": 0.45,
+    "similarity_boost": 0.75,
+    "speed": 0.96
+  },
+  "shots": [
+    {
+      "_comment": "Welcome + context. Plays over the same static Parse view as 0b and shot 1 — three holds, one still picture. Keep both intro clips SHORT or the film opens on ~40s of nothing moving, which is the exact failure that got shots 5 and 6 merged. 'from IBM Research' = the DS4SD team; the project was donated to LF AI & Data in 2025, so if you want the governance line rather than the origin line, say that instead — but check it before publishing.",
+      "key": "0a",
+      "shot": 1,
+      "text": "Hey everybody, and welcome to this quick introduction to Docling Studio. First, some context. Docling Studio is an open source product, and it's built on the Docling project, from IBM Research. Docling is the part that reads your PDF and gives you back a real structure. Studio doesn't rebuild any of that."
+    },
+    {
+      "_comment": "What Studio is FOR. 'fix it' is scoped to chunks on purpose: chunk text is the only editable thing (PATCH /{doc_id}/chunks/{chunk_id}, the textarea in ChunkPanel.vue and in ElementProperties.vue when a chunk is selected). Parsed nodes are read-only — no PUT/PATCH route exists for them. Saying 'correct the extraction' would promise an editor that isn't there. Docling Serve is named as an option, not as what's running: this take is engine=local.",
+      "key": "0b",
+      "shot": 1,
+      "text": "So what does Studio do? Two things. The first one is the whole point: it shows you what Docling found, clearly, and in a way you can trust — and where it needs a fix, you can fix it, right there. So it's a tool for looking at your documents, and for cleaning them up. And the second thing, the newer one, is what we're going to look at today: the agentic side. That's Docling Agent, and that's where it gets interesting."
+    },
+    {
+      "key": "1",
+      "shot": 1,
+      "text": "So here's a PDF we've already parsed. And what comes back isn't a wall of text. It's a tree. Every title, every paragraph, every table, every figure is a node. And each one knows where it sits on the page."
+    },
+    {
+      "key": "2a",
+      "shot": 2,
+      "text": "Click a node, and the preview shows you exactly where it came from. And on the right, that's what Docling actually pulled out: the node's own reference, its type, the page, and its box."
+    },
+    {
+      "key": "2b",
+      "shot": 2,
+      "text": "Keep an eye on that reference — the one starting with hash, slash, texts. It's about to do a lot of work."
+    },
+    {
+      "key": "3",
+      "shot": 3,
+      "text": "Now the Ask tab. Two things just showed up. A box to type in, on the right. And an empty timeline, under the page. That timeline is what this whole thing is about."
+    },
+    {
+      "key": "4a",
+      "shot": 4,
+      "text": "So let's ask it something."
+    },
+    {
+      "key": "4b",
+      "shot": 4,
+      "text": "Now, Studio doesn't do retrieval. Not one line of it. We hand the parsed document to Docling Agent, and let it do the work. And it doesn't work the way you'd expect. There's no chunking here. No embeddings. No vector database."
+    },
+    {
+      "key": "5a",
+      "shot": 5,
+      "text": "There's your answer. But look underneath. That's every step it took, in order. That's the loop it just ran."
+    },
+    {
+      "key": "5b",
+      "shot": 5,
+      "text": "Each row is one pass. It never read the whole paper. It saw an outline — just the headings — and it picked one section. And that title you're reading? That's the model's own reason for picking it. Then it read that section. Only that one."
+    },
+    {
+      "key": "5c",
+      "shot": 5,
+      "text": "Then it asked itself: can I answer now? The dim rows are where it said no, and went back for another section. The bright one is where it said yes. Five passes, that's the limit. So it moves through the document, the way you would."
+    },
+    {
+      "_comment": "No 'Properties fills in' here: Properties and the Ask panel share the same column and are mutually exclusive, so it is off-screen for this whole shot. The visible surfaces are the page and the tree.",
+      "key": "5d",
+      "shot": 5,
+      "text": "And here's the part I really care about. That chip is a reference into the same tree you're looking at. So the page jumps to what it read, and the tree opens right to it. Every claim in here points at a real spot, on a real page. That's the difference between a model telling you it read something, and showing you."
+    },
+    {
+      "key": "5e",
+      "shot": 5,
+      "text": "Up top: how many steps, how long it took, and the model — Granite 4.1 3B, running locally, through Ollama. And one honest note. The per-step timings aren't in the released library yet. So those bars show order, not duration. The total is real."
+    },
+    {
+      "key": "7a",
+      "shot": 7,
+      "text": "One more. Something harder — something that isn't sitting in the abstract."
+    },
+    {
+      "key": "7b",
+      "shot": 7,
+      "text": "Same loop. But this time, the answer isn't where it looks first. So it has to go hunting. And watch the reasons when it comes back: it guessed, it read, it admitted that wasn't enough, and it tried somewhere else."
+    },
+    {
+      "key": "7c",
+      "shot": 7,
+      "text": "That's not it failing. That's the loop working — and it's all on the record. Every dead end it walked down is right there, and you can click into each one."
+    },
+    {
+      "key": "8",
+      "shot": 8,
+      "text": "So: Docling parses the document. Docling Agent reasons over it. And Studio makes that reasoning something you can see, and click. And that trace we've been reading — run with trace — is something we contributed back upstream. It shipped in Docling Agent 0.6.0. So if you're building on the library, it's already there for you."
+    }
+  ]
+}
