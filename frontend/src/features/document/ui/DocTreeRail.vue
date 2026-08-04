@@ -74,10 +74,13 @@ function scrollFocusedToCenter(): void {
   if (!rail || !ref) return
   const el = rowRefs.get(ref)
   if (!el) return
-  // `.tree-rail` is the offset parent (position: relative), so `offsetTop` is
-  // the row's top within the scroll content. Center it in the viewport.
-  const target = el.offsetTop - rail.clientHeight / 2 + el.offsetHeight / 2
-  rail.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+  // Center the focused row in the rail's viewport via bounding-rect math —
+  // robust to offset-parent quirks, and deliberately not `scrollIntoView`
+  // (which would also jump ancestor scroll containers like the page).
+  const railRect = rail.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const delta = elRect.top - railRect.top - (rail.clientHeight - elRect.height) / 2
+  rail.scrollTo({ top: Math.max(0, rail.scrollTop + delta), behavior: 'smooth' })
 }
 
 // Re-fire on every focus pulse — `revealTick` bumps even when `focusedRef` is
