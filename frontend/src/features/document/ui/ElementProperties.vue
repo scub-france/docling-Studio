@@ -42,10 +42,32 @@
         </dl>
       </section>
 
-      <!-- Extracted text -->
+      <!-- Extracted content — tables render as a real table, everything
+           else as plain extracted text. -->
       <section class="props-section">
-        <h3 class="props-section-title">{{ t('properties.extractedText') }}</h3>
-        <p class="props-text" data-e2e="properties-extracted-text">
+        <div class="props-section-head">
+          <h3 class="props-section-title">
+            {{ isTable ? t('properties.table') : t('properties.extractedText') }}
+          </h3>
+          <button
+            v-if="isTable && element.content"
+            type="button"
+            class="props-expand-btn"
+            :title="t('tableModal.open')"
+            :aria-label="t('tableModal.open')"
+            data-e2e="properties-table-expand"
+            @click="tableModalOpen = true"
+          >
+            ⤢
+          </button>
+        </div>
+        <MarkdownViewer
+          v-if="isTable && element.content"
+          class="props-table"
+          :content="element.content"
+          data-e2e="properties-extracted-text"
+        />
+        <p v-else class="props-text" data-e2e="properties-extracted-text">
           {{ element.content || t('properties.noText') }}
         </p>
       </section>
@@ -95,6 +117,13 @@
         </button>
       </section>
     </div>
+
+    <TableModal
+      v-if="tableModalOpen && element"
+      :content="element.content"
+      :title="t('properties.table')"
+      @close="tableModalOpen = false"
+    />
   </aside>
 </template>
 
@@ -118,6 +147,8 @@ import type { DocChunk, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToPercent } from '../bboxPercent'
 import { colorFor } from '../elementColors'
+import MarkdownViewer from '../../analysis/ui/MarkdownViewer.vue'
+import TableModal from './TableModal.vue'
 
 const props = defineProps<{
   element: PageElement | null
@@ -138,6 +169,9 @@ const { t } = useI18n()
 const editing = ref(false)
 const draftText = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const tableModalOpen = ref(false)
+
+const isTable = computed(() => props.element?.type === 'table')
 
 const typeStyle = computed(() => {
   if (!props.element) return {}
@@ -189,6 +223,7 @@ watch(
   () => props.element?.self_ref,
   () => {
     if (editing.value) cancel()
+    tableModalOpen.value = false
   },
 )
 </script>
@@ -260,6 +295,41 @@ watch(
   letter-spacing: 0.08em;
   font-family: 'IBM Plex Mono', monospace;
   margin: 0 0 8px;
+}
+
+.props-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.props-section-head .props-section-title {
+  margin: 0;
+}
+
+.props-expand-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.props-expand-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .props-list {

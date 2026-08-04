@@ -14,7 +14,14 @@ const { t } = useI18n()
 
 const rendered = computed(() => {
   if (!props.content) return `<p class="empty">${t('results.noMarkdown')}</p>`
-  return DOMPurify.sanitize(marked.parse(props.content) as string)
+  // marked emits bare `<table>` blocks. Wrap each one in a scroll
+  // container so wide tables scroll horizontally inside narrow panels
+  // instead of squashing or overflowing the layout. Wrapping happens
+  // before sanitize so DOMPurify still validates the final markup.
+  const html = (marked.parse(props.content) as string)
+    .replace(/<table>/g, '<div class="md-table"><table>')
+    .replace(/<\/table>/g, '</table></div>')
+  return DOMPurify.sanitize(html)
 })
 </script>
 
@@ -69,23 +76,58 @@ const rendered = computed(() => {
   padding: 0;
 }
 
+/* Tables — card-framed, horizontally scrollable, zebra rows. The
+   `.md-table` wrapper is injected around every `<table>` in `rendered`. */
+.markdown-viewer :deep(.md-table) {
+  margin: 14px 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
 .markdown-viewer :deep(table) {
   border-collapse: collapse;
   width: 100%;
-  margin: 12px 0;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
-.markdown-viewer :deep(th),
-.markdown-viewer :deep(td) {
-  border: 1px solid var(--border);
-  padding: 8px 12px;
-  text-align: left;
-  font-size: 13px;
-}
-
-.markdown-viewer :deep(th) {
+.markdown-viewer :deep(thead th) {
   background: var(--bg-elevated);
+  color: var(--text-secondary);
   font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.markdown-viewer :deep(tbody td) {
+  padding: 8px 14px;
+  text-align: left;
+  vertical-align: top;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-viewer :deep(tbody td:first-child) {
+  font-weight: 500;
+}
+
+.markdown-viewer :deep(tbody tr:nth-child(even)) {
+  background: var(--bg-elevated);
+}
+
+.markdown-viewer :deep(tbody tr:hover) {
+  background: var(--bg-hover);
+}
+
+.markdown-viewer :deep(tbody tr:last-child td) {
+  border-bottom: none;
 }
 
 .markdown-viewer :deep(img) {
