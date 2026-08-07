@@ -33,6 +33,14 @@ open http://localhost:3000
 
 ## Step 3 — Set Up for Development
 
+Recommended first-time bootstrap:
+
+```bash
+bash ./scripts/initial_setup.sh
+```
+
+This installs frontend dependencies, syncs the Python dev environments used by the repo hooks, installs `pre-commit`, and enables the repository git hooks.
+
 ### Backend
 
 ```bash

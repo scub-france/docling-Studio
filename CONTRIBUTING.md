@@ -47,6 +47,16 @@ COMPOSE_PROFILES=remote CONVERSION_MODE=remote docker compose -f docker-compose.
 
 If you prefer running services directly on your machine:
 
+Recommended first-time bootstrap:
+
+```bash
+bash ./scripts/initial_setup.sh
+```
+
+This installs frontend dependencies, syncs the Python dev environments for `document-parser` and `embedding-service`, installs `pre-commit`, and registers the repository hooks.
+The commit hooks auto-fix Ruff and frontend formatting issues, then run the `document-parser` architecture test suite when backend layers change.
+On pull requests, CI enforces `80%` coverage on changed backend lines only.
+
 ### Backend (Python 3.12+)
 
 ```bash
@@ -69,6 +79,51 @@ npm install
 npm run dev
 ```
 
+### Git hooks (recommended)
+
+The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs targeted backend/frontend tests, blocks local/generated artifacts, scans for likely secrets, validates lockfile updates and workflow/compose changes, enforces Conventional Commit messages, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check, frontend build, and full `document-parser` test suite before each push when those areas changed.
+
+```bash
+bash ./scripts/initial_setup.sh
+
+# Or install only the hooks manually
+uv tool install pre-commit
+pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+```
+
+### Background repo health report
+
+If you want a local `report.json` that refreshes in the background while you work, install the repo health scheduler:
+
+```bash
+bash ./scripts/install_repo_health_agent.sh install
+```
+
+On macOS this installs a `launchd` job. On Linux it installs a user `systemd` timer. Both call the same shell reporter and write `.repo-health/report.json`. The generator skips a run when `HEAD` and the working tree fingerprint have not changed since the last report.
+
+Useful commands:
+
+```bash
+bash ./scripts/install_repo_health_agent.sh status
+bash ./scripts/install_repo_health_agent.sh uninstall
+```
+
+Portable fallback on any machine with Bash:
+
+```bash
+bash ./scripts/run_repo_health_watch.sh 300
+```
+
+The generated report is local-only and gitignored. It currently includes:
+
+```text
+- document-parser Ruff lint
+- document-parser pytest suite
+- frontend ESLint
+- frontend type-check
+- frontend Vitest run
+```
+
 ## Code Quality
 
 ### Backend — Ruff
@@ -77,6 +132,25 @@ We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting Python co
 
 ```bash
 cd document-parser
+uv run ruff check .          # lint
+uv run ruff check . --fix    # lint with auto-fix
+uv run ruff format .         # format
+```
+
+### Backend patch coverage
+
+Pull requests must keep changed backend lines at `>=80%` coverage. The gate is patch-based, so it applies only to lines changed in the PR, not the whole legacy codebase.
+
+You can run the same check locally with:
+
+```bash
+bash ./scripts/check_backend_patch_coverage.sh origin/main
+```
+
+For the embedding service:
+
+```bash
+cd embedding-service
 uv run ruff check .          # lint
 uv run ruff check . --fix    # lint with auto-fix
 uv run ruff format .         # format

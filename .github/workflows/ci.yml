@@ -24,6 +24,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -44,7 +46,12 @@ jobs:
         run: uv run ruff check .
 
       - name: Run tests
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ -v --cov --cov-report=xml --cov-report=term
+
+      - name: Enforce 80% coverage on changed backend lines
+        if: github.event_name == 'pull_request'
+        working-directory: document-parser
+        run: uv run diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} --fail-under=80
 
   frontend:
     name: Frontend tests & build
@@ -132,8 +139,10 @@ jobs:
 
       - name: Run E2E tests
         run: |
+          BASE_REF="${{ github.base_ref }}"
+          REF_NAME="${{ github.ref }}"
           KARATE_TAGS="@smoke"
-          if [[ "${{ github.base_ref }}" == release/* ]] || [[ "${{ github.ref }}" == refs/heads/release/* ]]; then
+          if [[ "$BASE_REF" == release/* ]] || [[ "$REF_NAME" == refs/heads/release/* ]]; then
             KARATE_TAGS="@smoke,@regression,@e2e"
           fi
           mvn test -f e2e/api/pom.xml -DbaseUrl=http://localhost:3000 -Dkarate.options="--tags ${KARATE_TAGS}"

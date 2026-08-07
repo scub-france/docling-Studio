@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -10,9 +11,12 @@ from fastapi.testclient import TestClient
 
 import main
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
 
 @pytest.fixture(autouse=True)
-def _mock_model() -> None:
+def _mock_model() -> Iterator[None]:
     """Inject a mock SentenceTransformer model for all tests."""
     mock = MagicMock()
     mock.get_sentence_embedding_dimension.return_value = 3

@@ -15,6 +15,16 @@
 
 ## Development Setup
 
+Recommended first-time setup:
+
+```bash
+bash ./scripts/initial_setup.sh
+```
+
+This installs frontend dependencies, syncs the Python dev environments for `document-parser` and `embedding-service`, installs `pre-commit`, and registers the repository hooks.
+The commit hooks auto-fix Ruff and frontend formatting issues, then run the `document-parser` architecture tests when backend layers change.
+On pull requests, CI enforces `80%` coverage on changed backend lines only.
+
 === "Backend (Python 3.12+)"
 
     ```bash
@@ -39,6 +49,18 @@
 
 ## Code Quality
 
+### Git hooks
+
+The repository ships with a root `.pre-commit-config.yaml` that auto-fixes Python and frontend files before each commit, runs targeted backend/frontend tests, blocks local/generated artifacts, scans for likely secrets, validates lockfile updates and workflow/compose changes, enforces Conventional Commit messages, runs `document-parser/tests/test_architecture.py` when backend layers change, then runs a frontend type-check, frontend build, and full `document-parser` test suite before each push when those areas changed.
+
+```bash
+bash ./scripts/initial_setup.sh
+
+# Or install only the hooks manually
+uv tool install pre-commit
+pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+```
+
 ### Backend — Ruff
 
 ```bash
@@ -46,6 +68,14 @@ cd document-parser
 uv run ruff check .          # lint
 uv run ruff check . --fix    # auto-fix
 uv run ruff format .         # format
+```
+
+### Backend patch coverage
+
+Pull requests must keep changed backend lines at `>=80%` coverage. The gate is patch-based, so it applies only to lines changed in the PR, not the whole existing backend.
+
+```bash
+bash ./scripts/check_backend_patch_coverage.sh origin/main
 ```
 
 ### Frontend — TypeScript + ESLint + Prettier
