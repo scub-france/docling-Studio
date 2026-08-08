@@ -203,13 +203,18 @@ function scrollToPage(pageNumber: number): void {
   const stage = stageRef.value
   if (!card || !stage) return
 
+  const cardRect = card.getBoundingClientRect()
+  const stageRect = stage.getBoundingClientRect()
+
   // Avoid jumping if the page is already reasonably visible
   const isVisible =
-    card.offsetTop >= stage.scrollTop &&
-    card.offsetTop + card.clientHeight <= stage.scrollTop + stage.clientHeight
+    cardRect.top >= stageRect.top && cardRect.bottom <= stageRect.bottom
 
   if (isVisible) return
-  card.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  stage.scrollTo({
+    top: Math.max(0, stage.scrollTop + cardRect.top - stageRect.top),
+    behavior: 'smooth',
+  })
 }
 
 function setupObserver(): void {
