@@ -1,12 +1,3 @@
-/**
- * Tests for the compact page-navigation helpers (#309).
- *
- * Pins the invariants that keep the editable page input safe:
- *   - garbage input never navigates (returns null → caller resets)
- *   - out-of-range values clamp into [1, totalPages] instead of
- *     emitting a page the parent can't render
- *   - the input keeps a stable minimum width on low-page documents
- */
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -44,10 +35,8 @@ describe('clampPageInput', () => {
   })
 
   it('follows parseInt semantics: trailing junk and decimals', () => {
-    // A leading integer with trailing junk parses; decimals truncate.
     expect(clampPageInput('7x', 10)).toBe(7)
     expect(clampPageInput('4.9', 10)).toBe(4)
-    // ...then still clamps to the range.
     expect(clampPageInput('42abc', 10)).toBe(10)
   })
 })
@@ -57,7 +46,6 @@ describe('pageInputWidthCh', () => {
     expect(pageInputWidthCh(1)).toBe(DEFAULT_PAGE_INPUT_SIZE)
     expect(pageInputWidthCh(9)).toBe(DEFAULT_PAGE_INPUT_SIZE)
     expect(pageInputWidthCh(999)).toBe(DEFAULT_PAGE_INPUT_SIZE)
-    // 1000 has as many digits as the default → still the floor.
     expect(pageInputWidthCh(1000)).toBe(DEFAULT_PAGE_INPUT_SIZE)
   })
 
