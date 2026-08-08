@@ -282,19 +282,23 @@ function centerHighlighted(): void {
     const rect = bboxToRect(target.bbox, scale)
     if (rect.w <= 0 || rect.h <= 0) return
 
-    const imgTop = img.offsetTop + card.offsetTop
-    const imgLeft = img.offsetLeft + card.offsetLeft
+    const imgRect = img.getBoundingClientRect()
+    const stageRect = stage.getBoundingClientRect()
+    const bboxLeft = imgRect.left + rect.x
+    const bboxTop = imgRect.top + rect.y
 
-    const targetLeft = imgLeft + rect.x + rect.w / 2 - stage.clientWidth / 2
-    const targetTop = imgTop + rect.y + rect.h / 2 - stage.clientHeight / 2
+    const targetLeft =
+      stage.scrollLeft + bboxLeft - stageRect.left + rect.w / 2 - stage.clientWidth / 2
+    const targetTop =
+      stage.scrollTop + bboxTop - stageRect.top + rect.h / 2 - stage.clientHeight / 2
 
     // Check if the target is already reasonably visible to avoid jumps when
     // clicking an element that is already in view.
     const isVisible =
-      imgTop + rect.y >= stage.scrollTop &&
-      imgTop + rect.y + rect.h <= stage.scrollTop + stage.clientHeight &&
-      imgLeft + rect.x >= stage.scrollLeft &&
-      imgLeft + rect.x + rect.w <= stage.scrollLeft + stage.clientWidth
+      bboxTop >= stageRect.top &&
+      bboxTop + rect.h <= stageRect.bottom &&
+      bboxLeft >= stageRect.left &&
+      bboxLeft + rect.w <= stageRect.right
 
     if (isVisible) return
 
