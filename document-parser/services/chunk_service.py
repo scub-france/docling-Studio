@@ -796,11 +796,7 @@ class ChunkService:
         await self._require_doc(document_id)
         if analysis_id:
             job = await self._analyses.find_by_id(analysis_id)
-            if (
-                not job
-                or job.document_id != document_id
-                or job.status != AnalysisStatus.COMPLETED
-            ):
+            if not job or job.document_id != document_id or job.status != AnalysisStatus.COMPLETED:
                 raise ChunkNotFoundError(f"Analysis not found: {analysis_id}")
         else:
             job = await self._analyses.find_latest_completed_by_document(document_id)
