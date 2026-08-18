@@ -174,6 +174,18 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
   }
 
   /**
+   * Force a fresh `/api/health` fetch (#317). Called after a runtime-config
+   * write so `reasoningAvailable` (and every surface gated on it) follows
+   * without a page reload. Awaits any in-flight load first so the re-fetch
+   * cannot resolve against a stale response.
+   */
+  async function reload(): Promise<void> {
+    if (loadPromise) await loadPromise
+    loaded.value = false
+    await load()
+  }
+
+  /**
    * Convenience accessor for `resolveMode` — returns the three doc
    * workspace mode flags as a `Record<DocMode, boolean>` so the routing
    * guard does not need to know about the FeatureFlag union.
@@ -210,5 +222,6 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
     isEnabled,
     modeFlags,
     load,
+    reload,
   }
 })

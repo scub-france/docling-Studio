@@ -146,6 +146,22 @@ describe('useFeatureFlagStore', () => {
     expect(store.isEnabled('reasoning')).toBe(false)
   })
 
+  it('reload re-fetches health and updates reasoningAvailable (#317)', async () => {
+    mockApiFetch.mockResolvedValue({ status: 'ok', engine: 'local', reasoningAvailable: false })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('reasoning')).toBe(false)
+
+    // A runtime-config write flipped the backend flag — reload must not be
+    // memoized away like load() is.
+    mockApiFetch.mockResolvedValue({ status: 'ok', engine: 'local', reasoningAvailable: true })
+    await store.reload()
+
+    expect(mockApiFetch).toHaveBeenCalledTimes(2)
+    expect(store.reasoningAvailable).toBe(true)
+    expect(store.isEnabled('reasoning')).toBe(true)
+  })
+
   it('handles health endpoint failure gracefully', async () => {
     mockApiFetch.mockRejectedValue(new Error('Network error'))
     const store = useFeatureFlagStore()
