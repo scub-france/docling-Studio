@@ -187,6 +187,18 @@ CREATE INDEX IF NOT EXISTS idx_chunk_pushes_doc_store        ON chunk_pushes(doc
 CREATE INDEX IF NOT EXISTS idx_chunk_pushes_doc_store_pushed
     ON chunk_pushes(document_id, store_id, pushed_at DESC);
 
+-- Runtime config overrides (#317) — namespaced key/value store. Values
+-- are opaque TEXT; the consuming service owns (de)serialization. Env
+-- vars are bootstrap defaults, rows here override them at runtime.
+-- `reasoning` is the first namespace.
+CREATE TABLE IF NOT EXISTS app_settings (
+    namespace   TEXT NOT NULL,
+    key         TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (namespace, key)
+);
+
 -- Document versions (#267) — frozen (analysis, chunks) snapshots
 -- created on explicit triggers (new analysis, generate chunks). Kind
 -- CHECK mirrors `domain.models.DocumentVersionKind` (lowercase).

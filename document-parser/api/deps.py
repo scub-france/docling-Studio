@@ -13,6 +13,7 @@ from domain.ports import (
     StoreRepository,
 )
 from services.analysis_service import AnalysisService
+from services.app_config_service import AppConfigService
 from services.chunk_service import ChunkService
 from services.document_service import DocumentService
 from services.export_service import ExportService
@@ -121,3 +122,13 @@ def get_document_store_link_repo(request: Request) -> DocumentStoreLinkRepositor
 DocumentStoreLinkRepoDep = Annotated[
     DocumentStoreLinkRepository, Depends(get_document_store_link_repo)
 ]
+
+
+def get_app_config_service(request: Request) -> AppConfigService:
+    svc = getattr(request.app.state, "app_config_service", None)
+    if svc is None:
+        raise HTTPException(status_code=503, detail="App config service not available")
+    return svc
+
+
+AppConfigServiceDep = Annotated[AppConfigService, Depends(get_app_config_service)]

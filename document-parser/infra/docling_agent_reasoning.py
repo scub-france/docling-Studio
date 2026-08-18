@@ -116,12 +116,13 @@ class DoclingAgentReasoningRunner:
     mutation, so concurrent runs can't race on a shared global.
     """
 
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(self, provider: LLMProvider, *, max_iterations: int = 5) -> None:
         if provider.type is not LLMProviderType.OLLAMA:
             raise NotImplementedError(
                 f"The reasoning runner only supports Ollama, got provider type {provider.type!r}."
             )
         self._provider = provider
+        self._max_iterations = max_iterations
         self._deps_ok = deps_present()
 
     @property
@@ -159,11 +160,14 @@ class DoclingAgentReasoningRunner:
                 models=deps.model_config_cls(reasoning=raw_model_id, writing=raw_model_id),
             )
         )
-        agent = deps.rag_agent_cls(tools=[], backend=backend)
+        # `max_iterations` bounds the RAG loop — runtime-configurable via the
+        # admin panel (#317); DoclingRAGAgent's own default is 5.
+        agent = deps.rag_agent_cls(tools=[], backend=backend, max_iterations=self._max_iterations)
         logger.info(
-            "Reasoning run: model_id=%s ollama_host=%s query=%r",
+            "Reasoning run: model_id=%s ollama_host=%s max_iterations=%d query=%r",
             raw_model_id,
             self._provider.host,
+            self._max_iterations,
             query[:120],
         )
 

@@ -118,13 +118,19 @@ def stub_fork(monkeypatch: pytest.MonkeyPatch):
     return state
 
 
-def _make_runner(*, host: str = "http://ollama:11434", default_model_id: str = "gpt-oss:20b"):
+def _make_runner(
+    *,
+    host: str = "http://ollama:11434",
+    default_model_id: str = "gpt-oss:20b",
+    max_iterations: int = 5,
+):
     """Build the runner bypassing the live deps-check (stubs are injected via
     sys.modules; we force `_deps_ok` so construction order doesn't matter)."""
     from infra.docling_agent_reasoning import DoclingAgentReasoningRunner
 
     runner = DoclingAgentReasoningRunner.__new__(DoclingAgentReasoningRunner)
     runner._provider = OllamaProvider(host=host, default_model_id=default_model_id)
+    runner._max_iterations = max_iterations
     runner._deps_ok = True
     return runner
 
@@ -221,6 +227,17 @@ class TestRunHappyPath:
         kwargs = stub_fork.agent_class.call_args.kwargs
         assert kwargs["tools"] == []
         assert kwargs["backend"].kind == "fake-ollama-backend"
+        assert kwargs["max_iterations"] == 5
+
+    @pytest.mark.asyncio
+    async def test_threads_max_iterations_into_agent(self, stub_fork) -> None:
+        """#317 — the runtime-configurable iteration cap must actually reach
+        `DoclingRAGAgent`, otherwise the admin knob is decorative."""
+        runner = _make_runner(max_iterations=9)
+
+        await runner.run(document_json="{}", query="Q")
+
+        assert stub_fork.agent_class.call_args.kwargs["max_iterations"] == 9
 
     @pytest.mark.asyncio
     async def test_calls_run_with_trace_with_query_and_doc(self, stub_fork) -> None:

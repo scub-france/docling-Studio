@@ -538,3 +538,59 @@ class ReasoningTraceResponse(_CamelModel):
     tokens_in: int = 0
     tokens_out: int = 0
     model_id: str = ""
+
+
+class ReasoningDiagnosticsResponse(_CamelModel):
+    """Read-only reasoning-stack diagnostics (#317) — docling-agent
+    provenance + effective availability, mirrored from
+    `domain.app_config.ReasoningDiagnostics`."""
+
+    deps_present: bool
+    provenance: str
+    available: bool
+
+
+class ReasoningConfigResponse(_CamelModel):
+    """Effective reasoning runtime config (#317).
+
+    `sources` is keyed by the **camelCase** field names (`enabled`,
+    `ollamaHost`, `modelId`, `maxIterations`) — Pydantic aliases field names,
+    not dict keys, so the router maps them explicitly. Values are `env`
+    (bootstrap default) or `db` (persisted override).
+    """
+
+    enabled: bool
+    ollama_host: str
+    model_id: str
+    max_iterations: int
+    sources: dict[str, str]
+    provider_type: str
+    read_only: bool
+    diagnostics: ReasoningDiagnosticsResponse
+
+
+class ReasoningConfigUpdateRequest(_CamelModel):
+    """Body for `PUT /api/config/reasoning` — full-state replace (#317).
+
+    All four knobs are required by design: the panel submits the whole form,
+    sparse PATCH semantics were rejected in the design doc (§6-B).
+    """
+
+    enabled: bool
+    ollama_host: str
+    model_id: str
+    max_iterations: int
+
+
+class ReasoningProbeRequest(_CamelModel):
+    """Body for `POST /api/config/reasoning/test`."""
+
+    host: str
+
+
+class ReasoningProbeResponse(_CamelModel):
+    """Probe outcome — an unreachable host is a 200 with `reachable: false`."""
+
+    reachable: bool
+    models: list[str] = Field(default_factory=list)
+    error: str | None = None

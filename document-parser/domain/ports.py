@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from domain.app_config import LLMHostProbeResult
     from domain.models import (
         AnalysisJob,
         Chunk,
@@ -276,6 +277,35 @@ class VectorStore(Protocol):
         """Cheap reachability probe — True if the backing store responds.
         Used by health checks; should not throw."""
         ...
+
+
+class AppSettingsRepository(Protocol):
+    """Port for the namespaced runtime-config override store (#317).
+
+    Values are opaque TEXT — the consuming service owns (de)serialization.
+    `reasoning` is the first namespace; the table is groundwork for future
+    runtime-configurable domains.
+    """
+
+    async def get_namespace(self, namespace: str) -> dict[str, str]: ...
+
+    async def set_many(self, namespace: str, values: dict[str, str]) -> None: ...
+
+    async def delete_namespace(self, namespace: str) -> int:
+        """Drop every override in `namespace`. Returns the number of rows removed."""
+        ...
+
+
+@runtime_checkable
+class LLMHostProbe(Protocol):
+    """Port for probing an LLM host: reachability + installed models (#317).
+
+    Implementations must never raise — transport/protocol failures map to
+    `LLMHostProbeResult(reachable=False, error=...)` so the API layer can
+    return a plain 200 carrying the outcome.
+    """
+
+    async def probe(self, host: str) -> LLMHostProbeResult: ...
 
 
 @runtime_checkable
