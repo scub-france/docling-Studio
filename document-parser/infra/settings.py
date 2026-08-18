@@ -5,6 +5,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from domain.app_config import MAX_ITERATIONS_MAX as _MAX_ITERATIONS_MAX
+from domain.app_config import MAX_ITERATIONS_MIN as _MAX_ITERATIONS_MIN
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -50,6 +53,10 @@ class Settings:
     llm_provider_type: str = "ollama"
     ollama_host: str = "http://localhost:11434"
     reasoning_model_id: str = "gpt-oss:20b"  # matches docling-agent's example_05
+    # RAG loop iteration cap threaded into DoclingRAGAgent (#317). Like the
+    # other reasoning vars this is a bootstrap default — the admin panel can
+    # override it at runtime via the `app_settings` store.
+    reasoning_max_iterations: int = 5
     opensearch_default_limit: int = 1000  # max chunks returned by get_chunks
     embedding_dimension: int = 384  # Granite Embedding 30M / all-MiniLM-L6-v2
     upload_dir: str = "./uploads"
@@ -109,6 +116,11 @@ class Settings:
             errors.append(f"embedding_dimension must be >= 1 (got {self.embedding_dimension})")
         if not (self.studio_mode_enabled or self.rag_pipeline_enabled):
             errors.append("at least one of STUDIO_MODE_ENABLED / RAG_PIPELINE_ENABLED must be true")
+        if not (_MAX_ITERATIONS_MIN <= self.reasoning_max_iterations <= _MAX_ITERATIONS_MAX):
+            errors.append(
+                f"reasoning_max_iterations must be between {_MAX_ITERATIONS_MIN} and "
+                f"{_MAX_ITERATIONS_MAX} (got {self.reasoning_max_iterations})"
+            )
         if self.default_table_mode not in ("accurate", "fast"):
             errors.append(
                 f"default_table_mode must be 'accurate' or 'fast' (got '{self.default_table_mode}')"
@@ -166,6 +178,7 @@ class Settings:
             llm_provider_type=os.environ.get("LLM_PROVIDER_TYPE", "ollama"),
             ollama_host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
             reasoning_model_id=os.environ.get("REASONING_MODEL_ID", "gpt-oss:20b"),
+            reasoning_max_iterations=int(os.environ.get("REASONING_MAX_ITERATIONS", "5")),
             opensearch_default_limit=int(os.environ.get("OPENSEARCH_DEFAULT_LIMIT", "1000")),
             embedding_dimension=int(os.environ.get("EMBEDDING_DIMENSION", "384")),
             upload_dir=os.environ.get("UPLOAD_DIR", "./uploads"),

@@ -24,9 +24,12 @@ from api.documents import router as documents_router
 from api.ingestion import router as ingestion_router
 from api.schemas import HealthResponse
 from api.stores import router as stores_router
+from domain.app_config import ReasoningConfig, ReasoningDiagnostics
+from infra.llm.ollama_probe import OllamaProbe
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.analysis_repo import SqliteAnalysisRepository
+from persistence.app_settings_repo import SqliteAppSettingsRepository
 from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
 from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import get_connection, init_db
@@ -348,16 +351,46 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.graph_service = GraphService(graph_reader=app.state.graph_reader)
 
-    # Reasoning service (#303) — wraps the runner (built at module scope below,
-    # None when REASONING_ENABLED=false) + the analysis repo. Services may not
-    # import infra, so the default model id is injected from settings here.
+    # Reasoning runtime config (#317) + reasoning service (#303). Env vars are
+    # bootstrap defaults; `app_settings` rows override them and writes rebuild
+    # the runner + service in place (no restart). Services may not import
+    # infra, so every infra binding lives in the closures below — main.py owns
+    # the wiring (#audit-01).
+    from services.app_config_service import AppConfigService
     from services.reasoning_service import ReasoningService
 
-    app.state.reasoning_service = ReasoningService(
-        runner=getattr(app.state, "reasoning_runner", None),
-        analysis_repo=analysis_repo,
-        default_model_id=settings.reasoning_model_id,
+    def _apply_reasoning_config(config: ReasoningConfig) -> None:
+        """Swap the runner + service for `config`. Rebind-only: in-flight Ask
+        runs keep their reference to the old runner and finish on the old
+        config; new requests resolve the fresh one via `app.state`."""
+        runner = _build_reasoning_runner(config)
+        app.state.reasoning_runner = runner
+        app.state.reasoning_service = ReasoningService(
+            runner=runner,
+            analysis_repo=analysis_repo,
+            default_model_id=config.model_id,
+        )
+
+    def _reasoning_diagnostics() -> ReasoningDiagnostics:
+        runner = getattr(app.state, "reasoning_runner", None)
+        return ReasoningDiagnostics(
+            deps_present=_reasoning_deps_present(),
+            provenance=_reasoning_provenance(),
+            available=runner is not None and runner.is_available,
+        )
+
+    app.state.app_config_service = AppConfigService(
+        repo=SqliteAppSettingsRepository(),
+        env_defaults=_env_reasoning_config(),
+        provider_type=settings.llm_provider_type,
+        read_only=settings.deployment_mode == "huggingface",
+        probe=OllamaProbe(),
+        apply_config=_apply_reasoning_config,
+        diagnostics_provider=_reasoning_diagnostics,
     )
+    # Applies persisted overrides on top of env — replaces the module-scope
+    # env-only runner and builds the ReasoningService.
+    await app.state.app_config_service.apply_effective()
     # The analysis service still carries the chunk promoter wiring for
     # legacy callers / tests, but the analysis flow no longer invokes it
     # (decoupling from #266). Chunks are explicit — produced via the
@@ -435,7 +468,8 @@ app.include_router(graph_router)
 
 # Live reasoning (docling-agent runner). Router is mounted unconditionally so
 # the route is introspectable in OpenAPI; the handler itself 503s when
-# `REASONING_ENABLED` is off or the deps aren't installed.
+# reasoning is disabled or the deps aren't installed.
+from api.config import router as config_router  # noqa: E402
 from api.reasoning import router as reasoning_router  # noqa: E402
 from infra.docling_agent_reasoning import DoclingAgentReasoningRunner  # noqa: E402
 from infra.docling_agent_reasoning import deps_present as _reasoning_deps_present  # noqa: E402
@@ -443,19 +477,35 @@ from infra.docling_agent_reasoning import deps_provenance as _reasoning_provenan
 from infra.llm.ollama_provider import OllamaProvider  # noqa: E402
 
 app.include_router(reasoning_router)
+# Runtime config (#317) — admin panel read/write over the reasoning knobs.
+app.include_router(config_router)
 
 
-def _build_reasoning_runner() -> DoclingAgentReasoningRunner | None:
-    """Wire the reasoning runner if `REASONING_ENABLED=true` and deps are
+def _env_reasoning_config() -> ReasoningConfig:
+    """Bootstrap defaults for the runtime-configurable reasoning knobs (#317).
+
+    Env vars seed the config; `app_settings` rows override it at runtime via
+    `AppConfigService` (wired in `lifespan`).
+    """
+    return ReasoningConfig(
+        enabled=settings.reasoning_enabled,
+        ollama_host=settings.ollama_host,
+        model_id=settings.reasoning_model_id,
+        max_iterations=settings.reasoning_max_iterations,
+    )
+
+
+def _build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunner | None:
+    """Wire the reasoning runner for `config` if enabled and deps are
     importable. Today only `LLM_PROVIDER_TYPE=ollama` is supported (cf.
     `LLMProvider` docstring); other values fall through to a logged warning
     + None so the rest of the app boots cleanly.
     """
-    if not settings.reasoning_enabled:
+    if not config.enabled:
         return None
     if not _reasoning_deps_present():
         logger.warning(
-            "REASONING_ENABLED=true but the reasoning stack is unusable (%s) — runner "
+            "Reasoning is enabled but the stack is unusable (%s) — runner "
             "disabled, /api/reasoning will 503. Expected docling-agent >= 0.6.0 + mellea; "
             "a bare `uvicorn` resolves against the ambient interpreter, not the project venv.",
             _reasoning_provenance(),
@@ -471,14 +521,16 @@ def _build_reasoning_runner() -> DoclingAgentReasoningRunner | None:
         return None
 
     provider = OllamaProvider(
-        host=settings.ollama_host,
-        default_model_id=settings.reasoning_model_id,
+        host=config.ollama_host,
+        default_model_id=config.model_id,
     )
     logger.info("Reasoning runner enabled (%s)", _reasoning_provenance())
-    return DoclingAgentReasoningRunner(provider=provider)
+    return DoclingAgentReasoningRunner(provider=provider, max_iterations=config.max_iterations)
 
 
-app.state.reasoning_runner = _build_reasoning_runner()
+# Env-only build covers the pre-lifespan window (tests importing `app`
+# without running lifespan); `lifespan` re-applies with DB overrides on boot.
+app.state.reasoning_runner = _build_reasoning_runner(_env_reasoning_config())
 
 
 @app.get("/api/health", response_model=HealthResponse)

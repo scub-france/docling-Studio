@@ -154,6 +154,25 @@ class TestSettingsValidation:
         assert "conversion_timeout" in str(exc_info.value)
 
 
+class TestReasoningMaxIterations:
+    """#317 — the RAG loop cap is a bounded bootstrap default."""
+
+    def test_default_is_five(self):
+        assert Settings().reasoning_max_iterations == 5
+
+    def test_from_env(self, monkeypatch):
+        monkeypatch.setenv("REASONING_MAX_ITERATIONS", "9")
+        assert Settings.from_env().reasoning_max_iterations == 9
+
+    def test_out_of_bounds_rejected(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="reasoning_max_iterations"):
+            Settings(reasoning_max_iterations=0)
+        with pytest.raises(ValueError, match="reasoning_max_iterations"):
+            Settings(reasoning_max_iterations=21)
+
+
 class TestSettingsFromEnv:
     def test_reads_env_vars(self, monkeypatch):
         monkeypatch.setenv("APP_VERSION", "1.2.3")
