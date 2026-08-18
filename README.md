@@ -326,12 +326,17 @@ export LLM_PROVIDER_TYPE=ollama
 
 Then `uv sync --group dev --group local` (or use the `local` Docker image which bundles the local stack) and restart the backend. The frontend reads `reasoningAvailable` from `/api/health` and hides the **Reasoning** sidebar entry when the runner isn't wired — so users never click through to a 503.
 
+### Runtime configuration (#317)
+
+Since 0.7.0 the env vars below are **bootstrap defaults**, not the final word: the **Reasoning** section of the `/settings` admin panel can enable/disable reasoning, change the Ollama URL / default model / iteration cap **at runtime** — the backend persists the overrides in SQLite (`app_settings` table), rebuilds the runner in place (no restart) and `/api/health` follows. Each field shows whether its value comes from `env` or `db`, a *test connection* action lists the models installed on the host, and *reset to environment* drops the overrides. On `DEPLOYMENT_MODE=huggingface` the panel is read-only (writes return 403).
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `REASONING_ENABLED` | `false` | Master switch — `true` to enable the live runner |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama daemon URL |
-| `REASONING_MODEL_ID` | `gpt-oss:20b` | Default model id (per-call override allowed via the API) |
-| `LLM_PROVIDER_TYPE` | `ollama` | LLM backend selector — only `ollama` is supported today |
+| `REASONING_ENABLED` | `false` | Bootstrap default for the master switch — overridable from `/settings` |
+| `OLLAMA_HOST` | `http://localhost:11434` | Bootstrap default for the Ollama daemon URL |
+| `REASONING_MODEL_ID` | `gpt-oss:20b` | Bootstrap default for the model id (per-call override allowed via the API) |
+| `REASONING_MAX_ITERATIONS` | `5` | Bootstrap default for the RAG loop iteration cap (1–20) |
+| `LLM_PROVIDER_TYPE` | `ollama` | LLM backend selector — only `ollama` is supported today (read-only in the panel) |
 
 ### Architecture
 
