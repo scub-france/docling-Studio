@@ -475,12 +475,11 @@ class TestAnalysisEndpointPipelineOptions:
         from unittest.mock import MagicMock
 
         from main import app
+        from tests.app_state import state_override
 
         mock = MagicMock()
-        original = getattr(app.state, "analysis_service", None)
-        app.state.analysis_service = mock
-        yield mock
-        app.state.analysis_service = original
+        with state_override(app, analysis_service=mock):
+            yield mock
 
     def test_no_pipeline_options_sends_none(self, client, mock_svc):
         from domain.models import AnalysisJob

@@ -15,6 +15,7 @@ from services.chunk_service import (
     ChunkValidationError,
     DocumentNotFoundError,
 )
+from tests.app_state import state_override
 
 
 @pytest.fixture
@@ -25,10 +26,8 @@ def client():
 @pytest.fixture
 def mock_service(client):
     svc = MagicMock()
-    original = getattr(app.state, "chunk_service", None)
-    app.state.chunk_service = svc
-    yield svc
-    app.state.chunk_service = original
+    with state_override(app, chunk_service=svc):
+        yield svc
 
 
 def _chunk(*, id="c-1", doc_id="d-1", sequence=0, text="hi") -> Chunk:

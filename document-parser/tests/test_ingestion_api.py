@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from api.ingestion import router
 from domain.models import AnalysisJob
 from services.ingestion_service import IngestionResult
+from tests.app_state import wire_state
 
 
 @pytest.fixture
@@ -44,8 +45,9 @@ def mock_analysis_service() -> AsyncMock:
 def client(mock_ingestion_service: AsyncMock, mock_analysis_service: AsyncMock) -> TestClient:
     app = FastAPI()
     app.include_router(router)
-    app.state.ingestion_service = mock_ingestion_service
-    app.state.analysis_service = mock_analysis_service
+    wire_state(
+        app, ingestion_service=mock_ingestion_service, analysis_service=mock_analysis_service
+    )
     return TestClient(app)
 
 
@@ -95,8 +97,7 @@ class TestIngestionStatus:
     def test_not_available(self) -> None:
         app = FastAPI()
         app.include_router(router)
-        app.state.ingestion_service = None
-        app.state.analysis_service = AsyncMock()
+        wire_state(app, ingestion_service=None, analysis_service=AsyncMock())
         tc = TestClient(app)
         resp = tc.get("/api/ingestion/status")
         assert resp.status_code == 200
@@ -108,8 +109,7 @@ class TestIngestionDisabled:
         """When ingestion service is None, router should not be mounted → 404."""
         app = FastAPI()
         # Do NOT include ingestion router — simulates main.py conditional mount
-        app.state.ingestion_service = None
-        app.state.analysis_service = AsyncMock()
+        wire_state(app, ingestion_service=None, analysis_service=AsyncMock())
         tc = TestClient(app)
         resp = tc.post("/api/ingestion/job-1")
         assert resp.status_code == 404
@@ -118,8 +118,7 @@ class TestIngestionDisabled:
         """If router is mounted but service is None, endpoints return 503."""
         app = FastAPI()
         app.include_router(router)
-        app.state.ingestion_service = None
-        app.state.analysis_service = AsyncMock()
+        wire_state(app, ingestion_service=None, analysis_service=AsyncMock())
         tc = TestClient(app)
         resp = tc.post("/api/ingestion/job-1")
         assert resp.status_code == 503

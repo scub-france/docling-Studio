@@ -13,6 +13,7 @@ from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.store_repo import SqliteStoreRepository
 from services.store_service import StoreService
+from tests.app_state import state_override
 
 
 @pytest.fixture(autouse=True)
@@ -25,10 +26,8 @@ async def setup_db_and_state(monkeypatch, tmp_path):
     link_repo = SqliteDocumentStoreLinkRepository()
     document_repo = SqliteDocumentRepository()
 
-    original = getattr(app.state, "store_service", None)
-    app.state.store_service = StoreService(store_repo, link_repo, document_repo)
-    yield
-    app.state.store_service = original
+    with state_override(app, store_service=StoreService(store_repo, link_repo, document_repo)):
+        yield
 
 
 @pytest.fixture

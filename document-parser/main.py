@@ -7,6 +7,9 @@ by SQLite.
 Conversion engine is selected via CONVERSION_ENGINE env var:
 - "local"  → Docling runs in-process as a Python library (default)
 - "remote" → delegates to a Docling Serve instance via HTTP
+
+Wiring lives in `bootstrap.AppStateBuilder`, which publishes the typed
+`AppState` container this module's lifespan installs on `app.state`.
 """
 
 from __future__ import annotations
@@ -19,29 +22,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.analyses import router as analyses_router
+from api.config import router as config_router
 from api.document_chunks import router as document_chunks_router
+from api.document_versions import router as document_versions_router
 from api.documents import router as documents_router
+from api.graph import router as graph_router
 from api.ingestion import router as ingestion_router
+from api.reasoning import router as reasoning_router
 from api.schemas import HealthResponse
+from api.state import AppState
 from api.stores import router as stores_router
-from domain.app_config import ReasoningConfig, ReasoningDiagnostics
-from infra.llm.ollama_probe import OllamaProbe
+from bootstrap import AppStateBuilder
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
-from persistence.analysis_repo import SqliteAnalysisRepository
-from persistence.app_settings_repo import SqliteAppSettingsRepository
-from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
-from persistence.chunk_repo import SqliteChunkRepository
-from persistence.database import get_connection, init_db
-from persistence.document_repo import SqliteDocumentRepository
-from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
-from persistence.store_repo import SqliteStoreRepository
-from services.analysis_service import AnalysisConfig, AnalysisService
-from services.chunk_service import ChunkService
-from services.document_service import DocumentConfig, DocumentService
-from services.export_service import ExportService
-from services.ingestion_service import IngestionConfig, IngestionService
-from services.store_service import StoreService
+from persistence.database import get_connection
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,380 +44,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _build_converter():
-    """Build the converter adapter based on configuration."""
-    if settings.conversion_engine == "remote":
-        from infra.serve_converter import ServeConverter
-
-        logger.info("Using remote Docling Serve at %s", settings.docling_serve_url)
-        return ServeConverter(
-            base_url=settings.docling_serve_url,
-            api_key=settings.docling_serve_api_key,
-            timeout=settings.conversion_timeout,
-        )
-    else:
-        from infra.local_converter import LocalConverter
-
-        logger.info("Using local Docling converter")
-        return LocalConverter()
-
-
-def _build_chunker():
-    """Build the chunker adapter.
-
-    Uses LocalChunker in all modes — in remote mode it chunks the
-    DoclingDocument JSON returned by Docling Serve, so docling-core
-    (lightweight) is the only local dependency needed.
-    """
-    from infra.local_chunker import LocalChunker
-
-    return LocalChunker()
-
-
-def _build_repos() -> tuple[SqliteDocumentRepository, SqliteAnalysisRepository]:
-    return SqliteDocumentRepository(), SqliteAnalysisRepository()
-
-
-def _build_analysis_service(
-    document_repo: SqliteDocumentRepository,
-    analysis_repo: SqliteAnalysisRepository,
-    graph_writer=None,
-) -> AnalysisService:
-    converter = _build_converter()
-    chunker = _build_chunker()
-    config = AnalysisConfig(
-        default_table_mode=settings.default_table_mode,
-        batch_page_size=settings.batch_page_size,
-    )
-    return AnalysisService(
-        converter=converter,
-        analysis_repo=analysis_repo,
-        document_repo=document_repo,
-        chunker=chunker,
-        conversion_timeout=settings.conversion_timeout,
-        max_concurrent=settings.max_concurrent_analyses,
-        config=config,
-        graph_writer=graph_writer,
-    )
-
-
-async def _init_neo4j():
-    """Warm the env-based Neo4j driver and bootstrap schema.
-
-    Returns the env-based driver so legacy callers (`AnalysisService`,
-    `IngestionService` service-level defaults) keep working. New
-    per-store callers go through the pool directly (#279) — schema
-    bootstrap is now the pool's job and runs once per (uri, user).
-    """
-    if not settings.neo4j_uri:
-        logger.info("Neo4j disabled (NEO4J_URI not set)")
-        return None
-
-    if settings.neo4j_password == "changeme":
-        # The dev compose stack ships with "changeme" so `docker compose up`
-        # works immediately. Anyone running the backend against a non-dev
-        # Neo4j with this password almost certainly forgot to override it.
-        logger.warning(
-            "Neo4j is configured with the dev default password 'changeme'. "
-            "Override NEO4J_PASSWORD before deploying outside localhost."
-        )
-
-    from infra.neo4j import get_driver
-
-    try:
-        # `get_driver` now delegates to the pool — schema bootstrap
-        # happens inside the pool's factory, no need to call it again
-        # here.
-        neo = await get_driver(
-            settings.neo4j_uri,
-            settings.neo4j_user,
-            settings.neo4j_password,
-        )
-        logger.info("Neo4j ready (uri=%s)", settings.neo4j_uri)
-        return neo
-    except Exception:
-        logger.exception("Neo4j init failed — continuing without graph storage")
-        return None
-
-
-def _build_ingestion_service(graph_writer=None) -> IngestionService | None:
-    """Build the ingestion service (#199).
-
-    Available as soon as `EMBEDDING_URL` is set AND at least one store
-    backend is configured (`OPENSEARCH_URL` and/or `NEO4J_URI`). The
-    historical precondition required both embedding + OpenSearch — this
-    was the bug that conflated the embedding pipeline with the
-    OpenSearch store.
-    """
-    if not settings.embedding_url:
-        logger.info("Ingestion disabled (EMBEDDING_URL not set)")
-        return None
-
-    has_opensearch = bool(settings.opensearch_url)
-    has_graph = graph_writer is not None
-    if not has_opensearch and not has_graph:
-        logger.info(
-            "Ingestion disabled (no store backend configured — set OPENSEARCH_URL or NEO4J_URI)"
-        )
-        return None
-
-    from infra.embedding_client import EmbeddingClient
-
-    embedding = EmbeddingClient(settings.embedding_url)
-
-    vector_store = None
-    if has_opensearch:
-        from infra.opensearch_store import OpenSearchStore
-
-        vector_store = OpenSearchStore(
-            settings.opensearch_url,
-            default_limit=settings.opensearch_default_limit,
-        )
-
-    config = IngestionConfig(
-        embedding_dimension=settings.embedding_dimension,
-    )
-    logger.info(
-        "Ingestion enabled (embedding=%s, opensearch=%s, neo4j=%s)",
-        settings.embedding_url,
-        settings.opensearch_url or "off",
-        "on" if has_graph else "off",
-    )
-    return IngestionService(embedding, vector_store, config, graph_writer=graph_writer)
-
-
-def _build_document_service(
-    document_repo: SqliteDocumentRepository,
-    analysis_repo: SqliteAnalysisRepository,
-) -> DocumentService:
-    config = DocumentConfig(
-        upload_dir=settings.upload_dir,
-        max_file_size_mb=settings.max_file_size_mb,
-        max_page_count=settings.max_page_count,
-    )
-    return DocumentService(
-        document_repo=document_repo,
-        analysis_repo=analysis_repo,
-        config=config,
-    )
-
-
-def _build_export_service(
-    document_repo: SqliteDocumentRepository,
-    analysis_repo: SqliteAnalysisRepository,
-) -> ExportService:
-    return ExportService(document_repo=document_repo, analysis_repo=analysis_repo)
-
-
-# ---------------------------------------------------------------------------
-# FastAPI app
-# ---------------------------------------------------------------------------
-
-
-async def _check_store_secret_key() -> None:
-    """Refuse to boot if sealed credentials exist but no key is set.
-
-    0.6.1 (#279) — store passwords are sealed with a Fernet key from
-    `STORE_SECRET_KEY`. Sealed values are unreadable without the key,
-    so any boot that has them and no key would surface as a hard
-    "wrong password" the moment a push tries to use a store. Better
-    to fail fast at boot than wait for the first user action.
-
-    Stores with NULL `connection_password_sealed` (e.g. the seeded
-    `default` row) don't require the key — booting without the key
-    is fine for a fresh install or a Neo4j-only stack that has not
-    yet set per-store passwords.
-    """
-    from persistence.database import get_connection
-
-    async with get_connection() as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) AS n FROM stores WHERE connection_password_sealed IS NOT NULL"
-        )
-        row = await cursor.fetchone()
-    sealed_count = row["n"] if row else 0
-    if sealed_count == 0:
-        return
-    if not settings.store_secret_key:
-        raise RuntimeError(
-            f"STORE_SECRET_KEY is required: {sealed_count} store row(s) hold "
-            "encrypted credentials and cannot be opened without the key. "
-            "Set STORE_SECRET_KEY in the backend environment before "
-            "booting, or null the connection_password_sealed columns "
-            "manually if the seal is lost."
-        )
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    await init_db()
-    await _check_store_secret_key()
-    document_repo, analysis_repo = _build_repos()
-    # Exposed on app.state for service construction (e.g. ReasoningService,
-    # wired further below) and for tests that stub it. Routers reach analyses
-    # through their service, never this attribute directly.
-    app.state.analysis_repo = analysis_repo
-    app.state.document_repo = document_repo
-    app.state.neo4j = await _init_neo4j()
-    # Wrap the env-based driver in the `GraphWriter` port adapter so the
-    # service layer never touches the raw driver (#audit-01). None when
-    # Neo4j isn't wired in — both services keep the soft-fail behavior.
-    if app.state.neo4j is not None:
-        from infra.neo4j.graph_adapter import Neo4jGraphReader, Neo4jGraphWriter
+    builder = AppStateBuilder(publish=lambda state: setattr(app.state, "container", state))
+    state = await builder.build()
 
-        app.state.graph_writer = Neo4jGraphWriter(app.state.neo4j)
-        app.state.graph_reader = Neo4jGraphReader(app.state.neo4j)
-    else:
-        app.state.graph_writer = None
-        app.state.graph_reader = None
-    app.state.analysis_service = _build_analysis_service(
-        document_repo, analysis_repo, graph_writer=app.state.graph_writer
-    )
-    app.state.document_service = _build_document_service(document_repo, analysis_repo)
-    app.state.export_service = _build_export_service(document_repo, analysis_repo)
-    store_repo = SqliteStoreRepository()
-    link_repo = SqliteDocumentStoreLinkRepository()
-    app.state.store_repo = store_repo
-    app.state.document_store_link_repo = link_repo
-    ingestion_service = _build_ingestion_service(graph_writer=app.state.graph_writer)
-    app.state.ingestion_service = ingestion_service
-    if ingestion_service is not None:
+    # Mounted conditionally: without an ingestion service every route would
+    # 503, so the surface stays out of OpenAPI entirely.
+    if state.ingestion_service is not None:
         app.include_router(ingestion_router)
         logger.info("Ingestion router mounted")
 
-    # 0.6.1 (#279) — per-store backend resolver. Bridges the per-store
-    # CRUD world to the (uri, user)-keyed driver pools. Env vars feed
-    # the transitional fallback path for the seeded `default` store +
-    # any pre-#279 store row that doesn't carry its own credentials.
-    from infra.neo4j.driver_pool import get_pool as get_neo4j_pool
-    from infra.neo4j.graph_adapter import Neo4jGraphWriter
-    from infra.opensearch_pool import get_pool as get_opensearch_pool
-    from services.store_backend_resolver import StoreBackendResolver
-
-    backend_resolver = StoreBackendResolver(
-        store_repo=store_repo,
-        neo4j_pool=get_neo4j_pool(),
-        opensearch_pool=get_opensearch_pool(),
-        # Injected as a factory so services/ never has to import infra
-        # at runtime (#audit-01). main.py owns the binding.
-        graph_writer_factory=Neo4jGraphWriter,
-        env_neo4j_uri=settings.neo4j_uri,
-        env_neo4j_user=settings.neo4j_user,
-        env_neo4j_password=settings.neo4j_password,
-        env_opensearch_url=settings.opensearch_url,
-    )
-    app.state.backend_resolver = backend_resolver
-    app.state.store_service = StoreService(
-        store_repo=store_repo,
-        link_repo=link_repo,
-        document_repo=document_repo,
-        backend_resolver=backend_resolver,
-    )
-
-    # Doc-centric chunks (#256). Wires the canonical chunkset CRUD on top
-    # of the chunk / chunk_edit / chunk_push repos introduced by #205.
-    chunk_repo = SqliteChunkRepository()
-    chunk_edit_repo = SqliteChunkEditRepository()
-    chunk_push_repo = SqliteChunkPushRepository()
-    app.state.chunk_repo = chunk_repo
-    # `DocumentTreeReader` adapter — pure stateless shim, can be a singleton.
-    from infra.docling_tree import DoclingTreeReader
-
-    app.state.tree_reader = DoclingTreeReader()
-    app.state.chunk_service = ChunkService(
-        chunk_repo=chunk_repo,
-        chunk_edit_repo=chunk_edit_repo,
-        chunk_push_repo=chunk_push_repo,
-        document_repo=document_repo,
-        analysis_repo=analysis_repo,
-        tree_reader=app.state.tree_reader,
-        chunker=_build_chunker(),
-        ingestion_service=ingestion_service,
-        store_repo=store_repo,
-        link_repo=link_repo,
-        backend_resolver=backend_resolver,
-    )
-
-    # 0.6.1 (#audit-01) — GraphService serves the /graph endpoint so
-    # api/graph.py stops reaching into infra. The reader is None when Neo4j
-    # isn't configured (the endpoint then 503s).
-    from services.graph_service import GraphService
-
-    app.state.graph_service = GraphService(graph_reader=app.state.graph_reader)
-
-    # Reasoning runtime config (#317) + reasoning service (#303). Env vars are
-    # bootstrap defaults; `app_settings` rows override them and writes rebuild
-    # the runner + service in place (no restart). Services may not import
-    # infra, so every infra binding lives in the closures below — main.py owns
-    # the wiring (#audit-01).
-    from services.app_config_service import AppConfigService
-    from services.reasoning_service import ReasoningService
-
-    def _apply_reasoning_config(config: ReasoningConfig) -> None:
-        """Swap the runner + service for `config`. Rebind-only: in-flight Ask
-        runs keep their reference to the old runner and finish on the old
-        config; new requests resolve the fresh one via `app.state`."""
-        runner = _build_reasoning_runner(config)
-        app.state.reasoning_runner = runner
-        app.state.reasoning_service = ReasoningService(
-            runner=runner,
-            analysis_repo=analysis_repo,
-            default_model_id=config.model_id,
-        )
-
-    def _reasoning_diagnostics() -> ReasoningDiagnostics:
-        runner = getattr(app.state, "reasoning_runner", None)
-        return ReasoningDiagnostics(
-            deps_present=_reasoning_deps_present(),
-            provenance=_reasoning_provenance(),
-            available=runner is not None and runner.is_available,
-        )
-
-    app.state.app_config_service = AppConfigService(
-        repo=SqliteAppSettingsRepository(),
-        env_defaults=_env_reasoning_config(),
-        provider_type=settings.llm_provider_type,
-        read_only=settings.deployment_mode == "huggingface",
-        probe=OllamaProbe(),
-        apply_config=_apply_reasoning_config,
-        diagnostics_provider=_reasoning_diagnostics,
-    )
-    # Applies persisted overrides on top of env — replaces the module-scope
-    # env-only runner and builds the ReasoningService.
-    await app.state.app_config_service.apply_effective()
-    # The analysis service still carries the chunk promoter wiring for
-    # legacy callers / tests, but the analysis flow no longer invokes it
-    # (decoupling from #266). Chunks are explicit — produced via the
-    # `+ Generate chunks` action on the Chunk view.
-    app.state.analysis_service.set_chunk_promoter(app.state.chunk_service)
-
-    # 0.6.1 — Document versions (#267). Frozen (analysis, chunks)
-    # snapshots written on each version-creating trigger. Wired into
-    # AnalysisService + ChunkService below.
-    from persistence.document_version_repo import SqliteDocumentVersionRepository
-    from services.version_service import VersionService
-
-    version_repo = SqliteDocumentVersionRepository()
-    app.state.version_service = VersionService(
-        version_repo=version_repo,
-        chunk_repo=chunk_repo,
-        chunk_edit_repo=chunk_edit_repo,
-        document_repo=document_repo,
-    )
-    app.state.analysis_service.set_version_recorder(app.state.version_service)
-    app.state.chunk_service.set_version_recorder(app.state.version_service)
-
-    # 0.6.1 (#279) — the document_version backfill ran on pre-0.6.1
-    # data and is no longer needed: the schema reset assumes a fresh
-    # SQLite file and no historical rows to materialize.
-
-    logger.info("Docling Studio backend ready (engine=%s)", settings.conversion_engine)
     try:
         yield
     finally:
-        # Drain both backend pools (#279). `close_driver` drains the
-        # Neo4j pool (every (uri, user) entry, not just the env-based
-        # one). The OpenSearch pool is drained explicitly.
+        # Drain both backend pools (#279). `close_driver` drains the Neo4j
+        # pool (every (uri, user) entry, not just the env-based one); the
+        # OpenSearch pool is drained explicitly.
         from infra.neo4j import close_driver
         from infra.opensearch_pool import get_pool as get_opensearch_pool
 
@@ -455,82 +92,15 @@ app.include_router(documents_router)
 app.include_router(document_chunks_router)
 app.include_router(analyses_router)
 app.include_router(stores_router)
-
 # Document versions (#267) — workspace History timeline.
-from api.document_versions import router as document_versions_router  # noqa: E402
-
 app.include_router(document_versions_router)
-
 # Graph view — mounted regardless; individual requests 503 if Neo4j is absent.
-from api.graph import router as graph_router  # noqa: E402
-
 app.include_router(graph_router)
-
-# Live reasoning (docling-agent runner). Router is mounted unconditionally so
-# the route is introspectable in OpenAPI; the handler itself 503s when
-# reasoning is disabled or the deps aren't installed.
-from api.config import router as config_router  # noqa: E402
-from api.reasoning import router as reasoning_router  # noqa: E402
-from infra.docling_agent_reasoning import DoclingAgentReasoningRunner  # noqa: E402
-from infra.docling_agent_reasoning import deps_present as _reasoning_deps_present  # noqa: E402
-from infra.docling_agent_reasoning import deps_provenance as _reasoning_provenance  # noqa: E402
-from infra.llm.ollama_provider import OllamaProvider  # noqa: E402
-
+# Live reasoning (#303). Mounted unconditionally so the route is
+# introspectable in OpenAPI; the handler 503s when reasoning is off.
 app.include_router(reasoning_router)
 # Runtime config (#317) — admin panel read/write over the reasoning knobs.
 app.include_router(config_router)
-
-
-def _env_reasoning_config() -> ReasoningConfig:
-    """Bootstrap defaults for the runtime-configurable reasoning knobs (#317).
-
-    Env vars seed the config; `app_settings` rows override it at runtime via
-    `AppConfigService` (wired in `lifespan`).
-    """
-    return ReasoningConfig(
-        enabled=settings.reasoning_enabled,
-        ollama_host=settings.ollama_host,
-        model_id=settings.reasoning_model_id,
-        max_iterations=settings.reasoning_max_iterations,
-    )
-
-
-def _build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunner | None:
-    """Wire the reasoning runner for `config` if enabled and deps are
-    importable. Today only `LLM_PROVIDER_TYPE=ollama` is supported (cf.
-    `LLMProvider` docstring); other values fall through to a logged warning
-    + None so the rest of the app boots cleanly.
-    """
-    if not config.enabled:
-        return None
-    if not _reasoning_deps_present():
-        logger.warning(
-            "Reasoning is enabled but the stack is unusable (%s) — runner "
-            "disabled, /api/reasoning will 503. Expected docling-agent >= 0.6.0 + mellea; "
-            "a bare `uvicorn` resolves against the ambient interpreter, not the project venv.",
-            _reasoning_provenance(),
-        )
-        return None
-    if settings.llm_provider_type != "ollama":
-        logger.warning(
-            "Unsupported LLM_PROVIDER_TYPE=%s — reasoning runner disabled (only "
-            "'ollama' is realizable today, see "
-            "https://github.com/docling-project/docling-agent/issues/26)",
-            settings.llm_provider_type,
-        )
-        return None
-
-    provider = OllamaProvider(
-        host=config.ollama_host,
-        default_model_id=config.model_id,
-    )
-    logger.info("Reasoning runner enabled (%s)", _reasoning_provenance())
-    return DoclingAgentReasoningRunner(provider=provider, max_iterations=config.max_iterations)
-
-
-# Env-only build covers the pre-lifespan window (tests importing `app`
-# without running lifespan); `lifespan` re-applies with DB overrides on boot.
-app.state.reasoning_runner = _build_reasoning_runner(_env_reasoning_config())
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -544,10 +114,12 @@ async def health() -> HealthResponse:
         db_status = "error"
         logger.warning("Health check: database unreachable", exc_info=True)
 
-    status = "ok" if db_status == "ok" else "degraded"
-    runner = getattr(app.state, "reasoning_runner", None)
+    # Tolerates a missing container: the app is importable (and this endpoint
+    # answerable) before lifespan has run, which is how the API tests mount it.
+    state: AppState = getattr(app.state, "container", None) or AppState()
+    runner = state.reasoning_runner
     return HealthResponse(
-        status=status,
+        status="ok" if db_status == "ok" else "degraded",
         version=settings.app_version,
         engine=settings.conversion_engine,
         deployment_mode=settings.deployment_mode,
@@ -558,10 +130,10 @@ async def health() -> HealthResponse:
             settings.max_paste_image_size_mb if settings.max_paste_image_size_mb > 0 else None
         ),
         paste_allowed_image_types=settings.paste_allowed_image_types,
-        ingestion_available=getattr(app.state, "ingestion_service", None) is not None,
-        # True when the runner is wired and reports itself available. The
-        # actual Ollama reachability is checked lazily at call-time to avoid
-        # blocking health checks on the LLM host.
+        ingestion_available=state.ingestion_service is not None,
+        # True when the runner is wired and reports itself available. Actual
+        # Ollama reachability is checked lazily at call time so health checks
+        # never block on the LLM host. Follows #317 runtime rebuilds.
         reasoning_available=runner is not None and runner.is_available,
         # 0.6.1 — Surface flags (#257).
         studio_mode_enabled=settings.studio_mode_enabled,

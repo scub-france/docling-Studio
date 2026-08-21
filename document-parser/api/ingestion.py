@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query
 
 from api import deps  # noqa: TC001
 from api.schemas import (
@@ -61,9 +61,11 @@ async def delete_ingested_document(doc_id: str, ingestion: deps.IngestionService
 
 
 @router.get("/status", response_model=IngestionStatusResponse)
-async def ingestion_status(request: Request) -> IngestionStatusResponse:
+async def ingestion_status(state: deps.AppStateDep) -> IngestionStatusResponse:
     """Check if the ingestion pipeline is available and OpenSearch is connected."""
-    svc = request.app.state.ingestion_service
+    # Reads the slot directly rather than through `IngestionServiceDep`: this
+    # endpoint reports absence as `available: false`, it does not 503 on it.
+    svc = state.ingestion_service
     if svc is None:
         return IngestionStatusResponse(available=False, opensearch_connected=False)
 

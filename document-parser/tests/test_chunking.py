@@ -13,6 +13,7 @@ from api.schemas import ChunkBboxResponse, ChunkingOptionsRequest, ChunkResponse
 from domain.models import AnalysisJob, AnalysisStatus, Document
 from domain.value_objects import ChunkBbox, ChunkingOptions, ChunkResult
 from main import app
+from tests.app_state import state_override
 
 # ---------------------------------------------------------------------------
 # Domain: value objects
@@ -207,10 +208,8 @@ def client():
 @pytest.fixture
 def mock_analysis_service(client):
     mock_svc = MagicMock()
-    original = getattr(app.state, "analysis_service", None)
-    app.state.analysis_service = mock_svc
-    yield mock_svc
-    app.state.analysis_service = original
+    with state_override(app, analysis_service=mock_svc):
+        yield mock_svc
 
 
 class TestCreateAnalysisWithChunking:
