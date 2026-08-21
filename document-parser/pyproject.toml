@@ -95,3 +95,13 @@ known-first-party = ["api", "domain", "persistence", "services"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.ruff.lint.flake8-type-checking]
+# Pydantic evaluates annotations at runtime — moving these imports into a
+# TYPE_CHECKING block would break model construction. Declaring the model base
+# classes here keeps TC001/TC002 from suggesting it, instead of scattering
+# per-import `# noqa: TC001` across the API layer.
+runtime-evaluated-base-classes = [
+  "pydantic.BaseModel",
+  "api.schemas._CamelModel",
+]

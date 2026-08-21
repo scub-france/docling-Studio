@@ -6,9 +6,24 @@ All responses use camelCase serialization to match the existing frontend contrac
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
+
+from domain.app_config import (
+    MAX_ITERATIONS_MAX,
+    MAX_ITERATIONS_MIN,
+    ConfigSource,
+    LLMHostProbeResult,
+    ReasoningConfigView,
+)
+from domain.value_objects import (
+    ReasoningStep,
+    ReasoningStepKind,
+    ReasoningStepPayload,
+    ReasoningTrace,
+)
 
 # Document lifecycle status — currently single-state (uploaded). Kept as a
 # constant so future statuses (e.g. "archived", "deleted") can extend the
@@ -509,22 +524,68 @@ class ReasoningRunRequest(_CamelModel):
     model_id: str | None = None
 
 
-class ReasoningStepResponse(_CamelModel):
-    """One projected reasoning step rendered as a trace-timeline row.
+class StepId(RootModel[str]):
+    """Identifier of a trace step — `s{iteration}` ("s1", "s2", …).
 
-    `payload` carries the raw iteration fields with **camelCase keys** built
-    in `domain.trace_builder` — Pydantic does not alias dict contents, so it
-    is serialized verbatim (the UI binds `payload.canAnswer`, etc.).
+    A `RootModel` rather than a bare `str` (#306 review): the id becomes a
+    named type in the OpenAPI schema instead of yet another anonymous string,
+    while serializing transparently as the string itself.
     """
 
-    id: str
-    kind: str  # ReasoningStepKind value: plan|retrieve|rerank|read|verify|answer|map
-    title: str
+    root: str
+
+
+class ReasoningStepPayloadResponse(_CamelModel):
+    """Raw iteration fields behind a trace step — what the debugger drawer
+    expands. 1:1 mirror of `domain.value_objects.ReasoningStepPayload`;
+    `_CamelModel` owns the snake_case → camelCase wire aliasing, so the UI
+    still binds `payload.canAnswer`.
+    """
+
+    iteration: int = Field(description="1-based index of the loop iteration")
+    section_ref: str = Field(description="Docling self_ref of the visited section")
+    reason: str = Field(description="The model's stated motivation for this section")
+    section_text_length: int = Field(description="Characters read from the section")
+    can_answer: bool = Field(description="Whether the model could answer from this section")
+    response: str = Field(description="The answer attempt produced at this step")
+    duration_ms: int = Field(
+        default=0,
+        description="Step duration in milliseconds; 0 when upstream reported no timing",
+    )
+
+    @classmethod
+    def from_payload(cls, payload: ReasoningStepPayload) -> ReasoningStepPayloadResponse:
+        return cls(**asdict(payload))
+
+
+class ReasoningStepResponse(_CamelModel):
+    """One projected reasoning step rendered as a trace-timeline row."""
+
+    id: StepId
+    kind: ReasoningStepKind
+    title: str = Field(description="Step label — the model's reason, truncated to 96 chars")
     summary: str
-    duration_ms: int = 0
-    token_count: int = 0
-    citations: list[str] = Field(default_factory=list)
-    payload: dict = Field(default_factory=dict)
+    payload: ReasoningStepPayloadResponse
+    duration_ms: int = Field(default=0, description="Step duration in milliseconds")
+    token_count: int = Field(
+        default=0, description="Tokens consumed by the step; 0 until mellea exposes usage"
+    )
+    citations: list[str] = Field(
+        default_factory=list, description="Docling self_refs this step cites"
+    )
+
+    @classmethod
+    def from_step(cls, step: ReasoningStep) -> ReasoningStepResponse:
+        return cls(
+            id=StepId(step.id),
+            kind=step.kind,
+            title=step.title,
+            summary=step.summary,
+            payload=ReasoningStepPayloadResponse.from_payload(step.payload),
+            duration_ms=step.duration_ms,
+            token_count=step.token_count,
+            citations=step.citations,
+        )
 
 
 class ReasoningTraceResponse(_CamelModel):
@@ -534,10 +595,25 @@ class ReasoningTraceResponse(_CamelModel):
     answer: str
     converged: bool
     steps: list[ReasoningStepResponse]
-    total_duration_ms: int
+    total_duration_ms: int = Field(description="Total run duration in milliseconds")
     tokens_in: int = 0
     tokens_out: int = 0
     model_id: str = ""
+
+    @classmethod
+    def from_trace(cls, trace: ReasoningTrace) -> ReasoningTraceResponse:
+        """Project a domain `ReasoningTrace` onto its wire shape — the router
+        maps no fields of its own (#306 review: keep the mapping with the
+        model it produces)."""
+        return cls(
+            answer=trace.answer,
+            converged=trace.converged,
+            steps=[ReasoningStepResponse.from_step(step) for step in trace.steps],
+            total_duration_ms=trace.total_duration_ms,
+            tokens_in=trace.tokens_in,
+            tokens_out=trace.tokens_out,
+            model_id=trace.model_id,
+        )
 
 
 class ReasoningDiagnosticsResponse(_CamelModel):
@@ -550,23 +626,54 @@ class ReasoningDiagnosticsResponse(_CamelModel):
     available: bool
 
 
-class ReasoningConfigResponse(_CamelModel):
-    """Effective reasoning runtime config (#317).
+class ReasoningConfigSourcesResponse(_CamelModel):
+    """Where each effective config value comes from — `env` (bootstrap
+    default) or `db` (persisted override).
 
-    `sources` is keyed by the **camelCase** field names (`enabled`,
-    `ollamaHost`, `modelId`, `maxIterations`) — Pydantic aliases field names,
-    not dict keys, so the router maps them explicitly. Values are `env`
-    (bootstrap default) or `db` (persisted override).
+    A model rather than a `dict[str, str]` (#306 review): the four keys are
+    known and closed, the `ConfigSource` literal is enforced instead of a bare
+    `str`, and `_CamelModel` aliases the keys to camelCase for free — Pydantic
+    does not alias dict *contents*, which previously forced the router to
+    rename every key by hand.
     """
+
+    enabled: ConfigSource
+    ollama_host: ConfigSource
+    model_id: ConfigSource
+    max_iterations: ConfigSource
+
+
+class ReasoningConfigResponse(_CamelModel):
+    """Effective reasoning runtime config (#317)."""
 
     enabled: bool
     ollama_host: str
     model_id: str
-    max_iterations: int
-    sources: dict[str, str]
+    max_iterations: int = Field(
+        ge=MAX_ITERATIONS_MIN,
+        le=MAX_ITERATIONS_MAX,
+        description="RAG loop iteration cap (count, not a duration)",
+    )
+    sources: ReasoningConfigSourcesResponse
     provider_type: str
     read_only: bool
     diagnostics: ReasoningDiagnosticsResponse
+
+    @classmethod
+    def from_view(cls, view: ReasoningConfigView) -> ReasoningConfigResponse:
+        """Project the service's `ReasoningConfigView` onto its wire shape."""
+        return cls(
+            enabled=view.config.enabled,
+            ollama_host=view.config.ollama_host,
+            model_id=view.config.model_id,
+            max_iterations=view.config.max_iterations,
+            # Keys are the `ReasoningConfig` field names, which are exactly
+            # this model's field names — `populate_by_name` accepts them.
+            sources=ReasoningConfigSourcesResponse(**view.sources),
+            provider_type=view.provider_type,
+            read_only=view.read_only,
+            diagnostics=ReasoningDiagnosticsResponse(**asdict(view.diagnostics)),
+        )
 
 
 class ReasoningConfigUpdateRequest(_CamelModel):
@@ -594,3 +701,7 @@ class ReasoningProbeResponse(_CamelModel):
     reachable: bool
     models: list[str] = Field(default_factory=list)
     error: str | None = None
+
+    @classmethod
+    def from_result(cls, result: LLMHostProbeResult) -> ReasoningProbeResponse:
+        return cls(**asdict(result))

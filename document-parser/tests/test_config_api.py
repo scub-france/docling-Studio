@@ -18,6 +18,7 @@ from domain.app_config import (
     ReasoningDiagnostics,
 )
 from services.app_config_service import AppConfigService
+from tests.app_state import wire_state
 
 ENV = ReasoningConfig(
     enabled=False,
@@ -75,7 +76,7 @@ def _make_client(
     )
     app = FastAPI()
     app.include_router(router)
-    app.state.app_config_service = service
+    wire_state(app, app_config_service=service)
     return TestClient(app), applied, repo
 
 

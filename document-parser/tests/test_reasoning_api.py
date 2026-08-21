@@ -21,6 +21,7 @@ from api.reasoning import router
 from domain.ports import ReasoningParseError
 from domain.value_objects import ReasoningIteration, ReasoningResult
 from services.reasoning_service import ReasoningService
+from tests.app_state import wire_state
 
 
 def _sample_result() -> ReasoningResult:
@@ -89,10 +90,13 @@ def _make_client(
 ) -> TestClient:
     app = FastAPI()
     app.include_router(router)
-    app.state.reasoning_service = ReasoningService(
-        runner=runner,
-        analysis_repo=_FakeAnalysisRepo(latest=latest),
-        default_model_id=default_model_id,
+    wire_state(
+        app,
+        reasoning_service=ReasoningService(
+            runner=runner,
+            analysis_repo=_FakeAnalysisRepo(latest=latest),
+            default_model_id=default_model_id,
+        ),
     )
     return TestClient(app)
 

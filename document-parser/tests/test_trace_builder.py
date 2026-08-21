@@ -2,7 +2,7 @@
 docling-agent `ReasoningResult` onto the trace-timeline `ReasoningTrace`.
 
 Locks the projection rules the UI binds to (title fallback + truncation,
-insufficient summary, camelCase payload, duration/model preference).
+insufficient summary, typed payload, duration/model preference).
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from domain.value_objects import (
     ReasoningIteration,
     ReasoningResult,
     ReasoningStepKind,
+    ReasoningStepPayload,
 )
 
 
@@ -114,7 +115,7 @@ def test_citations_empty_when_no_section_ref():
     assert trace.steps[0].citations == []
 
 
-def test_payload_keys_are_camelcase():
+def test_payload_is_a_typed_model():
     trace = build_trace(
         result=_result(
             [
@@ -131,17 +132,18 @@ def test_payload_keys_are_camelcase():
         ),
         model_id="m",
     )
-    payload = trace.steps[0].payload
-    assert payload == {
-        "iteration": 2,
-        "sectionRef": "#/texts/5",
-        "reason": "why",
-        "sectionTextLength": 99,
-        "canAnswer": False,
-        "response": "missing X",
-        "durationMs": 321,
-    }
-    # step.duration_ms and payload["durationMs"] derive from the same source.
+    # #306 review: the payload is a domain value object in snake_case — the
+    # API DTO owns the camelCase wire aliasing (asserted in test_reasoning_api).
+    assert trace.steps[0].payload == ReasoningStepPayload(
+        iteration=2,
+        section_ref="#/texts/5",
+        reason="why",
+        section_text_length=99,
+        can_answer=False,
+        response="missing X",
+        duration_ms=321,
+    )
+    # step.duration_ms and payload.duration_ms derive from the same source.
     assert trace.steps[0].duration_ms == 321
 
 
