@@ -133,31 +133,40 @@ Reasoning is orthogonal to `CONVERSION_ENGINE`: it works on both `latest-local` 
 
 Data flow (target state):
 
-```
-DocParseTab (Ask tab)                    document-parser
-┌─────────────────────┐   POST /api/documents/{id}/reasoning
-│ Composer.run(q, m?) ├──────────────────────────────────────┐
-└─────────────────────┘                                      ▼
-                                              ReasoningService.run(doc_id, q, m?)
-                                                │ empty query → 400 (typed error)
-                                                │ analysis_repo.find_latest_completed_by_document → 404
-                                                │ t0 = perf_counter()
-                                                │ runner.run(document_json, q, m?)   (port)
-                                                │   └ DoclingAgentReasoningRunner
-                                                │       └ to_thread(agent.run_with_trace, task=q, document=doc)
-                                                │           → RAGTrace.per_document[0] → ReasoningResult
-                                                │ wall_ms = perf_counter() - t0
-                                                │ build_trace(result, model_id, wall_ms)  (domain, pure)
-                                                ▼
-                                  ReasoningTraceResponse (camelCase)
-┌─────────────────────┐
-│ reasoning store     │  turns[] / selectedStepId
-│ TraceTimeline       │──selectStep──► documentStore.focusElement(ref)  (focusedRef + focusTick++)
-│ ConversationPanel   │                   │
-└─────────────────────┘                   ├─► PagePreviewWithOverlay  (bbox highlight + page flip + top-anchor scroll)
-        ▲                                 ├─► DocTreeRail             (reveal ancestors + scroll-to-center)
-        └──selectStepByCitation(ref)──────┴─► ElementProperties       (cited element)
-                 (reverse: bbox/tree click)
+```mermaid
+flowchart TB
+  subgraph front["DocParseTab — Ask tab"]
+    composer["Composer.run(q, model?)"]
+    timeline["TraceTimeline"]
+    panel["ConversationPanel"]
+    store["reasoning store<br/>turns[] · selectedStepId"]
+  end
+
+  subgraph back["document-parser"]
+    svc["ReasoningService.run(doc_id, q, model?)<br/>empty query → 400 · no analysis → 404<br/>wall-clock around the run"]
+    runner["DoclingAgentReasoningRunner (port)<br/>to_thread(agent.run_with_trace)"]
+    builder["build_trace() — domain, pure"]
+    dto["ReasoningTraceResponse (camelCase)"]
+  end
+
+  subgraph doc["Document surfaces"]
+    preview["PagePreviewWithOverlay<br/>bbox highlight · page flip · top-anchor scroll"]
+    tree["DocTreeRail<br/>reveal ancestors · scroll-to-center"]
+    props["ElementProperties<br/>cited element"]
+  end
+
+  composer -->|"POST /api/documents/{id}/reasoning"| svc
+  svc --> runner
+  runner -->|"RAGTrace.per_document[0] → ReasoningResult"| builder
+  builder --> dto
+  dto --> store
+  store --> timeline
+  store --> panel
+  timeline -->|"selectStep → focusElement(ref)<br/>focusedRef + focusTick++"| preview
+  timeline --> tree
+  timeline --> props
+  preview -.->|"bbox / tree click → selectStepByCitation(ref)"| store
+  tree -.-> store
 ```
 
 ### 5.1 Domain
