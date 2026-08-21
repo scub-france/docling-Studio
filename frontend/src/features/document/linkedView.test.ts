@@ -84,16 +84,16 @@ describe('elementRefsForChunk', () => {
         { selfRef: '#/tables/0', label: 'table' },
       ],
     })
-    expect(elementRefsForChunk(c, 1)).toEqual(new Set(['#/texts/1', '#/tables/0']))
+    expect(elementRefsForChunk(c)).toEqual(new Set(['#/texts/1', '#/tables/0']))
   })
 
   it('returns an empty set when the chunk has no docItems', () => {
-    expect(elementRefsForChunk(makeChunk('a'), 1)).toEqual(new Set())
+    expect(elementRefsForChunk(makeChunk('a'))).toEqual(new Set())
   })
 
   it('skips empty self_ref entries', () => {
     const c = makeChunk('a', { docItems: [{ selfRef: '', label: 'text' }] })
-    expect(elementRefsForChunk(c, 1)).toEqual(new Set())
+    expect(elementRefsForChunk(c)).toEqual(new Set())
   })
 })
 

@@ -1,7 +1,7 @@
 <template>
   <div class="chunk-tab" data-e2e="chunk-tab">
     <LayersBar
-      :elements="currentPageElements"
+      :elements="allPageElements"
       :hidden-types="hiddenTypes"
       @update:hidden-types="(next) => (hiddenTypes = next)"
     >
@@ -101,17 +101,16 @@ const hiddenTypes = ref<Set<string>>(new Set())
 const hoveredChunkId = ref<string | null>(null)
 const selectedChunkId = ref<string | null>(null)
 
-const currentPageElements = computed<PageElement[]>(() => {
-  const page = documentStore.workspacePages.find((p) => p.page_number === currentPage.value)
-  return page?.elements ?? []
-})
+const allPageElements = computed<PageElement[]>(() =>
+  documentStore.workspacePages.flatMap((page) => page.elements),
+)
 
 const highlightedRefs = computed<ReadonlySet<string>>(() => {
   const id = hoveredChunkId.value ?? selectedChunkId.value
   if (!id) return new Set()
   const chunk = chunksStore.chunks.find((c) => c.id === id)
   if (!chunk) return new Set()
-  return elementRefsForChunk(chunk, currentPage.value)
+  return elementRefsForChunk(chunk)
 })
 
 function onHoverElement(el: PageElement | null): void {
@@ -120,8 +119,8 @@ function onHoverElement(el: PageElement | null): void {
   void el
 }
 
-function onClickElement(el: PageElement): void {
-  const chunk = chunkForElement(el, currentPage.value, chunksStore.chunks)
+function onClickElement(el: PageElement, pageNumber: number): void {
+  const chunk = chunkForElement(el, pageNumber, chunksStore.chunks)
   if (chunk) selectedChunkId.value = chunk.id
 }
 

@@ -29,6 +29,7 @@ import { colorFor, UNKNOWN_ELEMENT_COLOR } from '../elementColors'
 
 const props = defineProps<{
   imageEl: HTMLImageElement | null
+  pageNumber: number
   pageWidth: number
   pageHeight: number
   elements: readonly PageElement[]
@@ -39,7 +40,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   hoverElement: [el: PageElement | null]
-  clickElement: [el: PageElement]
+  clickElement: [el: PageElement, pageNumber: number]
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -156,7 +157,7 @@ function onMouseLeave(): void {
 }
 function onClick(e: MouseEvent): void {
   const el = elementAt(e)
-  if (el) emit('clickElement', el)
+  if (el) emit('clickElement', el, props.pageNumber)
 }
 
 watch(
