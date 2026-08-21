@@ -108,6 +108,23 @@ def deps_provenance() -> str:
     return f"docling-agent {version} from {docling_agent.__file__}"
 
 
+def _to_iteration(raw: dict[str, Any]) -> ReasoningIteration:
+    """Map one dumped `RAGIteration` onto the domain value object.
+
+    `raw` comes from `model_dump()`; every key but `duration_ms` is part of
+    docling-agent 0.6.0's declared schema and is read positionally.
+    """
+    return ReasoningIteration(
+        iteration=raw["iteration"],
+        section_ref=raw["section_ref"],
+        reason=raw["reason"],
+        section_text_length=raw["section_text_length"],
+        can_answer=raw["can_answer"],
+        response=raw["response"],
+        duration_ms=raw.get("duration_ms", 0),
+    )
+
+
 class DoclingAgentReasoningRunner:
     """ReasoningRunner adapter wrapping docling-agent + mellea.
 
@@ -206,25 +223,19 @@ class DoclingAgentReasoningRunner:
             )
         rag_result = run_result.per_document[0]
 
-        # Defensive mapping — the fork at the pinned SHA may not carry
-        # `duration_ms`/`model_id` yet (the timing commit adds them; the
-        # eventual upstream release may not). getattr keeps this adapter green
-        # either way; the trace timeline degrades gracefully when timing is 0.
+        # `RAGResult` / `RAGIteration` are pydantic models, so the mapping goes
+        # through `model_dump()` rather than attribute-by-attribute reads
+        # (#306 review). The timing fields stay `.get()`-with-default on
+        # purpose: docling-agent 0.6.0 declares neither `duration_ms` nor
+        # `model_id` (verified against `model_fields`), they exist only on the
+        # fork carrying the timing commit. The trace timeline degrades to a
+        # uniform step-order layout when they are absent, so a default of 0 is
+        # a supported state, not a silent failure.
+        raw = rag_result.model_dump()
         return ReasoningResult(
-            answer=rag_result.answer,
-            iterations=[
-                ReasoningIteration(
-                    iteration=it.iteration,
-                    section_ref=it.section_ref,
-                    reason=it.reason,
-                    section_text_length=it.section_text_length,
-                    can_answer=it.can_answer,
-                    response=it.response,
-                    duration_ms=getattr(it, "duration_ms", 0),
-                )
-                for it in rag_result.iterations
-            ],
-            converged=rag_result.converged,
-            duration_ms=getattr(rag_result, "duration_ms", 0),
-            model_id=getattr(rag_result, "model_id", "") or raw_model_id,
+            answer=raw["answer"],
+            iterations=[_to_iteration(it) for it in raw["iterations"]],
+            converged=raw["converged"],
+            duration_ms=raw.get("duration_ms", 0),
+            model_id=raw.get("model_id") or raw_model_id,
         )

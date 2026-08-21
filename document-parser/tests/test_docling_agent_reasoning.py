@@ -7,8 +7,8 @@ cover the real adapter code path without bringing in Ollama or any LLM client.
 The adapter consumes the public `run_with_trace(task, document)` (docling-agent
 0.6.0) and builds a per-instance Ollama backend from `BackendConfig` — no
 private `_rag_loop`, no `os.environ["OLLAMA_HOST"]` mutation. Timing/model
-fields are read defensively (`getattr`) so the adapter survives the 0.6.0
-models, which carry neither.
+fields are read from `model_dump()` with a default so the adapter survives the
+0.6.0 models, which declare neither.
 """
 
 from __future__ import annotations
@@ -21,11 +21,26 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import infra.docling_agent_reasoning as mod
 from domain.ports import ReasoningParseError, ReasoningRunner
 from infra.llm.ollama_provider import OllamaProvider
 
 
-def _make_iteration(*, with_timing: bool) -> SimpleNamespace:
+class _FakeModel(SimpleNamespace):
+    """Stand-in for docling-agent's pydantic `RAGResult` / `RAGIteration`.
+
+    The adapter maps through `model_dump()` (#306 review), so the stub has to
+    expose it — and nest it the way pydantic does, dumping children to dicts.
+    """
+
+    def model_dump(self) -> dict:
+        return {
+            k: [c.model_dump() for c in v] if k == "iterations" else v
+            for k, v in vars(self).items()
+        }
+
+
+def _make_iteration(*, with_timing: bool) -> _FakeModel:
     fields = {
         "iteration": 1,
         "section_ref": "#/texts/0",
@@ -36,10 +51,10 @@ def _make_iteration(*, with_timing: bool) -> SimpleNamespace:
     }
     if with_timing:
         fields["duration_ms"] = 1234
-    return SimpleNamespace(**fields)
+    return _FakeModel(**fields)
 
 
-def _make_rag_result(*, with_timing: bool) -> SimpleNamespace:
+def _make_rag_result(*, with_timing: bool) -> _FakeModel:
     fields = {
         "answer": "stub answer",
         "converged": True,
@@ -48,7 +63,7 @@ def _make_rag_result(*, with_timing: bool) -> SimpleNamespace:
     if with_timing:
         fields["duration_ms"] = 5678
         fields["model_id"] = "granite3.3:8b"
-    return SimpleNamespace(**fields)
+    return _FakeModel(**fields)
 
 
 @pytest.fixture
@@ -126,9 +141,7 @@ def _make_runner(
 ):
     """Build the runner bypassing the live deps-check (stubs are injected via
     sys.modules; we force `_deps_ok` so construction order doesn't matter)."""
-    from infra.docling_agent_reasoning import DoclingAgentReasoningRunner
-
-    runner = DoclingAgentReasoningRunner.__new__(DoclingAgentReasoningRunner)
+    runner = mod.DoclingAgentReasoningRunner.__new__(mod.DoclingAgentReasoningRunner)
     runner._provider = OllamaProvider(host=host, default_model_id=default_model_id)
     runner._max_iterations = max_iterations
     runner._deps_ok = True
@@ -143,8 +156,6 @@ class TestProtocolConformance:
 
 class TestProviderRejection:
     def test_rejects_non_ollama_provider(self) -> None:
-        from infra.docling_agent_reasoning import DoclingAgentReasoningRunner
-
         class _FakeProvider:
             type = "openai"
             host = "x"
@@ -154,7 +165,7 @@ class TestProviderRejection:
                 return True
 
         with pytest.raises(NotImplementedError, match="Ollama"):
-            DoclingAgentReasoningRunner(provider=_FakeProvider())  # type: ignore[arg-type]
+            mod.DoclingAgentReasoningRunner(provider=_FakeProvider())  # type: ignore[arg-type]
 
 
 class TestRunHappyPath:
@@ -185,9 +196,9 @@ class TestRunHappyPath:
 
     @pytest.mark.asyncio
     async def test_defensive_mapping_when_timing_absent(self, stub_fork) -> None:
-        """Pinned-SHA / upstream-release reality: no timing fields on the
-        upstream models — getattr defaults to 0, model_id falls back to the
-        requested model."""
+        """Pinned-release reality: docling-agent 0.6.0 declares no timing
+        fields — the dump has no such keys, so they default to 0 and model_id
+        falls back to the requested model."""
         stub_fork.rag_result = _make_rag_result(with_timing=False)
         runner = _make_runner(default_model_id="fallback:7b")
 
@@ -267,7 +278,6 @@ class TestRunHappyPath:
         """The 20-40s sync run must be thread-offloaded so it can't block the
         event loop. Pin the offload so a refactor to a direct blocking call
         fails the suite (design §9)."""
-        import infra.docling_agent_reasoning as mod
 
         calls: list = []
         real_to_thread = asyncio.to_thread
@@ -331,14 +341,11 @@ class TestDepsPresent:
         monkeypatch.setitem(sys.modules, "docling_agent.agents", None)
         monkeypatch.setitem(sys.modules, "mellea", None)
 
-        from infra.docling_agent_reasoning import deps_present
-
-        assert deps_present() is False
+        assert mod.deps_present() is False
 
     def test_deps_present_returns_true_when_whole_surface_is_importable(self, stub_fork) -> None:
-        from infra.docling_agent_reasoning import deps_present
 
-        assert deps_present() is True
+        assert mod.deps_present() is True
 
     def test_deps_present_returns_false_when_backends_missing(
         self, stub_fork, monkeypatch: pytest.MonkeyPatch
@@ -348,9 +355,7 @@ class TestDepsPresent:
         at call time — cf. the 500 that motivated the 0.6.0 pin."""
         monkeypatch.setitem(sys.modules, "docling_agent.backends", None)
 
-        from infra.docling_agent_reasoning import deps_present
-
-        assert deps_present() is False
+        assert mod.deps_present() is False
 
     def test_deps_present_returns_false_when_agent_lacks_run_with_trace(self, stub_fork) -> None:
         """Releases before docling-project/docling-agent#39 import cleanly but
@@ -363,9 +368,7 @@ class TestDepsPresent:
 
         sys.modules["docling_agent.agents"].DoclingRAGAgent = _PreTraceAgent
 
-        from infra.docling_agent_reasoning import deps_present
-
-        assert deps_present() is False
+        assert mod.deps_present() is False
 
 
 class TestDepsProvenance:
@@ -378,9 +381,7 @@ class TestDepsProvenance:
         sys.modules["docling_agent"].__file__ = "/somewhere/docling_agent/__init__.py"
         monkeypatch.setattr(md, "version", lambda name: "0.6.0")
 
-        from infra.docling_agent_reasoning import deps_provenance
-
-        assert deps_provenance() == (
+        assert mod.deps_provenance() == (
             "docling-agent 0.6.0 from /somewhere/docling_agent/__init__.py"
         )
 
@@ -389,6 +390,4 @@ class TestDepsProvenance:
     ) -> None:
         monkeypatch.setitem(sys.modules, "docling_agent", None)
 
-        from infra.docling_agent_reasoning import deps_provenance
-
-        assert deps_provenance() == "docling-agent not importable"
+        assert mod.deps_provenance() == "docling-agent not importable"
