@@ -781,22 +781,22 @@ class TestConverterWiring:
         from infra.local_converter import LocalConverter
         from infra.settings import Settings
 
-        with patch("main.settings", Settings(conversion_engine="local")):
-            from main import _build_converter
+        with patch("bootstrap.factories.settings", Settings(conversion_engine="local")):
+            from bootstrap import build_converter
 
-            converter = _build_converter()
+            converter = build_converter()
         assert isinstance(converter, LocalConverter)
 
     def test_remote_engine_builds_serve_converter(self):
         from infra.settings import Settings
 
         with patch(
-            "main.settings",
+            "bootstrap.factories.settings",
             Settings(conversion_engine="remote", docling_serve_url="http://serve:5001"),
         ):
-            from main import _build_converter
+            from bootstrap import build_converter
 
-            converter = _build_converter()
+            converter = build_converter()
         assert isinstance(converter, ServeConverter)
         assert converter._base_url == "http://serve:5001"
 
@@ -804,16 +804,16 @@ class TestConverterWiring:
         from infra.settings import Settings
 
         with patch(
-            "main.settings",
+            "bootstrap.factories.settings",
             Settings(
                 conversion_engine="remote",
                 docling_serve_url="http://serve:5001",
                 docling_serve_api_key="my-key",
             ),
         ):
-            from main import _build_converter
+            from bootstrap import build_converter
 
-            converter = _build_converter()
+            converter = build_converter()
         assert isinstance(converter, ServeConverter)
         assert converter._api_key == "my-key"
 
@@ -823,10 +823,10 @@ class TestConverterWiring:
         from infra.settings import Settings
 
         with patch(
-            "main.settings",
+            "bootstrap.factories.settings",
             Settings(conversion_engine="remote", docling_serve_url="http://serve:5001"),
         ):
-            from main import _build_chunker
+            from bootstrap import build_chunker
 
-            chunker = _build_chunker()
+            chunker = build_chunker()
         assert isinstance(chunker, LocalChunker)

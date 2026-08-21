@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from api.graph import router
 from domain.value_objects import GraphPayload
 from services.graph_service import GraphService
+from tests.app_state import wire_state
 
 
 class _FakeGraphReader:
@@ -46,7 +47,7 @@ def _payload() -> GraphPayload:
 def _client(*, reader: _FakeGraphReader | None) -> TestClient:
     app = FastAPI()
     app.include_router(router)
-    app.state.graph_service = GraphService(graph_reader=reader)
+    wire_state(app, graph_service=GraphService(graph_reader=reader))
     return TestClient(app)
 
 

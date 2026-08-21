@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from domain.models import AnalysisJob, Document
 from main import app
+from tests.app_state import state_override
 
 
 @pytest.fixture
@@ -18,10 +19,8 @@ def client():
 def mock_analysis_service(client):
     """Inject a mock AnalysisService into app.state for the duration of the test."""
     mock_svc = MagicMock()
-    original = getattr(app.state, "analysis_service", None)
-    app.state.analysis_service = mock_svc
-    yield mock_svc
-    app.state.analysis_service = original
+    with state_override(app, analysis_service=mock_svc):
+        yield mock_svc
 
 
 @pytest.fixture
@@ -30,26 +29,19 @@ def mock_document_service(client):
     mock_svc = MagicMock()
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
-    original = getattr(app.state, "document_service", None)
-    app.state.document_service = mock_svc
-    yield mock_svc
-    app.state.document_service = original
+    with state_override(app, document_service=mock_svc):
+        yield mock_svc
 
 
 @pytest.fixture(autouse=True)
 def mock_document_related_repos(client):
     """Provide the repos expected by document routes using shared deps."""
-    original_link_repo = getattr(app.state, "document_store_link_repo", None)
-    original_store_repo = getattr(app.state, "store_repo", None)
     link_repo = MagicMock()
     link_repo.find_for_document = AsyncMock(return_value=[])
     store_repo = MagicMock()
     store_repo.find_all = AsyncMock(return_value=[])
-    app.state.document_store_link_repo = link_repo
-    app.state.store_repo = store_repo
-    yield
-    app.state.document_store_link_repo = original_link_repo
-    app.state.store_repo = original_store_repo
+    with state_override(app, document_store_link_repo=link_repo, store_repo=store_repo):
+        yield
 
 
 @pytest.fixture
@@ -57,10 +49,8 @@ def mock_export_service(client):
     """Inject a mock ExportService into app.state for export endpoint tests."""
     mock_svc = MagicMock()
     mock_svc.export = AsyncMock()
-    original = getattr(app.state, "export_service", None)
-    app.state.export_service = mock_svc
-    yield mock_svc
-    app.state.export_service = original
+    with state_override(app, export_service=mock_svc):
+        yield mock_svc
 
 
 class TestHealthEndpoint:
@@ -79,19 +69,15 @@ class TestHealthEndpoint:
         assert data["maxFileSizeMb"] == 50
 
     def test_health_exposes_ingestion_available_false(self, client):
-        original = getattr(app.state, "ingestion_service", None)
-        app.state.ingestion_service = None
-        resp = client.get("/api/health")
-        app.state.ingestion_service = original
+        with state_override(app, ingestion_service=None):
+            resp = client.get("/api/health")
         data = resp.json()
         assert "ingestionAvailable" in data
         assert data["ingestionAvailable"] is False
 
     def test_health_exposes_ingestion_available_true(self, client):
-        original = getattr(app.state, "ingestion_service", None)
-        app.state.ingestion_service = MagicMock()
-        resp = client.get("/api/health")
-        app.state.ingestion_service = original
+        with state_override(app, ingestion_service=MagicMock()):
+            resp = client.get("/api/health")
         data = resp.json()
         assert data["ingestionAvailable"] is True
 
@@ -255,7 +241,7 @@ class TestDocumentEndpoints:
         assert resp.json() == {"ok": True}
         assert resp.headers["content-disposition"] == 'attachment; filename="report.json"'
 
-    def test_export_document_unsupported_format_returns_422(self, client):
+    def test_export_document_unsupported_format_returns_422(self, client, mock_export_service):
         resp = client.get("/api/documents/d1/export?format=docx")
         assert resp.status_code == 422
 
