@@ -56,16 +56,11 @@ export function chunkForElement(
  * `pageNumber`. Empty set when the chunk has no `docItems` (caller can
  * fall back to bbox overlap rendering).
  */
-export function elementRefsForChunk(chunk: DocChunk, pageNumber: number): Set<string> {
+export function elementRefsForChunk(chunk: DocChunk): Set<string> {
   const refs = new Set<string>()
   for (const di of chunk.docItems) {
     if (di.selfRef) refs.add(di.selfRef)
   }
-  // Page filtering is heuristic — docItems don't carry page numbers, so we
-  // rely on the caller filtering chunks by `sourcePage` first. The set is
-  // still useful for the canvas to know "highlight these refs if you see
-  // them on the current page".
-  void pageNumber
   return refs
 }
 

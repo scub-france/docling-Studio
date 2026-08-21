@@ -1,11 +1,18 @@
 <template>
   <div class="preview-with-overlay" data-e2e="preview-with-overlay">
     <div class="preview-toolbar">
-      <div v-if="totalPages > 1" class="preview-mode-switch" data-e2e="preview-mode-switch">
+      <div
+        v-if="totalPages > 1"
+        class="preview-mode-switch"
+        role="group"
+        :aria-label="t('workspace.previewMode.label')"
+        data-e2e="preview-mode-switch"
+      >
         <button
           type="button"
           class="preview-mode-btn"
           :class="{ active: viewMode === 'page' }"
+          :aria-pressed="viewMode === 'page'"
           data-e2e="preview-mode-page"
           @click="viewMode = 'page'"
         >
@@ -15,6 +22,7 @@
           type="button"
           class="preview-mode-btn"
           :class="{ active: viewMode === 'scroll' }"
+          :aria-pressed="viewMode === 'scroll'"
           data-e2e="preview-mode-scroll"
           @click="viewMode = 'scroll'"
         >
@@ -43,7 +51,8 @@
               :style="{ width: `${pageInputSize}ch` }"
               :aria-label="t('workspace.pageNumber')"
               data-e2e="page-input"
-              @blur="commitPageInput"
+              @focus="pageInputFocused = true"
+              @blur="onPageInputBlur"
               @keydown.enter.prevent="commitPageInput"
               @keydown.esc.prevent="resetPageInput"
             />
@@ -79,15 +88,19 @@
         </header>
         <div class="preview-frame">
           <img
+            v-if="shouldRenderPage(page.page_number)"
             :src="getPreviewUrl(documentId, page.page_number)"
             :alt="`Page ${page.page_number}`"
             class="preview-image"
+            loading="lazy"
+            decoding="async"
             :ref="(el) => registerImage(page.page_number, el as HTMLImageElement | null)"
             @load="onImageLoad(page.page_number)"
           />
           <BboxCanvas
             v-if="loadedImages[page.page_number]"
             :image-el="loadedImages[page.page_number] ?? null"
+            :page-number="page.page_number"
             :page-width="page.width"
             :page-height="page.height"
             :elements="page.elements"
@@ -118,6 +131,7 @@ import { bboxToRect, computeScale } from '../bboxScaling'
 import { getPreviewUrl } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
 import { clampPageInput, pageInputWidthCh } from './PagePreviewWithOverlay.logic'
+import { centeredScrollPosition, isRectVisible, mostVisiblePage } from '../previewScroll'
 
 const { t } = useI18n()
 
@@ -133,7 +147,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:currentPage': [page: number]
   hoverElement: [el: PageElement | null]
-  clickElement: [el: PageElement]
+  clickElement: [el: PageElement, pageNumber: number]
 }>()
 
 const stageRef = ref<HTMLDivElement | null>(null)
@@ -141,15 +155,19 @@ const imageRefs = reactive<Record<number, HTMLImageElement | null>>({})
 const loadedImages = reactive<Record<number, HTMLImageElement | null>>({})
 const pageCardRefs = reactive<Record<number, HTMLElement | null>>({})
 const visiblePage = ref<number | null>(null)
+const renderedPageNumbers = reactive(new Set<number>())
 const viewMode = ref<'page' | 'scroll'>('scroll')
 const pageInput = ref('1')
+const pageInputFocused = ref(false)
 
 let pageObserver: IntersectionObserver | null = null
+let renderObserver: IntersectionObserver | null = null
+const visibilityRatios = new Map<number, number>()
 
 const totalPages = computed(() => props.pages.length)
 const pageInputSize = computed(() => pageInputWidthCh(totalPages.value))
 
-let suppressNextHighlightScroll = false
+let pendingClickRef: string | null = null
 
 const currentPageData = computed<Page | null>(() => {
   return props.pages.find((page) => page.page_number === props.currentPage) ?? null
@@ -178,18 +196,27 @@ function commitPageInput(): void {
   if (nextPage !== props.currentPage) onPageChange(nextPage)
 }
 
+function onPageInputBlur(): void {
+  pageInputFocused.value = false
+  commitPageInput()
+}
+
 function registerPageCard(pageNumber: number, el: HTMLElement | null): void {
   pageCardRefs[pageNumber] = el
 }
 
 function onImageLoad(pageNumber: number): void {
   loadedImages[pageNumber] = imageRefs[pageNumber] ?? null
-  nextTick(centerHighlighted)
+  if (highlightTarget()?.page.page_number === pageNumber) nextTick(centerHighlighted)
 }
 
-function onClickElement(el: PageElement): void {
-  suppressNextHighlightScroll = true
-  emit('clickElement', el)
+function onClickElement(el: PageElement, pageNumber: number): void {
+  pendingClickRef = el.self_ref ?? null
+  emit('clickElement', el, pageNumber)
+}
+
+function shouldRenderPage(pageNumber: number): boolean {
+  return viewMode.value === 'page' || renderedPageNumbers.has(pageNumber)
 }
 
 function onPageChange(page: number): void {
@@ -220,30 +247,45 @@ function scrollToPage(pageNumber: number): void {
 function setupObserver(): void {
   if (viewMode.value !== 'scroll') {
     pageObserver?.disconnect()
+    renderObserver?.disconnect()
     pageObserver = null
+    renderObserver = null
+    renderedPageNumbers.clear()
     return
   }
   pageObserver?.disconnect()
+  renderObserver?.disconnect()
+  visibilityRatios.clear()
   const stage = stageRef.value
   if (!stage) return
+  renderedPageNumbers.add(props.currentPage)
 
   pageObserver = new IntersectionObserver(
     (entries) => {
-      let best: { page: number; ratio: number } | null = null
       for (const entry of entries) {
-        if (!entry.isIntersecting) continue
         const page = Number((entry.target as HTMLElement).dataset.pageNumber)
-        if (!page || (best && entry.intersectionRatio <= best.ratio)) continue
-        best = { page, ratio: entry.intersectionRatio }
+        if (!page) continue
+        visibilityRatios.set(page, entry.isIntersecting ? entry.intersectionRatio : 0)
       }
-      if (!best || best.page === visiblePage.value) return
-      visiblePage.value = best.page
-      emit('update:currentPage', best.page)
+      const bestPage = mostVisiblePage(visibilityRatios)
+      if (!bestPage || bestPage === visiblePage.value) return
+      visiblePage.value = bestPage
+      emit('update:currentPage', bestPage)
     },
     {
       root: stage,
-      threshold: [0.25, 0.5, 0.75],
+      threshold: [0, 0.25, 0.5, 0.75],
     },
+  )
+
+  renderObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const page = Number((entry.target as HTMLElement).dataset.pageNumber)
+        if (page) updateRenderWindow(page, entry.isIntersecting)
+      }
+    },
+    { root: stage, rootMargin: '100% 0px' },
   )
 
   for (const page of props.pages) {
@@ -252,7 +294,28 @@ function setupObserver(): void {
     if (!card) continue
     card.dataset.pageNumber = String(page.page_number)
     pageObserver.observe(card)
+    renderObserver.observe(card)
   }
+}
+
+function updateRenderWindow(pageNumber: number, isIntersecting: boolean): void {
+  if (isIntersecting) {
+    renderedPageNumbers.add(pageNumber)
+    return
+  }
+  renderedPageNumbers.delete(pageNumber)
+  loadedImages[pageNumber] = null
+}
+
+function highlightTarget(): { page: Page; element: PageElement } | null {
+  const refs = props.highlightedRefs
+  if (!refs?.size) return null
+  const pages = viewMode.value === 'page' ? renderedPages.value : props.pages
+  for (const page of pages) {
+    const element = page.elements.find((el) => !!el.self_ref && refs.has(el.self_ref))
+    if (element) return { page, element }
+  }
+  return null
 }
 
 /**
@@ -261,25 +324,20 @@ function setupObserver(): void {
  * image is not loaded yet.
  */
 function centerHighlighted(): void {
-  const refs = props.highlightedRefs
   const stage = stageRef.value
-  if (!refs || refs.size === 0 || !stage) return
+  const target = highlightTarget()
+  if (!target || !stage) return
 
-  for (const page of props.pages) {
-    const target = page.elements.find((element) => !!element.self_ref && refs.has(element.self_ref))
-    if (!target) continue
+    const img = loadedImages[target.page.page_number]
+    if (!img) return
 
-    if (viewMode.value === 'page' && page.page_number !== props.currentPage) {
-      emit('update:currentPage', page.page_number)
-      return
-    }
-
-    const img = loadedImages[page.page_number]
-    const card = pageCardRefs[page.page_number]
-    if (!img || !card) return
-
-    const scale = computeScale(img.clientWidth, img.clientHeight, page.width, page.height)
-    const rect = bboxToRect(target.bbox, scale)
+    const scale = computeScale(
+      img.clientWidth,
+      img.clientHeight,
+      target.page.width,
+      target.page.height,
+    )
+    const rect = bboxToRect(target.element.bbox, scale)
     if (rect.w <= 0 || rect.h <= 0) return
 
     const imgRect = img.getBoundingClientRect()
@@ -287,34 +345,31 @@ function centerHighlighted(): void {
     const bboxLeft = imgRect.left + rect.x
     const bboxTop = imgRect.top + rect.y
 
-    const targetLeft =
-      stage.scrollLeft + bboxLeft - stageRect.left + rect.w / 2 - stage.clientWidth / 2
-    const targetTop =
-      stage.scrollTop + bboxTop - stageRect.top + rect.h / 2 - stage.clientHeight / 2
+    const bboxViewportRect = {
+      top: bboxTop,
+      right: bboxLeft + rect.w,
+      bottom: bboxTop + rect.h,
+      left: bboxLeft,
+    }
+    if (isRectVisible(bboxViewportRect, stageRect)) return
 
-    // Check if the target is already reasonably visible to avoid jumps when
-    // clicking an element that is already in view.
-    const isVisible =
-      bboxTop >= stageRect.top &&
-      bboxTop + rect.h <= stageRect.bottom &&
-      bboxLeft >= stageRect.left &&
-      bboxLeft + rect.w <= stageRect.right
-
-    if (isVisible) return
+    const position = centeredScrollPosition(
+      stage,
+      stageRect,
+      { x: bboxLeft, y: bboxTop, w: rect.w, h: rect.h },
+    )
 
     stage.scrollTo({
-      left: Math.max(0, targetLeft),
-      top: Math.max(0, targetTop),
+      left: position.left,
+      top: position.top,
       behavior: 'smooth',
     })
-    return
-  }
 }
 
 watch(
   () => props.currentPage,
   (page) => {
-    resetPageInput()
+    if (!pageInputFocused.value) resetPageInput()
     if (!page || viewMode.value !== 'scroll' || page === visiblePage.value) return
     nextTick(() => scrollToPage(page))
   },
@@ -337,15 +392,16 @@ watch(viewMode, async (mode) => {
 })
 
 watch(
-  () => props.highlightedRefs,
+  () => Array.from(props.highlightedRefs ?? []).sort().join('|'),
   () => {
-    if (suppressNextHighlightScroll) {
-      suppressNextHighlightScroll = false
+    const refs = props.highlightedRefs
+    if (pendingClickRef && refs?.has(pendingClickRef)) {
+      pendingClickRef = null
       return
     }
+    pendingClickRef = null
     nextTick(centerHighlighted)
   },
-  { deep: true },
 )
 
 onMounted(() => {
@@ -357,6 +413,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   pageObserver?.disconnect()
+  renderObserver?.disconnect()
 })
 </script>
 

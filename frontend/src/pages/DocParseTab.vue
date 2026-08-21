@@ -1,7 +1,7 @@
 <template>
   <div class="parse-tab" data-e2e="parse-tab">
     <LayersBar
-      :elements="currentPageElements"
+      :elements="allPageElements"
       :hidden-types="hiddenTypes"
       @update:hidden-types="(next) => (hiddenTypes = next)"
     >
@@ -102,10 +102,10 @@
         </button>
         <ElementProperties
           v-if="propertiesOpen"
-          :element="selectedElement"
-          :page-width="currentPageWidth"
-          :page-height="currentPageHeight"
-          :page-number="currentPage"
+          :element="selectedElementData?.element ?? null"
+          :page-width="selectedElementPage?.width ?? 0"
+          :page-height="selectedElementPage?.height ?? 0"
+          :page-number="selectedElementData?.pageNumber ?? currentPage"
           :linked-chunk="linkedChunk"
           :saving="chunksStore.saving"
           :editable="!analysisId"
@@ -199,15 +199,11 @@ const treeError = ref<string | null>(null)
 const filter = ref('')
 const selectedNodeRef = ref<string | null>(null)
 
-const currentPageData = computed(() => {
-  return documentStore.workspacePages.find((p) => p.page_number === currentPage.value) ?? null
-})
+const allPageElements = computed<PageElement[]>(() =>
+  documentStore.workspacePages.flatMap((page) => page.elements),
+)
 
-const currentPageElements = computed<PageElement[]>(() => currentPageData.value?.elements ?? [])
-const currentPageWidth = computed(() => currentPageData.value?.width ?? 0)
-const currentPageHeight = computed(() => currentPageData.value?.height ?? 0)
-
-const selectedElement = computed<PageElement | null>(() => {
+const selectedElementData = computed<{ element: PageElement; pageNumber: number } | null>(() => {
   if (!selectedNodeRef.value) return null
   // Search every page — selectedNodeRef may point to an element on a
   // different page than the one currently rendered (the click also
@@ -215,14 +211,27 @@ const selectedElement = computed<PageElement | null>(() => {
   // to show the element's data).
   for (const page of documentStore.workspacePages) {
     const el = page.elements.find((e) => e.self_ref === selectedNodeRef.value)
-    if (el) return el
+    if (el) return { element: el, pageNumber: page.page_number }
   }
   return null
 })
 
+const selectedElementPage = computed(() => {
+  if (!selectedElementData.value) return null
+  return (
+    documentStore.workspacePages.find(
+      (page) => page.page_number === selectedElementData.value?.pageNumber,
+    ) ?? null
+  )
+})
+
 const linkedChunk = computed<DocChunk | null>(() => {
-  if (!selectedElement.value) return null
-  return chunkForElement(selectedElement.value, currentPage.value, activeChunks.value)
+  if (!selectedElementData.value) return null
+  return chunkForElement(
+    selectedElementData.value.element,
+    selectedElementData.value.pageNumber,
+    activeChunks.value,
+  )
 })
 
 const activeChunks = computed<DocChunk[]>(() => {
@@ -267,7 +276,7 @@ function onHoverElement(_el: PageElement | null): void {
   // Hover is informational only — selection drives the tree highlight.
 }
 
-function onClickElement(el: PageElement): void {
+function onClickElement(el: PageElement, _pageNumber: number): void {
   if (el.self_ref) selectedNodeRef.value = el.self_ref
 }
 
