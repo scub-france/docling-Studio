@@ -10,56 +10,24 @@ from infra / persistence.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from fastapi import APIRouter, HTTPException
 
 from api import deps  # noqa: TC001
 from api.schemas import (
     ReasoningConfigResponse,
     ReasoningConfigUpdateRequest,
-    ReasoningDiagnosticsResponse,
     ReasoningProbeRequest,
     ReasoningProbeResponse,
 )
 from domain.app_config import ReasoningConfig
 from services.app_config_service import AppConfigError
 
-if TYPE_CHECKING:
-    from domain.app_config import ReasoningConfigView
-
 router = APIRouter(prefix="/api/config", tags=["config"])
-
-# Domain field name → wire (camelCase) key for the per-field source map.
-# Explicit on purpose: this is contract, not convention (see the DTO docstring).
-_SOURCE_KEYS = {
-    "enabled": "enabled",
-    "ollama_host": "ollamaHost",
-    "model_id": "modelId",
-    "max_iterations": "maxIterations",
-}
-
-
-def _to_response(view: ReasoningConfigView) -> ReasoningConfigResponse:
-    return ReasoningConfigResponse(
-        enabled=view.config.enabled,
-        ollama_host=view.config.ollama_host,
-        model_id=view.config.model_id,
-        max_iterations=view.config.max_iterations,
-        sources={_SOURCE_KEYS[field]: source for field, source in view.sources.items()},
-        provider_type=view.provider_type,
-        read_only=view.read_only,
-        diagnostics=ReasoningDiagnosticsResponse(
-            deps_present=view.diagnostics.deps_present,
-            provenance=view.diagnostics.provenance,
-            available=view.diagnostics.available,
-        ),
-    )
 
 
 @router.get("/reasoning", response_model=ReasoningConfigResponse)
 async def get_reasoning_config(service: deps.AppConfigServiceDep) -> ReasoningConfigResponse:
-    return _to_response(await service.get_reasoning())
+    return ReasoningConfigResponse.from_view(await service.get_reasoning())
 
 
 @router.put("/reasoning", response_model=ReasoningConfigResponse)
@@ -78,7 +46,7 @@ async def put_reasoning_config(
         # 400 (invalid values) / 403 (read-only deployment) — the service
         # carries the status hint, like `ReasoningServiceError`.
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
-    return _to_response(view)
+    return ReasoningConfigResponse.from_view(view)
 
 
 @router.delete("/reasoning", response_model=ReasoningConfigResponse)
@@ -87,7 +55,7 @@ async def reset_reasoning_config(service: deps.AppConfigServiceDep) -> Reasoning
         view = await service.reset_reasoning()
     except AppConfigError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
-    return _to_response(view)
+    return ReasoningConfigResponse.from_view(view)
 
 
 @router.post("/reasoning/test", response_model=ReasoningProbeResponse)
@@ -98,8 +66,4 @@ async def test_reasoning_connection(
         result = await service.test_connection(body.host)
     except AppConfigError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
-    return ReasoningProbeResponse(
-        reachable=result.reachable,
-        models=result.models,
-        error=result.error,
-    )
+    return ReasoningProbeResponse.from_result(result)

@@ -223,24 +223,40 @@ class ReasoningStepKind(StrEnum):
 
 
 @dataclass(frozen=True)
+class ReasoningStepPayload:
+    """The raw iteration fields a projected step carries alongside its
+    presentation-level title/summary — what the debugger drawer expands.
+
+    Modelled explicitly rather than kept as a free-form dict so the shape is
+    typed end to end (#306 review): the API DTO mirrors it field by field and
+    Pydantic owns the snake_case → camelCase aliasing, instead of the builder
+    hand-constructing wire-cased keys.
+    """
+
+    iteration: int
+    section_ref: str
+    reason: str
+    section_text_length: int
+    can_answer: bool
+    response: str
+    duration_ms: int = 0
+
+
+@dataclass(frozen=True)
 class ReasoningStep:
     """Debugger-facing projection of one reasoning step — what the trace
     timeline renders as a row. Built from a `ReasoningIteration` by the pure
     `domain.trace_builder` projection.
-
-    `payload` carries the iteration's raw fields with **camelCase keys** (the
-    wire contract the UI binds to, e.g. `payload.canAnswer`); Pydantic does
-    not alias dict contents, so the builder constructs them already-cased.
     """
 
     id: str  # "s1", "s2", …
     kind: ReasoningStepKind
     title: str  # the LLM's stated reason, truncated to <=96 chars
     summary: str  # answer attempt, or "Insufficient — …" when it moved on
+    payload: ReasoningStepPayload
     duration_ms: int = 0
     token_count: int = 0  # reserved until mellea exposes usage stats
     citations: list[str] = field(default_factory=list)  # docling self_refs
-    payload: dict[str, Any] = field(default_factory=dict)  # camelCase keys (wire-destined)
 
 
 @dataclass(frozen=True)

@@ -15,12 +15,14 @@ prefers the agent's own `RAGResult.duration_ms` (LLM time) over the API
 wall-clock fallback, since that's the signal the timeline actually cares
 about. Token counts stay zero until mellea exposes usage stats.
 
-Two deliberate divergences from the docling-lens reference:
-  - title fallback uses ``or`` (not ``if it.reason``), so a whitespace-only
-    reason also falls back to ``Read {ref}``;
-  - `payload` keys are **camelCase** — the binding wire contract the UI reads
-    (`payload.canAnswer`); Pydantic does not alias dict contents, so the keys
-    are constructed already-cased here.
+One deliberate divergence from the docling-lens reference: the title fallback
+uses ``or`` (not ``if it.reason``), so a whitespace-only reason also falls back
+to ``Read {ref}``.
+
+`payload` is a typed `ReasoningStepPayload`, snake_case like every other domain
+value object — the API DTO owns the camelCase wire aliasing (#306 review). It
+used to be a dict of hand-cased keys because Pydantic does not alias dict
+contents; modelling it removed that constraint.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from domain.value_objects import (
     ReasoningResult,
     ReasoningStep,
     ReasoningStepKind,
+    ReasoningStepPayload,
     ReasoningTrace,
 )
 
@@ -59,15 +62,15 @@ def _read_step(it: ReasoningIteration) -> ReasoningStep:
         summary=summary,
         duration_ms=it.duration_ms,
         citations=[it.section_ref] if it.section_ref else [],
-        payload={
-            "iteration": it.iteration,
-            "sectionRef": it.section_ref,
-            "reason": it.reason,
-            "sectionTextLength": it.section_text_length,
-            "canAnswer": it.can_answer,
-            "response": it.response,
-            "durationMs": it.duration_ms,
-        },
+        payload=ReasoningStepPayload(
+            iteration=it.iteration,
+            section_ref=it.section_ref,
+            reason=it.reason,
+            section_text_length=it.section_text_length,
+            can_answer=it.can_answer,
+            response=it.response,
+            duration_ms=it.duration_ms,
+        ),
     )
 
 
