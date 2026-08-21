@@ -127,7 +127,8 @@ that write path, with reasoning as its first consumer.
   the runner rebuild as a callback, diagnostics as a callback. Same pattern as
   `StoreBackendResolver.graph_writer_factory` (#audit-01).
 - `api/` may not import `infra/` or `persistence/` — the router only talks to
-  `AppConfigService` via `app.state` (`api/deps.py` accessor).
+  `AppConfigService` through the typed `AppState` container (`api/deps.py`
+  accessor over `api/state.py`).
 - New port surface: `AppSettingsRepository` (persistence) and `LLMHostProbe` (infra)
   in `domain/ports.py`.
 
@@ -180,7 +181,8 @@ class ReasoningDiagnostics:
 @dataclass(frozen=True)
 class ReasoningConfigView:
     config: ReasoningConfig
-    sources: dict[str, ConfigSource]   # keyed by ReasoningConfig field name
+    sources: dict[str, ConfigSource]   # keyed by ReasoningConfig field name;
+                                       # the DTO projects it onto a typed model
     provider_type: str                 # read-only diagnostic ("ollama")
     read_only: bool                    # deployment_mode == "huggingface"
     diagnostics: ReasoningDiagnostics
@@ -283,13 +285,13 @@ Use cases:
 - `apply_effective() -> None` — resolve and `apply_config(...)`; called once by
   `lifespan` so persisted overrides take effect at boot.
 
-Rebuild concurrency: `apply_config` swaps `app.state.reasoning_runner` and
-`app.state.reasoning_service` by rebinding the attributes (single assignment,
-event-loop thread). In-flight Ask runs hold a reference to the old
-runner/service and complete on the old config; new requests resolve the new
-one via `request.app.state`. No locking needed — no shared mutable state
-inside the runner beyond the provider it was constructed with. Writes are
-admin-frequency, not a hot path (`MAX_CONCURRENT_ANALYSES` untouched).
+Rebuild concurrency: `apply_config` publishes a **new immutable container**
+(`dataclasses.replace` + one rebind on the event-loop thread) carrying the fresh
+runner and `ReasoningService`. In-flight Ask runs already resolved their service
+and complete on the old config; subsequent requests resolve the new container.
+No locking needed — no shared mutable state inside the runner beyond the provider
+it was constructed with. Writes are admin-frequency, not a hot path
+(`MAX_CONCURRENT_ANALYSES` untouched).
 
 ### 5.5 API
 
@@ -308,26 +310,31 @@ no screen-shaped bundling. Not excluded from the rate limiter.
 returns the env-sourced view. The router maps `AppConfigError.http_status` exactly
 like `api/reasoning.py` maps `ReasoningServiceError`.
 
-`main.py` wiring (in `lifespan`, after `init_db` + repos):
+Wiring lives in `bootstrap.AppStateBuilder._wire_reasoning()` — the composition
+root that publishes the typed `AppState` container (`api/state.py`). The builder
+outlives boot precisely so the rebuild has somewhere to publish to:
 
 ```
-_apply_reasoning_config(cfg):                 # closure over app + analysis_repo
-    runner = _build_reasoning_runner(cfg)     # refactored to take ReasoningConfig
-    app.state.reasoning_runner = runner
-    app.state.reasoning_service = ReasoningService(runner, analysis_repo, cfg.model_id)
+AppStateBuilder._wire_reasoning(analysis_repo):
+    apply_config(cfg):                        # injected into AppConfigService
+        runner = build_reasoning_runner(cfg)
+        self._update(                         # replace(container, …) + rebind
+            reasoning_runner=runner,
+            reasoning_service=ReasoningService(runner, analysis_repo, cfg.model_id),
+        )
 
-_reasoning_diagnostics():                     # closure over app
-    ReasoningDiagnostics(deps_present(), deps_provenance(), runner.is_available…)
+    diagnostics():                            # reads the live container
+        ReasoningDiagnostics(deps_present(), deps_provenance(), runner.is_available…)
 
-app.state.app_config_service = AppConfigService(…)
-await app.state.app_config_service.apply_effective()   # DB overrides live from boot
+    self._update(app_config_service=AppConfigService(…, apply_config, diagnostics))
+    await state.app_config_service.apply_effective()   # DB overrides live from boot
 ```
 
-The module-scope `app.state.reasoning_runner = _build_reasoning_runner(env_config)`
-stays as the pre-lifespan default (tests importing `app` without lifespan keep the
-env behavior); `lifespan` immediately replaces it with the DB-aware build.
-`/api/health` is untouched code-wise — it already reads
-`app.state.reasoning_runner`, which now tracks every rebuild.
+`apply_effective()` at the end of boot is what actually builds the runner and the
+`ReasoningService`, so a persisted override is in force before the first request.
+`/api/health` reads `reasoning_runner` off the container — tolerating its absence,
+since the app is importable (and health answerable) before lifespan has run — and
+therefore follows every rebuild with no code of its own.
 
 ### 5.6 Frontend — feature module
 
@@ -366,14 +373,28 @@ drop the memo, re-fetch `/api/health`.
 
 Save sequence:
 
-```
-SettingsPanel ── save ──▶ PUT /api/config/reasoning
-   api/config.py ──▶ AppConfigService.update_reasoning
-        validate → repo.set_many("reasoning", …) → apply_config(effective)
-                                                        │ rebuild runner + service
-                                                        ▼ app.state.* swapped
-   ◀── 200 ReasoningConfigResponse (sources: db, fresh diagnostics)
-store ──▶ featureFlags.reload() ──▶ GET /api/health (reasoningAvailable follows)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as SettingsPanel<br/>(admin-config store)
+    participant API as api/config.py
+    participant SVC as AppConfigService
+    participant DB as app_settings (SQLite)
+    participant B as AppStateBuilder
+    participant H as /api/health
+
+    UI->>API: PUT /api/config/reasoning
+    API->>SVC: update_reasoning(config)
+    SVC->>SVC: validate_reasoning_config()
+    Note over SVC: invalid → 400 · read-only deploy → 403
+    SVC->>DB: set_many("reasoning", …)
+    SVC->>B: apply_config(effective)
+    B->>B: build_reasoning_runner(config)
+    B-->>B: publish replace(container,<br/>runner + ReasoningService)
+    SVC-->>API: ReasoningConfigView
+    API-->>UI: 200 (sources: db, fresh diagnostics)
+    UI->>H: featureFlags.reload()
+    H-->>UI: reasoningAvailable follows — Ask tab appears
 ```
 
 ## 6. Alternatives considered
