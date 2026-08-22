@@ -142,6 +142,12 @@ const props = defineProps<{
   hiddenTypes: ReadonlySet<string>
   showLabels: boolean
   highlightedRefs?: ReadonlySet<string>
+  /**
+   * Bumped by the document store on every `focusElement` call (#303). The
+   * highlight watcher below only fires when the *set* changes, so re-selecting
+   * the trace step that is already highlighted would not re-scroll without it.
+   */
+  focusTick?: number
 }>()
 
 const emit = defineEmits<{
@@ -399,6 +405,16 @@ watch(
       pendingClickRef = null
       return
     }
+    pendingClickRef = null
+    nextTick(centerHighlighted)
+  },
+)
+
+// Re-centre on an explicit focus even when the highlighted set is unchanged —
+// clicking the same citation twice must scroll back to it (#303).
+watch(
+  () => props.focusTick,
+  () => {
     pendingClickRef = null
     nextTick(centerHighlighted)
   },
