@@ -88,6 +88,24 @@ class SqliteDocumentRepository:
             row = await cursor.fetchone()
             return _row_to_document(row) if row else None
 
+    async def find_by_ids(self, doc_ids: list[str]) -> dict[str, Document]:
+        """Return the requested documents keyed by id, in a single query.
+
+        Batches what would otherwise be one `find_by_id` per id (N+1) into a
+        single `WHERE id IN (...)`. Missing ids are simply absent from the
+        mapping — callers default accordingly.
+        """
+        if not doc_ids:
+            return {}
+        placeholders = ",".join("?" for _ in doc_ids)
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"SELECT * FROM documents WHERE id IN ({placeholders})",
+                tuple(doc_ids),
+            )
+            rows = await cursor.fetchall()
+            return {row["id"]: _row_to_document(row) for row in rows}
+
     async def update_page_count(self, doc_id: str, page_count: int) -> None:
         """Update the page count after conversion has determined it."""
         async with get_connection() as db:

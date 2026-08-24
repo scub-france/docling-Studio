@@ -79,6 +79,20 @@ class SqliteDocumentStoreLinkRepository:
             rows = await cursor.fetchall()
             return [_row_to_link(r) for r in rows]
 
+    async def count_by_store(self) -> dict[str, int]:
+        """Return the document count per store in a single query.
+
+        Batches what would otherwise be one `find_for_store` per store
+        (N+1) into a single `GROUP BY`. Stores with no links are simply
+        absent from the mapping — callers default to 0.
+        """
+        async with get_connection() as db:
+            cursor = await db.execute(
+                "SELECT store_id, COUNT(*) AS n FROM document_store_links GROUP BY store_id"
+            )
+            rows = await cursor.fetchall()
+            return {row["store_id"]: row["n"] for row in rows}
+
     async def find_one(self, document_id: str, store_id: str) -> DocumentStoreLink | None:
         async with get_connection() as db:
             cursor = await db.execute(

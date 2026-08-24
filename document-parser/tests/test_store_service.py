@@ -173,6 +173,55 @@ class TestRead:
         default_view = next(v for v in views if v.slug == "default")
         assert default_view.document_count == 1
 
+    async def test_list_counts_are_per_store_batched(self, service):
+        # Two stores (plus the seeded 'default') with distinct link counts.
+        # Guards the batched count_by_store() attribution: the right count
+        # lands on the right store, and an unlinked store reports 0.
+        store_a = await service.create_store(
+            name="a",
+            slug="a",
+            kind=StoreKind.OPENSEARCH,
+            embedder="bge-m3",
+            config={"index_name": "a"},
+        )
+        store_b = await service.create_store(
+            name="b",
+            slug="b",
+            kind=StoreKind.OPENSEARCH,
+            embedder="bge-m3",
+            config={"index_name": "b"},
+        )
+        doc_repo = SqliteDocumentRepository()
+        link_repo = SqliteDocumentStoreLinkRepository()
+        for i in range(3):
+            await doc_repo.insert(
+                Document(id=f"a-{i}", filename=f"a{i}.pdf", storage_path=f"/tmp/a{i}.pdf")
+            )
+            await link_repo.upsert(
+                DocumentStoreLink(
+                    id=f"la-{i}",
+                    document_id=f"a-{i}",
+                    store_id=store_a.id,
+                    state=DocumentStoreLinkState.INGESTED,
+                )
+            )
+        await doc_repo.insert(Document(id="b-0", filename="b0.pdf", storage_path="/tmp/b0.pdf"))
+        await link_repo.upsert(
+            DocumentStoreLink(
+                id="lb-0",
+                document_id="b-0",
+                store_id=store_b.id,
+                state=DocumentStoreLinkState.INGESTED,
+            )
+        )
+
+        views = await service.list_stores()
+        by_slug = {v.slug: v.document_count for v in views}
+        assert by_slug["a"] == 3
+        assert by_slug["b"] == 1
+        # The seeded default has no links → defaults to 0.
+        assert by_slug["default"] == 0
+
 
 class TestUpdate:
     async def test_partial_update(self, service):

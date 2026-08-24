@@ -159,9 +159,10 @@ class StoreService:
 
     async def list_stores(self) -> list[StoreInfoView]:
         stores = await self._stores.find_all()
+        # Single GROUP BY for all stores instead of one query per store (N+1).
+        counts = await self._links.count_by_store()
         views: list[StoreInfoView] = []
         for store in stores:
-            links = await self._links.find_for_store(store.id)
             views.append(
                 StoreInfoView(
                     name=store.name,
@@ -169,7 +170,7 @@ class StoreService:
                     kind=store.kind.value,
                     embedder=store.embedder,
                     is_default=store.is_default,
-                    document_count=len(links),
+                    document_count=counts.get(store.id, 0),
                     chunk_count=0,
                     connected=True,
                 )
@@ -355,9 +356,12 @@ class StoreService:
                 )
                 for link in links
             ]
+        # Single IN (...) lookup for all linked docs instead of one query per
+        # link (N+1).
+        docs = await self._documents.find_by_ids([link.document_id for link in links])
         entries: list[StoreDocEntryView] = []
         for link in links:
-            doc = await self._documents.find_by_id(link.document_id)
+            doc = docs.get(link.document_id)
             entries.append(
                 StoreDocEntryView(
                     doc_id=link.document_id,
