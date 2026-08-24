@@ -1,7 +1,7 @@
 export { useAnalysisStore } from './store'
+export { fetchAnalysis } from './api'
 export { default as AnalysisPanel } from './ui/AnalysisPanel.vue'
 export { default as ResultTabs } from './ui/ResultTabs.vue'
-export { default as MarkdownViewer } from './ui/MarkdownViewer.vue'
 export { default as StructureViewer } from './ui/StructureViewer.vue'
 export { default as BboxOverlay } from './ui/BboxOverlay.vue'
 export { default as ImageGallery } from './ui/ImageGallery.vue'

@@ -37,7 +37,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { Analysis, Page } from '../../../shared/types'
-import MarkdownViewer from './MarkdownViewer.vue'
+import MarkdownViewer from '@/shared/ui/MarkdownViewer.vue'
 import StructureViewer from './StructureViewer.vue'
 import ImageGallery from './ImageGallery.vue'
 import { useI18n } from '../../../shared/i18n'

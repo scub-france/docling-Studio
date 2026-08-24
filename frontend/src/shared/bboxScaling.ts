@@ -1,4 +1,4 @@
-import type { Scale, Rect } from '../../shared/types'
+import type { Scale, Rect } from './types'
 
 /** Sentinel rect for degenerate bboxes — zero area, ignored by hit-testing. */
 export const EMPTY_RECT: Rect = { x: 0, y: 0, w: 0, h: 0 }

@@ -58,9 +58,8 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useDocumentStore } from '../../document/store'
+import { useDocumentStore, DocumentUpload, DocumentList, PagePreview } from '@/features/document'
 import { useAnalysisStore } from '../store'
-import { DocumentUpload, DocumentList, PagePreview } from '../../document/index'
 
 const documentStore = useDocumentStore()
 const analysisStore = useAnalysisStore()

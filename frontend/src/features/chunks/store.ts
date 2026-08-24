@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { DocChunk, ChunkDiff } from '../../shared/types'
 import type { RechunkOptions } from '@/shared/types'
-import { rechunkDocument } from '../document/api'
+import { rechunkDocument } from '@/features/document'
 import * as api from './api'
 
 export const useChunksStore = defineStore('chunks', () => {

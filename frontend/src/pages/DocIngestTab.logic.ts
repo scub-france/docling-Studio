@@ -14,7 +14,7 @@ import type {
   DocStoreLink,
   DocumentLifecycleState,
 } from '../shared/types'
-import type { StoreInfo } from '../features/store/api'
+import type { StoreInfo } from '@/features/store'
 import type { ChunkPushEntry } from '../features/chunks/api'
 
 export type RowState = DocumentLifecycleState | 'NotPushed'

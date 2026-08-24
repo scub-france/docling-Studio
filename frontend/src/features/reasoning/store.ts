@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
-import { useDocumentStore } from '../document/store'
+import { useDocumentStore } from '@/features/document'
 import { runReasoning } from './api'
 import type { ConversationTurn, ReasoningTrace } from './types'
 

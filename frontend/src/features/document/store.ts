@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Analysis, Document, DocumentVersion, Page } from '../../shared/types'
 import { appMaxFileSizeMb } from '../../shared/appConfig'
-import { fetchAnalysis } from '../analysis/api'
-import { pushChunksToStore } from '../chunks/api'
+import { fetchAnalysis } from '@/features/analysis'
+import { pushChunksToStore } from '@/features/chunks'
 import * as api from './api'
 
 export const useDocumentStore = defineStore('document', () => {

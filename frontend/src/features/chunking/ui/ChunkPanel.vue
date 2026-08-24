@@ -225,7 +225,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { useChunkingStore } from '../store'
-import { useAnalysisStore } from '../../analysis/store'
+import { useAnalysisStore } from '@/features/analysis'
 import { useI18n } from '../../../shared/i18n'
 import { usePagination } from '../../../shared/composables/usePagination'
 import { PaginationBar } from '../../../shared/ui'

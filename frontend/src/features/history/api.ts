@@ -1,5 +1,5 @@
 import type { Analysis } from '../../shared/types'
-import { apiFetch } from '../../shared/api/http'
+import { apiFetch } from '@/shared/api/http'
 
 export function fetchHistory(): Promise<Analysis[]> {
   return apiFetch<Analysis[]>('/api/analyses')

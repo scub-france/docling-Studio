@@ -127,7 +127,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { Page, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
-import { bboxToRect, computeScale } from '../bboxScaling'
+import { bboxToRect, computeScale } from '@/shared/bboxScaling'
 import { getPreviewUrl } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
 import { clampPageInput, pageInputWidthCh } from './PagePreviewWithOverlay.logic'

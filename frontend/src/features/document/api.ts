@@ -1,6 +1,6 @@
 import type { DocChunk, Document, DocTreeNode, DocumentVersion } from '../../shared/types'
 import type { RechunkOptions } from '@/shared/types'
-import { apiFetch } from '../../shared/api/http'
+import { apiFetch } from '@/shared/api/http'
 
 export function fetchDocuments(): Promise<Document[]> {
   return apiFetch<Document[]>('/api/documents')

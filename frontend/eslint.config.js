@@ -22,6 +22,37 @@ export default [
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'off',
+      // Decoupling invariant (#audit-07): cross-feature access only through the
+      // public barrel (@/features/<name>) or @/shared — never into another
+      // feature's internals (store/api/ui).
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '../*/store',
+                '../*/store/*',
+                '../*/api',
+                '../*/api/*',
+                '../*/ui/*',
+                '../../*/store',
+                '../../*/store/*',
+                '../../*/api',
+                '../../*/api/*',
+                '../../*/ui/*',
+                '@/features/*/store',
+                '@/features/*/store/*',
+                '@/features/*/api',
+                '@/features/*/api/*',
+                '@/features/*/ui/*',
+              ],
+              message:
+                'Cross-feature imports must go through the public barrel (@/features/<name>) or @/shared. Deep imports into another feature are forbidden (#audit-07 / decoupling).',
+            },
+          ],
+        },
+      ],
       'vue/multi-word-component-names': 'off',
       'vue/require-default-prop': 'off',
       // Formatting handled by Prettier
@@ -32,6 +63,13 @@ export default [
       'vue/html-indent': 'off',
       'vue/html-self-closing': 'off',
       'vue/attributes-order': 'off',
+    },
+  },
+  {
+    // Test files may reach into feature internals to build mocks/fixtures.
+    files: ['src/**/*.test.{ts,js}'],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
   {

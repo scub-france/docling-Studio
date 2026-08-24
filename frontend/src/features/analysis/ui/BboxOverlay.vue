@@ -36,7 +36,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, reactive, onMounted, onBeforeUnmount } from 'vue'
-import { computeScale, bboxToRect, pointInRect } from '../../document/bboxScaling'
+import { computeScale, bboxToRect, pointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement, ChunkBbox } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
 

@@ -10,7 +10,7 @@
 import { computed } from 'vue'
 import { useI18n } from '../shared/i18n'
 
-import ComingSoonShell from '../shared/ui/ComingSoonShell.vue'
+import ComingSoonShell from '@/shared/ui/ComingSoonShell.vue'
 
 const props = defineProps<{ id: string }>()
 

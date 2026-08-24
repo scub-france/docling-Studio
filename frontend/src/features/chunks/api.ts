@@ -1,5 +1,5 @@
 import type { DocChunk, ChunkDiff, PushSummary } from '../../shared/types'
-import { apiFetch } from '../../shared/api/http'
+import { apiFetch } from '@/shared/api/http'
 
 export function fetchChunks(docId: string): Promise<DocChunk[]> {
   return apiFetch<DocChunk[]>(`/api/documents/${docId}/chunks`)

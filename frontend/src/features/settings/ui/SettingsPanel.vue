@@ -70,8 +70,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useSettingsStore } from '../store'
-import { useFeatureFlagStore } from '../../feature-flags/store'
-import ReasoningConfigSection from '../../admin-config/ui/ReasoningConfigSection.vue'
+import { useFeatureFlagStore } from '@/features/feature-flags'
+import { ReasoningConfigSection } from '@/features/admin-config'
 import { useI18n } from '../../../shared/i18n'
 
 const store = useSettingsStore()

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { apiFetch } from '../../shared/api/http'
+import { apiFetch } from '@/shared/api/http'
 import { appMaxFileSizeMb, appMaxPageCount } from '../../shared/appConfig'
 
 type ConversionEngine = 'local' | 'remote'

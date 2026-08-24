@@ -42,7 +42,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { RouterView } from 'vue-router'
-import { AppSidebar } from '../shared/ui/index'
+import { AppSidebar } from '@/shared/ui'
 import AppBreadcrumb from '../shared/breadcrumb/AppBreadcrumb.vue'
 import { useBreadcrumbStore } from '../shared/breadcrumb/store'
 import { useSettingsStore } from '../features/settings/store'

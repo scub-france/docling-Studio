@@ -111,7 +111,7 @@
  */
 import { computed, reactive } from 'vue'
 import type { DocStoreLink } from '../shared/types'
-import type { StoreInfo } from '../features/store/api'
+import type { StoreInfo } from '@/features/store'
 import { pushChunksToStore } from '../features/chunks/api'
 import { useI18n } from '../shared/i18n'
 import {

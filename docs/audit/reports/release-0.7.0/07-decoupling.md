@@ -45,6 +45,12 @@ Detail du calcul : somme des poids = 35 ; poids conformes = 28 (non conformes :
 
 ### [CRIT] Imports croises systemiques entre features frontend (item 7.2.2)
 
+> **Resolu (Option B, barrel boundary)** sur `fix/release-0.7.0-audit-blockers` :
+> les briques partagees (`MarkdownViewer`, `StatusBadge`, `bboxScaling`) ont ete
+> extraites vers `shared/`, tous les acces inter-features passent desormais par
+> les barrels publics `@/features/<name>` (ou `@/shared`), et l'invariant est
+> impose par la regle ESLint `no-restricted-imports`.
+
 - **Localisation** : `frontend/src/features/reasoning/store.ts:3` (+ ~19 autres, liste ci-dessous)
 - **Constat** : L'item 7.2.2 exige que les features ne s'importent pas
   mutuellement, la communication devant passer par `shared/` ou par les

@@ -33,7 +33,7 @@
  */
 import { onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from '../../../shared/i18n'
-import MarkdownViewer from '../../analysis/ui/MarkdownViewer.vue'
+import MarkdownViewer from '@/shared/ui/MarkdownViewer.vue'
 
 defineProps<{ content: string; title: string }>()
 const emit = defineEmits<{ close: [] }>()

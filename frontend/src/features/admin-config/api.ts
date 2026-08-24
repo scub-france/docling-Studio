@@ -1,4 +1,4 @@
-import { apiFetch } from '../../shared/api/http'
+import { apiFetch } from '@/shared/api/http'
 import type { ReasoningConfigUpdate, ReasoningConfigView, ReasoningProbeResult } from './types'
 
 /**

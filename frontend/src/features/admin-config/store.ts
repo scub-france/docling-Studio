@@ -7,7 +7,7 @@ import {
   testReasoningConnection,
 } from './api'
 import type { ReasoningConfigView, ReasoningProbeResult } from './types'
-import { useFeatureFlagStore } from '../feature-flags/store'
+import { useFeatureFlagStore } from '@/features/feature-flags'
 
 /**
  * Admin runtime-config store (#317). Holds the server view plus an editable

@@ -7,7 +7,7 @@
 import { computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { useI18n } from '../../../shared/i18n'
+import { useI18n } from '../i18n'
 
 const props = defineProps({ content: String })
 const { t } = useI18n()

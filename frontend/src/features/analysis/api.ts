@@ -1,5 +1,5 @@
 import type { Analysis, Chunk, ChunkingOptions, PipelineOptions } from '../../shared/types'
-import { apiFetch } from '../../shared/api/http'
+import { apiFetch } from '@/shared/api/http'
 
 export function createAnalysis(
   documentId: string,

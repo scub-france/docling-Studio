@@ -1,4 +1,4 @@
-import { apiFetch } from '../../shared/api/http'
+import { apiFetch } from '@/shared/api/http'
 import type { DocumentLifecycleState } from '../../shared/types'
 
 export interface StoreInfo {

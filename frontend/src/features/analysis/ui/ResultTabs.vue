@@ -191,7 +191,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
 import { useAnalysisStore } from '../store'
-import MarkdownViewer from './MarkdownViewer.vue'
+import MarkdownViewer from '@/shared/ui/MarkdownViewer.vue'
 import ImageGallery from './ImageGallery.vue'
 import { useI18n } from '../../../shared/i18n'
 import type { PageElement } from '../../../shared/types'

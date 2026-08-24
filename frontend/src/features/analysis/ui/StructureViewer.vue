@@ -61,8 +61,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, reactive } from 'vue'
-import { getPreviewUrl } from '../../document/api'
-import { computeScale, bboxToRect, pointInRect } from '../../document/bboxScaling'
+import { getPreviewUrl } from '@/features/document'
+import { computeScale, bboxToRect, pointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
 

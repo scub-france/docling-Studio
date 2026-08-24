@@ -23,7 +23,7 @@
 | # | Item | Poids |
 |---|------|-------|
 | 7.2.1 | Chaque feature (`features/analysis`, `features/document`, ...) a son propre store, API client et composants UI | 2 |
-| 7.2.2 | Les features ne s'importent pas mutuellement — la communication passe par `shared/` ou par les props/events Vue | 3 |
+| 7.2.2 | Les features ne s'importent qu'a travers leur **barrel public `index.ts`** (ou `shared/`) — aucun import dans les internes (`store`/`api`/`ui`) d'une autre feature ; invariant impose par la regle ESLint `no-restricted-imports` | 3 |
 | 7.2.3 | Les types partages entre features sont dans `shared/types.ts`, pas dans une feature specifique | 2 |
 | 7.2.4 | Un store Pinia n'accede pas directement au state d'un autre store (sauf via des getters exposes) | 2 |
 

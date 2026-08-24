@@ -101,6 +101,7 @@ La 0.7.0 **ne peut pas être taguée en l'état** : 2 écarts CRITICAL + 15 éca
 1. **Obligatoire (release-prep)** : figer `CHANGELOG.md` en `[0.7.0] - 2026-08-24` **et** bumper `frontend/package.json` en 0.7.0. → lève le CRIT-11 et le MAJ-11.
 2. **Obligatoire (sécurité)** : corriger la SSRF de la probe `test-connection` (bloquer loopback / RFC1918 dans `validate_host_url`). → lève le MAJ-08.
 3. **Arbitrage requis** : le CRIT-07 (imports croisés frontend) — soit remédiation (introduire `shared/` + inverser les dépendances), soit reclassement en dette documentée assumée pour 0.7.x avec ticket de suivi. Tant qu'il reste `[CRIT]`, le verdict reste NO-GO.
+   - **Adressé (Option B, barrel boundary)** sur `fix/release-0.7.0-audit-blockers` : briques partagées extraites vers `shared/`, tous les accès inter-features passent par les barrels publics `@/features/<name>`, invariant imposé par la règle ESLint `no-restricted-imports` (pas d'inversion de stores). → à re-auditer pour lever le CRIT-07.
 4. **Recommandé avant tag** : ramener les MAJOR sous le seuil de 3 (au moins les quick wins DRY + le N+1 StoreService).
 
 Après corrections : re-auditer **07, 08, 11** (et 01/03/05/12 pour le score) avant de merger dans `main` et taguer `v0.7.0`.

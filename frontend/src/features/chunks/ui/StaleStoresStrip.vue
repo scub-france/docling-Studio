@@ -32,7 +32,7 @@
 import { ref, computed } from 'vue'
 import type { DocStoreLink } from '../../../shared/types'
 import { pushChunksToStore } from '../api'
-import StatusBadge from '../../document/ui/StatusBadge.vue'
+import StatusBadge from '@/shared/ui/StatusBadge.vue'
 import { useI18n } from '../../../shared/i18n'
 import { formatRelativeTime } from '../../../shared/format'
 import { appLocale } from '../../../shared/appConfig'
