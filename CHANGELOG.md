@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **The published `local` image now ships the reasoning stack** (`release.yml`): the release build never passed `WITH_REASONING`, so `docling-agent` + `mellea` were absent from `ghcr.io/scub-france/docling-studio:0.7.0-local` and `POST /api/documents/{id}/reasoning` answered `503` — the 0.7.0 headline feature was unreachable from the image users pull. The runtime panel (#317) can toggle reasoning, but it cannot install packages. `release.yml` now passes `WITH_REASONING=true` on the `local` target; the lightweight `remote` image is unchanged (its stage does not declare the ARG), and source builds stay opt-in.
+- **README reasoning section corrected**: it still described the v1 graph overlay that 0.7.0 removed, and still called the stack "disabled by default". It now documents the Parse-view timeline, the published-image behaviour, and the two upstream limits (docling-agent 0.6.0 emits only `READ` steps and reports no per-step timing).
+
+### Known gap
+
+- The release gate has **no reasoning coverage at all** — no workflow builds a `WITH_REASONING` image and `release-gate.yml` contains no reasoning job, so a fully green gate says nothing about this feature. The `e2e-ui-reasoning` job specified in `docs/design/303-reasoning-trace-v2-parse-view.md` was never created. Tracked as follow-up.
+
 ## [0.7.0] - 2026-08-24
 
 ### Added

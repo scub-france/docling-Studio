@@ -308,11 +308,17 @@ RETURN d.title, t.caption, t.cells_json
 
 The in-app **Graph** tab (under *Results*) renders the per-document graph with [Cytoscape.js](https://js.cytoscape.org/) (see [ADR-001](docs/architecture/adrs/ADR-001-graph-visualization-library.md) for the library choice). Documents with more than **200 pages** return `HTTP 413` from `GET /api/documents/{id}/graph`; pagination ships in v0.6.
 
-## Live Reasoning (opt-in, R&D)
+## Live Reasoning (R&D)
 
-Docling Studio can run [docling-agent](https://github.com/docling-project/docling-agent)'s Chunkless RAG loop against an analyzed document and return a full **reasoning trace** — the path the agent walked through the document outline, with the section reference / rationale / answer for each iteration. The trace is overlaid on the document graph so you can *see* how the agent navigated the structure.
+Docling Studio can run [docling-agent](https://github.com/docling-project/docling-agent)'s Chunkless RAG loop against an analyzed document and return a full **reasoning trace**. Since 0.7.0 (#303) the trace renders as a step timeline in the **Parse view of an analysis** (*Analyses* → open a run), next to an **Ask** panel: focusing a step reveals and scrolls the cited element across the PDF preview, the document tree and the Parse view. The standalone `/reasoning` page and its graph overlay were removed — the old routes redirect.
 
-Disabled by default — pulls heavy deps (`docling-agent`, `mellea`, ~60 MB) and needs a reachable Ollama instance with the target model already pulled.
+Two caveats about what the timeline shows today, both upstream: docling-agent 0.6.0's chunkless loop emits only `READ` steps (the other kinds — `PLAN`/`RETRIEVE`/`RERANK`/`VERIFY`/`ANSWER`/`MAP` — are reserved in the wire contract), and it reports no per-step duration, so the timeline renders in its uniform "step-order" mode with a footnote instead of inventing bars. The run's wall-clock total is captured server-side and is real.
+
+Needs a reachable Ollama instance with the target model already pulled. The published `local` image ships the reasoning packages (`docling-agent`, `mellea`); the lightweight `remote` image does not. Building from source keeps them opt-in:
+
+```bash
+docker build --build-arg WITH_REASONING=true --target local -t docling-studio:reasoning .
+```
 
 ### Enable
 
@@ -324,7 +330,7 @@ export REASONING_MODEL_ID=gpt-oss:20b           # any model already pulled in Ol
 export LLM_PROVIDER_TYPE=ollama
 ```
 
-Then `uv sync --group dev --group local` (or use the `local` Docker image which bundles the local stack) and restart the backend. The frontend reads `reasoningAvailable` from `/api/health` and hides the **Reasoning** sidebar entry when the runner isn't wired — so users never click through to a 503.
+For a source checkout, `uv sync --group dev --group local --group reasoning`, then restart the backend. The frontend reads `reasoningAvailable` from `/api/health` and hides the Ask surface when the runner isn't wired — so users never click through to a 503. `REASONING_ENABLED` can also be flipped at runtime from `/settings` (see below) without a restart, but only if the packages are present in the image.
 
 ### Runtime configuration (#317)
 

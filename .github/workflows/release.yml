@@ -61,9 +61,16 @@ jobs:
           # operators rebuilding from source) default to BAKE_MODELS=false
           # to keep the project HF-free outside this one sanctioned path.
           # See docs/architecture/huggingface-dependency-map.md.
+          # WITH_REASONING ships docling-agent + mellea inside the published
+          # `local` image. Without it the reasoning stack is absent and
+          # POST /api/documents/{id}/reasoning 503s, so the Ask surface and the
+          # trace timeline are unreachable from the image users actually pull —
+          # the runtime panel (#317) can toggle the feature, but it cannot
+          # install the packages. Only the `local` stage declares this ARG.
           build-args: |
             APP_VERSION=${{ steps.version.outputs.value }}
             BAKE_MODELS=${{ matrix.target == 'local' && 'true' || 'false' }}
+            WITH_REASONING=${{ matrix.target == 'local' && 'true' || 'false' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.target }}
