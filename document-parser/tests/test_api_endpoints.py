@@ -176,6 +176,22 @@ class TestDocumentEndpoints:
         )
         assert resp.status_code == 400
 
+    def test_upload_rejects_oversized_content_length(self, client, mock_document_service):
+        """Endpoint returns 413 from the Content-Length pre-check, before the
+        body is read and before the service is touched (#audit-09 MAJ-09a)."""
+        mock_document_service.max_file_size = 5  # bytes
+        mock_document_service.max_file_size_mb = 0
+        mock_document_service.upload = AsyncMock()  # must never be reached
+
+        resp = client.post(
+            "/api/documents/upload",
+            files={"file": ("big.pdf", b"way-more-than-five-bytes", "application/pdf")},
+        )
+
+        assert resp.status_code == 413
+        assert "too large" in resp.json()["detail"].lower()
+        mock_document_service.upload.assert_not_called()
+
     def test_preview_page_out_of_range(self, client, mock_document_service):
         mock_document_service.find_by_id = AsyncMock(
             return_value=Document(
