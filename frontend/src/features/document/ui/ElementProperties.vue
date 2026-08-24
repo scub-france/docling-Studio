@@ -146,7 +146,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { DocChunk, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToPercent } from '../bboxPercent'
-import { colorFor } from '../elementColors'
+import { colorFor } from '@/shared/elementColors'
 import MarkdownViewer from '../../analysis/ui/MarkdownViewer.vue'
 import TableModal from './TableModal.vue'
 

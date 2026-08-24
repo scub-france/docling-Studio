@@ -1,13 +1,13 @@
 // Step-kind palette for the trace timeline (#303).
 //
 // Single source of truth: the canonical OCR element palette in
-// `features/document/elementColors.ts`. Each reasoning kind borrows the base
+// `shared/elementColors.ts`. Each reasoning kind borrows the base
 // hex of the element type whose colour the handoff sampled for it. The badge
 // text and the duration bar use the base hex; the badge background derives as
 // a theme-safe tint via `color-mix` (works in both light and dark themes,
 // unlike the handoff's light-only pastel hexes).
 
-import { ELEMENT_COLORS } from '../document/elementColors'
+import { ELEMENT_COLORS } from '@/shared/elementColors'
 import type { ReasoningStepKind } from './types'
 
 // kind → the element type whose canonical colour it inherits.

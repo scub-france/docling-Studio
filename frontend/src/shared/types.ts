@@ -81,6 +81,19 @@ export interface ChunkingOptions {
   repeat_table_header?: boolean
 }
 
+/**
+ * Camel-case chunking options for the rechunk endpoint (#268). The
+ * backend `ChunkingOptionsRequest` accepts both snake_case and camelCase
+ * via `AliasChoices`; the rest of the API contract is camelCase, so the
+ * new Linked/Chunk view sticks to camelCase too.
+ */
+export interface RechunkOptions {
+  chunkerType?: 'hybrid' | 'hierarchical'
+  maxTokens?: number
+  mergePeers?: boolean
+  repeatTableHeader?: boolean
+}
+
 export interface ChunkBbox {
   page: number
   bbox: [number, number, number, number]

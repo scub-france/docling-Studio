@@ -125,7 +125,7 @@
  * silently lose their edits.
  */
 import { reactive, ref, watch } from 'vue'
-import type { RechunkOptions } from '../../document/api'
+import type { RechunkOptions } from '@/shared/types'
 import { useI18n } from '../../../shared/i18n'
 
 const props = defineProps<{

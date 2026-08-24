@@ -93,9 +93,9 @@
  */
 import { computed, watch } from 'vue'
 import type { DocChunk } from '../../../shared/types'
-import type { RechunkOptions } from '../../document/api'
+import type { RechunkOptions } from '@/shared/types'
 import { useI18n } from '../../../shared/i18n'
-import { colorFor } from '../../document/elementColors'
+import { colorFor } from '@/shared/elementColors'
 import { useChunksStore } from '../store'
 import StrategyPopover from './StrategyPopover.vue'
 

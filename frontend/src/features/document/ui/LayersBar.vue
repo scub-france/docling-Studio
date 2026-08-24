@@ -34,7 +34,7 @@
  */
 import { computed } from 'vue'
 import type { PageElement } from '../../../shared/types'
-import { colorFor, LAYER_ORDER } from '../elementColors'
+import { colorFor, LAYER_ORDER } from '@/shared/elementColors'
 
 const props = defineProps<{
   elements: readonly PageElement[]

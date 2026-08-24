@@ -25,7 +25,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import type { PageElement } from '../../../shared/types'
 import { bboxToRect, computeScale, pointInRect } from '../bboxScaling'
-import { colorFor, UNKNOWN_ELEMENT_COLOR } from '../elementColors'
+import { colorFor, UNKNOWN_ELEMENT_COLOR } from '@/shared/elementColors'
 
 const props = defineProps<{
   imageEl: HTMLImageElement | null

@@ -38,18 +38,7 @@
 import { ref, computed, watch, nextTick, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { computeScale, bboxToRect, pointInRect } from '../../document/bboxScaling'
 import type { Page, PageElement, ChunkBbox } from '../../../shared/types'
-
-const ELEMENT_COLORS: Record<string, string> = {
-  title: '#EF4444',
-  section_header: '#F97316',
-  text: '#3B82F6',
-  table: '#8B5CF6',
-  picture: '#22C55E',
-  list: '#06B6D4',
-  formula: '#EC4899',
-  code: '#14B8A6',
-  caption: '#EAB308',
-}
+import { ELEMENT_COLORS } from '@/shared/elementColors'
 
 const props = withDefaults(
   defineProps<{

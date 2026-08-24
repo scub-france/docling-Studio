@@ -64,16 +64,7 @@ import { ref, computed, watch, nextTick, reactive } from 'vue'
 import { getPreviewUrl } from '../../document/api'
 import { computeScale, bboxToRect, pointInRect } from '../../document/bboxScaling'
 import type { Page, PageElement } from '../../../shared/types'
-
-const ELEMENT_COLORS: Record<string, string> = {
-  section_header: '#F97316',
-  text: '#3B82F6',
-  table: '#8B5CF6',
-  picture: '#22C55E',
-  list: '#06B6D4',
-  formula: '#EC4899',
-  caption: '#EAB308',
-}
+import { ELEMENT_COLORS } from '@/shared/elementColors'
 
 const props = defineProps({
   pages: { type: Array as () => Page[], default: () => [] },

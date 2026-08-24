@@ -49,7 +49,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { DocTreeNode } from '../../../shared/types'
-import { colorFor } from '../elementColors'
+import { colorFor } from '@/shared/elementColors'
 
 const props = withDefaults(
   defineProps<{

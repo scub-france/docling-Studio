@@ -1,4 +1,5 @@
 import type { DocChunk, Document, DocTreeNode, DocumentVersion } from '../../shared/types'
+import type { RechunkOptions } from '@/shared/types'
 import { apiFetch } from '../../shared/api/http'
 
 export function fetchDocuments(): Promise<Document[]> {
@@ -29,19 +30,6 @@ export function getPreviewUrl(id: string, page = 1, dpi = 150): string {
 
 export function getExportUrl(id: string, format: 'pdf' | 'md' | 'json'): string {
   return `/api/documents/${id}/export?format=${format}`
-}
-
-/**
- * Camel-case chunking options for the rechunk endpoint (#268). The
- * backend `ChunkingOptionsRequest` accepts both snake_case and camelCase
- * via `AliasChoices`; the rest of the API contract is camelCase, so the
- * new Linked/Chunk view sticks to camelCase too.
- */
-export interface RechunkOptions {
-  chunkerType?: 'hybrid' | 'hierarchical'
-  maxTokens?: number
-  mergePeers?: boolean
-  repeatTableHeader?: boolean
 }
 
 /** Rechunk the canonical chunkset. Backend runs synchronously and returns
