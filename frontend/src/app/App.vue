@@ -19,6 +19,10 @@
         <img src="/logo.png" alt="Docling Studio" class="topbar-logo-icon" />
         <span class="topbar-logo-text">Docling Studio</span>
       </div>
+      <div v-if="import.meta.env.DEV" class="dev-route-indicator" data-e2e="dev-route-indicator">
+        <span>DEV</span>
+        {{ route.name ? String(route.name) : route.path }}
+      </div>
       <div class="topbar-spacer" />
     </header>
 
@@ -41,7 +45,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 import { AppSidebar } from '@/shared/ui'
 import AppBreadcrumb from '../shared/breadcrumb/AppBreadcrumb.vue'
 import { useBreadcrumbStore } from '../shared/breadcrumb/store'
@@ -54,6 +58,7 @@ useSettingsStore()
 const flagStore = useFeatureFlagStore()
 const breadcrumbStore = useBreadcrumbStore()
 const { t } = useI18n()
+const route = useRoute()
 
 const sidebarOpen = ref(true)
 const disclaimerEnabled = useFeatureFlag('disclaimer')
@@ -189,6 +194,19 @@ body {
   gap: 12px;
   padding: 0 16px;
 }
+.dev-route-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  font: 10px 'IBM Plex Mono', monospace;
+  letter-spacing: 0.04em;
+}
+.dev-route-indicator span { font-weight: 700; }
 
 .burger-btn {
   width: 36px;
