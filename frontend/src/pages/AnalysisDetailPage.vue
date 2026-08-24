@@ -4,7 +4,7 @@
     <div v-else-if="error || !analysis" class="state state--error">{{ t('analyses.failed') }}</div>
     <template v-else>
       <header class="detail-header">
-        <RouterLink :to="{ name: ROUTES.ANALYSES }" class="back-link">
+        <RouterLink :to="{ name: ROUTES.ANALYSIS_LIBRARY }" class="back-link">
           ← {{ t('analyses.title') }}
         </RouterLink>
         <div>
@@ -16,7 +16,11 @@
           <DownloadDropdown :doc-id="analysis.documentId" />
         </div>
       </header>
-      <DocParseTab :doc-id="analysis.documentId" :analysis-id="analysis.id" />
+      <DocParseTab
+        :doc-id="analysis.documentId"
+        :analysis-id="analysis.id"
+        :show-new-analysis="false"
+      />
     </template>
   </section>
 </template>

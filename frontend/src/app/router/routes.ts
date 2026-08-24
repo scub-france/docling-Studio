@@ -32,8 +32,8 @@ export const routes: RouteRecordRaw[] = [
   },
   {
     path: '/analyses',
-    name: ROUTES.ANALYSES,
-    component: () => import('../../pages/AnalysesPage.vue'),
+    name: ROUTES.ANALYSIS_LIBRARY,
+    component: () => import('../../pages/AnalysisLibraryPage.vue'),
   },
   {
     path: '/analyses/:id',
