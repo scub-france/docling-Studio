@@ -19,7 +19,7 @@
         <img src="/logo.png" alt="Docling Studio" class="topbar-logo-icon" />
         <span class="topbar-logo-text">Docling Studio</span>
       </div>
-      <div v-if="import.meta.env.DEV" class="dev-route-indicator" data-e2e="dev-route-indicator">
+      <div v-if="isDev" class="dev-route-indicator" data-e2e="dev-route-indicator">
         <span>DEV</span>
         {{ route.name ? String(route.name) : route.path }}
       </div>
@@ -59,6 +59,7 @@ const flagStore = useFeatureFlagStore()
 const breadcrumbStore = useBreadcrumbStore()
 const { t } = useI18n()
 const route = useRoute()
+const isDev = import.meta.env.DEV
 
 const sidebarOpen = ref(true)
 const disclaimerEnabled = useFeatureFlag('disclaimer')
