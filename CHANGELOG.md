@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-24
+
 ### Added
 
 - **Analyses workspace**: a dedicated Analyses navigation item lists every run and opens its saved visualization independently of the document preview. This makes document source management separate from analysis-result inspection and supports multiple analyses per document.
