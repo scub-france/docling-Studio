@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-24
+
 ### Fixed
 
 - **The published `local` image now ships the reasoning stack** (`release.yml`): the release build never passed `WITH_REASONING`, so `docling-agent` + `mellea` were absent from `ghcr.io/scub-france/docling-studio:0.7.0-local` and `POST /api/documents/{id}/reasoning` answered `503` — the 0.7.0 headline feature was unreachable from the image users pull. The runtime panel (#317) can toggle reasoning, but it cannot install packages. `release.yml` now passes `WITH_REASONING=true` on the `local` target; the lightweight `remote` image is unchanged (its stage does not declare the ARG), and source builds stay opt-in.
