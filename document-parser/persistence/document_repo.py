@@ -43,6 +43,20 @@ def _row_to_document(row) -> Document:
         created_at=created,
         lifecycle_state=lifecycle_state,
         lifecycle_state_at=lifecycle_state_at,
+        active_analysis_id=row["active_analysis_id"] if "active_analysis_id" in row else None,  # noqa: SIM401
+        active_edit_stream_id=(
+            row["active_edit_stream_id"] if "active_edit_stream_id" in row else None  # noqa: SIM401
+        ),
+        chunks_source_analysis_id=(
+            row["chunks_source_analysis_id"]  # noqa: SIM401
+            if "chunks_source_analysis_id" in row
+            else None
+        ),
+        chunks_source_edit_sequence=(
+            row["chunks_source_edit_sequence"]  # noqa: SIM401
+            if "chunks_source_edit_sequence" in row
+            else 0
+        ),
     )
 
 
@@ -55,8 +69,10 @@ class SqliteDocumentRepository:
             await db.execute(
                 """INSERT INTO documents (
                        id, filename, content_type, file_size, page_count,
-                       storage_path, created_at, lifecycle_state, lifecycle_state_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       storage_path, created_at, lifecycle_state, lifecycle_state_at,
+                       active_analysis_id, active_edit_stream_id,
+                       chunks_source_analysis_id, chunks_source_edit_sequence
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     doc.id,
                     doc.filename,
@@ -67,6 +83,10 @@ class SqliteDocumentRepository:
                     str(doc.created_at),
                     doc.lifecycle_state.value,
                     str(doc.lifecycle_state_at) if doc.lifecycle_state_at else None,
+                    doc.active_analysis_id,
+                    doc.active_edit_stream_id,
+                    doc.chunks_source_analysis_id,
+                    doc.chunks_source_edit_sequence,
                 ),
             )
             await db.commit()
@@ -131,6 +151,31 @@ class SqliteDocumentRepository:
             await db.execute(
                 "UPDATE documents SET lifecycle_state = ?, lifecycle_state_at = ? WHERE id = ?",
                 (state.value, str(at), doc_id),
+            )
+            await db.commit()
+
+    async def update_active_analysis(
+        self,
+        doc_id: str,
+        analysis_id: str | None,
+        edit_stream_id: str | None,
+    ) -> None:
+        async with get_connection() as db:
+            await db.execute(
+                "UPDATE documents SET active_analysis_id = ?, active_edit_stream_id = ? WHERE id = ?",
+                (analysis_id, edit_stream_id, doc_id),
+            )
+            await db.commit()
+
+    async def update_chunk_source(
+        self, doc_id: str, analysis_id: str | None, edit_sequence: int
+    ) -> None:
+        async with get_connection() as db:
+            await db.execute(
+                """UPDATE documents
+                   SET chunks_source_analysis_id = ?, chunks_source_edit_sequence = ?
+                   WHERE id = ?""",
+                (analysis_id, edit_sequence, doc_id),
             )
             await db.commit()
 

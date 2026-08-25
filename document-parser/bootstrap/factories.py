@@ -189,17 +189,19 @@ def build_backend_resolver(store_repo) -> StoreBackendResolver:
     )
 
 
-def build_analysis_service(document_repo, analysis_repo, graph_writer) -> AnalysisService:
+def build_analysis_service(document_repo, analysis_repo, graph_writer, merger=None) -> AnalysisService:
     return AnalysisService(
         converter=build_converter(),
         analysis_repo=analysis_repo,
         document_repo=document_repo,
         chunker=build_chunker(),
+        merger=merger,
         conversion_timeout=settings.conversion_timeout,
         max_concurrent=settings.max_concurrent_analyses,
         config=AnalysisConfig(
             default_table_mode=settings.default_table_mode,
             batch_page_size=settings.batch_page_size,
+            preserve_document_json=True,
         ),
         graph_writer=graph_writer,
     )

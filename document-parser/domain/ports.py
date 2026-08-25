@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from domain.analysis_editing import EditCommand, EditStream, StoredEditCommand, WorkingCopy
     from domain.app_config import LLMHostProbeResult
     from domain.models import (
         AnalysisJob,
@@ -73,6 +74,12 @@ class DocumentConverter(Protocol):
         converters that handle batching themselves return False so the
         orchestrator passes the full document through in one call."""
         ...
+
+
+class DocumentMerger(Protocol):
+    """Merge conversion results while preserving canonical structure."""
+
+    def merge(self, results: list[ConversionResult]) -> ConversionResult: ...
 
 
 class DocumentChunker(Protocol):
@@ -210,6 +217,30 @@ class AnalysisRepository(Protocol):
     async def delete(self, job_id: str) -> bool: ...
 
     async def delete_by_document(self, document_id: str) -> int: ...
+
+
+class AnalysisEditRepository(Protocol):
+    async def find_stream(self, document_id: str, base_analysis_id: str) -> EditStream | None: ...
+
+    async def create_stream(self, stream: EditStream) -> None: ...
+
+    async def list_commands(self, stream_id: str) -> list[StoredEditCommand]: ...
+
+    async def find_working_copy(
+        self, document_id: str, base_analysis_id: str
+    ) -> WorkingCopy | None: ...
+
+    async def save_commands_and_working_copy(
+        self,
+        *,
+        stream: EditStream,
+        commands: list[EditCommand],
+        expected_sequence: int,
+        working_copy: WorkingCopy,
+        activate: bool = False,
+    ) -> list[StoredEditCommand]: ...
+
+    async def replace_working_copy(self, working_copy: WorkingCopy) -> None: ...
 
 
 @runtime_checkable

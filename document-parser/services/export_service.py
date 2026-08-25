@@ -33,9 +33,11 @@ class ExportService:
         self,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
+        active_result_service=None,
     ) -> None:
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
+        self._active_result_service = active_result_service
 
     async def export(self, doc_id: str, format: ExportFormat) -> ExportResult:
         doc = await self._document_repo.find_by_id(doc_id)
@@ -52,7 +54,11 @@ class ExportService:
             )
 
         if format is ExportFormat.MD:
-            analysis = await self._analysis_repo.find_latest_completed(doc_id)
+            analysis = (
+                (await self._active_result_service.active_result(doc_id)).job
+                if self._active_result_service is not None
+                else await self._analysis_repo.find_latest_completed(doc_id)
+            )
             if not analysis:
                 raise ExportNotFoundError("No completed analysis found for this document")
             if not analysis.content_markdown:
@@ -63,7 +69,11 @@ class ExportService:
                 filename=_build_export_filename(doc.filename, doc_id, ExportFormat.MD),
             )
 
-        analysis = await self._analysis_repo.find_latest_completed_by_document(doc_id)
+        analysis = (
+            (await self._active_result_service.active_result(doc_id)).job
+            if self._active_result_service is not None
+            else await self._analysis_repo.find_latest_completed_by_document(doc_id)
+        )
         if not analysis:
             raise ExportNotFoundError("JSON content not available")
         if not analysis.document_json:
