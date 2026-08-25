@@ -4,7 +4,7 @@
     <div v-else-if="error || !analysis" class="state state--error">{{ t('analyses.failed') }}</div>
     <template v-else>
       <header class="detail-header">
-        <RouterLink :to="{ name: ROUTES.ANALYSES }" class="back-link">
+        <RouterLink :to="{ name: ROUTES.ANALYSIS_LIBRARY }" class="back-link">
           ← {{ t('analyses.title') }}
         </RouterLink>
         <div>
@@ -13,10 +13,32 @@
           <p class="meta">{{ analysis.id }} · {{ formatDate(analysis.createdAt) }}</p>
         </div>
         <div class="detail-actions">
+          <button
+            v-if="!editMode"
+            class="edit-analysis-btn"
+            :disabled="!analysis.hasDocumentJson"
+            :title="analysis.hasDocumentJson ? t('workspace.editAnalysis') : t('workspace.analysisEditingUnavailable')"
+            @click="editMode = true"
+          >
+            {{ t('workspace.editAnalysis') }}
+          </button>
+          <button v-else class="edit-analysis-btn" @click="editMode = false">
+            {{ t('workspace.inspectAnalysis') }}
+          </button>
           <DownloadDropdown :doc-id="analysis.documentId" />
         </div>
       </header>
-      <DocParseTab :doc-id="analysis.documentId" :analysis-id="analysis.id" />
+      <AnalysisEditor
+        v-if="editMode"
+        :document-id="analysis.documentId"
+        :analysis-id="analysis.id"
+      />
+      <DocParseTab
+        v-else
+        :doc-id="analysis.documentId"
+        :analysis-id="analysis.id"
+        :show-new-analysis="false"
+      />
     </template>
   </section>
 </template>
@@ -30,12 +52,16 @@ import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocParseTab from './DocParseTab.vue'
 import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
+import { AnalysisEditor } from '../features/analysis-editor'
 
 const props = defineProps<{ id: string }>()
 const { t } = useI18n()
 const analysis = ref<Analysis | null>(null)
 const loading = ref(true)
 const error = ref(false)
+// Analysis details open on the immutable source projection. Editing is an
+// explicit action from the detail header.
+const editMode = ref(false)
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
@@ -97,6 +123,22 @@ h1 {
 }
 .detail-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.edit-analysis-btn {
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-muted);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+}
+.edit-analysis-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .analysis-detail :deep(.parse-tab) {
   min-height: 0;

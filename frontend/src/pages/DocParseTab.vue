@@ -7,6 +7,7 @@
     >
       <template #action>
         <button
+          v-if="showNewAnalysis"
           type="button"
           class="tab-action-cta"
           :disabled="analysisStore.running"
@@ -194,7 +195,10 @@ import ConversationPanel from '../features/reasoning/ui/ConversationPanel.vue'
 import TraceTimeline from '../features/reasoning/ui/TraceTimeline.vue'
 import { useI18n } from '../shared/i18n'
 
-const props = defineProps<{ docId: string; analysisId?: string }>()
+const props = withDefaults(defineProps<{ docId: string; analysisId?: string; showNewAnalysis?: boolean }>(), {
+  showNewAnalysis: true,
+})
+const showNewAnalysis = computed(() => props.showNewAnalysis)
 
 const { t } = useI18n()
 const documentStore = useDocumentStore()

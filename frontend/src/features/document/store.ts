@@ -155,6 +155,12 @@ export const useDocumentStore = defineStore('document', () => {
     }
   }
 
+  /** Force the workspace to resolve the latest saved active result. */
+  async function refreshWorkspace(docId: string): Promise<void> {
+    if (workspaceDoc.value?.id === docId) workspaceDoc.value = null
+    await loadWorkspace(docId)
+  }
+
   /**
    * Refresh the versions list without resetting the doc (#266 / #267).
    * Called after a `+ New analysis` or `+ Generate chunks` completes —
@@ -237,6 +243,7 @@ export const useDocumentStore = defineStore('document', () => {
     clearError,
     load,
     loadWorkspace,
+    refreshWorkspace,
     reloadWorkspaceVersions,
     setWorkspaceVersion,
     upload,

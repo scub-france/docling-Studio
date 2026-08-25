@@ -153,7 +153,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:currentPage': [page: number]
   hoverElement: [el: PageElement | null]
-  clickElement: [el: PageElement, pageNumber: number]
+  clickElement: [el: PageElement, pageNumber: number, event: MouseEvent]
 }>()
 
 const stageRef = ref<HTMLDivElement | null>(null)
@@ -216,9 +216,9 @@ function onImageLoad(pageNumber: number): void {
   if (highlightTarget()?.page.page_number === pageNumber) nextTick(centerHighlighted)
 }
 
-function onClickElement(el: PageElement, pageNumber: number): void {
+function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent): void {
   pendingClickRef = el.self_ref ?? null
-  emit('clickElement', el, pageNumber)
+  emit('clickElement', el, pageNumber, event)
 }
 
 function shouldRenderPage(pageNumber: number): boolean {
