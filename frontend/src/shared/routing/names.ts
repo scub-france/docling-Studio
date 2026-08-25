@@ -14,7 +14,7 @@ export const ROUTES = {
   HOME: 'home',
   STUDIO: 'studio',
   HISTORY: 'history',
-  ANALYSES: 'analyses',
+  ANALYSIS_LIBRARY: 'analysis-library',
   ANALYSIS_DETAIL: 'analysis-detail',
   DOCUMENTS: 'documents',
   SEARCH: 'search',
