@@ -16,6 +16,9 @@ response code.
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import io
 import json
 import logging
 from collections import OrderedDict
@@ -26,6 +29,7 @@ from urllib.parse import quote as urlquote
 from domain.navigation import (
     Citation,
     CitationCheck,
+    CitationImage,
     CitationStatus,
     DocumentAnchor,
     DocumentOutline,
@@ -116,6 +120,13 @@ class NavigationConfig:
     # immutable for a given analysis id, so the cache can never go stale;
     # it is bounded because `document_json` runs to megabytes.
     index_cache_size: int = 4
+    # Raster crops for the citation view. The byte budget is the real
+    # constraint: a crop travels inside a tool result, and hosts stop
+    # hydrating an app when the result gets large, so the image is
+    # downscaled until it fits rather than sent at full size.
+    image_dpi: int = 150
+    image_max_bytes: int = 45_000
+    image_min_dpi: int = 40
 
 
 class NavigationService:
@@ -399,6 +410,86 @@ class NavigationService:
             if covered is not None and claimed in normalise_quote(covered.text):
                 return covered
         return None
+
+    async def render_citation(
+        self,
+        uri: str,
+        *,
+        padding: int = 8,
+        dpi: int | None = None,
+    ) -> CitationImage:
+        """Rasterise the page region a citation points at.
+
+        The visual counterpart of `verify_citation`: instead of asserting that
+        the quote is in the document, it shows where. Returns a crop rather
+        than the page, because the crop is the evidence and a full page at a
+        readable dpi is an order of magnitude more bytes than a tool result
+        should carry.
+        """
+        anchor = DocumentAnchor.parse(uri)
+        doc, job, index = await self._load(anchor.document_id, anchor.version_id)
+        element = resolve(index, anchor.ref)
+        if element is None:
+            raise RefNotFoundError(f"Ref {anchor.ref!r} does not exist in version {job.id}.")
+        if element.bbox is None or element.page is None:
+            raise InvalidArgumentError(
+                f"{anchor.ref} carries no page coordinates, so there is nothing to show. "
+                "Only elements with provenance can be rendered."
+            )
+        if not doc.storage_path:
+            raise InvalidArgumentError(f"Document {doc.id} has no stored file to render.")
+
+        return await asyncio.to_thread(
+            self._crop,
+            doc.storage_path,
+            element.bbox,
+            padding=padding,
+            dpi=min(dpi or self._config.image_dpi, self._config.image_dpi),
+        )
+
+    def _crop(self, storage_path: str, bbox, *, padding: int, dpi: int) -> CitationImage:
+        """Render, crop, and shrink until the result fits the byte budget.
+
+        Blocking on purpose — rasterising a PDF page is CPU work — and called
+        through `asyncio.to_thread` so the event loop keeps serving.
+        """
+        from pathlib import Path
+
+        from PIL import Image
+
+        from services.document_service import DocumentService
+
+        content = Path(storage_path).read_bytes()
+        budget = self._config.image_max_bytes
+        current = dpi
+        while True:
+            png = DocumentService.generate_preview(content, page=bbox.page, dpi=current)
+            page_image = Image.open(io.BytesIO(png))
+            left, top, right, bottom = bbox.pixel_box(dpi=current, padding=padding)
+            box = (
+                min(left, page_image.width),
+                min(top, page_image.height),
+                min(max(right, left + 1), page_image.width),
+                min(max(bottom, top + 1), page_image.height),
+            )
+            crop = page_image.crop(box)
+            buffer = io.BytesIO()
+            crop.save(buffer, format="PNG", optimize=True)
+            raw = buffer.getvalue()
+            if len(raw) <= budget or current <= self._config.image_min_dpi:
+                encoded = base64.b64encode(raw).decode("ascii")
+                return CitationImage(
+                    png=raw,
+                    data_uri=f"data:image/png;base64,{encoded}",
+                    width=crop.width,
+                    height=crop.height,
+                    page=bbox.page,
+                    dpi=current,
+                )
+            # Overshoot deliberately: PNG size falls roughly with the pixel
+            # count, so halving the dpi quarters the bytes and one or two
+            # rounds converge instead of a long descent.
+            current = max(self._config.image_min_dpi, current // 2)
 
     # ------------------------------------------------------------------
     # Internals

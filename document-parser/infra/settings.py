@@ -95,6 +95,11 @@ class Settings:
     # Hard server-side ceiling on a single read. A client argument may lower
     # it, never raise it.
     mcp_max_read_tokens: int = 4000
+    # MCP Apps (SEP-1865) — the citation viewer rendered inline by hosts
+    # that negotiate `io.modelcontextprotocol/ui`. On by default because it
+    # degrades to text on hosts that do not: a client that never advertises
+    # the extension never fetches the template, and the tool answers as text.
+    mcp_apps_enabled: bool = True
     # Absolute base for citation deep links (e.g. http://localhost:3000).
     # Empty leaves them relative, which is right when Studio serves the API
     # and the UI from the same origin.
@@ -230,6 +235,8 @@ class Settings:
                 ).split(",")
                 if h.strip()
             ],
+            mcp_apps_enabled=os.environ.get("MCP_APPS_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
             mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
             mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
         )
