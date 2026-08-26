@@ -147,6 +147,34 @@ class BoundingBox:
     page_width: float | None = None
     page_height: float | None = None
 
+    def pixel_box(self, *, dpi: int = 150, padding: int = 8) -> tuple[int, int, int, int]:
+        """Project the box onto a page rendered at `dpi`, origin-normalised.
+
+        Docling reports points (1/72 inch) from whichever corner the parse
+        used; a raster crop needs pixels from the top-left. The `page_height`
+        flip is what turns a BOTTOMLEFT box into one, and the final swap
+        catches a box whose corners are inverted for any other reason — a
+        crop with a negative height would raise deep inside the imaging
+        library instead of just being wrong.
+        """
+        scale = dpi / 72.0
+        left, right = self.left * scale, self.right * scale
+        if self.coord_origin.upper() == "BOTTOMLEFT" and self.page_height:
+            top = (self.page_height - self.top) * scale
+            bottom = (self.page_height - self.bottom) * scale
+        else:
+            top, bottom = self.top * scale, self.bottom * scale
+        if top > bottom:
+            top, bottom = bottom, top
+        if left > right:
+            left, right = right, left
+        return (
+            max(0, int(left - padding)),
+            max(0, int(top - padding)),
+            int(right + padding),
+            int(bottom + padding),
+        )
+
 
 @dataclass(frozen=True)
 class Citation:
@@ -202,6 +230,22 @@ class DocumentSearch:
     scanned: int
     scan_limit: int
     truncated: bool
+
+
+@dataclass(frozen=True)
+class CitationImage:
+    """A raster crop of the page region a citation points at.
+
+    `png` is the image itself; `data_uri` is what an HTML view embeds. Kept
+    together so a caller never has to re-derive one from the other.
+    """
+
+    png: bytes
+    data_uri: str
+    width: int
+    height: int
+    page: int
+    dpi: int
 
 
 @dataclass(frozen=True)

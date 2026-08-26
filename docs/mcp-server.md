@@ -81,6 +81,7 @@ MCP_STUDIO_BASE_URL=http://localhost:3000   # optional, for absolute deep links
 | `MCP_ENABLED` | `false` | Mounts `POST /mcp` on the backend. It does **not** gate `mcp_stdio.py`: that process is spawned by the client itself, which is the authorisation. |
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host/Origin allow-list (DNS-rebinding protection). `*` delegates the check to a fronting proxy. |
 | `MCP_MAX_READ_TOKENS` | `4000` | Hard ceiling for one `read_element`. A client may ask for less, never more. |
+| `MCP_APPS_ENABLED` | `true` | Ships the `show_citation` MCP App. Degrades to text on hosts without UI support. |
 | `MCP_STUDIO_BASE_URL` | *(empty)* | Absolute base for citation deep links. Empty keeps them relative. |
 
 ## Connect a client
@@ -124,7 +125,50 @@ In `claude_desktop_config.json`:
 ```
 
 Then ask, in plain language: *"list the documents, then find the notice period
-in the contract and cite it."*
+in the contract and cite it."* On Claude Desktop, add *"and show me where"* to
+get the passage rendered on its page.
+
+## Seeing a citation, not just reading it
+
+The server also ships one **MCP App** (SEP-1865, extension
+`io.modelcontextprotocol/ui`): a `show_citation` tool bound to a predeclared
+`ui://docling-studio/citation.html` template. A host that supports it renders
+the cited passage **as an image of the page region it was lifted from**, next
+to its verbatim text — `verify_citation` says a quote is real, this shows it.
+
+| Tool | Purpose |
+|------|---------|
+| `show_citation` | Takes a citation uri and returns the passage with a raster crop of its page region. Falls back to the citation as text on hosts that cannot render it. |
+
+**Which clients render it**
+
+- **Claude Desktop / claude.ai / mobile — yes.** A local stdio server works: Claude asks
+  permission the first time ("Always allow") and renders the app inline. No
+  directory listing or review needed for your own connector.
+- **Claude Code — no.** It is absent from the
+  [client matrix](https://modelcontextprotocol.io/extensions/client-matrix) and
+  its docs and changelog never mention MCP Apps. `show_citation` still works
+  there — it just answers as text.
+- Others rendering today: VS Code Copilot, Goose, Postman, MCPJam, Cursor,
+  ChatGPT, LibreChat, Smithery.
+
+Degradation is a spec requirement and it is what makes this free to ship: a
+host that never advertises the extension never fetches the template, and the
+image is never rendered at all — so the bytes cost nothing on a client that
+could not have shown them.
+
+Turn it off with `MCP_APPS_ENABLED=false`; the four text tools are unaffected.
+
+**How the image is kept small.** The crop is embedded as a `data:` URI (the
+default MCP Apps CSP allows `img-src data:` and nothing else, so the view
+loads from the network never — which also means it works over stdio, with no
+backend running). It is rendered at 150 dpi and halved until it fits
+`image_max_bytes` (45 KB by default): a paragraph lands around 35-50 KB.
+
+*Known limitation:* the crop travels in the tool result, so on a rendering
+host the model sees the base64 too. The documented upgrade is an app-only tool
+(`visibility: ["app"]`) that the view calls for its own image — worth doing if
+payloads grow, unnecessary at one crop per call.
 
 ## Security posture
 
@@ -144,8 +188,7 @@ in the contract and cite it."*
 
 ## Limits of this first slice
 
-Search (`search_document`, `search_corpus`), page-crop images
-(`get_element_image`), MCP resources and prompts, and authentication are not
-part of it. `find_documents` filters on filename over the most recent
+Search (`search_document`, `search_corpus`), MCP resources and prompts, and
+authentication are not part of it. `find_documents` filters on filename over the most recent
 documents rather than through a repository query, and the Docker image does
 not carry the SDK yet — the group is opt-in at install time.

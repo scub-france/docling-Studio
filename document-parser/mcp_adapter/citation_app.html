@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Citation</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --paper: #fff; --ink: #16201f; --muted: #5c6b69; --line: #dfe5e4;
+    --accent: #0d6e70; --mark: #b26b06;
+    font-family: ui-sans-serif, -apple-system, "IBM Plex Sans", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #0e1413; --ink: #e3ecea; --muted: #93a5a1; --line: #26332f;
+            --accent: #58bebf; --mark: #e0a44a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-size: 14px; line-height: 1.55; }
+  main { display: grid; gap: 14px; padding: 14px; }
+  .crumbs { font-size: 12px; color: var(--muted); }
+  .crumbs b { color: var(--ink); font-weight: 600; }
+  figure { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; }
+  figure img { display: block; width: 100%; height: auto; }
+  figcaption { font-size: 11px; color: var(--muted); padding: 6px 8px; border-top: 1px solid var(--line); }
+  blockquote { margin: 0; padding: 10px 12px; border-left: 3px solid var(--mark); border-radius: 0 4px 4px 0;
+               background: color-mix(in srgb, var(--mark) 10%, transparent); }
+  .meta { font-family: ui-monospace, "IBM Plex Mono", monospace; font-size: 11px;
+          color: var(--muted); word-break: break-all; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 5px; cursor: pointer;
+           border: 1px solid var(--line); background: transparent; color: var(--ink); }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .status { font-size: 12px; color: var(--muted); padding: 20px 14px; }
+</style>
+</head>
+<body>
+<main id="root"><p class="status">Waiting for a citation…</p></main>
+<script>
+  "use strict";
+  const root = document.getElementById("root");
+
+  // Text lifted from a PDF never becomes markup — it is data, and a document
+  // that contains "<img onerror=…>" is a document, not an instruction.
+  const esc = (value) =>
+    String(value ?? "").replace(/[&<>"']/g, (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+
+  function render(view) {
+    if (!view || !view.quote) return;
+    const crumbs = (view.headings || []).map((h) => `<b>${esc(h)}</b>`).join(" › ");
+    const image = view.page_image
+      ? `<figure>
+           <img alt="The cited passage on page ${esc(view.page)}" src="${esc(view.page_image)}">
+           <figcaption>page ${esc(view.page)} · ${esc(view.ref)}</figcaption>
+         </figure>`
+      : "";
+    root.innerHTML = `
+      ${crumbs ? `<div class="crumbs">${crumbs}</div>` : ""}
+      ${image}
+      <blockquote>${esc(view.quote)}</blockquote>
+      <div class="meta">${esc(view.uri)}</div>
+      ${view.image_note ? `<div class="status">${esc(view.image_note)}</div>` : ""}
+      <div class="row">
+        <button data-act="copy">Copy citation</button>
+        ${view.deep_link ? '<button data-act="open">Open in Studio</button>' : ""}
+      </div>`;
+    for (const button of root.querySelectorAll("button")) {
+      button.addEventListener("click", () => act(button.dataset.act, view));
+    }
+  }
+
+  function act(kind, view) {
+    if (kind === "copy") {
+      const text = `"${view.quote}" — ${view.uri}`;
+      navigator.clipboard?.writeText(text).catch(() => {});
+      return;
+    }
+    if (kind === "open") {
+      // `ui/open-link` is the host's job: an app cannot navigate the user by
+      // itself, and hosts gate this behind their own confirmation.
+      post({ jsonrpc: "2.0", id: Date.now(), method: "ui/open-link", params: { url: view.deep_link } });
+    }
+  }
+
+  function post(message) {
+    try { window.parent?.postMessage(message, "*"); } catch (_) { /* no host, no-op */ }
+  }
+
+  // Host -> app. Hosts differ in how much of the JSON-RPC envelope reaches the
+  // guest, so the payload is dug out of every documented shape rather than
+  // betting on one: params.result / result / the message itself, structured
+  // content first, then the JSON in the text content block.
+  function extract(data) {
+    if (!data || typeof data !== "object") return null;
+    for (const candidate of [data.params?.result, data.params, data.result, data]) {
+      if (!candidate || typeof candidate !== "object") continue;
+      const structured = candidate.structuredContent ?? candidate.structured_content;
+      if (structured?.quote) return structured;
+      if (candidate.quote) return candidate;
+      const text = candidate.content?.[0]?.text;
+      if (typeof text === "string") {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.quote) return parsed;
+        } catch (_) { /* not our payload */ }
+      }
+    }
+    return null;
+  }
+
+  window.addEventListener("message", (event) => {
+    const view = extract(event.data);
+    if (view) render(view);
+  });
+
+  // Tell the host we are ready, for hosts that wait for it before pushing the
+  // tool result. Harmless where they don't.
+  post({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+</script>
+</body>
+</html>

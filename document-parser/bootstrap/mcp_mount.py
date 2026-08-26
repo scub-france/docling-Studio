@@ -68,6 +68,7 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
     server = build_mcp_server(
         lambda: _navigation_from(app),
         version=settings.app_version,
+        apps=settings.mcp_apps_enabled,
     )
     mcp_app = server.streamable_http_app(
         streamable_http_path=MCP_PATH,
