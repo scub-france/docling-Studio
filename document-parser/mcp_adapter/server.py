@@ -26,6 +26,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from domain.navigation import AnchorParseError
+from mcp_adapter.apps import build_apps_extension
 from mcp_adapter.wire import (
     UNTRUSTED_NOTE,
     DocumentSearchResult,
@@ -62,6 +63,9 @@ so you can choose what to read instead of paying to find out.
 citation you are quoting. The server, not you, is the source of truth for what the \
 document says.
 
+show_citation displays a passage where it lives, on the page it came from — reach for it \
+when someone asks to see or point at something rather than be told about it.
+
 Anchors (`dstudio://doc/<id>@<version>#<ref>`) are opaque: pass them back exactly as \
 received. Never assemble or edit one — the version segment pins the parse a ref belongs \
 to, and a ref from another parse points at different text.
@@ -78,6 +82,7 @@ def build_mcp_server(
     *,
     name: str = SERVER_NAME,
     version: str = "",
+    apps: bool = True,
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -87,7 +92,8 @@ def build_mcp_server(
     for the container on each tool call. `navigation` raises when the app is
     not wired yet, which surfaces as a tool error rather than an import crash.
     """
-    server = MCPServer(name=name, version=version, instructions=INSTRUCTIONS)
+    extensions = [build_apps_extension(navigation)] if apps else None
+    server = MCPServer(name=name, version=version, instructions=INSTRUCTIONS, extensions=extensions)
 
     @server.tool(
         annotations=_READ_ONLY,

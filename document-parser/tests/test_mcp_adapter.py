@@ -31,13 +31,17 @@ from tests.navigation_fixtures import (
     make_navigation_service,
 )
 
+# The text surface. `show_citation` is added by the Apps extension and is
+# asserted in tests/test_mcp_apps.py, so this set pins that enabling a UI does
+# not quietly change what a text-only host sees.
 TOOL_NAMES = {"find_documents", "get_outline", "read_element", "verify_citation"}
 
 
 @asynccontextmanager
 async def _client(service=None, *, provider=None):
     navigation = provider or (lambda: service or make_navigation_service())
-    async with Client(build_mcp_server(navigation, version="test")) as client:
+    # apps=False: this module owns the text contract.
+    async with Client(build_mcp_server(navigation, version="test", apps=False)) as client:
         yield client
 
 

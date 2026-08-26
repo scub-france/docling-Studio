@@ -50,7 +50,9 @@ async def _serve() -> None:
         SqliteDocumentRepository(),
         SqliteAnalysisRepository(),
     )
-    server = build_mcp_server(lambda: navigation, version=settings.app_version)
+    server = build_mcp_server(
+        lambda: navigation, version=settings.app_version, apps=settings.mcp_apps_enabled
+    )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()
 
