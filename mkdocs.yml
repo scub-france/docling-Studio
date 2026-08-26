@@ -36,6 +36,7 @@ nav:
   - Get started: getting-started.md
   - User guide: user-guide.md
   - Configuration: configuration.md
+  - MCP server: mcp-server.md
   - Troubleshooting: troubleshooting.md
   - Contribute:
       - Contributing: https://github.com/scub-france/Docling-Studio/blob/main/CONTRIBUTING.md
