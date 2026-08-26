@@ -11,23 +11,11 @@ import re
 
 import pytest
 
-from domain.navigation import (
-    AnchorParseError,
-    DocumentAnchor,
-    estimate_tokens,
-    normalise_quote,
-    quote_hash,
-)
-from domain.navigation_builder import (
-    build_index,
-    build_outline,
-    element_text,
-    page_ref,
-    parse_page_ref,
-    render_markdown,
-    resolve,
-    section_refs,
-)
+from domain.anchors import AnchorParseError, DocumentAnchor, normalise_quote, quote_hash
+from domain.element_reader import element_text, render_markdown, resolve, section_refs
+from domain.navigation import estimate_tokens
+from domain.outline_builder import build_outline
+from domain.parse_index import build_index, page_ref, parse_page_ref
 from infra.docling_tree import DoclingTreeReader
 from tests.navigation_fixtures import FLAT, MESSY, SECTIONED
 
@@ -276,3 +264,42 @@ class TestTableRendering:
         # The internal label extracted from the figure is not a reading-order node.
         assert "#/texts/6" not in index.order
         assert element_text(index, "#/pictures/0") == "[figure] Figure A — schéma"
+
+
+class TestPartialMetadata:
+    """What a real scan looks like: provenance without page geometry."""
+
+    def test_a_page_missing_its_size_still_appears_on_the_map(self):
+        import copy
+
+        payload = copy.deepcopy(FLAT)
+        payload["pages"]["2"] = {"page_no": 2}  # no `size`
+        index = _index(payload)
+        draft = build_outline(index, depth=2)
+        # The page fallback exists for scans, where this metadata is the first
+        # thing missing — dropping the page would hide its content entirely.
+        assert index.page_numbers == [1, 2]
+        assert [node.ref for node in draft.nodes] == ["#/pages/1", "#/pages/2"]
+        assert resolve(index, "#/pages/2") is not None
+        assert section_refs(index, "#/pages/2") == ["#/texts/2"]
+
+    def test_an_unreadable_table_says_so_instead_of_reading_empty(self):
+        import copy
+
+        from domain.element_reader import UNREADABLE_TABLE
+
+        payload = copy.deepcopy(SECTIONED)
+        # A payload shape this version does not know — what a docling upgrade
+        # looks like from here.
+        payload["tables"][0]["data"] = {"cells_v2": [{"content": "Motif"}]}
+        text = element_text(_index(payload), "#/tables/0")
+        # Not "": an empty element is skipped by the reader, so the agent would
+        # be told the table is empty rather than that it could not be read.
+        assert text == UNREADABLE_TABLE
+
+    def test_a_genuinely_empty_table_still_reads_empty(self):
+        import copy
+
+        payload = copy.deepcopy(SECTIONED)
+        payload["tables"][0]["data"] = {}
+        assert element_text(_index(payload), "#/tables/0") == ""

@@ -27,8 +27,8 @@ from bootstrap.factories import (
     build_backend_resolver,
     build_chunk_service,
     build_document_service,
+    build_document_tools,
     build_ingestion_service,
-    build_navigation_service,
     build_reasoning_runner,
     check_store_secret_key,
     env_reasoning_config,
@@ -146,7 +146,7 @@ class AppStateBuilder:
             graph_service=GraphService(graph_reader=graph_reader),
             version_service=version_service,
             ingestion_service=ingestion_service,
-            navigation_service=build_navigation_service(document_repo, analysis_repo),
+            document_tools=build_document_tools(document_repo, analysis_repo),
         )
 
         await self._wire_reasoning(analysis_repo)

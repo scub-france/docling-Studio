@@ -22,6 +22,7 @@ if TYPE_CHECKING:
         DocumentStoreLink,
         Store,
     )
+    from domain.navigation import RasterCrop
     from domain.value_objects import (
         ChunkingOptions,
         ChunkResult,
@@ -383,6 +384,26 @@ class DocumentTreeReader(Protocol):
 
     def iter_pages(self, doc_data: dict[str, Any]) -> Iterator[dict[str, Any]]:
         """Yield `{page_no, width, height}` for every page of the parse."""
+        ...
+
+
+@runtime_checkable
+class PageRasterizer(Protocol):
+    """Port for turning a stored document into page images.
+
+    Rasterising is infrastructure — poppler, PIL, a file on disk — while the
+    dpi ladder and the byte budget that drive it are policy. The split runs
+    here: the adapter renders and crops what it is told to, the service
+    decides what to ask for.
+    """
+
+    def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
+        """Return `page` of the document at `storage_path` as PNG bytes."""
+        ...
+
+    def crop(self, png: bytes, box: tuple[int, int, int, int]) -> RasterCrop:
+        """Crop a PNG to `box` (left, top, right, bottom in pixels), clamped
+        to the image, and return it with its final dimensions."""
         ...
 
 

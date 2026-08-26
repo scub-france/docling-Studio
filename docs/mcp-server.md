@@ -46,6 +46,11 @@ and the height is `top - bottom`; with `TOPLEFT` it is the other way round.
 `page_width` / `page_height` come with the citation so the box can be flipped
 without another call.
 
+Every result also carries a `next_step`: what to do with what was just
+returned, delivered at the moment it applies rather than as a rule stated once
+at connection time. A truncated read hands back its own cursor; a verification
+says whether the quote is publishable.
+
 `verify_citation` is the point of the whole contract: the server, not the
 model, is the source of truth for what the document says. Its `status` is one
 of:
@@ -81,6 +86,7 @@ MCP_STUDIO_BASE_URL=http://localhost:3000   # optional, for absolute deep links
 | `MCP_ENABLED` | `false` | Mounts `POST /mcp` on the backend. It does **not** gate `mcp_stdio.py`: that process is spawned by the client itself, which is the authorisation. |
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host/Origin allow-list (DNS-rebinding protection). `*` delegates the check to a fronting proxy. |
 | `MCP_MAX_READ_TOKENS` | `4000` | Hard ceiling for one `read_element`. A client may ask for less, never more. |
+| `MCP_CACHE_TTL_SECONDS` | `600` | Freshness hint for the tool list, the prompt list and the viewer (SEP-2549). `0` disables it. |
 | `MCP_APPS_ENABLED` | `true` | Ships the `show_citation` MCP App. Degrades to text on hosts without UI support. |
 | `MCP_STUDIO_BASE_URL` | *(empty)* | Absolute base for citation deep links. Empty keeps them relative. |
 
@@ -128,6 +134,25 @@ Then ask, in plain language: *"list the documents, then find the notice period
 in the contract and cite it."* On Claude Desktop, add *"and show me where"* to
 get the passage rendered on its page.
 
+## Procedures the user invokes
+
+Two MCP **prompts** — slash commands in clients that surface them. They exist
+because a thorough protocol is worth several extra tool calls when someone
+asks for a sourced answer, and wasteful when they ask a passing question. A
+tool description is read on every call; a prompt is chosen.
+
+| Prompt | Arguments | What it makes the agent do |
+|--------|-----------|----------------------------|
+| `cite_answer` | `document`, `question`, `evidence` (`text` \| `images`) | Map before reading, read only what the question needs, resume a truncated read with its cursor, cite with the *element's* uri, verify every quote before publishing — and say so plainly when the document does not answer. `evidence=images` adds a `show_citation` for each verified quote. |
+| `extract_table` | `uri` | Read the table alone, return it exactly as rendered — no re-aligning, re-ordering, or rounding — with the citation needed to check it. |
+
+Neither reimplements anything: a prompt returns text the model then executes
+with the same tools, which is what keeps the procedure from drifting away
+from what the server actually does.
+
+Clients list prompts once per session, so a newly added one needs a reconnect
+to appear.
+
 ## Seeing a citation, not just reading it
 
 The server also ships one **MCP App** (SEP-1865, extension
@@ -170,6 +195,20 @@ host the model sees the base64 too. The documented upgrade is an app-only tool
 (`visibility: ["app"]`) that the view calls for its own image — worth doing if
 payloads grow, unnecessary at one crop per call.
 
+## What a client may cache
+
+The protocol's caching seam is `_meta` freshness hints (SEP-2549) on the
+methods it declares cacheable: `tools/list`, `prompts/list`, `resources/list`,
+`resources/templates/list`, `resources/read` and `server/discover`. The server
+stamps all of them with `MCP_CACHE_TTL_SECONDS` and `cacheScope: public` —
+they are deploy-scoped and identical for every caller.
+
+Note what is *not* on that list: **`tools/call`**. The protocol offers caching
+exactly where this server's cost is not. A hint amortises the ~4 000 tokens of
+connecting; it does nothing for the cost of reading, which is where the tokens
+actually go. Any deduplication of repeated reads has to happen in the client or
+a proxy.
+
 ## Security posture
 
 - **Document text is untrusted data.** Everything read is wrapped in
@@ -188,7 +227,7 @@ payloads grow, unnecessary at one crop per call.
 
 ## Limits of this first slice
 
-Search (`search_document`, `search_corpus`), MCP resources and prompts, and
+Search (`search_document`, `search_corpus`), `docling://` resources, and
 authentication are not part of it. `find_documents` filters on filename over the most recent
 documents rather than through a repository query, and the Docker image does
 not carry the SDK yet — the group is opt-in at install time.

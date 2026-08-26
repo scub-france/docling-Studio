@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from domain.navigation import CitationStatus
-from services.navigation_service import (
+from services.navigation_config import NavigationConfig
+from services.navigation_errors import (
     DocumentNotFoundError,
     InvalidArgumentError,
-    NavigationConfig,
     NoParseError,
     RefNotFoundError,
 )
@@ -34,6 +34,9 @@ from tests.navigation_fixtures import (
 )
 from tests.navigation_fixtures import (
     make_document as _document,
+)
+from tests.navigation_fixtures import (
+    make_document_tools as _tools,
 )
 from tests.navigation_fixtures import (
     make_job as _job,
@@ -108,9 +111,9 @@ class TestGetOutline:
     async def test_parse_is_indexed_once_and_reused(self):
         service = _service()
         await service.get_outline(DOC_ID)
-        first = service._index_cache[JOB_ID]
+        first = service._parses._cache[JOB_ID]
         await service.get_outline(DOC_ID)
-        assert service._index_cache[JOB_ID] is first
+        assert service._parses._cache[JOB_ID] is first
 
 
 class TestReadElement:
@@ -192,45 +195,49 @@ class TestReadElement:
 
 class TestVerifyCitation:
     async def test_verifies_a_full_quote(self):
-        check = await _service().verify_citation(_uri(PREAVIS_REF), PREAVIS_TEXT)
+        check = await _tools().citations.verify_citation(_uri(PREAVIS_REF), PREAVIS_TEXT)
         assert check.valid is True
         assert check.status is CitationStatus.VERIFIED
         assert check.citation is not None
 
     async def test_verifies_a_partial_quote(self):
-        check = await _service().verify_citation(_uri(PREAVIS_REF), "trois mois")
+        check = await _tools().citations.verify_citation(_uri(PREAVIS_REF), "trois mois")
         assert check.valid is True
 
     async def test_tolerates_reflowed_whitespace(self):
-        check = await _service().verify_citation(
+        check = await _tools().citations.verify_citation(
             _uri(PREAVIS_REF), "Le  préavis\nest de trois mois"
         )
         assert check.valid is True
 
     async def test_catches_a_fabricated_quote(self):
-        check = await _service().verify_citation(_uri(PREAVIS_REF), "Le préavis est de six mois")
+        check = await _tools().citations.verify_citation(
+            _uri(PREAVIS_REF), "Le préavis est de six mois"
+        )
         assert check.valid is False
         assert check.status is CitationStatus.QUOTE_DRIFT
         assert check.actual_quote == PREAVIS_TEXT
 
     async def test_catches_an_unknown_ref(self):
-        check = await _service().verify_citation(_uri("#/texts/999"), "anything")
+        check = await _tools().citations.verify_citation(_uri("#/texts/999"), "anything")
         assert (check.valid, check.status) == (False, CitationStatus.UNKNOWN_REF)
 
     async def test_catches_an_unknown_version(self):
-        check = await _service().verify_citation(_uri(PREAVIS_REF, job_id="ghost"), PREAVIS_TEXT)
+        check = await _tools().citations.verify_citation(
+            _uri(PREAVIS_REF, job_id="ghost"), PREAVIS_TEXT
+        )
         assert (check.valid, check.status) == (False, CitationStatus.UNKNOWN_VERSION)
 
     async def test_empty_quote_is_not_a_verification(self):
-        check = await _service().verify_citation(_uri(PREAVIS_REF), "   ")
+        check = await _tools().citations.verify_citation(_uri(PREAVIS_REF), "   ")
         assert check.valid is False
 
     async def test_flags_an_anchor_pinned_to_a_superseded_parse(self):
-        service = _service()
-        service._analyses.find_latest_completed_by_document = AsyncMock(
+        tools = _tools()
+        tools.citations._parses.analyses.find_latest_completed_by_document = AsyncMock(
             return_value=_job(job_id="an-2")
         )
-        check = await service.verify_citation(_uri(PREAVIS_REF), "trois mois")
+        check = await tools.citations.verify_citation(_uri(PREAVIS_REF), "trois mois")
         # Still valid — the quote is there — but the anchor is not the current
         # parse, and that is a distinct status, not a note buried in prose.
         assert check.valid is True
@@ -241,7 +248,7 @@ class TestVerifyCitation:
         # The advertised workflow reads a section by its uri, so the uri an
         # agent holds is usually the section's, not the paragraph's. That must
         # not read as a fabricated quote.
-        check = await _service().verify_citation(_uri("#/texts/3"), "trois mois")
+        check = await _tools().citations.verify_citation(_uri("#/texts/3"), "trois mois")
         assert check.valid is True
         assert check.status is CitationStatus.VERIFIED
         # …and it hands back the precise anchor to cite instead.
@@ -249,7 +256,9 @@ class TestVerifyCitation:
         assert check.citation.ref == PREAVIS_REF
 
     async def test_a_quote_from_another_section_still_drifts(self):
-        check = await _service().verify_citation(_uri("#/texts/3"), "Les factures sont émises")
+        check = await _tools().citations.verify_citation(
+            _uri("#/texts/3"), "Les factures sont émises"
+        )
         assert check.valid is False
         assert check.status is CitationStatus.QUOTE_DRIFT
 
@@ -305,10 +314,10 @@ class TestBudgetEdges:
         assert excerpt.markdown.endswith("[…clipped]")
 
     async def test_a_clipped_quote_still_verifies(self):
-        service = _service(config=NavigationConfig(max_read_tokens=5))
-        excerpt = await service.read_element(DOC_ID, PREAVIS_REF, include="self")
+        tools = _tools(config=NavigationConfig(max_read_tokens=5))
+        excerpt = await tools.navigation.read_element(DOC_ID, PREAVIS_REF, include="self")
         citation = excerpt.citations[0]
-        check = await service.verify_citation(citation.uri, citation.quote.split(" […")[0])
+        check = await tools.citations.verify_citation(citation.uri, citation.quote.split(" […")[0])
         assert check.valid is True
 
 
@@ -324,9 +333,9 @@ class TestUnorderedRefs:
         assert len(section.citations) == 1
 
     async def test_read_and_verify_agree_on_such_a_ref(self):
-        service = _service()
-        excerpt = await service.read_element(DOC_ID, "#/texts/5")
-        check = await service.verify_citation(_uri("#/texts/5"), "Figure 1")
+        tools = _tools()
+        excerpt = await tools.navigation.read_element(DOC_ID, "#/texts/5")
+        check = await tools.citations.verify_citation(_uri("#/texts/5"), "Figure 1")
         assert excerpt.citations[0].ref == "#/texts/5"
         assert check.valid is True
 
@@ -340,21 +349,21 @@ class TestIndexCache:
         # Touching an-0 makes an-1 the least recently used…
         await service.get_outline(DOC_ID, version_id="an-0")
         await service.get_outline(DOC_ID, version_id="an-2")
-        assert set(service._index_cache) == {"an-0", "an-2"}
+        assert set(service._parses._cache) == {"an-0", "an-2"}
 
     async def test_never_grows_past_the_configured_bound(self):
         jobs = [_job(SECTIONED, f"an-{i}") for i in range(6)]
         service = _service(jobs=jobs, config=NavigationConfig(index_cache_size=2))
         for job in jobs:
             await service.get_outline(DOC_ID, version_id=job.id)
-        assert len(service._index_cache) == 2
+        assert len(service._parses._cache) == 2
 
     async def test_a_pinned_parse_is_indexed_from_its_own_json(self):
         # Guards the cache key: two parses must never share an index.
         service = _service(jobs=[_job(SECTIONED, "an-1"), _job(FLAT, "an-2")])
         await service.get_outline(DOC_ID, version_id="an-1")
         await service.get_outline(DOC_ID, version_id="an-2")
-        assert service._index_cache["an-1"] is not service._index_cache["an-2"]
+        assert service._parses._cache["an-1"][0] is not service._parses._cache["an-2"][0]
 
 
 class TestMessyParse:

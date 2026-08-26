@@ -202,6 +202,52 @@ class TestMcpAdapterLayerIsolation:
         )
 
 
+class TestDocumentAgentServicesAreFrameworkFree:
+    """The document-agent services reach infrastructure through ports only.
+
+    Rasterising a page was inlined in `NavigationService` — PIL, a filesystem
+    read and an import of another service, in the middle of a use case. The
+    `PageRasterizer` port moved all three behind `infra/page_raster.py`; this
+    is what stops them coming back. Scoped to these four modules rather than
+    all of `services/` because `document_service.py` rasterises directly and
+    predates the port.
+    """
+
+    MODULES = (
+        "navigation_service",
+        "citation_service",
+        "citation_image_service",
+        "parse_loader",
+    )
+
+    @pytest.mark.parametrize("lib", ["PIL", "pdf2image", "fastapi"])
+    def test_no_imaging_or_web_framework(self, lib: str):
+        for module in self.MODULES:
+            source = (Path(_PROJECT_ROOT) / "services" / f"{module}.py").read_text()
+            tree = ast.parse(source)
+            imported: set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name.split(".")[0] for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported.add(node.module.split(".")[0])
+            assert lib not in imported, f"services/{module}.py imports '{lib}'"
+
+    def test_they_do_not_import_a_peer_service(self):
+        """A service reaching into another service is a missing port."""
+        for module in self.MODULES:
+            source = (Path(_PROJECT_ROOT) / "services" / f"{module}.py").read_text()
+            for node in ast.walk(ast.parse(source)):
+                if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("services."):
+                    peer = node.module.split(".")[1]
+                    assert peer in {
+                        "navigation_config",
+                        "navigation_errors",
+                        "parse_loader",
+                        "citation_service",
+                    }, f"services/{module}.py imports peer service '{peer}'"
+
+
 class TestPersistenceLayerIsolation:
     """persistence may import domain, but not api, services, or infra."""
 
