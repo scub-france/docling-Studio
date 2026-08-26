@@ -371,6 +371,20 @@ class DocumentTreeReader(Protocol):
         """
         ...
 
+    def dfs_order(self, doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
+        """Return `self_ref`s in reading order (DFS pre-order from body),
+        omitting `skip_refs`."""
+        ...
+
+    def iter_provs(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        """Flatten an item's provenance into rows carrying `page_no`,
+        `bbox_l/t/r/b`, `coord_origin` and the char span."""
+        ...
+
+    def iter_pages(self, doc_data: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Yield `{page_no, width, height}` for every page of the parse."""
+        ...
+
 
 @runtime_checkable
 class GraphReader(Protocol):

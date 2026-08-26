@@ -79,6 +79,26 @@ class Settings:
     # Sub-flags effective only when rag_pipeline_enabled is true.
     inspect_mode_enabled: bool = True
     linked_mode_enabled: bool = True
+    # MCP document server — off by default. It publishes a read-only tool
+    # surface over the parsed documents and carries NO authentication of its
+    # own, so enabling it on a backend reachable from anywhere hands that
+    # surface to anyone who can reach the port. Enable it for local agent
+    # work (`MCP_ENABLED=true`), and keep it behind an authenticating proxy
+    # anywhere else.
+    mcp_enabled: bool = False
+    # Host/Origin allow-list for the streamable-HTTP transport (DNS-rebinding
+    # protection). "*" disables the check — only correct behind a proxy that
+    # already validates the Host header.
+    mcp_allowed_hosts: list[str] = field(
+        default_factory=lambda: ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    )
+    # Hard server-side ceiling on a single read. A client argument may lower
+    # it, never raise it.
+    mcp_max_read_tokens: int = 4000
+    # Absolute base for citation deep links (e.g. http://localhost:3000).
+    # Empty leaves them relative, which is right when Studio serves the API
+    # and the UI from the same origin.
+    mcp_studio_base_url: str = ""
 
     def __post_init__(self) -> None:
         errors: list[str] = []
@@ -114,6 +134,10 @@ class Settings:
             )
         if self.embedding_dimension < 1:
             errors.append(f"embedding_dimension must be >= 1 (got {self.embedding_dimension})")
+        if self.mcp_max_read_tokens < 1:
+            errors.append(f"mcp_max_read_tokens must be >= 1 (got {self.mcp_max_read_tokens})")
+        if self.mcp_enabled and not self.mcp_allowed_hosts:
+            errors.append("mcp_allowed_hosts must not be empty when MCP_ENABLED is true")
         if not (self.studio_mode_enabled or self.rag_pipeline_enabled):
             errors.append("at least one of STUDIO_MODE_ENABLED / RAG_PIPELINE_ENABLED must be true")
         if not (_MAX_ITERATIONS_MIN <= self.reasoning_max_iterations <= _MAX_ITERATIONS_MAX):
@@ -196,6 +220,18 @@ class Settings:
             in ("1", "true", "yes", "on"),
             linked_mode_enabled=os.environ.get("LINKED_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
+            # MCP document server (read-only agent surface).
+            mcp_enabled=os.environ.get("MCP_ENABLED", "false").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_allowed_hosts=[
+                h.strip()
+                for h in os.environ.get(
+                    "MCP_ALLOWED_HOSTS", "127.0.0.1:*,localhost:*,[::1]:*"
+                ).split(",")
+                if h.strip()
+            ],
+            mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
+            mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
         )
 
 

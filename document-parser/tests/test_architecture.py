@@ -8,6 +8,7 @@ Rules enforced:
 - services -> no import from api, infra, persistence
 - api      -> no import from infra, persistence
 - infra    -> no import from api, services
+- mcp_adapter -> no import from api, infra, persistence
 - persistence -> no import from api, services, infra
 - domain   -> no import of fastapi, sqlalchemy, httpx, opensearchpy
 - services -> no import of fastapi
@@ -171,6 +172,34 @@ class TestInfraLayerIsolation:
             .are_sub_modules_of(_mod(forbidden))
         )
         rule.assert_applies(_evaluable)
+
+
+class TestMcpAdapterLayerIsolation:
+    """mcp_adapter is a driving adapter: it may reach services + domain only.
+
+    Same contract as `api/`. The MCP surface is allowed to *shape* responses
+    for an agent (budgets, anchors, content delimiters); it is not allowed to
+    reach past the services layer to do it.
+
+    Asserted with the ast scanner rather than a pytestarch rule on purpose.
+    The pytestarch rules above resolve import *targets* against graph nodes
+    named `document-parser.<layer>.<module>`, while the source says
+    `from persistence.database import …` — the project root is a hyphenated
+    directory, not an importable package, so those targets match no node and
+    the rules never see an edge. Verified by hand: adding
+    `from persistence.database import get_connection` to a `services/` module
+    leaves every rule green. Fixing that machinery is a change of its own
+    (it will surface whatever the rules have been missing); until then, a new
+    package gets an assertion that actually bites.
+    """
+
+    @pytest.mark.parametrize("forbidden", ["api", "infra", "persistence"])
+    def test_mcp_adapter_does_not_import(self, forbidden: str):
+        imports = _collect_imports("mcp_adapter")
+        assert forbidden not in imports, (
+            f"mcp_adapter imports forbidden layer '{forbidden}' — a driving adapter "
+            "reaches the services layer, never past it"
+        )
 
 
 class TestPersistenceLayerIsolation:
