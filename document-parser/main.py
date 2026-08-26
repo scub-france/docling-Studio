@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +33,7 @@ from api.schemas import HealthResponse
 from api.state import AppState
 from api.stores import router as stores_router
 from bootstrap import AppStateBuilder
+from bootstrap.mcp_mount import mount_mcp_server
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.database import get_connection
@@ -55,17 +56,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.include_router(ingestion_router)
         logger.info("Ingestion router mounted")
 
-    try:
-        yield
-    finally:
-        # Drain both backend pools (#279). `close_driver` drains the Neo4j
-        # pool (every (uri, user) entry, not just the env-based one); the
-        # OpenSearch pool is drained explicitly.
-        from infra.neo4j import close_driver
-        from infra.opensearch_pool import get_pool as get_opensearch_pool
+    async with AsyncExitStack() as stack:
+        # The MCP streamable-HTTP transport needs its session manager running
+        # for the lifetime of the app. It is created at import time (see the
+        # `mount_mcp_server` call below) because the ASGI route must exist
+        # before the first request; entering it here is what starts it.
+        if _mcp_session is not None:
+            await stack.enter_async_context(_mcp_session)
+        try:
+            yield
+        finally:
+            # Drain both backend pools (#279). `close_driver` drains the Neo4j
+            # pool (every (uri, user) entry, not just the env-based one); the
+            # OpenSearch pool is drained explicitly.
+            from infra.neo4j import close_driver
+            from infra.opensearch_pool import get_pool as get_opensearch_pool
 
-        await close_driver()
-        await get_opensearch_pool().close_all()
+            await close_driver()
+            await get_opensearch_pool().close_all()
 
 
 app = FastAPI(
@@ -101,6 +109,12 @@ app.include_router(graph_router)
 app.include_router(reasoning_router)
 # Runtime config (#317) — admin panel read/write over the reasoning knobs.
 app.include_router(config_router)
+
+# MCP document server (read-only agent surface) — mounted at import time so
+# the ASGI route and its session manager exist before the first request; the
+# lifespan above enters the returned context. `None` when MCP_ENABLED is off
+# or the optional SDK is absent, in which case nothing is mounted at all.
+_mcp_session = mount_mcp_server(app)
 
 
 @app.get("/api/health", response_model=HealthResponse)
