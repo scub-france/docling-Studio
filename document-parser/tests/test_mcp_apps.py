@@ -12,7 +12,6 @@ from __future__ import annotations
 import base64
 import io
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -31,16 +30,14 @@ from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI
-from services.navigation_service import (
-    InvalidArgumentError,
-    NavigationConfig,
-    RefNotFoundError,
-)
+from services.navigation_config import NavigationConfig
+from services.navigation_errors import InvalidArgumentError, RefNotFoundError
 from tests.navigation_fixtures import (
     PREAVIS_REF,
+    FakeRasterizer,
     anchor_uri,
     make_document,
-    make_navigation_service,
+    make_document_tools,
 )
 
 APPS_CLIENT = advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})
@@ -56,19 +53,23 @@ def _png(width: int = 1275, height: int = 1650) -> bytes:
 
 
 @asynccontextmanager
-async def _client(service, *, apps: bool = True, negotiates: bool = False):
-    server = build_mcp_server(lambda: service, version="test", apps=apps)
+async def _client(tools, *, apps: bool = True, negotiates: bool = False):
+    server = build_mcp_server(lambda: tools, version="test", apps=apps)
     async with Client(server, extensions=[APPS_CLIENT] if negotiates else None) as client:
         yield client
 
 
 def _service_with_file(tmp_path: Path, **kwargs):
-    """A navigation service whose document points at a real file on disk."""
+    """Document tools whose document points at a real file on disk.
+
+    The path only has to exist for the entity to be valid — the rasterizer is
+    a fake, which is what the `PageRasterizer` port was extracted for.
+    """
     pdf = tmp_path / "contrat.pdf"
     pdf.write_bytes(b"%PDF-1.4 not really a pdf")
     document = make_document()
     document.storage_path = str(pdf)
-    return make_navigation_service(documents=[document], **kwargs)
+    return make_document_tools(documents=[document], **kwargs)
 
 
 class TestPixelProjection:
@@ -112,46 +113,43 @@ class TestPixelProjection:
 
 class TestRenderCitation:
     async def test_returns_a_data_uri_for_the_cited_region(self, tmp_path):
-        service = _service_with_file(tmp_path)
-        with patch(
-            "services.document_service.DocumentService.generate_preview", return_value=_png()
-        ):
-            image = await service.render_citation(anchor_uri(PREAVIS_REF))
+        tools = _service_with_file(tmp_path)
+        image = await tools.images.render(anchor_uri(PREAVIS_REF))
         assert image.data_uri.startswith("data:image/png;base64,")
         assert base64.b64decode(image.data_uri.split(",", 1)[1]) == image.png
         assert image.page == 1
         assert image.width > 0 and image.height > 0
 
     async def test_shrinks_until_it_fits_the_byte_budget(self, tmp_path):
-        service = _service_with_file(
-            tmp_path, config=NavigationConfig(image_max_bytes=10, image_dpi=150, image_min_dpi=40)
+        raster = FakeRasterizer()
+        tools = _service_with_file(
+            tmp_path,
+            config=NavigationConfig(image_max_bytes=10, image_dpi=150, image_min_dpi=40),
+            rasterizer=raster,
         )
-        with patch(
-            "services.document_service.DocumentService.generate_preview", return_value=_png()
-        ) as preview:
-            image = await service.render_citation(anchor_uri(PREAVIS_REF))
+        image = await tools.images.render(anchor_uri(PREAVIS_REF))
         # Unsatisfiable budget: it descends to the floor and stops there
         # rather than looping, and reports the dpi it settled on.
         assert image.dpi == 40
-        assert [call.kwargs["dpi"] for call in preview.call_args_list] == [150, 75, 40]
+        assert [dpi for _, dpi in raster.renders] == [150, 75, 40]
 
     async def test_an_element_without_provenance_is_refused_clearly(self, tmp_path):
-        service = _service_with_file(tmp_path)
+        tools = _service_with_file(tmp_path)
         with pytest.raises(InvalidArgumentError, match="no page coordinates"):
             # The document title in the fixture has provenance; a caption
             # hanging off a picture does too. `#/pages/1` is a virtual ref and
             # carries none.
-            await service.render_citation(anchor_uri("#/pages/1"))
+            await tools.images.render(anchor_uri("#/pages/1"))
 
     async def test_unknown_ref(self, tmp_path):
-        service = _service_with_file(tmp_path)
+        tools = _service_with_file(tmp_path)
         with pytest.raises(RefNotFoundError):
-            await service.render_citation(anchor_uri("#/texts/999"))
+            await tools.images.render(anchor_uri("#/texts/999"))
 
     async def test_a_document_without_a_file_is_refused(self):
-        service = make_navigation_service()  # storage_path is empty
+        tools = make_document_tools()  # storage_path is empty
         with pytest.raises(InvalidArgumentError, match="no stored file"):
-            await service.render_citation(anchor_uri(PREAVIS_REF))
+            await tools.images.render(anchor_uri(PREAVIS_REF))
 
 
 class TestAppsSurface:
@@ -186,35 +184,83 @@ class TestGracefulDegradation:
     """SEP-2133: a UI-enabled tool must stay useful without the UI."""
 
     async def test_a_host_without_apps_gets_the_citation_and_no_image(self, tmp_path):
-        async with _client(_service_with_file(tmp_path), negotiates=False) as client:
-            with patch(
-                "services.document_service.DocumentService.generate_preview", return_value=_png()
-            ) as preview:
-                result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        raster = FakeRasterizer()
+        async with _client(
+            _service_with_file(tmp_path, rasterizer=raster), negotiates=False
+        ) as client:
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
         view = result.structured_content
         assert view["quote"]
         assert view["page_image"] is None
         # Not merely omitted from the payload — never rendered at all, so the
         # bytes cost nothing on a host that could not have shown them.
-        preview.assert_not_called()
+        assert raster.renders == []
 
     async def test_a_host_with_apps_gets_the_image(self, tmp_path):
         async with _client(_service_with_file(tmp_path), negotiates=True) as client:
-            with patch(
-                "services.document_service.DocumentService.generate_preview", return_value=_png()
-            ):
-                result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
         view = result.structured_content
         assert view["page_image"].startswith("data:image/png;base64,")
         assert view["image_note"] is None
 
-    async def test_a_failed_render_degrades_to_the_text_citation(self, tmp_path):
+    async def test_the_payload_carries_the_provenance_the_viewer_shows(self, tmp_path):
+        # The anchor already encodes document and parse; unpacking them means
+        # the viewer never has to parse a `dstudio://` uri to say where a
+        # passage came from — and a text-only host reads the same provenance.
+        async with _client(_service_with_file(tmp_path), negotiates=False) as client:
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        view = result.structured_content
+        assert view["document_id"] == "doc-1"
+        assert view["version_id"] == "an-1"
+        assert view["label"]
+        assert view["quote_hash"].startswith("sha256:")
+
+    async def test_the_quote_is_priced_with_the_estimator_the_rest_of_the_surface_uses(
+        self, tmp_path
+    ):
+        # One estimator across the surface: a card's figure has to be
+        # comparable with the `est_tokens` an outline entry advertises,
+        # otherwise the two numbers quietly mean different things.
+        from domain.navigation import estimate_tokens
+
+        async with _client(_service_with_file(tmp_path), negotiates=False) as client:
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        view = result.structured_content
+        assert view["est_tokens"] == estimate_tokens(view["quote"])
+        # No image was rendered, so there is no weight to report — and the
+        # field says so rather than reporting zero.
+        assert view["image_bytes"] is None
+
+    async def test_the_page_image_is_weighed_in_bytes_not_tokens(self, tmp_path):
+        # How a host prices an image is the host's business; quoting a token
+        # figure for it would be inventing one.
         async with _client(_service_with_file(tmp_path), negotiates=True) as client:
-            with patch(
-                "services.document_service.DocumentService.generate_preview",
-                side_effect=OSError("poppler is not installed"),
-            ):
-                result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        view = result.structured_content
+        assert view["image_bytes"] > 0
+        # The raster's own size, not the base64 it travels as.
+        assert view["image_bytes"] < len(view["page_image"])
+
+    async def test_the_card_reports_the_surface_total_not_just_its_own_cost(self, tmp_path):
+        # What a reader wants to know is whether the document work is getting
+        # expensive, which one citation's cost cannot answer. The tally counts
+        # every tool call on the server, this one included.
+        async with _client(_service_with_file(tmp_path), negotiates=False) as client:
+            await client.call_tool("find_documents", {})
+            await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        view = result.structured_content
+        assert view["total_calls"] == 3
+        assert view["total_est_tokens"] > view["est_tokens"]
+
+    async def test_a_failed_render_degrades_to_the_text_citation(self, tmp_path):
+        class BrokenRasterizer(FakeRasterizer):
+            def render_page(self, storage_path, *, page, dpi):
+                raise OSError("poppler is not installed")
+
+        tools = _service_with_file(tmp_path, rasterizer=BrokenRasterizer())
+        async with _client(tools, negotiates=True) as client:
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
         view = result.structured_content
         assert result.is_error is False
         assert view["quote"]
@@ -243,5 +289,60 @@ class TestTemplate:
     def test_escapes_document_text_before_it_becomes_markup(self):
         assert "&amp;" in CITATION_APP_HTML and "&lt;" in CITATION_APP_HTML
         # Every interpolation of document-derived text goes through esc().
-        for field in ("view.quote", "view.uri", "view.page_image", "view.ref"):
+        for field in ("view.uri", "view.page_image", "view.ref", "view.quote_hash"):
             assert f"esc({field})" in CITATION_APP_HTML, field
+
+    def test_the_quote_is_escaped_before_markdown_becomes_markup(self):
+        # The quote is the one field that does *not* reach `esc` at the
+        # interpolation site: it is rendered as markdown. The invariant is
+        # unchanged, it just moves one call earlier — `renderMarkdown` escapes
+        # the whole string before composing a single tag out of it, so every
+        # branch below it works on text that can no longer carry markup.
+        assert "renderMarkdown(view.quote)" in CITATION_APP_HTML
+        assert 'const text = esc(String(raw ?? ""))' in CITATION_APP_HTML
+
+    def test_copying_survives_a_host_that_grants_no_clipboard(self):
+        # `navigator.clipboard?.writeText(...).then(...)` throws when the
+        # clipboard is absent, so the button did nothing at all — silently.
+        # Three layers now: the async API, execCommand, then selecting the
+        # text so the reader can copy it themselves.
+        assert "execCommand" in CITATION_APP_HTML
+        assert "Clipboard blocked" in CITATION_APP_HTML
+
+    def test_open_in_studio_is_offered_only_for_a_link_a_host_can_resolve(self):
+        # `deep_link` is a bare path unless MCP_STUDIO_BASE_URL is set, and
+        # `ui/open-link` on a bare path does nothing.
+        assert "isAbsolute(view.deep_link)" in CITATION_APP_HTML
+        assert "MCP_STUDIO_BASE_URL" in CITATION_APP_HTML
+
+    def test_asks_the_host_to_size_the_frame_to_the_content(self):
+        # The host owns the iframe's box, so a citation carrying a page image
+        # and a long table only gets the room it needs if the app asks for it.
+        assert "ui/notifications/size-changed" in CITATION_APP_HTML
+        assert "ResizeObserver" in CITATION_APP_HTML
+
+    def test_the_page_image_is_not_capped_against_the_viewport(self):
+        # A `vh` cap plus a resize request is a feedback loop: the frame grows,
+        # so the image grows, so the frame is asked to grow again.
+        import re
+
+        assert "max-height: 460px" in CITATION_APP_HTML
+        assert not re.search(r"\d+vh\b", CITATION_APP_HTML)
+
+    def test_renders_a_pipe_table_rather_than_a_wall_of_pipes(self):
+        # A table element's text arrives as GFM markup; the viewer builds a
+        # real table out of it, wrapped in the same scroll container the
+        # Studio markdown viewer uses.
+        assert '<div class="md-table">' in CITATION_APP_HTML
+        assert "isDelimiter" in CITATION_APP_HTML
+
+    def test_the_element_palette_matches_the_studio_one(self):
+        # Same element, same colour on both surfaces — the values are the ones
+        # in frontend/src/shared/elementColors.ts.
+        for label, color in (
+            ("table", "#8B5CF6"),
+            ("section_header", "#F97316"),
+            ("text", "#3B82F6"),
+        ):
+            assert f'{label}: "{color}"' in CITATION_APP_HTML, label
+        assert "#94A3B8" in CITATION_APP_HTML  # the unknown-type fallback

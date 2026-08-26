@@ -20,15 +20,15 @@ from mcp import Client
 
 from mcp_adapter import build_mcp_server
 from mcp_adapter.wire import CONTENT_CLOSE
-from services.navigation_service import NavigationConfig
+from services.navigation_config import NavigationConfig
 from tests.navigation_fixtures import (
     DOC_ID,
     FLAT,
     PREAVIS_REF,
     PREAVIS_TEXT,
     anchor_uri,
+    make_document_tools,
     make_job,
-    make_navigation_service,
 )
 
 # The text surface. `show_citation` is added by the Apps extension and is
@@ -39,7 +39,7 @@ TOOL_NAMES = {"find_documents", "get_outline", "read_element", "verify_citation"
 
 @asynccontextmanager
 async def _client(service=None, *, provider=None):
-    navigation = provider or (lambda: service or make_navigation_service())
+    navigation = provider or (lambda: service or make_document_tools())
     # apps=False: this module owns the text contract.
     async with Client(build_mcp_server(navigation, version="test", apps=False)) as client:
         yield client
@@ -110,7 +110,7 @@ class TestGetOutline:
         assert "read_element" in outline["next_step"]
 
     async def test_page_mode_survives_a_document_without_headings(self):
-        service = make_navigation_service(job=make_job(FLAT))
+        service = make_document_tools(job=make_job(FLAT))
         async with _client(service) as client:
             outline = _payload(await client.call_tool("get_outline", {"document_id": DOC_ID}))
         assert outline["mode"] == "pages"
@@ -225,7 +225,7 @@ class TestUntrustedContent:
             "groups": [],
             "pages": {"1": {"page_no": 1, "size": {"width": 612, "height": 792}}},
         }
-        service = make_navigation_service(job=make_job(payload))
+        service = make_document_tools(job=make_job(payload))
         async with _client(service) as client:
             excerpt = _payload(
                 await client.call_tool("read_element", {"uri": anchor_uri("#/texts/0")})
@@ -235,7 +235,7 @@ class TestUntrustedContent:
 
 class TestGuards:
     async def test_a_client_cannot_raise_the_server_ceiling(self):
-        service = make_navigation_service(config=NavigationConfig(max_read_tokens=5))
+        service = make_document_tools(config=NavigationConfig(max_read_tokens=5))
         async with _client(service) as client:
             excerpt = _payload(
                 await client.call_tool(
@@ -246,7 +246,7 @@ class TestGuards:
         assert excerpt["truncated"] is True
 
     async def test_an_unwired_container_answers_instead_of_crashing(self):
-        from services.navigation_service import NavigationUnavailableError
+        from services.navigation_errors import NavigationUnavailableError
 
         def unwired():
             raise NavigationUnavailableError(
@@ -281,12 +281,20 @@ TOOL_FIELDS = {
         "est_tokens",
         "truncated",
         "citations",
+        "next_step",
         "untrusted_content_note",
         "next_cursor",
         "first_page",
         "last_page",
     },
-    "verify_citation": {"valid", "status", "detail", "actual_quote", "citation"},
+    "verify_citation": {
+        "valid",
+        "status",
+        "detail",
+        "next_step",
+        "actual_quote",
+        "citation",
+    },
 }
 NESTED_FIELDS = {
     "DocumentRow": {
@@ -373,8 +381,8 @@ class TestPublishedContract:
 
         from tests.navigation_fixtures import make_job
 
-        service = make_navigation_service()
-        service._analyses.find_latest_completed_by_document = AsyncMock(
+        service = make_document_tools()
+        service.citations._parses.analyses.find_latest_completed_by_document = AsyncMock(
             return_value=make_job(job_id="an-2")
         )
         async with _client(service) as client:
@@ -386,3 +394,92 @@ class TestPublishedContract:
             )
         assert check["valid"] is True
         assert check["status"] == "stale_version"
+
+
+class TestNextStep:
+    """Guidance rides with the payload, where it arrives when it applies."""
+
+    async def test_a_complete_read_says_how_to_cite(self):
+        async with _client() as client:
+            excerpt = _payload(
+                await client.call_tool("read_element", {"uri": anchor_uri(PREAVIS_REF)})
+            )
+        assert "citations[].uri" in excerpt["next_step"]
+        assert "verify_citation" in excerpt["next_step"]
+
+    async def test_a_truncated_read_hands_back_its_own_cursor(self):
+        async with _client() as client:
+            excerpt = _payload(
+                await client.call_tool(
+                    "read_element", {"uri": anchor_uri("#/texts/0"), "max_tokens": 12}
+                )
+            )
+        assert excerpt["next_cursor"] in excerpt["next_step"]
+        assert "read_element" in excerpt["next_step"]
+
+    async def test_verification_says_what_to_do_per_status(self):
+        async with _client() as client:
+            good = _payload(
+                await client.call_tool(
+                    "verify_citation",
+                    {"uri": anchor_uri(PREAVIS_REF), "quote": "trois mois"},
+                )
+            )
+            bad = _payload(
+                await client.call_tool(
+                    "verify_citation",
+                    {"uri": anchor_uri(PREAVIS_REF), "quote": "six mois"},
+                )
+            )
+        assert "publish" in good["next_step"].lower()
+        assert "do not publish" in bad["next_step"].lower()
+        assert "actual_quote" in bad["next_step"]
+
+    async def test_every_status_carries_a_next_step(self):
+        from domain.navigation import CitationStatus
+        from mcp_adapter.wire_mapping import _VERIFICATION_NEXT_STEP
+
+        assert set(_VERIFICATION_NEXT_STEP) == set(CitationStatus)
+        assert all(text.strip() for text in _VERIFICATION_NEXT_STEP.values())
+
+
+class TestCacheHints:
+    """SEP-2549: the only caching seam the protocol offers this server."""
+
+    async def test_the_deploy_scoped_listings_carry_a_freshness_hint(self):
+        server = build_mcp_server(
+            lambda: make_document_tools(), version="test", apps=False, cache_ttl_seconds=600
+        )
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            prompts = await client.list_prompts()
+        assert tools.ttl_ms == 600_000
+        # Public: the tool list is identical for every caller of this server.
+        assert tools.cache_scope == "public"
+        assert prompts.ttl_ms == 600_000
+
+    async def test_the_ui_template_is_cacheable_too(self):
+        from mcp_adapter.apps import CITATION_APP_URI
+
+        server = build_mcp_server(
+            lambda: make_document_tools(), version="test", apps=True, cache_ttl_seconds=600
+        )
+        async with Client(server) as client:
+            read = await client.read_resource(CITATION_APP_URI)
+        assert read.ttl_ms == 600_000
+
+    async def test_zero_disables_it_rather_than_advertising_staleness(self):
+        server = build_mcp_server(
+            lambda: make_document_tools(), version="test", apps=False, cache_ttl_seconds=0
+        )
+        async with Client(server) as client:
+            tools = await client.list_tools()
+        assert tools.ttl_ms == 0
+
+    async def test_tool_calls_are_never_hinted(self):
+        # `tools/call` is not in CACHEABLE_METHODS — the protocol puts caching
+        # where this server's cost is not, and pretending otherwise would let
+        # a host serve a stale read.
+        from mcp.server.caching import CACHEABLE_METHODS
+
+        assert "tools/call" not in CACHEABLE_METHODS

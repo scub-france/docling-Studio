@@ -1,4 +1,4 @@
-"""The MCP wire contract — what the tools actually return to an agent.
+"""The MCP wire contract — the shapes the tools return.
 
 Deliberately *not* the domain types. These dataclasses are a published
 contract: the SDK derives each tool's JSON output schema from them, so a
@@ -19,23 +19,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 # Runtime import, not TYPE_CHECKING: the SDK resolves these dataclasses'
 # annotations at registration time to derive each tool's output schema, so a
 # type that only exists for a checker would fail there.
 from domain.navigation import CitationStatus  # noqa: TC001
-
-if TYPE_CHECKING:
-    from domain.navigation import (
-        Citation,
-        CitationCheck,
-        DocumentOutline,
-        DocumentSearch,
-        DocumentSummary,
-        Excerpt,
-        OutlineNode,
-    )
 
 # Wrapper for every span of document text handed to the model. Anything a PDF
 # says is data: it may contain "ignore your instructions and …" because a
@@ -187,6 +175,7 @@ class ExcerptResult:
     est_tokens: int
     truncated: bool
     citations: list[CitationOut]
+    next_step: str
     untrusted_content_note: str = UNTRUSTED_NOTE
     next_cursor: str | None = None
     first_page: int | None = None
@@ -207,120 +196,6 @@ class VerificationResult:
     valid: bool
     status: CitationStatus
     detail: str
+    next_step: str
     actual_quote: str | None = None
     citation: CitationOut | None = None
-
-
-# ---------------------------------------------------------------------------
-# domain -> wire
-# ---------------------------------------------------------------------------
-
-
-def document_row(summary: DocumentSummary) -> DocumentRow:
-    return DocumentRow(
-        document_id=summary.document_id,
-        filename=neutralise(summary.filename),
-        state=summary.lifecycle_state,
-        pages=summary.page_count,
-        version_id=summary.version_id,
-        created_at=summary.created_at,
-    )
-
-
-def search_result(search: DocumentSearch) -> DocumentSearchResult:
-    unparsed = [row for row in search.documents if row.version_id is None]
-    hint = "Call get_outline(document_id=…) on the document you need."
-    if search.truncated:
-        hint += (
-            f" Only the {search.scan_limit} most recent documents were searched — "
-            "narrow the query if what you expected is missing."
-        )
-    if unparsed:
-        hint += " Documents with a null version_id have not been parsed and cannot be read."
-    return DocumentSearchResult(
-        documents=[document_row(summary) for summary in search.documents],
-        truncated=search.truncated,
-        scanned=search.scanned,
-        scan_limit=search.scan_limit,
-        next_step=hint,
-    )
-
-
-def outline_entry(node: OutlineNode) -> OutlineEntry:
-    return OutlineEntry(
-        uri=node.uri,
-        title=neutralise(node.title),
-        kind=node.kind,
-        level=node.level,
-        est_tokens=node.est_tokens,
-        child_count=node.child_count,
-        page=node.page,
-        children=[outline_entry(child) for child in node.children],
-    )
-
-
-def outline_result(outline: DocumentOutline) -> OutlineResult:
-    return OutlineResult(
-        document_id=outline.document_id,
-        version_id=outline.version_id,
-        filename=neutralise(outline.filename),
-        mode=outline.mode,
-        total_est_tokens=outline.total_est_tokens,
-        deeper_levels_available=outline.depth_limited,
-        entries_omitted=outline.node_limited,
-        entries=[outline_entry(node) for node in outline.nodes],
-        pages=outline.page_count,
-        next_step=(
-            "Call read_element(uri=…) with the uri of the entry you need. Reading the whole "
-            f"document would cost about {outline.total_est_tokens} tokens."
-        ),
-    )
-
-
-def citation_out(citation: Citation) -> CitationOut:
-    bbox = citation.bbox
-    return CitationOut(
-        uri=citation.uri,
-        ref=citation.ref,
-        label=citation.label,
-        quote=neutralise(citation.quote),
-        quote_hash=citation.quote_hash,
-        headings=_neutralise_all(list(citation.headings)),
-        page=citation.page,
-        bbox=[bbox.left, bbox.top, bbox.right, bbox.bottom] if bbox else None,
-        coord_origin=bbox.coord_origin if bbox else None,
-        page_width=bbox.page_width if bbox else None,
-        page_height=bbox.page_height if bbox else None,
-        deep_link=citation.deep_link,
-    )
-
-
-def excerpt_result(excerpt: Excerpt) -> ExcerptResult:
-    return ExcerptResult(
-        uri=excerpt.uri,
-        document_id=excerpt.document_id,
-        version_id=excerpt.version_id,
-        title=neutralise(excerpt.title),
-        content=wrap_content(
-            excerpt.markdown,
-            document_id=excerpt.document_id,
-            version_id=excerpt.version_id,
-            ref=excerpt.ref,
-        ),
-        est_tokens=excerpt.est_tokens,
-        truncated=excerpt.truncated,
-        citations=[citation_out(citation) for citation in excerpt.citations],
-        next_cursor=excerpt.next_cursor,
-        first_page=excerpt.page_range[0] if excerpt.page_range else None,
-        last_page=excerpt.page_range[1] if excerpt.page_range else None,
-    )
-
-
-def verification_result(check: CitationCheck) -> VerificationResult:
-    return VerificationResult(
-        valid=check.valid,
-        status=check.status,
-        detail=check.detail,
-        actual_quote=neutralise(check.actual_quote) if check.actual_quote else None,
-        citation=citation_out(check.citation) if check.citation else None,
-    )

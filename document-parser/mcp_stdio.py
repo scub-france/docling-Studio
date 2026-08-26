@@ -26,7 +26,7 @@ import asyncio
 import logging
 import sys
 
-from bootstrap.factories import build_navigation_service
+from bootstrap.factories import build_document_tools
 from infra.settings import settings
 from mcp_adapter import build_mcp_server, deps_present, deps_provenance
 from persistence.analysis_repo import SqliteAnalysisRepository
@@ -46,12 +46,15 @@ async def _serve() -> None:
     # against an existing database — the schema init is idempotent.
     await init_db()
 
-    navigation = build_navigation_service(
+    tools = build_document_tools(
         SqliteDocumentRepository(),
         SqliteAnalysisRepository(),
     )
     server = build_mcp_server(
-        lambda: navigation, version=settings.app_version, apps=settings.mcp_apps_enabled
+        lambda: tools,
+        version=settings.app_version,
+        apps=settings.mcp_apps_enabled,
+        cache_ttl_seconds=settings.mcp_cache_ttl_seconds,
     )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()

@@ -4,34 +4,276 @@
 <meta charset="utf-8">
 <title>Citation</title>
 <style>
+  /* Design tokens lifted from the Studio shell (frontend/src/app/App.vue).
+     Same names, same values, so the viewer and the product do not drift into
+     two palettes. The product picks its theme with a class on <html>; an app
+     in a sandboxed iframe cannot read the host's, so the media query decides.
+     Light is the default because most hosts render on paper. */
   :root {
     color-scheme: light dark;
-    --paper: #fff; --ink: #16201f; --muted: #5c6b69; --line: #dfe5e4;
-    --accent: #0d6e70; --mark: #b26b06;
-    font-family: ui-sans-serif, -apple-system, "IBM Plex Sans", system-ui, sans-serif;
+    --bg: #fafafa;
+    --bg-surface: #ffffff;
+    --bg-elevated: #f4f4f5;
+    --bg-hover: #e4e4e7;
+    --accent: #f97316;
+    --accent-hover: #ea580c;
+    --accent-muted: rgba(249, 115, 22, 0.1);
+    --text: #18181b;
+    --text-secondary: #52525b;
+    --text-muted: #a1a1aa;
+    --border: #e4e4e7;
+    --border-light: #d4d4d8;
+    --radius: 8px;
+    --radius-sm: 6px;
+    --radius-lg: 12px;
+    --transition: 150ms ease;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --paper: #0e1413; --ink: #e3ecea; --muted: #93a5a1; --line: #26332f;
-            --accent: #58bebf; --mark: #e0a44a; }
+    :root {
+      --bg: #0a0a0b;
+      --bg-surface: #111113;
+      --bg-elevated: #1a1a1d;
+      --bg-hover: #222226;
+      --accent-hover: #fb923c;
+      --accent-muted: rgba(249, 115, 22, 0.15);
+      --text: #ececef;
+      --text-secondary: #a1a1aa;
+      --text-muted: #63636e;
+      --border: #27272a;
+      --border-light: #3f3f46;
+    }
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--paper); color: var(--ink); font-size: 14px; line-height: 1.55; }
-  main { display: grid; gap: 14px; padding: 14px; }
-  .crumbs { font-size: 12px; color: var(--muted); }
-  .crumbs b { color: var(--ink); font-weight: 600; }
-  figure { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; }
-  figure img { display: block; width: 100%; height: auto; }
-  figcaption { font-size: 11px; color: var(--muted); padding: 6px 8px; border-top: 1px solid var(--line); }
-  blockquote { margin: 0; padding: 10px 12px; border-left: 3px solid var(--mark); border-radius: 0 4px 4px 0;
-               background: color-mix(in srgb, var(--mark) 10%, transparent); }
-  .meta { font-family: ui-monospace, "IBM Plex Mono", monospace; font-size: 11px;
-          color: var(--muted); word-break: break-all; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  button { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 5px; cursor: pointer;
-           border: 1px solid var(--line); background: transparent; color: var(--ink); }
-  button:hover { border-color: var(--accent); color: var(--accent); }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main { max-width: 940px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+
+  /* ---- header ------------------------------------------------------- */
+
+  .crumbs {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .crumbs .sep { color: var(--border-light); }
+  .crumbs b { color: var(--text-secondary); font-weight: 500; }
+
+  .headline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  /* Element-type swatch — colour comes from the payload's `label` through the
+     Studio palette (frontend/src/shared/elementColors.ts). */
+  .kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    background: var(--bg-surface);
+  }
+  .kind .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: currentColor; flex: none;
+  }
+  .page-chip {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 11px;
+  }
+  .shape { font-size: 12px; color: var(--text-muted); }
+  /* Context cost of the quoted text. Muted on purpose: it is an estimate, and
+     an estimate that looks like a measurement gets trusted like one. */
+  .cost {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--accent-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 11px;
+    cursor: help;
+  }
+
+  /* ---- page image --------------------------------------------------- */
+
+  figure {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: #fff;
+  }
+  /* Capped in px, deliberately not in vh: the app asks the host to resize the
+     frame to its content, and a viewport-relative image would grow with the
+     frame it just caused to grow. */
+  figure img { display: block; width: 100%; height: auto; max-height: 460px; object-fit: contain; }
+  figcaption {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ---- the quote ---------------------------------------------------- */
+
+  .quote {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    background: var(--bg-surface);
+    padding: 16px 18px;
+    overflow-wrap: anywhere;
+  }
+  .quote > :first-child { margin-top: 0; }
+  .quote > :last-child { margin-bottom: 0; }
+
+  /* Markdown, mirroring shared/ui/MarkdownViewer.vue. Docling hands the
+     quote over as markdown — a table element arrives as a pipe table — so
+     rendering it is the difference between a passage and a wall of pipes. */
+  .quote h1, .quote h2, .quote h3, .quote h4, .quote h5, .quote h6 {
+    margin: 20px 0 10px; font-weight: 600; line-height: 1.3;
+  }
+  .quote h1 { font-size: 22px; }
+  .quote h2 { font-size: 19px; }
+  .quote h3 { font-size: 17px; }
+  .quote h4, .quote h5, .quote h6 { font-size: 15px; }
+  .quote p { margin: 10px 0; }
+  .quote ul, .quote ol { margin: 10px 0; padding-left: 22px; }
+  .quote li { margin: 4px 0; }
+  .quote code {
+    background: var(--bg-elevated);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .quote pre {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  .quote pre code { background: none; padding: 0; }
+
+  .md-table {
+    margin: 14px 0;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+  }
+  .md-table table { border-collapse: collapse; width: 100%; font-size: 13px; line-height: 1.45; }
+  .md-table thead th {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-align: left;
+    white-space: nowrap;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .md-table tbody td {
+    padding: 9px 14px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border);
+  }
+  .md-table tbody td:first-child { font-weight: 500; }
+  .md-table tbody tr:nth-child(even) { background: var(--bg-elevated); }
+  .md-table tbody tr:hover { background: var(--bg-hover); }
+  .md-table tbody tr:last-child td { border-bottom: none; }
+
+  /* ---- provenance --------------------------------------------------- */
+
+  .meta {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+  .meta div {
+    padding: 10px 14px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    min-width: 0;
+  }
+  .meta dt {
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+  .meta dd {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .anchor {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  /* ---- actions ------------------------------------------------------ */
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button {
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 1px solid var(--border-light);
+    background: var(--bg-surface);
+    color: var(--text);
+    transition: color var(--transition), border-color var(--transition), background var(--transition);
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-muted); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .status { font-size: 12px; color: var(--muted); padding: 20px 14px; }
+  .said { font-size: 12px; color: var(--accent); }
+
+  .status { font-size: 13px; color: var(--text-muted); padding: 28px 20px; text-align: center; }
+  .note {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+  }
 </style>
 </head>
 <body>
@@ -46,34 +288,212 @@
     String(value ?? "").replace(/[&<>"']/g, (ch) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 
+  // Element-type palette, kept byte-identical to the Studio one
+  // (frontend/src/shared/elementColors.ts) so the same element carries the
+  // same colour in both surfaces.
+  const ELEMENT_COLORS = {
+    title: "#EF4444", section_header: "#F97316", text: "#3B82F6",
+    table: "#8B5CF6", picture: "#22C55E", list: "#06B6D4",
+    formula: "#EC4899", code: "#14B8A6", caption: "#EAB308",
+  };
+  const UNKNOWN_ELEMENT_COLOR = "#94A3B8";
+  // Docling's leaf labels are narrower than the palette's keys: a bullet is a
+  // `list_item`, a heading a `section_header`. Fold them onto the swatch a
+  // reader already associates with that kind of block.
+  const LABEL_ALIASES = { list_item: "list", page_header: "text", page_footer: "text", footnote: "text" };
+  const colorFor = (label) => {
+    const key = LABEL_ALIASES[label] || label;
+    return ELEMENT_COLORS[key] || UNKNOWN_ELEMENT_COLOR;
+  };
+
+  // ---- markdown -------------------------------------------------------
+  // A deliberately small subset: what Docling actually emits in an element's
+  // text — tables above all — and nothing that would need a parser worth
+  // auditing. `esc` runs over the whole string first, so every branch below
+  // composes markup out of text that can no longer contain any.
+
+  const inline = (s) =>
+    s.replace(/`([^`]+)`/g, "<code>$1</code>")
+     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+     .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+
+  const isRow = (s) => s.includes("|") && s.trim() !== "";
+  const isDelimiter = (s) => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(s) && s.includes("-");
+  const cells = (s) => s.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+
+  function renderMarkdown(raw) {
+    const text = esc(String(raw ?? "")).replace(/\r\n?/g, "\n");
+    const lines = text.split("\n");
+    const out = [];
+    const stats = { rows: 0, columns: 0, chars: String(raw ?? "").length };
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      if (!line.trim()) { i++; continue; }
+
+      if (/^\s*```/.test(line)) {
+        const body = [];
+        i++;
+        while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
+        i++; // closing fence
+        out.push(`<pre><code>${body.join("\n")}</code></pre>`);
+        continue;
+      }
+
+      // A table needs a delimiter row, or a second row shaped like the first.
+      // Requiring one of the two keeps a paragraph that merely contains a
+      // pipe from being torn into columns.
+      const next = lines[i + 1] ?? "";
+      if (isRow(line) && (isDelimiter(next) || (isRow(next) && !isDelimiter(line)))) {
+        const head = cells(line);
+        i += isDelimiter(next) ? 2 : 1;
+        const body = [];
+        while (i < lines.length && isRow(lines[i])) body.push(cells(lines[i++]));
+        stats.rows = body.length;
+        stats.columns = head.length;
+        const th = head.map((c) => `<th>${inline(c)}</th>`).join("");
+        const tr = body
+          .map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`)
+          .join("");
+        out.push(
+          `<div class="md-table"><table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`
+        );
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = heading[1].length;
+        out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+        i++;
+        continue;
+      }
+
+      if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+        const ordered = /^\s*\d+[.)]\s+/.test(line);
+        const items = [];
+        while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+          items.push(lines[i++].replace(/^\s*([-*+]|\d+[.)])\s+/, ""));
+        }
+        const tag = ordered ? "ol" : "ul";
+        out.push(`<${tag}>${items.map((it) => `<li>${inline(it)}</li>`).join("")}</${tag}>`);
+        continue;
+      }
+
+      const paragraph = [];
+      while (i < lines.length && lines[i].trim() && !/^\s*```/.test(lines[i]) &&
+             !/^(#{1,6})\s+/.test(lines[i]) && !isRow(lines[i]) &&
+             !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+        paragraph.push(lines[i++]);
+      }
+      if (paragraph.length) { out.push(`<p>${inline(paragraph.join(" "))}</p>`); continue; }
+      // A line no branch claimed — a sentence carrying a lone pipe, say, which
+      // looks like a table row until you notice there is no second one. It is
+      // still the document's text: emit it rather than drop it, and advance so
+      // the loop cannot spin.
+      out.push(`<p>${inline(lines[i++])}</p>`);
+    }
+
+    return { html: out.join("") || "<p></p>", stats };
+  }
+
+  // ---- view -----------------------------------------------------------
+
+  const short = (id) => (id && id.length > 12 ? id.slice(0, 8) + "…" : id || "—");
+  const kb = (bytes) => (bytes ? Math.round(bytes / 1024) + " KB" : null);
+
+  // `deep_link` is a bare path (`/docs/…`) unless the server was started with
+  // MCP_STUDIO_BASE_URL. A host has no base to resolve that against, so
+  // `ui/open-link` would do nothing: offer the button only when the link can
+  // actually be opened, and say why when it cannot.
+  const isAbsolute = (url) => /^[a-z][a-z0-9+.-]*:\/\//i.test(String(url || ""));
+  const shortHash = (h) => {
+    const hex = String(h || "").replace(/^sha256:/, "");
+    return hex ? "sha256:" + hex.slice(0, 12) + "…" : "—";
+  };
+
   function render(view) {
     if (!view || !view.quote) return;
-    const crumbs = (view.headings || []).map((h) => `<b>${esc(h)}</b>`).join(" › ");
+
+    const { html, stats } = renderMarkdown(view.quote);
+    const color = colorFor(view.label);
+    const kind = String(view.label || "element").replace(/_/g, " ");
+
+    const crumbs = (view.headings || []).length
+      ? `<nav class="crumbs">${(view.headings || [])
+          .map((h) => `<b>${esc(h)}</b>`)
+          .join('<span class="sep">›</span>')}</nav>`
+      : "";
+
+    const shape = stats.rows
+      ? `${stats.rows} rows × ${stats.columns} columns`
+      : `${stats.chars} characters`;
+
     const image = view.page_image
       ? `<figure>
            <img alt="The cited passage on page ${esc(view.page)}" src="${esc(view.page_image)}">
            <figcaption>page ${esc(view.page)} · ${esc(view.ref)}</figcaption>
          </figure>`
       : "";
+
     root.innerHTML = `
-      ${crumbs ? `<div class="crumbs">${crumbs}</div>` : ""}
+      ${crumbs}
+      <div class="headline">
+        <span class="kind" style="color: ${esc(color)}"><span class="dot"></span>${esc(kind)}</span>
+        ${view.page ? `<span class="page-chip">page ${esc(view.page)}</span>` : ""}
+        ${view.total_est_tokens
+          ? `<span class="cost" title="Everything this MCP server has served since it started, across all its tools — priced at ~4 characters per token, page images excluded. Over stdio that is this session; over HTTP it is every client of this backend.">Σ ≈ ${esc(view.total_est_tokens)} tokens · ${esc(view.total_calls)} calls</span>`
+          : ""}
+        <span class="shape">${esc(shape)}</span>
+      </div>
       ${image}
-      <blockquote>${esc(view.quote)}</blockquote>
-      <div class="meta">${esc(view.uri)}</div>
-      ${view.image_note ? `<div class="status">${esc(view.image_note)}</div>` : ""}
+      ${view.image_note ? `<div class="note">${esc(view.image_note)}</div>` : ""}
+      <div class="quote">${html}</div>
+      <dl class="meta">
+        <div><dt>Element</dt><dd>${esc(view.ref)}</dd></div>
+        <div><dt>Page</dt><dd>${view.page ? esc(view.page) : "—"}</dd></div>
+        <div><dt>Document</dt><dd title="${esc(view.document_id)}">${esc(short(view.document_id))}</dd></div>
+        <div><dt>Parse version</dt><dd title="${esc(view.version_id)}">${esc(short(view.version_id))}</dd></div>
+        <div><dt>Quote hash</dt><dd title="${esc(view.quote_hash)}">${esc(shortHash(view.quote_hash))}</dd></div>
+        <div><dt>This citation</dt><dd>${view.est_tokens ? "≈ " + esc(view.est_tokens) + " tokens" : "—"}</dd></div>
+        <div><dt>Page image</dt><dd>${esc(kb(view.image_bytes) || "not rendered")}</dd></div>
+        <div><dt>Server total</dt><dd>${view.total_est_tokens ? "≈ " + esc(view.total_est_tokens) + " tokens · " + esc(view.total_calls) + " calls" : "—"}</dd></div>
+      </dl>
+      <div class="anchor">${esc(view.uri)}</div>
       <div class="row">
         <button data-act="copy">Copy citation</button>
-        ${view.deep_link ? '<button data-act="open">Open in Studio</button>' : ""}
-      </div>`;
+        <button data-act="anchor">Copy anchor</button>
+        ${isAbsolute(view.deep_link) ? '<button data-act="open">Open in Studio</button>' : ""}
+        <span class="said" id="said"></span>
+      </div>
+      ${view.deep_link && !isAbsolute(view.deep_link)
+        ? `<div class="note">Set <code>MCP_STUDIO_BASE_URL</code> on the server to enable “Open in Studio” — the deep link is currently a bare path (<code>${esc(view.deep_link)}</code>), which the host cannot resolve.</div>`
+        : ""}`;
+
     for (const button of root.querySelectorAll("button")) {
       button.addEventListener("click", () => act(button.dataset.act, view));
     }
+    // Covers a host whose engine has no ResizeObserver; where there is one it
+    // reports again, more accurately, once the image has decoded.
+    reportSize();
+  }
+
+  function say(message) {
+    const slot = document.getElementById("said");
+    if (!slot) return;
+    slot.textContent = message;
+    setTimeout(() => { if (slot.textContent === message) slot.textContent = ""; }, 2000);
   }
 
   function act(kind, view) {
     if (kind === "copy") {
-      const text = `"${view.quote}" — ${view.uri}`;
-      navigator.clipboard?.writeText(text).catch(() => {});
+      copy(`"${view.quote}" — ${view.uri}`, "Citation copied");
+      return;
+    }
+    if (kind === "anchor") {
+      copy(view.uri, "Anchor copied");
       return;
     }
     if (kind === "open") {
@@ -83,8 +503,68 @@
     }
   }
 
+  // Three layers, because a sandboxed iframe may have no clipboard at all:
+  // the async API when the host granted `clipboardWrite`, the legacy
+  // execCommand when it did not, and — when both are refused — selecting the
+  // text so the reader can copy it themselves. The previous version called
+  // `.then` on the result of an optional call, which throws when
+  // `navigator.clipboard` is undefined: the button then did nothing at all,
+  // silently, which is worse than saying it is blocked.
+  function copy(text, confirmation) {
+    const fallback = () => {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.top = "0";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      let copied = false;
+      try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
+      document.body.removeChild(area);
+      say(copied ? confirmation : "Clipboard blocked — select the text below");
+    };
+    let promise = null;
+    try {
+      promise = navigator.clipboard && navigator.clipboard.writeText(text);
+    } catch (_) { promise = null; }
+    if (promise && typeof promise.then === "function") promise.then(() => say(confirmation), fallback);
+    else fallback();
+  }
+
   function post(message) {
     try { window.parent?.postMessage(message, "*"); } catch (_) { /* no host, no-op */ }
+  }
+
+  // ---- frame size -----------------------------------------------------
+  // The host sizes the iframe, not the page, so a citation with a page image
+  // and a twelve-row table lands in a box built for two lines of text. The
+  // spec's answer is `ui/notifications/size-changed`, in pixels.
+  //
+  // Height is measured on <main>, whose own height is content-driven — never
+  // on `body`/`documentElement`, which follow the frame the host just sized
+  // and would make each report justify the previous one. Width is reported as
+  // the frame's current width so the notification only ever asks to grow
+  // vertically; hosts differ on whether they honour width at all.
+  let lastHeight = 0;
+  function reportSize() {
+    const main = document.querySelector("main");
+    if (!main) return;
+    const height = Math.ceil(main.getBoundingClientRect().height);
+    if (!height || Math.abs(height - lastHeight) < 8) return;
+    lastHeight = height;
+    post({
+      jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { width: Math.ceil(document.documentElement.clientWidth), height },
+    });
+  }
+
+  if (typeof ResizeObserver === "function") {
+    // Fires again when the page image finishes decoding, which is when the
+    // height actually settles.
+    new ResizeObserver(reportSize).observe(document.querySelector("main"));
   }
 
   // Host -> app. Hosts differ in how much of the JSON-RPC envelope reaches the

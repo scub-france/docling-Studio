@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 from infra.settings import settings
 from mcp_adapter import build_mcp_server, deps_present, deps_provenance
-from services.navigation_service import NavigationUnavailableError
+from services.navigation_errors import NavigationUnavailableError
 
 if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from api.state import AppState
-    from services.navigation_service import NavigationService
+    from services.document_tools import DocumentTools
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +66,10 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
         return None
 
     server = build_mcp_server(
-        lambda: _navigation_from(app),
+        lambda: _tools_from(app),
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
+        cache_ttl_seconds=settings.mcp_cache_ttl_seconds,
     )
     mcp_app = server.streamable_http_app(
         streamable_http_path=MCP_PATH,
@@ -89,7 +90,7 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
     return server.session_manager.run()
 
 
-def _navigation_from(app: FastAPI) -> NavigationService:
+def _tools_from(app: FastAPI) -> DocumentTools:
     """Resolve the wired service, typed — `app.state` itself stays untyped.
 
     The one `getattr` is the same read `api.state.get_app_state` does, and for
@@ -99,12 +100,12 @@ def _navigation_from(app: FastAPI) -> NavigationService:
     silently missing tool at request time.
     """
     container: AppState | None = getattr(app.state, "container", None)
-    if container is None or container.navigation_service is None:
+    if container is None or container.document_tools is None:
         raise NavigationUnavailableError(
             "Docling Studio is still starting up — no document navigation available yet. "
             "Retry in a moment."
         )
-    return container.navigation_service
+    return container.document_tools
 
 
 def _transport_security():
