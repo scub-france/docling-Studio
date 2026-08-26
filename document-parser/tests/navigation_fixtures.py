@@ -326,8 +326,54 @@ def make_job(payload: dict | None = None, job_id: str = JOB_ID, doc_id: str = DO
 _UNSET = object()
 
 
-def make_navigation_service(*, documents=None, job=_UNSET, jobs=None, config=None):
-    """A `NavigationService` over AsyncMock repositories holding real models.
+class FakeRasterizer:
+    """A `PageRasterizer` that renders blank pages of a fixed size.
+
+    The port exists so the citation view can be tested without poppler; this
+    is what it bought. `renders` records every (page, dpi) asked for, which is
+    how the dpi ladder is asserted.
+    """
+
+    def __init__(self, *, width: int = 1275, height: int = 1650, png_bytes: int | None = None):
+        self._size = (width, height)
+        self._forced = png_bytes
+        self.renders: list[tuple[int, int]] = []
+
+    def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
+        self.renders.append((page, dpi))
+        return self._png(*self._size)
+
+    def crop(self, png: bytes, box):
+        from domain.navigation import RasterCrop
+
+        left, top, right, bottom = box
+        width, height = max(1, right - left), max(1, bottom - top)
+        raw = self._png(width, height)
+        if self._forced is not None:
+            # Pad to a size the budget cannot satisfy, to drive the ladder.
+            raw = raw + b"\0" * max(0, self._forced - len(raw))
+        return RasterCrop(png=raw, width=width, height=height)
+
+    @staticmethod
+    def _png(width: int, height: int) -> bytes:
+        import io
+
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (max(1, width), max(1, height)), "white").save(buffer, format="PNG")
+        return buffer.getvalue()
+
+
+def make_document_tools(
+    *,
+    documents=None,
+    job=_UNSET,
+    jobs=None,
+    config=None,
+    rasterizer=None,
+):
+    """The three document-agent services over AsyncMock repositories.
 
     `jobs` takes several analyses of the same document — the last one is the
     latest completed parse, the others are only reachable by pinning their id,
@@ -336,7 +382,12 @@ def make_navigation_service(*, documents=None, job=_UNSET, jobs=None, config=Non
     from unittest.mock import AsyncMock
 
     from infra.docling_tree import DoclingTreeReader
-    from services.navigation_service import NavigationConfig, NavigationService
+    from services.citation_image_service import CitationImageService
+    from services.citation_service import CitationService
+    from services.document_tools import DocumentTools
+    from services.navigation_config import NavigationConfig
+    from services.navigation_service import NavigationService
+    from services.parse_loader import ParseLoader
 
     docs = documents if documents is not None else [make_document()]
     if jobs is not None:
@@ -359,15 +410,30 @@ def make_navigation_service(*, documents=None, job=_UNSET, jobs=None, config=Non
     analysis_repo.find_by_id = AsyncMock(
         side_effect=lambda job_id: next((j for j in analyses if j.id == job_id), None)
     )
-    return NavigationService(
+
+    settings = config or NavigationConfig(studio_base_url="http://localhost:3000")
+    parses = ParseLoader(
         document_repo=document_repo,
         analysis_repo=analysis_repo,
         tree_reader=DoclingTreeReader(),
-        config=config or NavigationConfig(studio_base_url="http://localhost:3000"),
+        config=settings,
+    )
+    citations = CitationService(parses=parses, config=settings)
+    return DocumentTools(
+        navigation=NavigationService(parses=parses, citations=citations, config=settings),
+        citations=citations,
+        images=CitationImageService(
+            parses=parses, rasterizer=rasterizer or FakeRasterizer(), config=settings
+        ),
     )
 
 
+def make_navigation_service(**kwargs):
+    """The reading service alone — most tests only need this one."""
+    return make_document_tools(**kwargs).navigation
+
+
 def anchor_uri(ref: str, *, doc_id: str = DOC_ID, job_id: str = JOB_ID) -> str:
-    from domain.navigation import DocumentAnchor
+    from domain.anchors import DocumentAnchor
 
     return DocumentAnchor(doc_id, job_id, ref).uri

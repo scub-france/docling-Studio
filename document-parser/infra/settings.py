@@ -100,6 +100,13 @@ class Settings:
     # degrades to text on hosts that do not: a client that never advertises
     # the extension never fetches the template, and the tool answers as text.
     mcp_apps_enabled: bool = True
+    # Freshness hint (SEP-2549) for the cacheable MCP methods — the tool
+    # list, the prompt list and the `ui://` viewer. It is the only caching
+    # seam the protocol offers: `tools/call` is not cacheable, so this
+    # amortises the fixed cost of connecting, never the cost of reading. A
+    # host may hold a stale surface for this long after a redeploy, which is
+    # why it is minutes rather than hours. 0 disables it.
+    mcp_cache_ttl_seconds: int = 600
     # Absolute base for citation deep links (e.g. http://localhost:3000).
     # Empty leaves them relative, which is right when Studio serves the API
     # and the UI from the same origin.
@@ -139,6 +146,8 @@ class Settings:
             )
         if self.embedding_dimension < 1:
             errors.append(f"embedding_dimension must be >= 1 (got {self.embedding_dimension})")
+        if self.mcp_cache_ttl_seconds < 0:
+            errors.append(f"mcp_cache_ttl_seconds must be >= 0 (got {self.mcp_cache_ttl_seconds})")
         if self.mcp_max_read_tokens < 1:
             errors.append(f"mcp_max_read_tokens must be >= 1 (got {self.mcp_max_read_tokens})")
         if self.mcp_enabled and not self.mcp_allowed_hosts:
@@ -238,6 +247,7 @@ class Settings:
             mcp_apps_enabled=os.environ.get("MCP_APPS_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
             mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
+            mcp_cache_ttl_seconds=int(os.environ.get("MCP_CACHE_TTL_SECONDS", "600")),
             mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
         )
 

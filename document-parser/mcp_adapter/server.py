@@ -19,31 +19,36 @@ enabled server — least privilege applied to a tool surface.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+from mcp.server.caching import CACHEABLE_METHODS, CacheHint
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from domain.navigation import AnchorParseError
+from domain.anchors import AnchorParseError
 from mcp_adapter.apps import build_apps_extension
+from mcp_adapter.ledger import Ledger
+from mcp_adapter.prompts import register_prompts
 from mcp_adapter.wire import (
     UNTRUSTED_NOTE,
     DocumentSearchResult,
     ExcerptResult,
     OutlineResult,
     VerificationResult,
+)
+from mcp_adapter.wire_mapping import (
     excerpt_result,
     outline_result,
     search_result,
     verification_result,
 )
-from services.navigation_service import NavigationServiceError
+from services.navigation_errors import NavigationServiceError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from services.navigation_service import NavigationService
+    from services.document_tools import DocumentTools
 
 logger = logging.getLogger(__name__)
 
@@ -78,22 +83,36 @@ _READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_wor
 
 
 def build_mcp_server(
-    navigation: Callable[[], NavigationService],
+    tools: Callable[[], DocumentTools],
     *,
     name: str = SERVER_NAME,
     version: str = "",
     apps: bool = True,
+    cache_ttl_seconds: int = 0,
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
-    The service is resolved per call, not captured at build time: the HTTP
+    The services are resolved per call, not captured at build time: the HTTP
     transport needs its session manager to exist before FastAPI's lifespan has
     wired anything, so the server is constructed at import time and reaches
-    for the container on each tool call. `navigation` raises when the app is
-    not wired yet, which surfaces as a tool error rather than an import crash.
+    for the container on each tool call. `tools` raises when the app is not
+    wired yet, which surfaces as a tool error rather than an import crash.
     """
-    extensions = [build_apps_extension(navigation)] if apps else None
-    server = MCPServer(name=name, version=version, instructions=INSTRUCTIONS, extensions=extensions)
+    # Every tool result passes through it, and the citation viewer reads it
+    # back, so a card can say what the surface has cost so far rather than
+    # only what it cost itself.
+    ledger = Ledger()
+    extensions = [build_apps_extension(tools, ledger)] if apps else None
+    server = MCPServer(
+        name=name,
+        version=version,
+        instructions=INSTRUCTIONS,
+        extensions=extensions,
+        cache_hints=_cache_hints(cache_ttl_seconds),
+    )
+    # Slash commands: the thorough protocols, invoked by the user rather than
+    # inflicted on every call (see mcp_adapter/prompts.py).
+    register_prompts(server)
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -109,8 +128,8 @@ def build_mcp_server(
     )
     async def find_documents(query: str | None = None, limit: int = 20) -> DocumentSearchResult:
         async with _ToolErrors():
-            search = await navigation().find_documents(query=query, limit=limit)
-        return search_result(search)
+            search = await tools().navigation.find_documents(query=query, limit=limit)
+        return ledger.record(search_result(search))
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -130,10 +149,10 @@ def build_mcp_server(
         depth: int = 2,
     ) -> OutlineResult:
         async with _ToolErrors():
-            outline = await navigation().get_outline(
+            outline = await tools().navigation.get_outline(
                 document_id, version_id=version_id, depth=depth
             )
-        return outline_result(outline)
+        return ledger.record(outline_result(outline))
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -156,7 +175,7 @@ def build_mcp_server(
     ) -> ExcerptResult:
         anchor = _parse_anchor(uri)
         async with _ToolErrors():
-            excerpt = await navigation().read_element(
+            excerpt = await tools().navigation.read_element(
                 anchor.document_id,
                 anchor.ref,
                 version_id=anchor.version_id,
@@ -164,7 +183,7 @@ def build_mcp_server(
                 max_tokens=max_tokens,
                 cursor=cursor,
             )
-        return excerpt_result(excerpt)
+        return ledger.record(excerpt_result(excerpt))
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -183,14 +202,32 @@ def build_mcp_server(
     async def verify_citation(uri: str, quote: str) -> VerificationResult:
         _parse_anchor(uri)
         async with _ToolErrors():
-            check = await navigation().verify_citation(uri, quote)
-        return verification_result(check)
+            check = await tools().citations.verify_citation(uri, quote)
+        return ledger.record(verification_result(check))
 
     return server
 
 
+def _cache_hints(ttl_seconds: int) -> dict[Any, CacheHint] | None:
+    """Freshness hints for the methods the protocol lets a client cache.
+
+    Everything cacheable here is deploy-scoped and identical for every
+    caller — the tool list, the prompt list, the `ui://` viewer — so the
+    scope is `public` and the only real question is how long a host may hold
+    a surface that a redeploy has changed underneath it.
+
+    Note what is *not* in `CACHEABLE_METHODS`: `tools/call`. The protocol
+    offers caching exactly where this server's cost is not. This amortises
+    connecting, never reading.
+    """
+    if ttl_seconds <= 0:
+        return None
+    hint = CacheHint(ttl_ms=ttl_seconds * 1000, scope="public")
+    return dict.fromkeys(CACHEABLE_METHODS, hint)
+
+
 def _parse_anchor(uri: str):
-    from domain.navigation import DocumentAnchor
+    from domain.anchors import DocumentAnchor
 
     try:
         return DocumentAnchor.parse(uri)
