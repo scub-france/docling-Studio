@@ -196,11 +196,15 @@ Turn it off with `MCP_APPS_ENABLED=false`; the four text tools are unaffected.
 `get_citation_image` — an app-only tool (`visibility: ["app"]`), so the tool
 is not offered to the model at all. Sending the raster in the tool result cost
 **21 432 tokens a call**, twice over, for a picture no reader can read;
-fetching it costs zero. `kind="page"` returns a thumbnail of the whole page
-instead of the crop.
+fetching it costs zero. `kind="page"` returns a thumbnail of the whole page with
+the passage's box in that image's own pixels, so the view draws a marker
+without converting anything — the crop answers *what*, the thumbnail answers
+*where on the page*.
 
 Rasters are WebP, which is about half of PNG on a rendered paragraph and a
-fifth of it on a scaled page. The crop is embedded as a `data:` URI — the
+fifth of it on a scaled page — a 320 px page is ~25 KB, which would have been
+~7 400 tokens through a tool result and twice that on a host that forwards
+both representations of it. The crop is embedded as a `data:` URI — the
 default MCP Apps CSP allows `img-src data:` and nothing else, so the view
 never loads from the network, which is also why it works over stdio with no
 backend running. It is rendered at 150 dpi and halved until it fits

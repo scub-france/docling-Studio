@@ -165,6 +165,12 @@ class CitationImage:
     page: int
     dpi: int
     media_type: str = "image/png"
+    # Where the cited passage sits *inside this image*, in its own pixels.
+    # Computed here because the renderer is the only thing that knows the dpi
+    # it settled on — a consumer given page points and left to do the
+    # arithmetic is a consumer that will do it differently.
+    highlight: tuple[int, int, int, int] | None = None
+    page_count: int | None = None
 
 
 @dataclass(frozen=True)
