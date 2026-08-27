@@ -293,6 +293,7 @@ TOOL_FIELDS = {
         "next_cursor",
         "first_page",
         "last_page",
+        "span_uri",
     },
     "verify_citation": {
         "valid",

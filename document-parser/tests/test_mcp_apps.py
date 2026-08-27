@@ -199,6 +199,18 @@ class TestGracefulDegradation:
         # bytes cost nothing on a host that could not have shown them.
         assert raster.renders == []
 
+    async def test_a_span_anchor_shows_the_whole_passage(self, tmp_path):
+        # The card's reason to exist is the passage, not the block boundary it
+        # happens to fall in. A span anchor is shown like any other.
+        async with _client(_service_with_file(tmp_path), negotiates=False) as client:
+            result = await client.call_tool(
+                "show_citation", {"uri": anchor_uri("#/texts/2..#/texts/3")}
+            )
+        view = result.structured_content
+        assert view["label"] == "span"
+        assert "Chaque partie" in view["quote"] and "Préavis" in view["quote"]
+        assert view["page"] == 1
+
     async def test_the_payload_carries_the_provenance_the_viewer_shows(self, tmp_path):
         # The anchor already encodes document and parse; unpacking them means
         # the viewer never has to parse a `dstudio://` uri to say where a
