@@ -282,6 +282,12 @@ class TestGracefulDegradation:
         assert "dstudio://doc/" in result.content[0].text
 
 
+def _stylesheet() -> str:
+    """Just the <style> block — assertions about CSS should not read the JS."""
+    start = CITATION_APP_HTML.index("<style>")
+    return CITATION_APP_HTML[start : CITATION_APP_HTML.index("</style>", start)]
+
+
 class TestTemplate:
     def test_is_a_self_contained_html5_document(self):
         assert CITATION_APP_HTML.lstrip().startswith("<!doctype html>")
@@ -329,6 +335,38 @@ class TestTemplate:
         assert "isAbsolute(view.deep_link)" in CITATION_APP_HTML
         assert "MCP_STUDIO_BASE_URL" in CITATION_APP_HTML
 
+    def test_completes_the_handshake_before_calling_a_tool_back(self):
+        # The spec's lifecycle is `ui/initialize` -> the host's result ->
+        # `ui/notifications/initialized`. Sending only the notification is
+        # enough to be *handed* a tool result and not enough to be allowed to
+        # call one back — which is exactly how the page thumbnail went missing.
+        assert '"ui/initialize"' in CITATION_APP_HTML
+        assert "ui/notifications/initialized" in CITATION_APP_HTML
+        assert '"2026-01-26"' in CITATION_APP_HTML
+        # The image fetch waits for it.
+        assert "await handshake()" in CITATION_APP_HTML
+
+    def test_the_notification_is_sent_even_when_the_handshake_is_ignored(self):
+        # A host that predates `ui/initialize` still gates the tool result on
+        # the notification. Withholding it would trade a missing thumbnail for
+        # a blank card.
+        assert ".catch(() => false)" in CITATION_APP_HTML
+
+    def test_a_thumbnail_that_cannot_be_fetched_says_so(self):
+        # A grey rectangle that never fills in is a bug the reader has to
+        # guess at.
+        assert "failLocator" in CITATION_APP_HTML
+        assert "Aperçu de la page indisponible" in CITATION_APP_HTML
+
+    def test_answers_the_host_s_teardown_request(self):
+        assert "ui/resource-teardown" in CITATION_APP_HTML
+
+    def test_follows_the_host_s_theme_and_later_changes_to_it(self):
+        # A sandboxed iframe cannot read the host's theme class, so it is
+        # asked for — and re-applied when the host says it changed.
+        assert "ui/notifications/host-context-changed" in CITATION_APP_HTML
+        assert 'setAttribute("data-theme"' in CITATION_APP_HTML
+
     def test_asks_the_host_to_size_the_frame_to_the_content(self):
         # The host owns the iframe's box, so a citation carrying a page image
         # and a long table only gets the room it needs if the app asks for it.
@@ -336,13 +374,31 @@ class TestTemplate:
         assert "ResizeObserver" in CITATION_APP_HTML
 
     def test_no_image_is_sized_against_the_viewport(self):
-        # A `vh` size plus a resize request is a feedback loop: the frame
-        # grows, so the image grows, so the frame is asked to grow again. The
-        # rail's thumbnail is sized by its column instead.
+        # A `vh` size in the stylesheet plus a resize request is a feedback
+        # loop: the frame grows, so the image grows, so the frame is asked to
+        # grow again. The rail's thumbnail is sized by its column instead.
+        #
+        # The scripted `100vh` is exempt and deliberate: it is the spec's own
+        # prescription for a host that declares a *fixed* height, where the
+        # frame's box is the host's and cannot be grown by asking. The report
+        # is measured on <main>, never on documentElement, so it stays out of
+        # the loop either way.
         import re
 
-        assert not re.search(r"\d+vh\b", CITATION_APP_HTML)
+        assert not re.search(r"\d+vh\b", _stylesheet())
         assert ".rail" in CITATION_APP_HTML
+
+    def test_the_frame_is_sized_the_way_the_host_asked_for_it(self):
+        # `containerDimensions` is how a host says "you get exactly 400px" or
+        # "you may grow to 600". Applying neither is how the card ends up laid
+        # out at a width the host then cuts off.
+        assert "containerDimensions" in CITATION_APP_HTML
+        assert "maxWidth" in CITATION_APP_HTML
+        # And the card's own breakpoints follow the card, not the window: a
+        # viewport media query inside a 400px iframe answers the wrong
+        # question.
+        assert "container-type: inline-size" in CITATION_APP_HTML
+        assert "@container" in CITATION_APP_HTML
 
     def test_the_rail_says_where_the_page_sits_in_the_document(self):
         # A citation on page 12 of 13 is near the end, and that is worth a

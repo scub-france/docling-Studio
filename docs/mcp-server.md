@@ -190,6 +190,24 @@ host that never advertises the extension never fetches the template, and the
 image is never rendered at all — so the bytes cost nothing on a client that
 could not have shown them.
 
+**The handshake, and why the thumbnail depends on it**
+
+The view opens with `ui/initialize` and sends `ui/notifications/initialized`
+only once the host has answered. Both matter, and for different reasons: the
+notification is what allows the host to push the tool result at all, and the
+*request* is what registers the view as a negotiated app — without it a host
+is entitled to refuse the `tools/call` the view makes for its own page
+thumbnail, which is how the rail ends up a grey rectangle that never fills in.
+It now says why instead of staying blank.
+
+The host's answer also carries `hostContext`, and the card uses two fields of
+it: `theme`, because a sandboxed iframe cannot read the host's theme class and
+has to be told; and `containerDimensions`, which says whether the frame's width
+is fixed (fill it) or capped (grow up to it). Applying neither is how a card
+ends up laid out at a width the host then cuts off. Its own breakpoints are
+container queries against the card, not media queries against the window — in a
+400 px frame a viewport query answers a question about the frame.
+
 Turn it off with `MCP_APPS_ENABLED=false`; the four text tools are unaffected.
 
 **The image never reaches the model.** The view fetches it itself, through
