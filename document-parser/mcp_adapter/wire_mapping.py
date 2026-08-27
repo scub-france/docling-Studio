@@ -150,6 +150,14 @@ _CITE_WITH = (
     "on the page it came from."
 )
 
+# Said only when there is a span to say it about, and said *after* the
+# per-element rule: one anchor per quote stays the common case, and a span
+# offered on every read would be read as the thing to reach for.
+_CITE_SPAN = (
+    " A quote running across several of them — a sentence finishing in the next paragraph — "
+    "is cited with `span_uri`, which covers everything this read returned."
+)
+
 _VERIFICATION_NEXT_STEP = {
     CitationStatus.VERIFIED: "Safe to publish, citing citation.uri.",
     CitationStatus.STALE_VERSION: (
@@ -177,7 +185,7 @@ def _excerpt_next_step(excerpt: Excerpt) -> str:
         )
     if not excerpt.citations:
         return "Nothing readable at this anchor. Pick another entry from get_outline."
-    return _CITE_WITH
+    return _CITE_WITH + (_CITE_SPAN if excerpt.span_uri else "")
 
 
 def excerpt_result(excerpt: Excerpt) -> ExcerptResult:
@@ -199,6 +207,7 @@ def excerpt_result(excerpt: Excerpt) -> ExcerptResult:
         next_cursor=excerpt.next_cursor,
         first_page=excerpt.page_range[0] if excerpt.page_range else None,
         last_page=excerpt.page_range[1] if excerpt.page_range else None,
+        span_uri=excerpt.span_uri,
     )
 
 

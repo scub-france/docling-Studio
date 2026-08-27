@@ -10,15 +10,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from domain.navigation import ResolvedElement, is_heading, is_readable
+from domain.navigation import BoundingBox, ResolvedElement, is_heading, is_readable
 from domain.parse_index import heading_level, label_of, parse_page_ref
+from domain.spans import parse_span, span_members, span_ref
 
 if TYPE_CHECKING:
     from domain.parse_index import DocumentIndex
 
 
 def resolve(index: DocumentIndex, ref: str) -> ResolvedElement | None:
-    """Resolve a `ref` (docling self_ref or virtual page ref) to an element."""
+    """Resolve a `ref` to an element: a docling self_ref, a virtual page ref,
+    or a span covering several elements (`#/texts/91..#/texts/94`)."""
+    span = parse_span(ref)
+    if span is not None:
+        return _resolve_span(index, *span)
+
     page = parse_page_ref(ref)
     if page is not None:
         if index.page_numbers and page not in index.page_numbers:
@@ -50,6 +56,10 @@ def section_refs(index: DocumentIndex, ref: str) -> list[str]:
     - anything else covers itself plus its docling descendants (a list and
       its items, a group and its rows).
     """
+    span = parse_span(ref)
+    if span is not None:
+        return span_members(index, *span)
+
     page = parse_page_ref(ref)
     if page is not None:
         return [r for r in index.order if page in index.pages_of.get(r, frozenset())]
@@ -79,6 +89,43 @@ def _descendant_refs(index: DocumentIndex, ref: str) -> set[str]:
             seen.add(child_ref)
             stack.append(child_ref)
     return seen
+
+
+# What a span's citation is labelled. Not the label of its first element: a
+# range of paragraphs is not a paragraph, and calling it one would colour the
+# card and drive the reader's expectations off a member that happens to sort
+# first.
+SPAN_LABEL = "span"
+
+
+def _resolve_span(index: DocumentIndex, start: str, end: str) -> ResolvedElement | None:
+    """Resolve a span into one element carrying the whole passage.
+
+    The text is the members' own text joined by blank lines — *not* rendered
+    markdown. A quote crossing a heading must still verify, and prefixing that
+    heading with `##` would put characters in the citation that are nowhere in
+    the document.
+    """
+    members = [(ref, element_text(index, ref)) for ref in span_members(index, start, end)]
+    readable = [(ref, text) for ref, text in members if text.strip()]
+    if not readable:
+        return None
+
+    first = readable[0][0]
+    page = next((index.page_of[ref] for ref, _ in readable if ref in index.page_of), None)
+    boxes = [
+        index.bbox_of[ref]
+        for ref, _ in readable
+        if ref in index.bbox_of and index.page_of.get(ref) == page
+    ]
+    return ResolvedElement(
+        ref=span_ref(start, end),
+        label=SPAN_LABEL,
+        text="\n\n".join(text for _, text in readable),
+        page=page,
+        bbox=BoundingBox.union(boxes),
+        headings=list(index.heading_path.get(first, [])),
+    )
 
 
 def element_text(index: DocumentIndex, ref: str) -> str:

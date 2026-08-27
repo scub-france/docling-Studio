@@ -13,9 +13,10 @@ import pytest
 
 from domain.anchors import AnchorParseError, DocumentAnchor, normalise_quote, quote_hash
 from domain.element_reader import element_text, render_markdown, resolve, section_refs
-from domain.navigation import estimate_tokens
+from domain.navigation import BoundingBox, estimate_tokens
 from domain.outline_builder import build_outline
 from domain.parse_index import build_index, page_ref, parse_page_ref
+from domain.spans import is_span, parse_span, span_members
 from infra.docling_tree import DoclingTreeReader
 from tests.navigation_fixtures import FLAT, MESSY, SECTIONED
 
@@ -303,3 +304,119 @@ class TestPartialMetadata:
         payload = copy.deepcopy(SECTIONED)
         payload["tables"][0]["data"] = {}
         assert element_text(_index(payload), "#/tables/0") == ""
+
+
+class TestSpanRefs:
+    """A citation covering several elements — the grammar and its resolution."""
+
+    def test_a_plain_ref_is_not_a_span(self):
+        assert parse_span("#/texts/2") is None
+        assert parse_span("#/pages/1") is None
+        assert not is_span("#/tables/0")
+
+    def test_the_second_endpoint_may_omit_its_hash(self):
+        # `#/texts/2..#/texts/4` reads better than `#/texts/2../texts/4`, and
+        # both name the same range.
+        assert parse_span("#/texts/2..#/texts/4") == ("#/texts/2", "#/texts/4")
+        assert parse_span("#/texts/2../texts/4") == ("#/texts/2", "#/texts/4")
+
+    def test_a_span_covers_everything_between_its_ends_in_reading_order(self):
+        index = _index()
+        assert span_members(index, "#/texts/2", "#/texts/4") == [
+            "#/texts/2",
+            "#/texts/3",
+            "#/texts/4",
+        ]
+
+    def test_reversed_endpoints_are_read_in_the_document_s_order(self):
+        index = _index()
+        assert span_members(index, "#/texts/4", "#/texts/2") == span_members(
+            index, "#/texts/2", "#/texts/4"
+        )
+
+    def test_an_endpoint_from_another_parse_covers_nothing(self):
+        # Guessing at the overlap would produce a citation nobody asked for.
+        assert span_members(_index(), "#/texts/2", "#/texts/999") == []
+
+    def test_resolving_a_span_joins_the_members_own_text(self):
+        element = resolve(_index(), "#/texts/2..#/texts/4")
+        assert element is not None
+        assert element.label == "span"
+        assert element.text == (
+            "Chaque partie peut résilier le contrat.\n\n"
+            "12.2 Préavis\n\n"
+            "Le préavis est de trois mois à compter de la notification."
+        )
+
+    def test_a_heading_inside_a_span_keeps_its_own_words(self):
+        # Not rendered markdown: a `##` prefix would put characters in the
+        # citation that are nowhere in the document, and a quote crossing the
+        # heading would stop verifying.
+        assert "##" not in resolve(_index(), "#/texts/2..#/texts/4").text
+
+    def test_a_span_reports_the_page_it_opens_on(self):
+        element = resolve(_index(), "#/texts/4..#/tables/0")
+        assert element.page == 1
+
+    def test_a_span_s_box_covers_its_members_on_that_page(self):
+        index = _index()
+        element = resolve(index, "#/texts/2..#/texts/4")
+        first = index.bbox_of["#/texts/2"]
+        last = index.bbox_of["#/texts/4"]
+        assert element.bbox.top == first.top
+        assert element.bbox.bottom == last.bottom
+
+    def test_a_span_that_straddles_a_page_break_boxes_only_the_first_page(self):
+        # A rectangle spanning two pages is not a rectangle.
+        index = _index()
+        element = resolve(index, "#/texts/4..#/tables/0")
+        assert element.bbox.page == 1
+        assert element.bbox.bottom == index.bbox_of["#/texts/4"].bottom
+
+    def test_a_span_of_nothing_readable_does_not_resolve(self):
+        assert resolve(_index(), "#/texts/99..#/texts/100") is None
+
+    def test_reading_a_span_as_a_section_yields_its_members(self):
+        assert section_refs(_index(), "#/texts/2..#/texts/4") == [
+            "#/texts/2",
+            "#/texts/3",
+            "#/texts/4",
+        ]
+
+
+class TestBoxUnion:
+    def test_no_boxes_no_union(self):
+        assert BoundingBox.union([]) is None
+
+    def test_topleft_grows_downwards(self):
+        boxes = [
+            BoundingBox(page=1, left=72, top=100, right=500, bottom=140),
+            BoundingBox(page=1, left=60, top=200, right=520, bottom=260),
+        ]
+        union = BoundingBox.union(boxes)
+        assert (union.left, union.top, union.right, union.bottom) == (60, 100, 520, 260)
+
+    def test_bottomleft_grows_upwards(self):
+        # Docling's PDF-native origin: `top` is the LARGER number.
+        boxes = [
+            BoundingBox(page=1, left=72, top=700, right=500, bottom=660, coord_origin="BOTTOMLEFT"),
+            BoundingBox(page=1, left=60, top=600, right=520, bottom=540, coord_origin="BOTTOMLEFT"),
+        ]
+        union = BoundingBox.union(boxes)
+        assert (union.top, union.bottom) == (700, 540)
+
+    def test_a_box_from_another_page_is_dropped_not_merged(self):
+        boxes = [
+            BoundingBox(page=1, left=72, top=100, right=500, bottom=140),
+            BoundingBox(page=2, left=10, top=10, right=600, bottom=700),
+        ]
+        union = BoundingBox.union(boxes)
+        assert union.page == 1
+        assert (union.left, union.right) == (72, 500)
+
+    def test_two_coordinate_origins_are_never_reconciled(self):
+        boxes = [
+            BoundingBox(page=1, left=72, top=100, right=500, bottom=140),
+            BoundingBox(page=1, left=10, top=700, right=600, bottom=660, coord_origin="BOTTOMLEFT"),
+        ]
+        assert BoundingBox.union(boxes).bottom == 140

@@ -377,3 +377,89 @@ class TestMessyParse:
         excerpt = await service.read_element(DOC_ID, "#/pages/2")
         assert "page 2/2" not in excerpt.markdown
         assert all(c.label not in {"page_header", "page_footer"} for c in excerpt.citations)
+
+
+class TestSpanCitations:
+    """A quote that does not respect one element's boundary."""
+
+    async def test_a_read_hands_back_the_span_covering_what_it_returned(self):
+        excerpt = await _service().read_element(DOC_ID, "#/texts/3")
+        first, last = excerpt.citations[0].ref, excerpt.citations[-1].ref
+        assert excerpt.span_uri == _uri(f"{first}..{last}")
+
+    async def test_a_single_element_read_offers_no_span(self):
+        # Nothing to span. Offering the range would be noise on every read.
+        excerpt = await _service().read_element(DOC_ID, PREAVIS_REF, include="self")
+        assert excerpt.span_uri is None
+
+    async def test_the_span_covers_nothing_the_read_did_not_return(self):
+        # A page read picks elements by provenance, which need not be
+        # contiguous in reading order; a span over them would silently cover
+        # text the caller never saw.
+        service = _service(job=_job(FLAT))
+        excerpt = await service.read_element(DOC_ID, "#/pages/1")
+        if excerpt.span_uri is not None:
+            from domain.anchors import DocumentAnchor
+            from domain.spans import parse_span
+
+            start, end = parse_span(DocumentAnchor.parse(excerpt.span_uri).ref)
+            read = {citation.ref for citation in excerpt.citations}
+            assert start in read and end in read
+
+    async def test_a_quote_running_across_two_elements_verifies(self):
+        # This is the failure the span exists for: quoted one element at a
+        # time, the sentence is in neither.
+        across = "Chaque partie peut résilier le contrat. 12.2 Préavis"
+        check = await _tools().citations.verify_citation(_uri("#/texts/2"), across)
+        assert check.valid is False
+
+        check = await _tools().citations.verify_citation(_uri("#/texts/1"), across)
+        assert check.valid is True
+        assert check.status is CitationStatus.VERIFIED
+        assert check.citation.ref == "#/texts/2..#/texts/3"
+        assert check.citation.label == "span"
+
+    async def test_the_span_returned_is_the_smallest_one_that_contains_the_quote(self):
+        quote = "12.2 Préavis Le préavis est de trois mois"
+        check = await _tools().citations.verify_citation(_uri("#/texts/1"), quote)
+        assert check.citation.ref == f"#/texts/3..{PREAVIS_REF}"
+
+    async def test_the_detail_says_the_quote_spans_several_elements(self):
+        check = await _tools().citations.verify_citation(
+            _uri("#/texts/1"), "Chaque partie peut résilier le contrat. 12.2 Préavis"
+        )
+        assert "runs across several elements" in check.detail
+
+    async def test_widening_does_not_invent_a_quote_that_is_not_there(self):
+        check = await _tools().citations.verify_citation(
+            _uri("#/texts/1"), "Chaque partie peut résilier le bail. 12.2 Préavis"
+        )
+        assert check.valid is False
+        assert check.status is CitationStatus.QUOTE_DRIFT
+
+    async def test_a_span_anchor_reads_and_cites_like_any_other(self):
+        tools = _tools()
+        span = _uri("#/texts/2..#/texts/3")
+        excerpt = await tools.navigation.read_element(DOC_ID, "#/texts/2..#/texts/3")
+        assert [c.ref for c in excerpt.citations] == ["#/texts/2", "#/texts/3"]
+
+        citation = await tools.citations.get_citation(span)
+        assert citation.label == "span"
+        assert "Chaque partie" in citation.quote and "Préavis" in citation.quote
+
+    async def test_a_span_deep_links_to_the_element_it_opens_on(self):
+        # The Studio viewer scrolls to one ref; a range is not one it can
+        # resolve.
+        citation = await _tools().citations.get_citation(_uri("#/texts/2..#/texts/3"))
+        assert citation.deep_link.endswith("ref=%23%2Ftexts%2F2&page=1")
+
+    async def test_a_span_renders_as_one_crop_over_its_members(self, tmp_path):
+        pdf = tmp_path / "contrat.pdf"
+        pdf.write_bytes(b"%PDF-1.4 not really a pdf")
+        document = _document()
+        document.storage_path = str(pdf)
+        tools = _tools(documents=[document])
+
+        image = await tools.images.render(_uri("#/texts/2..#/texts/3"))
+        assert image.page == 1
+        assert image.width > 0

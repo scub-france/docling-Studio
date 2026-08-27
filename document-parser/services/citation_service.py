@@ -19,8 +19,9 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote as urlquote
 
 from domain.anchors import DocumentAnchor, normalise_quote, quote_hash
-from domain.element_reader import resolve, section_refs
+from domain.element_reader import element_text, resolve, section_refs
 from domain.navigation import Citation, CitationCheck, CitationStatus, clip_to_tokens
+from domain.spans import is_span, span_ref, span_start
 from services.navigation_errors import NavigationServiceError, RefNotFoundError
 
 if TYPE_CHECKING:
@@ -114,14 +115,7 @@ class CitationService:
         return CitationCheck(
             valid=True,
             status=CitationStatus.VERIFIED,
-            detail=(
-                "The quote appears verbatim in the cited element."
-                if match.ref == anchor.ref
-                else (
-                    f"The quote appears in {match.ref}, which the cited section covers. "
-                    "`citation` carries the precise anchor — prefer it."
-                )
-            ),
+            detail=_found_detail(anchor.ref, match.ref),
             citation=matched,
             actual_quote=self._clipped(match.text),
         )
@@ -175,22 +169,93 @@ class CitationService:
         element: ResolvedElement,
         claimed: str,
     ) -> ResolvedElement | None:
-        """Return the element carrying `claimed`, or None. Searches the anchor
-        first, then the elements it covers."""
+        """Return the element carrying `claimed`, or None.
+
+        Three passes, narrowest first: the anchor itself, then each element it
+        covers, then runs of consecutive elements. The third is what makes a
+        quote that finishes in the next paragraph verifiable instead of
+        drifted — and it answers with a span anchor, so the citation the agent
+        publishes covers the whole passage it quoted.
+        """
         if claimed in normalise_quote(element.text):
             return element
-        for candidate in section_refs(index, ref):
+        covered = section_refs(index, ref)
+        for candidate in covered:
             if candidate == ref:
                 continue
-            covered = resolve(index, candidate)
-            if covered is not None and claimed in normalise_quote(covered.text):
-                return covered
+            found = resolve(index, candidate)
+            if found is not None and claimed in normalise_quote(found.text):
+                return found
+        return CitationService._locate_across(index, covered, claimed)
+
+    @staticmethod
+    def _locate_across(
+        index: DocumentIndex,
+        refs: list[str],
+        claimed: str,
+    ) -> ResolvedElement | None:
+        """The smallest run of consecutive elements containing `claimed`.
+
+        Windows grow from each starting element and stop as soon as the text
+        *before* the window's last addition is already longer than the claim:
+        past that point no match could still involve the element the window
+        starts at, so extending it only re-tests what the next start will.
+        That bound is what keeps this linear-ish over a long section instead
+        of quadratic.
+        """
+        texts = [(ref, normalise_quote(element_text(index, ref))) for ref in refs]
+        texts = [(ref, text) for ref, text in texts if text]
+        for start, (_, head) in enumerate(texts):
+            joined = head
+            for end in range(start + 1, len(texts)):
+                if len(joined) > len(claimed) + len(head):
+                    break
+                joined = f"{joined} {texts[end][1]}"
+                if claimed in joined:
+                    first = CitationService._trim_left(texts, start, end, claimed)
+                    return resolve(index, span_ref(texts[first][0], texts[end][0]))
         return None
+
+    @staticmethod
+    def _trim_left(
+        texts: list[tuple[str, str]],
+        start: int,
+        end: int,
+        claimed: str,
+    ) -> int:
+        """Drop leading elements the quote does not actually reach into.
+
+        The scan finds the leftmost start that works, and the section's own
+        heading works for every quote inside it — so without this, quoting one
+        paragraph of Article 12 would come back as a span opening on the title
+        of Article 12. The end needs no such trim: the scan already stops at
+        the first one that matches.
+        """
+        while start < end and claimed in " ".join(text for _, text in texts[start + 1 : end + 1]):
+            start += 1
+        return start
 
     def _deep_link(self, document_id: str, element: ResolvedElement) -> str:
         """A Studio URL that reopens the cited element in the viewer."""
-        path = f"/docs/{document_id}?ref={urlquote(element.ref, safe='')}"
+        # The Studio viewer scrolls to one element, so a span links to the
+        # element it opens on rather than to a range it cannot resolve.
+        path = f"/docs/{document_id}?ref={urlquote(span_start(element.ref), safe='')}"
         if element.page is not None:
             path += f"&page={element.page}"
         base = self._config.studio_base_url.rstrip("/")
         return f"{base}{path}" if base else path
+
+
+def _found_detail(asked: str, found: str) -> str:
+    """What to tell an agent about where its quote actually turned up."""
+    if found == asked:
+        return "The quote appears verbatim in the cited element."
+    if is_span(found):
+        return (
+            f"The quote runs across several elements ({found}). `citation` carries the span "
+            "anchor covering all of them — cite that, not one of the halves."
+        )
+    return (
+        f"The quote appears in {found}, which the cited section covers. "
+        "`citation` carries the precise anchor — prefer it."
+    )

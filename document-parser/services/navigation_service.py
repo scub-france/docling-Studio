@@ -29,6 +29,7 @@ from domain.navigation import (
 )
 from domain.outline_builder import build_outline
 from domain.parse_index import parse_page_ref
+from domain.spans import span_members, span_ref
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError
 
@@ -171,11 +172,39 @@ class NavigationService:
             truncated=truncated,
             next_cursor=next_cursor,
             page_range=(min(pages), max(pages)) if pages else None,
+            span_uri=self._span_uri(parse, refs, picked),
         )
 
     # ------------------------------------------------------------------
     # Reading internals
     # ------------------------------------------------------------------
+
+    def _span_uri(
+        self,
+        parse: LoadedParse,
+        refs: list[str],
+        picked: list[ResolvedElement],
+    ) -> str | None:
+        """The anchor covering exactly this read — nothing more.
+
+        A quote that runs from one paragraph into the next has no single ref
+        to hang on, and truncating it to whichever half fits one is how a
+        citation becomes an approximation. This hands the range back so the
+        agent never has to assemble one.
+
+        The span is withheld unless every ref between its endpoints was part
+        of this read: a page read can pick up elements that are not contiguous
+        in reading order, and a span over them would silently cover text the
+        caller never saw.
+        """
+        if len(picked) < 2:
+            return None
+        read = set(refs)
+        members = span_members(parse.index, picked[0].ref, picked[-1].ref)
+        if not members or any(member not in read for member in members):
+            return None
+        ref = span_ref(picked[0].ref, picked[-1].ref)
+        return DocumentAnchor(parse.document.id, parse.version_id, ref).uri
 
     def _refs_to_read(
         self,

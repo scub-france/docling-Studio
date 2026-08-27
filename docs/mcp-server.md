@@ -14,8 +14,8 @@ local agent work; put it behind an authenticating proxy anywhere else.
 |------|---------|
 | `find_documents` | List documents, optionally filtered by filename. Returns `document_id`, the current `version_id`, and the window that was searched — `truncated: true` with an empty list means "not among the documents I looked at", not "no such document". |
 | `get_outline` | The map: a tree of sections — or of pages, for a document without headings — each with its anchor and its estimated reading cost. `deeper_levels_available` says to ask for more depth; `entries_omitted` says the node cap was hit. |
-| `read_element` | Read one entry, by `ref` + `document_id` (from an outline) or by the `uri` of a citation you hold. The element alone (`include="self"`) or the whole section under it (`include="section"`), capped server-side and resumable through `next_cursor`. |
-| `verify_citation` | Re-resolve an anchor and confirm a quote actually appears at it. |
+| `read_element` | Read one entry, by `ref` + `document_id` (from an outline) or by the `uri` of a citation you hold. The element alone (`include="self"`) or the whole section under it (`include="section"`), capped server-side and resumable through `next_cursor`. `citations[]` gives one anchor per element; `span_uri` gives the one covering all of them. |
+| `verify_citation` | Re-resolve an anchor and confirm a quote actually appears at it — including a quote that runs across several elements, which comes back as a span anchor. |
 
 Nothing writes. Uploading, re-analysing and editing chunks stay in the Studio
 UI and the HTTP API.
@@ -33,8 +33,9 @@ dstudio://doc/8f2a91c4@a71f0c33#/texts/91
   `self_ref` is stable inside one analysis and meaningless across two — a
   re-parse renumbers the document. Pinning the version is what keeps a
   citation true afterwards.
-- `#{self_ref}` is the docling reference, or a virtual page ref
-  (`#/pages/7`) for documents with no headings.
+- `#{self_ref}` is the docling reference, a virtual page ref (`#/pages/7`)
+  for documents with no headings, or a **span** — `#/texts/91..#/texts/94` —
+  covering everything between two elements in reading order.
 
 `read_element` returns one **pointer** per element it read — the anchor, the
 page, and a few words of preview so you can tell which passage is which. Not
@@ -42,6 +43,33 @@ the verbatim: the text is already in `content`, and sending it again doubled
 every read. The full citation — quote, `sha256`, bounding box, heading
 breadcrumb, deep link — comes from `verify_citation` or `show_citation`, for
 the one anchor that turns out to matter.
+
+### Citing more than one element
+
+A docling `self_ref` names one block; a quote rarely respects that boundary.
+A sentence finishes in the next paragraph, a clause is split across two list
+items, a figure's number lives in the caption below it. Cited one block at a
+time, such a passage is either truncated to whichever half fits a ref, or
+fails verification because it is in neither.
+
+A span is the inclusive range between two refs. It resolves like any other
+anchor — text, page, provenance, crop, deep link — so reading, verifying and
+showing all work on it unchanged. Two ways to get one, both server-issued
+(the "never assemble an anchor" rule is unchanged):
+
+- `read_element` returns **`span_uri`**: the anchor covering exactly what that
+  read returned. It is absent when the read returned a single element, and
+  when the range between the first and the last would have covered text the
+  read did not return — a citation quietly including unread text would be
+  worse than none.
+- `verify_citation` **widens** on its own. A quote found in no single element
+  is looked for across consecutive ones, and the `citation` it answers with is
+  the smallest span that actually contains it. So an agent that quotes what it
+  read gets back the anchor for the whole passage, without ever building one.
+
+A span's box is the union of its members' boxes **on the page it opens on**:
+a rectangle spanning two pages is not a rectangle, so the crop shows the first
+page and the rest is reachable through the outline.
 
 Every path that hands out document text obeys the same ceiling. A budget that
 governed reads but not verification would not be a budget: a 300-row table
@@ -64,7 +92,7 @@ of:
 
 | Status | Meaning |
 |--------|---------|
-| `verified` | The quote is there. A partial quote counts, and a section anchor also covers the elements inside it — when the quote came from one of them, `citation` carries that precise anchor to prefer. |
+| `verified` | The quote is there. A partial quote counts, and a section anchor also covers the elements inside it — when the quote came from one of them, `citation` carries that precise anchor to prefer. A quote running across several elements counts too: `citation` is then the span anchor covering exactly them. |
 | `stale_version` | The quote is there, but the anchor pins a parse that has since been superseded. Still valid; re-read to cite the current one. |
 | `quote_drift` | The anchor resolves and the quote is not in what it covers. `actual_quote` says what is. |
 | `unknown_ref` | No such element in that parse. |
