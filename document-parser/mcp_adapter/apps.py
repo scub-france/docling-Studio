@@ -147,7 +147,8 @@ def build_apps_extension(
             "someone asks to see, check or point at a passage. It carries a raster "
             "of the page, so it costs more than a text citation: for ordinary "
             "explanatory prose, quote the text instead. Takes the uri of a citation "
-            "returned by read_element (`citations[].uri`). On a host that cannot "
+            "returned by read_element — `citations[].uri` for one element, or "
+            "`span_uri` for a passage running across several. On a host that cannot "
             "display it, it returns the same citation as text."
         ),
     )

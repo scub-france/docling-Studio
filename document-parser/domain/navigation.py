@@ -9,8 +9,12 @@ in `services/`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class CitationStatus(StrEnum):
@@ -82,6 +86,39 @@ class BoundingBox:
             max(0, int(top - padding)),
             int(right + padding),
             int(bottom + padding),
+        )
+
+    @classmethod
+    def union(cls, boxes: Sequence[BoundingBox]) -> BoundingBox | None:
+        """The smallest box covering `boxes` — for a citation spanning several.
+
+        Only boxes sharing the first one's page *and* coordinate origin are
+        merged. A rectangle spanning two pages is not a rectangle, and two
+        origins mixed together would put the union somewhere neither box is;
+        both are dropped rather than reconciled, so a span that straddles a
+        page break is shown on the page it starts on.
+
+        The origin decides which end is "outer": under BOTTOMLEFT the y axis
+        grows upwards, so the topmost edge is the LARGEST `top`.
+        """
+        boxes = list(boxes)
+        if not boxes:
+            return None
+        first = boxes[0]
+        same = [
+            box
+            for box in boxes
+            if box.page == first.page and box.coord_origin == first.coord_origin
+        ]
+        upwards = first.coord_origin.upper() == "BOTTOMLEFT"
+        tops = [box.top for box in same]
+        bottoms = [box.bottom for box in same]
+        return replace(
+            first,
+            left=min(box.left for box in same),
+            right=max(box.right for box in same),
+            top=max(tops) if upwards else min(tops),
+            bottom=min(bottoms) if upwards else max(bottoms),
         )
 
 
@@ -233,6 +270,11 @@ class Excerpt:
 
     `next_cursor` is a `ref`: pass it back as `cursor` to continue exactly
     where the budget cut the read. `None` means the section is exhausted.
+
+    `span_uri` is the anchor covering *everything this read returned*, for a
+    quote that runs across element boundaries. Present only when the read
+    returned more than one element and the span covers nothing beyond them —
+    a citation that quietly included unread text would be worse than none.
     """
 
     document_id: str
@@ -246,6 +288,7 @@ class Excerpt:
     truncated: bool = False
     next_cursor: str | None = None
     page_range: tuple[int, int] | None = None
+    span_uri: str | None = None
 
 
 # Docling labels that open a section in the outline. `title` is level 0 so a

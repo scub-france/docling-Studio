@@ -377,12 +377,20 @@
     title: "#EF4444", section_header: "#F97316", text: "#3B82F6",
     table: "#8B5CF6", picture: "#22C55E", list: "#06B6D4",
     formula: "#EC4899", code: "#14B8A6", caption: "#EAB308",
+    // A span is not an element type Studio draws, so it has no colour there
+    // to match. Indigo is unused by the palette, which is the point: a
+    // citation covering several blocks should not look like any one of them.
+    span: "#6366F1",
   };
   const UNKNOWN_ELEMENT_COLOR = "#94A3B8";
   // Docling's leaf labels are narrower than the palette's keys: a bullet is a
   // `list_item`, a heading a `section_header`. Fold them onto the swatch a
   // reader already associates with that kind of block.
   const LABEL_ALIASES = { list_item: "list", page_header: "text", page_footer: "text", footnote: "text" };
+  // What the pill says. Only where docling's own word would mislead a reader:
+  // "span" is the server's name for a range of elements, "passage" is the
+  // reader's.
+  const KIND_LABELS = { span: "passage", section_header: "titre de section" };
   const colorFor = (label) => {
     const key = LABEL_ALIASES[label] || label;
     return ELEMENT_COLORS[key] || UNKNOWN_ELEMENT_COLOR;
@@ -510,8 +518,12 @@
 
     const { html, stats } = renderMarkdown(view.quote);
     const color = colorFor(view.label);
-    const kind = String(view.label || "element").replace(/_/g, " ");
-    const asTitle = HEADING_LABELS.has(String(view.label || "")) || stats.chars <= TITLE_CHARS;
+    const label = String(view.label || "element");
+    const kind = KIND_LABELS[label] || label.replace(/_/g, " ");
+    // A span always covers at least two elements, so it is a passage however
+    // short it reads — never the card's title.
+    const asTitle =
+      label !== "span" && (HEADING_LABELS.has(label) || stats.chars <= TITLE_CHARS);
 
     const crumbs = (view.headings || []).length
       ? `<nav class="crumbs">${(view.headings || [])

@@ -196,6 +196,17 @@ class CitationRef:
 
 @dataclass(frozen=True)
 class ExcerptResult:
+    """The text of one read, plus the anchors for citing any part of it.
+
+    `citations[]` is one anchor per element. `span_uri` is the single anchor
+    covering *all* of them, for a quote that runs across their boundaries —
+    a sentence finishing in the next paragraph, a clause split over two list
+    items. Cite it exactly as given: a span is a server-issued anchor like any
+    other. It is absent when the read returned a single element, or when the
+    range between the first and last would have covered text this read did not
+    return.
+    """
+
     uri: str
     document_id: str
     version_id: str
@@ -208,6 +219,7 @@ class ExcerptResult:
     next_cursor: str | None = None
     first_page: int | None = None
     last_page: int | None = None
+    span_uri: str | None = None
 
 
 @dataclass(frozen=True)
