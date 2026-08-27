@@ -335,13 +335,27 @@ class TestTemplate:
         assert "ui/notifications/size-changed" in CITATION_APP_HTML
         assert "ResizeObserver" in CITATION_APP_HTML
 
-    def test_the_page_image_is_not_capped_against_the_viewport(self):
-        # A `vh` cap plus a resize request is a feedback loop: the frame grows,
-        # so the image grows, so the frame is asked to grow again.
+    def test_no_image_is_sized_against_the_viewport(self):
+        # A `vh` size plus a resize request is a feedback loop: the frame
+        # grows, so the image grows, so the frame is asked to grow again. The
+        # rail's thumbnail is sized by its column instead.
         import re
 
-        assert "max-height: 460px" in CITATION_APP_HTML
         assert not re.search(r"\d+vh\b", CITATION_APP_HTML)
+        assert ".rail" in CITATION_APP_HTML
+
+    def test_the_rail_says_where_the_page_sits_in_the_document(self):
+        # A citation on page 12 of 13 is near the end, and that is worth a
+        # glance — the pager and its track carry it.
+        assert 'id="pager"' in CITATION_APP_HTML
+        assert 'id="track"' in CITATION_APP_HTML
+        assert "page_count" in CITATION_APP_HTML
+
+    def test_a_long_passage_is_not_set_as_a_title(self):
+        # A heading is the card's title; four hundred characters set at 25px
+        # would be shouting.
+        assert "TITLE_CHARS" in CITATION_APP_HTML
+        assert "as-title" in CITATION_APP_HTML
 
     def test_renders_a_pipe_table_rather_than_a_wall_of_pipes(self):
         # A table element's text arrives as GFM markup; the viewer builds a
