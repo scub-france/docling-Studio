@@ -38,3 +38,8 @@ class NavigationConfig:
     image_dpi: int = 150
     image_max_bytes: int = 45_000
     image_min_dpi: int = 40
+    # A page raster never travels in a tool result — the view fetches it
+    # through an app-only tool — so it is bounded by what a host will hold in
+    # an iframe, not by what a model can afford. Wide enough for the expanded
+    # view to be readable, bounded so a dense scan cannot hand back megabytes.
+    image_page_max_bytes: int = 400_000

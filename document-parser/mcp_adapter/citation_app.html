@@ -135,9 +135,43 @@
     overflow: hidden;
   }
   .sheet img { display: block; width: 100%; height: auto; }
+  /* The rail's page is a control, not an illustration: a 128px page tells you
+     *where* the passage is and nothing about what surrounds it, which is the
+     other half of "show me where this comes from". */
+  button.sheet {
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    background: #fff;
+    cursor: default;
+    transition: border-color var(--transition);
+  }
+  button.sheet:hover { background: #fff; color: inherit; border-color: var(--border); }
+  button.sheet.ready { cursor: zoom-in; }
+  button.sheet.ready:hover { border-color: var(--accent); }
+  button.sheet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sheet .glass {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: #fff;
+    background: color-mix(in srgb, var(--text) 72%, transparent);
+    opacity: 0;
+    transition: opacity var(--transition);
+  }
+  button.sheet.ready:hover .glass,
+  button.sheet.ready:focus-visible .glass { opacity: 1; }
   /* Where the passage is. A filled band, not a hairline box: at this size a
-     paragraph is four grey lines, and an outline that thin reads as noise. */
-  .sheet .mark {
+     paragraph is four grey lines, and an outline that thin reads as noise.
+     Positioned in percentages of the raster it sits on, so the same rule
+     serves the rail's thumbnail and the expanded page. */
+  .mark {
     position: absolute;
     background: color-mix(in srgb, var(--accent) 34%, transparent);
     outline: 1.5px solid var(--accent);
@@ -352,6 +386,41 @@
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .said { font-size: 12px; color: var(--accent); }
 
+  /* ---- the expanded page -------------------------------------------- */
+  /* Lives on <body>, not inside <main>: `main` carries the fit zoom, and an
+     overlay meant to fill the frame must not be scaled by the correction the
+     card needed. */
+  .lens {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+    background: color-mix(in srgb, var(--bg) 88%, #000);
+  }
+  .lens[hidden] { display: none; }
+  .lens-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .lens-title { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
+  .lens-title b { color: var(--accent); font-weight: 600; }
+  .lens-bar button { margin-left: auto; }
+  .lens-stage { display: grid; place-items: center; min-height: 0; overflow: auto; }
+  .lens-page {
+    position: relative;
+    line-height: 0;
+    background: #fff;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.34);
+  }
+  .lens-page img { display: block; max-width: 100%; height: auto; }
+  /* The thumbnail, upscaled, while the readable render is on its way. Better
+     than an empty stage: it is the same page, and the marker is already in
+     the right place. */
+  .lens-page.provisional img { filter: blur(0.4px); }
+  .lens-status { font-size: 13px; color: var(--text-muted); text-align: center; }
+
   .status { font-size: 13px; color: var(--text-muted); padding: 28px 20px; text-align: center; }
   .note {
     font-size: 12px;
@@ -518,8 +587,18 @@
   const TITLE_CHARS = 90;
   const HEADING_LABELS = new Set(["title", "section_header", "page_header", "caption"]);
 
+  let current = null;
+  let thumbnail = null;
+  let enlarged = null;
+
   function render(view) {
     if (!view || !view.quote) return;
+    // A new citation is a new page: the rasters cached for the last one would
+    // put the previous document's page behind this one's marker.
+    current = view;
+    thumbnail = null;
+    enlarged = null;
+    closeLens();
 
     const { html, stats } = renderMarkdown(view.quote);
     const color = colorFor(view.label);
@@ -544,10 +623,10 @@
     // The rail's picture: the page thumbnail this view fetches for itself, or
     // the crop the server inlined when MCP_INLINE_CITATION_IMAGE is on.
     const sheet = view.page_image
-      ? `<div class="sheet" id="page-sheet"><img alt="Le passage cité, page ${esc(
-          view.page
-        )}" src="${esc(view.page_image)}"></div>`
-      : `<div class="sheet pending" id="page-sheet"></div>`;
+      ? `<button type="button" class="sheet ready" id="page-sheet" title="Agrandir la page">` +
+        `<img alt="Le passage cité, page ${esc(view.page)}" src="${esc(view.page_image)}">` +
+        `<span class="glass" aria-hidden="true">⤢</span></button>`
+      : `<button type="button" class="sheet pending" id="page-sheet" disabled></button>`;
 
     root.innerHTML = `
       <div class="card">
@@ -600,9 +679,10 @@
           )}</code>), que l'hôte ne sait pas résoudre.</div>`
         : ""}`;
 
-    for (const button of root.querySelectorAll("button")) {
+    for (const button of root.querySelectorAll("button[data-act]")) {
       button.addEventListener("click", () => act(button.dataset.act, view));
     }
+    root.querySelector("#page-sheet")?.addEventListener("click", openLens);
     // Covers a host whose engine has no ResizeObserver; where there is one it
     // reports again, more accurately, once the image has decoded. The card is
     // brand new, so the fit is measured rather than reused.
@@ -824,11 +904,15 @@
           ((box[3] - box[1]) / img.height) * 100
         }%"></div>`
       : "";
+    thumbnail = img;
     sheet.classList.remove("pending");
+    sheet.classList.add("ready");
+    sheet.disabled = false;
+    sheet.title = "Agrandir la page";
     sheet.innerHTML =
       `<img alt="Page ${esc(img.page)}, le passage cité surligné" src="${esc(
         img.data_uri
-      )}">` + mark;
+      )}">` + mark + `<span class="glass" aria-hidden="true">⤢</span>`;
 
     const pager = document.getElementById("pager");
     const track = document.getElementById("track");
@@ -865,6 +949,110 @@
   // the frame's current width, so the notification only ever asks to grow
   // vertically; the frame's width is the host's to decide, and it has already
   // said so through `containerDimensions`.
+  // ---- the expanded page -----------------------------------------------
+  // The rail answers "where on the page"; at 128 px it cannot answer "what is
+  // around it", which is the other half of showing a reader where a quote
+  // comes from. Clicking the page asks the host for the whole frame and
+  // fetches the same raster at a readable width.
+  //
+  // Fullscreen is requested, never assumed: `ui/request-display-mode` is the
+  // host's to grant, and a host that refuses still gets the overlay, filling
+  // the inline frame. Nothing here depends on the answer.
+  const LENS_WIDTH = 1400;
+  let lensLoading = false;
+
+  const lens = document.createElement("div");
+  lens.className = "lens";
+  lens.id = "lens";
+  lens.hidden = true;
+  lens.setAttribute("role", "dialog");
+  lens.setAttribute("aria-modal", "true");
+  lens.setAttribute("aria-label", "Page agrandie");
+  lens.innerHTML =
+    '<div class="lens-bar"><span class="lens-title" id="lens-title"></span>' +
+    '<button type="button" id="lens-close">Fermer</button></div>' +
+    '<div class="lens-stage" id="lens-stage"></div>';
+  document.body.appendChild(lens);
+  lens.querySelector("#lens-close").addEventListener("click", closeLens);
+  // The scrim closes; the page itself does not.
+  lens.addEventListener("click", (event) => {
+    if (event.target === lens || event.target.id === "lens-stage") closeLens();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !lens.hidden) closeLens();
+  });
+
+  function openLens() {
+    if (!current || !thumbnail) return;
+    lens.hidden = false;
+    paintLens();
+    lens.querySelector("#lens-close").focus();
+    call("ui/request-display-mode", { mode: "fullscreen" }).catch(() => {});
+    if (!enlarged && !lensLoading) loadLens();
+  }
+
+  function closeLens() {
+    if (lens.hidden) return;
+    lens.hidden = true;
+    call("ui/request-display-mode", { mode: "inline" }).catch(() => {});
+    document.getElementById("page-sheet")?.focus();
+  }
+
+  async function loadLens() {
+    lensLoading = true;
+    try {
+      const result = await call(
+        "tools/call",
+        {
+          name: "get_citation_image",
+          arguments: { uri: current.uri, kind: "page", max_width: LENS_WIDTH },
+        },
+        20000
+      );
+      if (result && (result.isError || result.is_error)) {
+        throw new Error(result?.content?.[0]?.text || "the server refused");
+      }
+      const img =
+        result?.structuredContent ??
+        result?.structured_content ??
+        JSON.parse(result?.content?.[0]?.text ?? "{}");
+      if (img && img.data_uri) enlarged = img;
+    } catch (_) {
+      // The thumbnail is already on screen and is the same page. A failed
+      // upgrade costs sharpness, not the answer.
+    } finally {
+      lensLoading = false;
+      if (!lens.hidden) paintLens();
+    }
+  }
+
+  function paintLens() {
+    const img = enlarged || thumbnail;
+    if (!img) return;
+    const box = img.highlight;
+    const mark = box
+      ? `<div class="mark" style="left:${(box[0] / img.width) * 100}%;top:${
+          (box[1] / img.height) * 100
+        }%;width:${((box[2] - box[0]) / img.width) * 100}%;height:${
+          ((box[3] - box[1]) / img.height) * 100
+        }%"></div>`
+      : "";
+    // The thumbnail stands in until the readable render lands, upscaled to
+    // roughly where it will sit — so the page does not jump size under the
+    // reader when it arrives.
+    const provisional = enlarged ? "" : " provisional";
+    const width = enlarged ? `${img.width}px` : "860px";
+    lens.querySelector("#lens-stage").innerHTML =
+      `<div class="lens-page${provisional}" style="width:${width};max-width:100%">` +
+      `<img alt="Page ${esc(img.page)}, le passage cité surligné" src="${esc(
+        img.data_uri
+      )}">${mark}</div>`;
+    const pages = img.page_count ? ` / ${esc(img.page_count)}` : "";
+    lens.querySelector("#lens-title").innerHTML =
+      `page <b>${esc(img.page)}</b>${pages} · ${esc(current ? current.ref : "")}` +
+      (enlarged ? "" : " · agrandissement en cours…");
+  }
+
   // ---- fitting a fixed frame ------------------------------------------
   // The frame's width is the host's, and it does not negotiate: it hands the
   // view a number and clips whatever exceeds it. The card is built to shrink,
@@ -899,6 +1087,7 @@
     fittedFor = available;
 
     main.style.zoom = "";
+    main.style.maxWidth = "";
     // `scrollWidth` still reports content clipped by `overflow: hidden`, which
     // is the whole reason this can be measured at all.
     const gutter = Math.max(0, main.offsetWidth - card.offsetWidth);
@@ -908,6 +1097,13 @@
 
     const zoom = Math.max(MIN_ZOOM, available / needed);
     main.style.zoom = String(zoom);
+    // `zoom` multiplies every length the element resolves, `max-width`
+    // included — so the stylesheet's 940px comfort cap became 940 × zoom and
+    // started binding at frame widths where it never had. The card then sat
+    // narrower than its frame, centred by `margin: 0 auto`, which reads as the
+    // card being off to one side. The cap is for a frame that is too wide;
+    // while compensating for one that is too narrow it has no business here.
+    main.style.maxWidth = "none";
     fitNote += ` · zoom ${zoom.toFixed(2)}`;
   }
 
@@ -987,6 +1183,10 @@
     if (data?.method === "ui/notifications/host-context-changed") {
       host = { ...host, context: { ...host.context, ...(data.params || {}) } };
       applyHostContext(host.context);
+      // The host can put the view back inline on its own — through its own
+      // chrome, or because another app asked for the frame. The overlay
+      // follows rather than sitting over a frame that is no longer full.
+      if (data.params?.displayMode === "inline") closeLens();
       return;
     }
 
