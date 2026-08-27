@@ -89,6 +89,7 @@ def build_mcp_server(
     version: str = "",
     apps: bool = True,
     cache_ttl_seconds: int = 0,
+    inline_citation_image: bool = False,
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -102,7 +103,9 @@ def build_mcp_server(
     # back, so a card can say what the surface has cost so far rather than
     # only what it cost itself.
     ledger = Ledger()
-    extensions = [build_apps_extension(tools, ledger)] if apps else None
+    extensions = (
+        [build_apps_extension(tools, ledger, inline_image=inline_citation_image)] if apps else None
+    )
     server = MCPServer(
         name=name,
         version=version,
@@ -157,28 +160,43 @@ def build_mcp_server(
     @server.tool(
         annotations=_READ_ONLY,
         description=(
-            "Read the text at an anchor uri, with one ready-to-use citation per "
-            "element read. `include='section'` (default) reads the entry and "
-            "everything under it; `include='self'` reads only that element. "
-            "Cite with the uri of the citation you are quoting, not the uri you "
-            "read with. `max_tokens` lowers the budget but cannot raise it above "
-            "the server ceiling: when `truncated` is true, call again with "
-            "`cursor=next_cursor` to continue exactly where it stopped. "
+            "Read the text of one entry. Address it either by `ref` (from a "
+            "get_outline entry) together with the `document_id` that outline "
+            "reported, or by the `uri` of a citation you already hold. "
+            "`include='section'` (default) reads the entry and everything under "
+            "it; `include='self'` reads only that element. The text comes back "
+            "in `content`; `citations[]` carries one anchor per element read, "
+            "with a short preview so you can tell which is which — cite with "
+            "`citations[].uri`, and verify_citation returns the full verbatim "
+            "for the one you publish. `max_tokens` lowers the budget but cannot "
+            "raise it: when `truncated` is true, call again with "
+            "`cursor=next_cursor`. "
             f"{UNTRUSTED_NOTE}"
         ),
     )
     async def read_element(
-        uri: str,
+        uri: str | None = None,
+        document_id: str | None = None,
+        ref: str | None = None,
+        version_id: str | None = None,
         include: Literal["section", "self"] = "section",
         max_tokens: int | None = None,
         cursor: str | None = None,
     ) -> ExcerptResult:
-        anchor = _parse_anchor(uri)
+        if uri:
+            anchor = _parse_anchor(uri)
+            document_id, ref, version_id = anchor.document_id, anchor.ref, anchor.version_id
+        elif not (document_id and ref):
+            raise ToolError(
+                "read_element needs either `uri` (from a citation) or `document_id` + `ref` "
+                "(from a get_outline entry and the document_id that outline reported). Pass "
+                "back values you received — never invent a ref."
+            )
         async with _ToolErrors():
             excerpt = await tools().navigation.read_element(
-                anchor.document_id,
-                anchor.ref,
-                version_id=anchor.version_id,
+                document_id,
+                ref,
+                version_id=version_id,
                 include=include,
                 max_tokens=max_tokens,
                 cursor=cursor,

@@ -20,7 +20,7 @@ from urllib.parse import quote as urlquote
 
 from domain.anchors import DocumentAnchor, normalise_quote, quote_hash
 from domain.element_reader import resolve, section_refs
-from domain.navigation import Citation, CitationCheck, CitationStatus
+from domain.navigation import Citation, CitationCheck, CitationStatus, clip_to_tokens
 from services.navigation_errors import NavigationServiceError, RefNotFoundError
 
 if TYPE_CHECKING:
@@ -81,7 +81,7 @@ class CitationService:
                 status=CitationStatus.QUOTE_DRIFT,
                 detail="No quote supplied to verify.",
                 citation=citation,
-                actual_quote=element.text,
+                actual_quote=self._clipped(element.text),
             )
 
         match = self._locate_quote(parse.index, anchor.ref, element, claimed)
@@ -94,7 +94,7 @@ class CitationService:
                     "verbatim, or re-read the element."
                 ),
                 citation=citation,
-                actual_quote=element.text,
+                actual_quote=self._clipped(element.text),
             )
 
         matched = self.build(parse.document.id, parse.version_id, match)
@@ -109,7 +109,7 @@ class CitationService:
                     "document to cite the current parse."
                 ),
                 citation=matched,
-                actual_quote=match.text,
+                actual_quote=self._clipped(match.text),
             )
         return CitationCheck(
             valid=True,
@@ -123,7 +123,7 @@ class CitationService:
                 )
             ),
             citation=matched,
-            actual_quote=match.text,
+            actual_quote=self._clipped(match.text),
         )
 
     # ------------------------------------------------------------------
@@ -131,16 +131,25 @@ class CitationService:
     # ------------------------------------------------------------------
 
     def build(self, document_id: str, version_id: str, element: ResolvedElement) -> Citation:
-        """Assemble the citation for one resolved element."""
+        """Assemble the citation for one resolved element.
+
+        The quote is clipped to the same ceiling a read obeys. A budget that
+        governed `read_element` but not `verify_citation` would not be a
+        budget: a caller wanting an unbudgeted read would simply verify
+        instead, and a 300-row table came back at 19 795 tokens that way.
+        The hash covers the clipped text, so what is published is what was
+        checked.
+        """
         anchor = DocumentAnchor(document_id, version_id, element.ref)
+        quote = clip_to_tokens(element.text, self._config.max_read_tokens)
         return Citation(
             uri=anchor.uri,
             document_id=document_id,
             version_id=version_id,
             ref=element.ref,
             label=element.label,
-            quote=element.text,
-            quote_hash=quote_hash(element.text),
+            quote=quote,
+            quote_hash=quote_hash(quote),
             page=element.page,
             bbox=element.bbox,
             headings=list(element.headings),
@@ -150,6 +159,9 @@ class CitationService:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _clipped(self, text: str) -> str:
+        return clip_to_tokens(text, self._config.max_read_tokens)
 
     async def _superseding_parse(self, document_id: str, version_id: str) -> str | None:
         """The id of the current parse when the anchor pins an older one."""

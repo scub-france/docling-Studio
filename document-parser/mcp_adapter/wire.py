@@ -102,10 +102,20 @@ class DocumentSearchResult:
 
 @dataclass(frozen=True)
 class OutlineEntry:
-    """One node of the map. `est_tokens` covers the whole subtree, including
-    levels elided by `depth`, so the number is a true reading cost."""
+    """One node of the map.
 
-    uri: str
+    `ref`, not a full anchor: the anchor is `document_id` + `version_id` +
+    `ref`, and the first two are stated once on the result rather than
+    repeated on every entry — on a 42-section paper that repetition was 38%
+    of the map. Read an entry by passing its `ref` back with the map's own
+    `document_id`, or build nothing and pass `uri` on a citation you already
+    hold.
+
+    `est_tokens` covers the whole subtree, including levels elided by
+    `depth`, so the number is a true reading cost.
+    """
+
+    ref: str
     title: str
     kind: str
     level: int
@@ -166,6 +176,25 @@ class CitationOut:
 
 
 @dataclass(frozen=True)
+class CitationRef:
+    """What a read hands back per element: where it came from, and enough to
+    tell which passage is which.
+
+    Not the full citation. The text is already in `content` — sending it
+    again under `quote` doubled every read — and the geometry only matters to
+    something that draws or verifies, both of which fetch it themselves.
+    `preview` exists so an agent can match the passage it is quoting to the
+    right anchor; `verify_citation` and `show_citation` return the complete
+    `CitationOut` for the one anchor that turns out to matter.
+    """
+
+    uri: str
+    ref: str
+    preview: str
+    page: int | None = None
+
+
+@dataclass(frozen=True)
 class ExcerptResult:
     uri: str
     document_id: str
@@ -174,9 +203,8 @@ class ExcerptResult:
     content: str
     est_tokens: int
     truncated: bool
-    citations: list[CitationOut]
+    citations: list[CitationRef]
     next_step: str
-    untrusted_content_note: str = UNTRUSTED_NOTE
     next_cursor: str | None = None
     first_page: int | None = None
     last_page: int | None = None

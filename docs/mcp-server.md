@@ -14,7 +14,7 @@ local agent work; put it behind an authenticating proxy anywhere else.
 |------|---------|
 | `find_documents` | List documents, optionally filtered by filename. Returns `document_id`, the current `version_id`, and the window that was searched — `truncated: true` with an empty list means "not among the documents I looked at", not "no such document". |
 | `get_outline` | The map: a tree of sections — or of pages, for a document without headings — each with its anchor and its estimated reading cost. `deeper_levels_available` says to ask for more depth; `entries_omitted` says the node cap was hit. |
-| `read_element` | Read one anchor: the element alone (`include="self"`) or the whole section under it (`include="section"`), capped server-side and resumable through `next_cursor`. |
+| `read_element` | Read one entry, by `ref` + `document_id` (from an outline) or by the `uri` of a citation you hold. The element alone (`include="self"`) or the whole section under it (`include="section"`), capped server-side and resumable through `next_cursor`. |
 | `verify_citation` | Re-resolve an anchor and confirm a quote actually appears at it. |
 
 Nothing writes. Uploading, re-analysing and editing chunks stay in the Studio
@@ -36,9 +36,16 @@ dstudio://doc/8f2a91c4@a71f0c33#/texts/91
 - `#{self_ref}` is the docling reference, or a virtual page ref
   (`#/pages/7`) for documents with no headings.
 
-`read_element` returns one citation per element it read: the verbatim quote, a
-`sha256` of it, the page, the bounding box, the heading breadcrumb, and a deep
-link back into the Studio viewer.
+`read_element` returns one **pointer** per element it read — the anchor, the
+page, and a few words of preview so you can tell which passage is which. Not
+the verbatim: the text is already in `content`, and sending it again doubled
+every read. The full citation — quote, `sha256`, bounding box, heading
+breadcrumb, deep link — comes from `verify_citation` or `show_citation`, for
+the one anchor that turns out to matter.
+
+Every path that hands out document text obeys the same ceiling. A budget that
+governed reads but not verification would not be a budget: a 300-row table
+came back at 19 795 tokens through `verify_citation` before it did.
 
 Read `coord_origin` before the bbox numbers. Docling emits `BOTTOMLEFT` for
 PDF-native parses — the y axis grows upwards, so `top` is the *larger* number
@@ -87,6 +94,7 @@ MCP_STUDIO_BASE_URL=http://localhost:3000   # optional, for absolute deep links
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host/Origin allow-list (DNS-rebinding protection). `*` delegates the check to a fronting proxy. |
 | `MCP_MAX_READ_TOKENS` | `4000` | Hard ceiling for one `read_element`. A client may ask for less, never more. |
 | `MCP_CACHE_TTL_SECONDS` | `600` | Freshness hint for the tool list, the prompt list and the viewer (SEP-2549). `0` disables it. |
+| `MCP_INLINE_CITATION_IMAGE` | `false` | Put the raster back in the tool result (~21 000 tokens a call). Only for a host where the app-only fetch fails. |
 | `MCP_APPS_ENABLED` | `true` | Ships the `show_citation` MCP App. Degrades to text on hosts without UI support. |
 | `MCP_STUDIO_BASE_URL` | *(empty)* | Absolute base for citation deep links. Empty keeps them relative. |
 
@@ -184,16 +192,24 @@ could not have shown them.
 
 Turn it off with `MCP_APPS_ENABLED=false`; the four text tools are unaffected.
 
-**How the image is kept small.** The crop is embedded as a `data:` URI (the
-default MCP Apps CSP allows `img-src data:` and nothing else, so the view
-loads from the network never — which also means it works over stdio, with no
-backend running). It is rendered at 150 dpi and halved until it fits
-`image_max_bytes` (45 KB by default): a paragraph lands around 35-50 KB.
+**The image never reaches the model.** The view fetches it itself, through
+`get_citation_image` — an app-only tool (`visibility: ["app"]`), so the tool
+is not offered to the model at all. Sending the raster in the tool result cost
+**21 432 tokens a call**, twice over, for a picture no reader can read;
+fetching it costs zero. `kind="page"` returns a thumbnail of the whole page
+instead of the crop.
 
-*Known limitation:* the crop travels in the tool result, so on a rendering
-host the model sees the base64 too. The documented upgrade is an app-only tool
-(`visibility: ["app"]`) that the view calls for its own image — worth doing if
-payloads grow, unnecessary at one crop per call.
+Rasters are WebP, which is about half of PNG on a rendered paragraph and a
+fifth of it on a scaled page. The crop is embedded as a `data:` URI — the
+default MCP Apps CSP allows `img-src data:` and nothing else, so the view
+never loads from the network, which is also why it works over stdio with no
+backend running. It is rendered at 150 dpi and halved until it fits
+`image_max_bytes`.
+
+If a host cannot make the app-only fetch work, `MCP_INLINE_CITATION_IMAGE=true`
+restores the old behaviour — at the old price. The view degrades on its own
+either way: a failed or unanswered fetch leaves the citation intact and says
+what is missing.
 
 ## What a client may cache
 

@@ -127,6 +127,7 @@
      frame to its content, and a viewport-relative image would grow with the
      frame it just caused to grow. */
   figure img { display: block; width: 100%; height: auto; max-height: 460px; object-fit: contain; }
+  figure.pending { min-height: 3.5rem; display: grid; place-items: center; }
   figcaption {
     font-family: var(--mono);
     font-size: 11px;
@@ -431,12 +432,17 @@
       ? `${stats.rows} rows × ${stats.columns} columns`
       : `${stats.chars} characters`;
 
+    // The figure is always emitted; when the payload carries no raster the
+    // view fetches its own through the app-only tool, so the picture never
+    // travels through the model's context.
     const image = view.page_image
-      ? `<figure>
+      ? `<figure id="citation-figure">
            <img alt="The cited passage on page ${esc(view.page)}" src="${esc(view.page_image)}">
            <figcaption>page ${esc(view.page)} · ${esc(view.ref)}</figcaption>
          </figure>`
-      : "";
+      : `<figure id="citation-figure" class="pending">
+           <figcaption>Loading the page…</figcaption>
+         </figure>`;
 
     root.innerHTML = `
       ${crumbs}
@@ -537,6 +543,63 @@
     try { window.parent?.postMessage(message, "*"); } catch (_) { /* no host, no-op */ }
   }
 
+  // ---- guest -> host requests -----------------------------------------
+  // A bounded JSON-RPC client. Bounded matters: a host that never answers
+  // must cost this view a note, not a spinner that spins forever.
+  const pending = new Map();
+  let nextRequestId = 1;
+
+  function call(method, params, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      const id = `app-${nextRequestId++}`;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error("the host did not answer"));
+      }, timeoutMs);
+      pending.set(id, { resolve, reject, timer });
+      post({ jsonrpc: "2.0", id, method, params });
+    });
+  }
+
+  function settle(data) {
+    const entry = data && data.id != null && pending.get(data.id);
+    if (!entry) return false;
+    pending.delete(data.id);
+    clearTimeout(entry.timer);
+    if (data.error) entry.reject(new Error(data.error.message || "call failed"));
+    else entry.resolve(data.result);
+    return true;
+  }
+
+  // ---- the page raster -------------------------------------------------
+  async function hydrateImage(view) {
+    const figure = document.getElementById("citation-figure");
+    if (!figure || !figure.classList.contains("pending")) return;
+    try {
+      const result = await call("tools/call", {
+        name: "get_citation_image",
+        arguments: { uri: view.uri },
+      });
+      if (result && result.isError) throw new Error("the server could not render the page");
+      const payload =
+        result?.structuredContent ??
+        result?.structured_content ??
+        JSON.parse(result?.content?.[0]?.text ?? "{}");
+      if (!payload || !payload.data_uri) throw new Error("no image came back");
+      figure.classList.remove("pending");
+      figure.innerHTML =
+        `<img alt="The cited passage on page ${esc(view.page)}" src="${esc(payload.data_uri)}">` +
+        `<figcaption>page ${esc(view.page)} · ${esc(view.ref)}</figcaption>`;
+    } catch (err) {
+      // The citation itself is unaffected — say what is missing and why.
+      figure.classList.remove("pending");
+      figure.innerHTML =
+        `<figcaption>The page image is unavailable (${esc(err.message)}). ` +
+        `The citation above is unaffected.</figcaption>`;
+    }
+    reportSize();
+  }
+
   // ---- frame size -----------------------------------------------------
   // The host sizes the iframe, not the page, so a citation with a page image
   // and a twelve-row table lands in a box built for two lines of text. The
@@ -590,8 +653,12 @@
   }
 
   window.addEventListener("message", (event) => {
+    if (settle(event.data)) return;
     const view = extract(event.data);
-    if (view) render(view);
+    if (view) {
+      render(view);
+      hydrateImage(view);
+    }
   });
 
   // Tell the host we are ready, for hosts that wait for it before pushing the

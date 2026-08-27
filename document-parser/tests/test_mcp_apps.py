@@ -53,8 +53,10 @@ def _png(width: int = 1275, height: int = 1650) -> bytes:
 
 
 @asynccontextmanager
-async def _client(tools, *, apps: bool = True, negotiates: bool = False):
-    server = build_mcp_server(lambda: tools, version="test", apps=apps)
+async def _client(tools, *, apps: bool = True, negotiates: bool = False, inline: bool = False):
+    server = build_mcp_server(
+        lambda: tools, version="test", apps=apps, inline_citation_image=inline
+    )
     async with Client(server, extensions=[APPS_CLIENT] if negotiates else None) as client:
         yield client
 
@@ -115,7 +117,8 @@ class TestRenderCitation:
     async def test_returns_a_data_uri_for_the_cited_region(self, tmp_path):
         tools = _service_with_file(tmp_path)
         image = await tools.images.render(anchor_uri(PREAVIS_REF))
-        assert image.data_uri.startswith("data:image/png;base64,")
+        assert image.data_uri.startswith("data:image/webp;base64,")
+        assert image.media_type == "image/webp"
         assert base64.b64decode(image.data_uri.split(",", 1)[1]) == image.png
         assert image.page == 1
         assert image.width > 0 and image.height > 0
@@ -196,13 +199,6 @@ class TestGracefulDegradation:
         # bytes cost nothing on a host that could not have shown them.
         assert raster.renders == []
 
-    async def test_a_host_with_apps_gets_the_image(self, tmp_path):
-        async with _client(_service_with_file(tmp_path), negotiates=True) as client:
-            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
-        view = result.structured_content
-        assert view["page_image"].startswith("data:image/png;base64,")
-        assert view["image_note"] is None
-
     async def test_the_payload_carries_the_provenance_the_viewer_shows(self, tmp_path):
         # The anchor already encodes document and parse; unpacking them means
         # the viewer never has to parse a `dstudio://` uri to say where a
@@ -233,8 +229,9 @@ class TestGracefulDegradation:
 
     async def test_the_page_image_is_weighed_in_bytes_not_tokens(self, tmp_path):
         # How a host prices an image is the host's business; quoting a token
-        # figure for it would be inventing one.
-        async with _client(_service_with_file(tmp_path), negotiates=True) as client:
+        # figure for it would be inventing one. Only the escape hatch puts an
+        # image in this payload at all.
+        async with _client(_service_with_file(tmp_path), negotiates=True, inline=True) as client:
             result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
         view = result.structured_content
         assert view["image_bytes"] > 0
@@ -259,13 +256,24 @@ class TestGracefulDegradation:
                 raise OSError("poppler is not installed")
 
         tools = _service_with_file(tmp_path, rasterizer=BrokenRasterizer())
-        async with _client(tools, negotiates=True) as client:
+        async with _client(tools, negotiates=True, inline=True) as client:
             result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
         view = result.structured_content
         assert result.is_error is False
         assert view["quote"]
         assert view["page_image"] is None
         assert "poppler" in view["image_note"]
+
+    async def test_a_failed_image_fetch_is_an_error_the_view_can_show(self, tmp_path):
+        class BrokenRasterizer(FakeRasterizer):
+            def render_page(self, storage_path, *, page, dpi):
+                raise OSError("poppler is not installed")
+
+        tools = _service_with_file(tmp_path, rasterizer=BrokenRasterizer())
+        async with _client(tools, negotiates=True) as client:
+            result = await client.call_tool("get_citation_image", {"uri": anchor_uri(PREAVIS_REF)})
+        # The view keeps its text card and shows why the picture is missing.
+        assert result.is_error is True
 
     async def test_a_malformed_anchor_is_still_a_tool_error(self, tmp_path):
         async with _client(_service_with_file(tmp_path)) as client:
