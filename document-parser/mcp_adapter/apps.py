@@ -214,8 +214,9 @@ def build_apps_extension(
         description=(
             "Internal — the citation viewer's own image fetch. Returns a raster "
             "of a cited passage (`kind='crop'`) or of the page it sits on "
-            "(`kind='page'`) as a data URI. Not for reading: it answers with "
-            "binary, and show_citation already carries everything a reader needs."
+            "(`kind='page'`, sized by `max_width`) as a data URI. Not for "
+            "reading: it answers with binary, and show_citation already carries "
+            "everything a reader needs."
         ),
     )
     async def get_citation_image(
@@ -247,7 +248,13 @@ def build_apps_extension(
         # for, not an unsafe one.
         try:
             if kind == "page":
-                image = await tools().images.render_page(uri, max_width=max_width)
+                # The view asks for a thumbnail at ~320 and for the expanded
+                # page at ~1400. Clamped so a caller cannot ask for a raster
+                # nobody can use: the dpi ladder bounds the bytes, this bounds
+                # the work.
+                image = await tools().images.render_page(
+                    uri, max_width=max(120, min(max_width, 1600))
+                )
             else:
                 image = await tools().images.render(uri, padding=padding)
         except AnchorParseError as exc:

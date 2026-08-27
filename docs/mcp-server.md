@@ -218,6 +218,23 @@ host that never advertises the extension never fetches the template, and the
 image is never rendered at all — so the bytes cost nothing on a client that
 could not have shown them.
 
+**Opening the page.** The rail answers *where on the page*; at 128 px it
+cannot answer *what is around it*, which is the other half of showing a reader
+where a quote comes from. Clicking the page (or focusing it and pressing
+Enter) asks the host for the whole frame with `ui/request-display-mode` and
+fetches the same raster at a readable width. Escape, the close button or the
+scrim dismisses it, and the view goes back to `inline`.
+
+Fullscreen is requested, never assumed: granting it is the host's call, and a
+host that refuses still gets the overlay filling the inline frame. The
+thumbnail already on screen stands in, upscaled, until the readable render
+lands — it is the same page with the marker already in the right place. The
+page raster has its own byte ceiling (`image_page_max_bytes`, 400 KB) separate
+from the crop's 45 KB: it never travels in a tool result, so it is bounded by
+what a host will hold in an iframe rather than by what a model can afford.
+Both paths run the same dpi ladder, and the marker is projected at the dpi the
+ladder settled on rather than the one it was asked for.
+
 **The handshake, and why the thumbnail depends on it**
 
 The view opens with `ui/initialize` and sends `ui/notifications/initialized`
