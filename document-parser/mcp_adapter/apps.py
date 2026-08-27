@@ -52,6 +52,18 @@ CITATION_APP_HTML = (Path(__file__).parent / "citation_app.html").read_text(enco
 
 
 @dataclass(frozen=True)
+class CitationImageOut:
+    """A raster for the viewer, never for the model."""
+
+    data_uri: str
+    media_type: str
+    width: int
+    height: int
+    page: int
+    bytes: int
+
+
+@dataclass(frozen=True)
 class CitationView:
     """What the viewer renders — and what a text-only host reads instead.
 
@@ -101,7 +113,12 @@ class CitationView:
     image_note: str | None = None
 
 
-def build_apps_extension(tools: Callable[[], DocumentTools], ledger: Ledger) -> Apps:
+def build_apps_extension(
+    tools: Callable[[], DocumentTools],
+    ledger: Ledger,
+    *,
+    inline_image: bool = False,
+) -> Apps:
     """Build the Apps extension over the same lazily-resolved service."""
     apps = Apps()
 
@@ -160,6 +177,12 @@ def build_apps_extension(tools: Callable[[], DocumentTools], ledger: Ledger) -> 
 
         if not client_supports_apps(ctx):
             return view
+        if not inline_image:
+            # The view fetches its own image through `get_citation_image`, an
+            # app-only tool. Sending it here put a base64 raster in the model's
+            # context — twice, since the SDK mirrors structured output as text —
+            # for 21 432 tokens a call on a picture no reader can read.
+            return view
 
         try:
             image = await tools().images.render(uri, padding=padding)
@@ -172,6 +195,49 @@ def build_apps_extension(tools: Callable[[], DocumentTools], ledger: Ledger) -> 
             return _with_note(view, f"The page could not be rendered ({exc}).")
 
         return _with_image(view, image.data_uri, image.page, len(image.png))
+
+    @apps.tool(
+        resource_uri=CITATION_APP_URI,
+        # App-only: the model is never offered this tool, because its answer is
+        # a base64 raster it cannot read and would pay for by the token.
+        visibility=["app"],
+        annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+        description=(
+            "Internal — the citation viewer's own image fetch. Returns a raster "
+            "of a cited passage (`kind='crop'`) or of the page it sits on "
+            "(`kind='page'`) as a data URI. Not for reading: it answers with "
+            "binary, and show_citation already carries everything a reader needs."
+        ),
+    )
+    async def get_citation_image(
+        ctx: Context,
+        uri: str,
+        kind: str = "crop",
+        padding: int = 8,
+        max_width: int = 320,
+    ) -> CitationImageOut:
+        if not client_supports_apps(ctx):
+            raise ToolError(
+                "get_citation_image serves the citation viewer and answers with binary "
+                "data. Call show_citation instead — it carries the citation as text."
+            )
+        try:
+            if kind == "page":
+                image = await tools().images.render_page(uri, max_width=max_width)
+            else:
+                image = await tools().images.render(uri, padding=padding)
+        except AnchorParseError as exc:
+            raise ToolError(str(exc)) from exc
+        except NavigationServiceError as exc:
+            raise ToolError(str(exc)) from exc
+        return CitationImageOut(
+            data_uri=image.data_uri,
+            media_type=image.media_type,
+            width=image.width,
+            height=image.height,
+            page=image.page,
+            bytes=len(image.png),
+        )
 
     apps.add_html_resource(
         CITATION_APP_URI,

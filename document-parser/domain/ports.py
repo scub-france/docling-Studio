@@ -401,9 +401,15 @@ class PageRasterizer(Protocol):
         """Return `page` of the document at `storage_path` as PNG bytes."""
         ...
 
-    def crop(self, png: bytes, box: tuple[int, int, int, int]) -> RasterCrop:
+    def crop(
+        self,
+        png: bytes,
+        box: tuple[int, int, int, int],
+        *,
+        fmt: str = "PNG",
+    ) -> RasterCrop:
         """Crop a PNG to `box` (left, top, right, bottom in pixels), clamped
-        to the image, and return it with its final dimensions."""
+        to the image, and re-encode it as `fmt` (`"PNG"` or `"WEBP"`)."""
         ...
 
 

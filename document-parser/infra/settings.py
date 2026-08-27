@@ -100,6 +100,11 @@ class Settings:
     # degrades to text on hosts that do not: a client that never advertises
     # the extension never fetches the template, and the tool answers as text.
     mcp_apps_enabled: bool = True
+    # Escape hatch: send the citation raster inside the tool result again,
+    # the way it worked before the viewer fetched its own. Costs ~21 000
+    # tokens a call on a host that renders, which is why it is off — flip it
+    # only if a host cannot make the app-only fetch work.
+    mcp_inline_citation_image: bool = False
     # Freshness hint (SEP-2549) for the cacheable MCP methods — the tool
     # list, the prompt list and the `ui://` viewer. It is the only caching
     # seam the protocol offers: `tools/call` is not cacheable, so this
@@ -245,6 +250,8 @@ class Settings:
                 if h.strip()
             ],
             mcp_apps_enabled=os.environ.get("MCP_APPS_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_inline_citation_image=os.environ.get("MCP_INLINE_CITATION_IMAGE", "false").lower()
             in ("1", "true", "yes", "on"),
             mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
             mcp_cache_ttl_seconds=int(os.environ.get("MCP_CACHE_TTL_SECONDS", "600")),

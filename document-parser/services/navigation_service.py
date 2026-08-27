@@ -24,8 +24,7 @@ from domain.navigation import (
     DocumentSummary,
     Excerpt,
     OutlineNode,
-    chars_for_tokens,
-    estimate_tokens,
+    clip_to_tokens,
     is_heading,
 )
 from domain.outline_builder import build_outline
@@ -42,8 +41,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 READ_MODES = ("self", "section")
-
-CLIP_MARKER = " […clipped]"
 
 
 class NavigationService:
@@ -229,7 +226,7 @@ class NavigationService:
                 # word boundary and flagged. The citation quotes the clipped
                 # text, which still verifies (verification is a substring
                 # match), and the operator's lever is MCP_MAX_READ_TOKENS.
-                clipped = replace(element, text=_clip(element.text, budget))
+                clipped = replace(element, text=clip_to_tokens(element.text, budget))
                 following = refs[position + 1] if position + 1 < len(refs) else None
                 return [clipped], clipped.est_tokens, True, following
             picked.append(element)
@@ -258,19 +255,3 @@ class NavigationService:
         if target.headings:
             return target.headings[-1]
         return doc.filename or target.ref
-
-
-def _clip(text: str, budget: int) -> str:
-    """Cut `text` to `budget` tokens at a word boundary, marking the cut.
-
-    The marker is part of the returned text on purpose — an agent that quotes
-    a clipped element must be able to see it is holding a prefix — and it is
-    charged to the budget, so the promised ceiling still holds for the whole
-    string rather than for the string minus its own footnote.
-    """
-    limit = chars_for_tokens(max(1, budget - estimate_tokens(CLIP_MARKER)))
-    if len(text) <= limit:
-        return text
-    head = text[:limit]
-    cut = head.rsplit(" ", 1)[0] if " " in head else head
-    return f"{cut.rstrip()}{CLIP_MARKER}"

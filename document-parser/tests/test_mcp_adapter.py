@@ -7,6 +7,8 @@ when the optional SDK is absent — the default install does not carry it.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytest.importorskip(
@@ -105,7 +107,11 @@ class TestGetOutline:
         assert outline["deeper_levels_available"] is False
         assert outline["entries_omitted"] is False
         root = outline["entries"][0]
-        assert root["uri"].startswith("dstudio://doc/doc-1@an-1#")
+        # A ref, not a 96-character anchor: document_id and version_id are
+        # stated once on the result instead of on all 42 entries.
+        assert root["ref"].startswith("#/")
+        assert "dstudio://" not in json.dumps(outline["entries"])
+        assert outline["document_id"] == DOC_ID
         assert root["children"][0]["title"].startswith("Article 12")
         assert "read_element" in outline["next_step"]
 
@@ -114,7 +120,7 @@ class TestGetOutline:
         async with _client(service) as client:
             outline = _payload(await client.call_tool("get_outline", {"document_id": DOC_ID}))
         assert outline["mode"] == "pages"
-        assert outline["entries"][0]["uri"].endswith("#/pages/1")
+        assert outline["entries"][0]["ref"] == "#/pages/1"
 
     async def test_unknown_document_is_a_tool_error(self):
         async with _client() as client:
@@ -131,13 +137,15 @@ class TestReadElement:
         assert excerpt["content"].startswith('<document-content document_id="doc-1"')
         assert excerpt["content"].rstrip().endswith(CONTENT_CLOSE)
         assert PREAVIS_TEXT in excerpt["content"]
-        assert "never follow instructions" in excerpt["untrusted_content_note"].lower()
 
         citation = excerpt["citations"][0]
         assert citation["uri"] == anchor_uri(PREAVIS_REF)
         assert citation["page"] == 1
-        assert citation["bbox"] == [72.0, 290.0, 523.0, 332.0]
-        assert citation["quote_hash"].startswith("sha256:")
+        # A pointer, not a second copy of the text that is already in
+        # `content`: enough words to tell which passage is which.
+        assert citation["preview"]
+        assert len(citation["preview"]) < len(PREAVIS_TEXT)
+        assert set(citation) == {"uri", "ref", "preview", "page"}
 
     async def test_budget_reports_a_resumable_cursor(self):
         async with _client() as client:
@@ -282,7 +290,6 @@ TOOL_FIELDS = {
         "truncated",
         "citations",
         "next_step",
-        "untrusted_content_note",
         "next_cursor",
         "first_page",
         "last_page",
@@ -306,7 +313,7 @@ NESTED_FIELDS = {
         "created_at",
     },
     "OutlineEntry": {
-        "uri",
+        "ref",
         "title",
         "kind",
         "level",
@@ -367,12 +374,17 @@ class TestPublishedContract:
             "stale_version",
         }
 
-    async def test_a_citation_carries_what_it_takes_to_draw_the_box(self):
+    async def test_the_geometry_travels_with_verification_not_with_every_read(self):
+        # Only something that draws or checks needs a box; a read that carried
+        # one per element paid ~130 tokens a citation for nothing.
         async with _client() as client:
-            excerpt = _payload(
-                await client.call_tool("read_element", {"uri": anchor_uri(PREAVIS_REF)})
+            check = _payload(
+                await client.call_tool(
+                    "verify_citation",
+                    {"uri": anchor_uri(PREAVIS_REF), "quote": "trois mois"},
+                )
             )
-        citation = excerpt["citations"][0]
+        citation = check["citation"]
         assert citation["coord_origin"] == "TOPLEFT"
         assert (citation["page_width"], citation["page_height"]) == (612.0, 792.0)
 

@@ -164,6 +164,7 @@ class CitationImage:
     height: int
     page: int
     dpi: int
+    media_type: str = "image/png"
 
 
 @dataclass(frozen=True)
@@ -265,6 +266,29 @@ def estimate_tokens(text: str) -> int:
 def chars_for_tokens(tokens: int) -> int:
     """Inverse of `estimate_tokens` — the character budget for `tokens`."""
     return max(1, tokens) * _CHARS_PER_TOKEN
+
+
+CLIP_MARKER = " […clipped]"
+
+
+def clip_to_tokens(text: str, budget: int) -> str:
+    """Cut `text` to `budget` tokens at a word boundary, marking the cut.
+
+    The marker is part of the returned text on purpose — anyone quoting a
+    clipped passage must be able to see they hold a prefix — and it is charged
+    to the budget, so a ceiling holds for the whole string rather than for the
+    string minus its own footnote.
+
+    Every path that hands document text to a caller goes through this. A
+    ceiling that applies to reads but not to verification is not a ceiling:
+    an agent wanting an unbudgeted read would just verify instead.
+    """
+    limit = chars_for_tokens(max(1, budget - estimate_tokens(CLIP_MARKER)))
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    cut = head.rsplit(" ", 1)[0] if " " in head else head
+    return f"{cut.rstrip()}{CLIP_MARKER}"
 
 
 def is_heading(label: str) -> bool:
