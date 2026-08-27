@@ -97,6 +97,11 @@
      a body that answers "what was said, and can it be trusted". */
   .card {
     display: grid;
+    /* A grid item's automatic minimum is its content unless it is told
+       otherwise, and `main`'s implicit column takes its minimum from this
+       item — so without `min-width` the card can size the page rather than
+       the page sizing the card. */
+    min-width: 0;
     grid-template-columns: clamp(128px, 26cqi, 188px) minmax(0, 1fr);
     background: var(--bg-surface);
     border: 1px solid var(--border);
@@ -746,16 +751,24 @@
   // The host owns the frame. A fixed `width` means "fill exactly this"; a
   // `maxWidth` means "grow up to here". Applying neither is how a card ends
   // up laid out at a width the host then cuts off.
+  //
+  // `100%`, not the `100vw` the spec's own snippet suggests: `100vw` counts
+  // the scrollbar gutter and the client width does not, so on any platform
+  // with classic scrollbars a card told to be exactly as wide as the frame
+  // ends up a scrollbar wider than it — cropped down the side, which is the
+  // very failure this function exists to prevent.
+  let frame = null;
   function applyContainerDimensions(dimensions) {
     if (!dimensions || typeof dimensions !== "object") return;
+    frame = dimensions;
     const root = document.documentElement.style;
     if (typeof dimensions.width === "number") {
-      root.width = "100vw";
-      root.maxWidth = "100vw";
+      root.width = "100%";
+      root.maxWidth = "100%";
     } else if (typeof dimensions.maxWidth === "number") {
       root.maxWidth = `${dimensions.maxWidth}px`;
     }
-    if (typeof dimensions.height === "number") root.height = "100vh";
+    if (typeof dimensions.height === "number") root.height = "100%";
     else if (typeof dimensions.maxHeight === "number") {
       root.maxHeight = `${dimensions.maxHeight}px`;
     }
@@ -854,7 +867,16 @@
     const main = document.querySelector("main");
     if (!main) return;
     const height = Math.ceil(main.getBoundingClientRect().height);
-    const width = Math.ceil(document.documentElement.clientWidth);
+    // Clamped to what the host declared. A host that honours this width sets
+    // the frame from it, so reporting more than it offered is how the card
+    // asks to be cropped.
+    const ceiling =
+      typeof frame?.width === "number"
+        ? frame.width
+        : typeof frame?.maxWidth === "number"
+          ? frame.maxWidth
+          : Infinity;
+    const width = Math.ceil(Math.min(document.documentElement.clientWidth, ceiling));
     if (!height) return;
     if (Math.abs(height - lastHeight) < 8 && width === lastWidth) return;
     lastHeight = height;

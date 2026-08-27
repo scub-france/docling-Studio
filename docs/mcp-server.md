@@ -239,8 +239,12 @@ container queries against the card, not media queries against the window — in 
 Turn it off with `MCP_APPS_ENABLED=false`; the four text tools are unaffected.
 
 **The image never reaches the model.** The view fetches it itself, through
-`get_citation_image` — an app-only tool (`visibility: ["app"]`), so the tool
-is not offered to the model at all. Sending the raster in the tool result cost
+`get_citation_image` — an app-only tool (`visibility: ["app"]`), which a
+conforming host keeps out of the agent's tool list. That rule is the host's to
+enforce: the SDK advertises every registered tool in `tools/list` and adds no
+filter of its own, so on a host that ignores `visibility` a model could reach
+it. What it would get is the picture it already has the text for — wasteful,
+read-only, no new data. Sending the raster in the tool result cost
 **21 432 tokens a call**, twice over, for a picture no reader can read;
 fetching it costs zero. `kind="page"` returns a thumbnail of the whole page with
 the passage's box in that image's own pixels, so the view draws a marker
@@ -260,6 +264,17 @@ If a host cannot make the app-only fetch work, `MCP_INLINE_CITATION_IMAGE=true`
 restores the old behaviour — at the old price. The view degrades on its own
 either way: a failed or unanswered fetch leaves the citation intact and says
 what is missing.
+
+**Neither path consults the client's negotiated capabilities**, and that is
+deliberate. `client_supports_apps()` reports what the *connection* advertised
+at `initialize`, which is the same answer for a call made by the model and one
+made by the view — so it can never mean "only the view may call this". It also
+cannot answer yes over HTTP at all: the transport is mounted `stateless_http`,
+and on the 2025-era protocol path the SDK serves each request from a fresh
+connection with `client_capabilities=None`. Gating on it refused the view its
+own image and left the `MCP_INLINE_CITATION_IMAGE` escape hatch dead in exactly
+the case it was written for. Over stdio the same code negotiates normally; the
+asymmetry was invisible until the view tried to call back.
 
 ## What a client may cache
 
