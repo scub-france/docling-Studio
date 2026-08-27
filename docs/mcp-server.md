@@ -253,6 +253,16 @@ ends up laid out at a width the host then cuts off. Its own breakpoints are
 container queries against the card, not media queries against the window — in a
 400 px frame a viewport query answers a question about the frame.
 
+The card's own rows cannot size the card. `.body` is a grid, and its column is
+floored at `minmax(0, 1fr)` rather than left implicit: an `auto` track is
+`minmax(min-content, max-content)`, and an `auto` minimum has no floor — its
+base size is the largest min-content contribution among the rows, and it is
+allowed to exceed the grid's own content box. The anchor is `white-space:
+nowrap`, so its min-content is the whole unbroken `dstudio://` URI — 722 px.
+Every row of the body was laid out at that width inside a 700 px card and
+clipped by `.card`'s `overflow: hidden`: every line, at the same place,
+mid-word.
+
 When the frame is fixed and the card still does not fit, the card scales.
 `.card` is an `overflow: hidden` box, so content its grid cannot fit is cut off
 *inside* it — mid-word, with no scrollbar, and invisible to any check on the

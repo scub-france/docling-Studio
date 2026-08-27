@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import io
+import re
 from pathlib import Path
 
 import pytest
@@ -421,6 +422,20 @@ class TestTemplate:
         assert '"100vw"' not in CITATION_APP_HTML
         assert '"100vh"' not in CITATION_APP_HTML
         assert 'root.width = "100%"' in CITATION_APP_HTML
+
+    def test_no_row_of_the_card_can_size_the_card(self):
+        # The bug this pins: `.body` was `display: grid` with no
+        # `grid-template-columns`, so its single implicit column was `auto` —
+        # `minmax(min-content, max-content)` — and an `auto` *minimum* has no
+        # floor. Its base size is the largest min-content contribution among
+        # the items, and it may exceed the grid's own content box. `.anchor` is
+        # `white-space: nowrap`, so its min-content is the whole unbroken
+        # `dstudio://` URI: 722px, measured. Every row of the body was laid out
+        # at 722px inside a 700px card and clipped by `.card`'s
+        # `overflow: hidden` — every line, at the same place, mid-word.
+        body = re.search(r"\.body \{[^}]*\}", _stylesheet(), re.S)
+        assert body is not None
+        assert "grid-template-columns: minmax(0, 1fr)" in body.group(0)
 
     def test_scales_the_card_down_rather_than_letting_it_be_cut(self):
         # The frame's width is the host's and it does not negotiate. `.card`
