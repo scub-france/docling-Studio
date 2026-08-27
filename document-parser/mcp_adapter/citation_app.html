@@ -604,7 +604,9 @@
       button.addEventListener("click", () => act(button.dataset.act, view));
     }
     // Covers a host whose engine has no ResizeObserver; where there is one it
-    // reports again, more accurately, once the image has decoded.
+    // reports again, more accurately, once the image has decoded. The card is
+    // brand new, so the fit is measured rather than reused.
+    fitToFrame(true);
     reportSize();
   }
 
@@ -840,6 +842,7 @@
       track.firstElementChild.style.width = `${at * 100}%`;
       track.hidden = false;
     }
+    fitToFrame(true);
     reportSize();
   }
 
@@ -847,6 +850,7 @@
     sheet.classList.remove("pending");
     sheet.classList.add("failed");
     sheet.innerHTML = `<p class="fallback">${esc(message)}</p>`;
+    fitToFrame(true);
     reportSize();
   }
 
@@ -861,11 +865,62 @@
   // the frame's current width, so the notification only ever asks to grow
   // vertically; the frame's width is the host's to decide, and it has already
   // said so through `containerDimensions`.
+  // ---- fitting a fixed frame ------------------------------------------
+  // The frame's width is the host's, and it does not negotiate: it hands the
+  // view a number and clips whatever exceeds it. The card is built to shrink,
+  // but `.card` is an `overflow: hidden` box — anything its own grid cannot
+  // fit is cut off inside it, mid-word, with no scrollbar to reveal it. That
+  // is what a reader sees as a truncated card, and it is invisible to a check
+  // on the document's width, because the document never overflowed.
+  //
+  // So: measure what the card actually needs, and scale by exactly the
+  // shortfall. `zoom` rather than `transform: scale()` because zoom is part of
+  // layout — the height reported to the host afterwards is the height the card
+  // now occupies, where a transform would report the unscaled one and leave a
+  // gap under the card.
+  //
+  // Bounded at 80%: past that the fix is worse than the symptom, and a frame
+  // that narrow wants the single-column layout, which it already gets.
+  const MIN_ZOOM = 0.8;
+  let fitNote = "";
+  // The width the current zoom was computed for. Re-fitting is driven by the
+  // ResizeObserver, and the fit itself resizes what that observer watches —
+  // so a fit that recomputed every time would answer its own notification
+  // forever. It recomputes when the frame changes, or when the card does.
+  let fittedFor = null;
+
+  function fitToFrame(contentChanged) {
+    const main = document.querySelector("main");
+    const card = main && main.querySelector(".card");
+    if (!main || !card) return;
+    const available = document.documentElement.clientWidth;
+    if (!available) return;
+    if (!contentChanged && fittedFor === available) return;
+    fittedFor = available;
+
+    main.style.zoom = "";
+    // `scrollWidth` still reports content clipped by `overflow: hidden`, which
+    // is the whole reason this can be measured at all.
+    const gutter = Math.max(0, main.offsetWidth - card.offsetWidth);
+    const needed = Math.max(main.scrollWidth, card.scrollWidth + gutter);
+    fitNote = `frame ${available} · content ${needed}`;
+    if (needed <= available + 1) return;
+
+    const zoom = Math.max(MIN_ZOOM, available / needed);
+    main.style.zoom = String(zoom);
+    fitNote += ` · zoom ${zoom.toFixed(2)}`;
+  }
+
   let lastHeight = 0;
   let lastWidth = 0;
   function reportSize() {
     const main = document.querySelector("main");
     if (!main) return;
+    fitToFrame(false);
+    const origin = main.querySelector(".origin");
+    // Not decoration: if a card still comes back clipped, these two numbers
+    // say whether the content was too wide or the frame was.
+    if (origin && fitNote) origin.title = fitNote;
     const height = Math.ceil(main.getBoundingClientRect().height);
     // Clamped to what the host declared. A host that honours this width sets
     // the frame from it, so reporting more than it offered is how the card

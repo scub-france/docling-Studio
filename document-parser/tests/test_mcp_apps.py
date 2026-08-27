@@ -422,6 +422,30 @@ class TestTemplate:
         assert '"100vh"' not in CITATION_APP_HTML
         assert 'root.width = "100%"' in CITATION_APP_HTML
 
+    def test_scales_the_card_down_rather_than_letting_it_be_cut(self):
+        # The frame's width is the host's and it does not negotiate. `.card`
+        # is an `overflow: hidden` box, so anything its grid cannot fit is cut
+        # off inside it, mid-word, with no scrollbar — and invisible to a check
+        # on the document's width, because the document never overflowed.
+        # `scrollWidth` still reports content clipped that way, so the shortfall
+        # is measurable and the card is scaled by exactly it.
+        assert "fitToFrame" in CITATION_APP_HTML
+        assert "scrollWidth" in CITATION_APP_HTML
+        assert "MIN_ZOOM" in CITATION_APP_HTML
+
+    def test_the_fit_cannot_answer_its_own_resize_notification(self):
+        # Re-fitting is driven by the ResizeObserver, and the fit resizes what
+        # that observer watches. Without the cache this is a loop.
+        assert "fittedFor" in CITATION_APP_HTML
+        assert "fitToFrame(false)" in CITATION_APP_HTML
+        assert "fitToFrame(true)" in CITATION_APP_HTML
+
+    def test_says_what_it_measured_when_a_card_still_does_not_fit(self):
+        # If a card comes back clipped anyway, these two numbers separate "the
+        # content was too wide" from "the frame was".
+        assert "fitNote" in CITATION_APP_HTML
+        assert "frame ${available} · content ${needed}" in CITATION_APP_HTML
+
     def test_never_asks_for_more_width_than_the_host_offered(self):
         # A host that honours the reported width sets the frame from it.
         assert "ceiling" in CITATION_APP_HTML
