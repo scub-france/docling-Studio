@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from domain.navigation import CitationStatus
 from mcp_adapter.wire import (
     CitationOut,
+    CitationRef,
     DocumentRow,
     DocumentSearchResult,
     ExcerptResult,
@@ -74,7 +75,7 @@ def search_result(search: DocumentSearch) -> DocumentSearchResult:
 
 def outline_entry(node: OutlineNode) -> OutlineEntry:
     return OutlineEntry(
-        uri=node.uri,
+        ref=node.ref,
         title=neutralise(node.title),
         kind=node.kind,
         level=node.level,
@@ -97,9 +98,28 @@ def outline_result(outline: DocumentOutline) -> OutlineResult:
         entries=[outline_entry(node) for node in outline.nodes],
         pages=outline.page_count,
         next_step=(
-            "Call read_element(uri=…) with the uri of the entry you need. Reading the whole "
-            f"document would cost about {outline.total_est_tokens} tokens."
+            "Read an entry with read_element(document_id=…, ref=…) — the ref from the entry, "
+            f"the document_id from this result. Reading the whole document would cost about "
+            f"{outline.total_est_tokens} tokens."
         ),
+    )
+
+
+# Enough words to tell one passage from another without re-sending it.
+PREVIEW_WORDS = 8
+
+
+def citation_ref(citation: Citation) -> CitationRef:
+    """The pointer form: anchor, page, and a few words to recognise it by."""
+    words = neutralise(citation.quote).split()
+    preview = " ".join(words[:PREVIEW_WORDS])
+    if len(words) > PREVIEW_WORDS:
+        preview += " …"
+    return CitationRef(
+        uri=citation.uri,
+        ref=citation.ref,
+        preview=preview,
+        page=citation.page,
     )
 
 
@@ -174,7 +194,7 @@ def excerpt_result(excerpt: Excerpt) -> ExcerptResult:
         ),
         est_tokens=excerpt.est_tokens,
         truncated=excerpt.truncated,
-        citations=[citation_out(citation) for citation in excerpt.citations],
+        citations=[citation_ref(citation) for citation in excerpt.citations],
         next_step=_excerpt_next_step(excerpt),
         next_cursor=excerpt.next_cursor,
         first_page=excerpt.page_range[0] if excerpt.page_range else None,

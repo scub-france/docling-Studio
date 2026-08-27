@@ -338,17 +338,19 @@ class FakeRasterizer:
         self._size = (width, height)
         self._forced = png_bytes
         self.renders: list[tuple[int, int]] = []
+        self.formats: list[str] = []
 
     def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
         self.renders.append((page, dpi))
         return self._png(*self._size)
 
-    def crop(self, png: bytes, box):
+    def crop(self, png: bytes, box, *, fmt: str = "PNG"):
         from domain.navigation import RasterCrop
 
         left, top, right, bottom = box
         width, height = max(1, right - left), max(1, bottom - top)
-        raw = self._png(width, height)
+        self.formats.append(fmt)
+        raw = self._encode(width, height, fmt)
         if self._forced is not None:
             # Pad to a size the budget cannot satisfy, to drive the ladder.
             raw = raw + b"\0" * max(0, self._forced - len(raw))
@@ -356,12 +358,16 @@ class FakeRasterizer:
 
     @staticmethod
     def _png(width: int, height: int) -> bytes:
+        return FakeRasterizer._encode(width, height, "PNG")
+
+    @staticmethod
+    def _encode(width: int, height: int, fmt: str) -> bytes:
         import io
 
         from PIL import Image
 
         buffer = io.BytesIO()
-        Image.new("RGB", (max(1, width), max(1, height)), "white").save(buffer, format="PNG")
+        Image.new("RGB", (max(1, width), max(1, height)), "white").save(buffer, format=fmt.upper())
         return buffer.getvalue()
 
 

@@ -32,7 +32,13 @@ class PdfPageRasterizer:
         images[0].save(buffer, format="PNG")
         return buffer.getvalue()
 
-    def crop(self, png: bytes, box: tuple[int, int, int, int]) -> RasterCrop:
+    def crop(
+        self,
+        png: bytes,
+        box: tuple[int, int, int, int],
+        *,
+        fmt: str = "PNG",
+    ) -> RasterCrop:
         from PIL import Image
 
         image = Image.open(io.BytesIO(png))
@@ -48,5 +54,11 @@ class PdfPageRasterizer:
         )
         cropped = image.crop(clamped)
         buffer = io.BytesIO()
-        cropped.save(buffer, format="PNG", optimize=True)
+        if fmt.upper() == "WEBP":
+            # Half the bytes of PNG on rendered text, and a third of them on a
+            # scaled-down page — PNG is lossless per pixel, which is exactly
+            # the wrong trade for an image nobody will pixel-peep.
+            cropped.convert("RGB").save(buffer, format="WEBP", quality=78, method=6)
+        else:
+            cropped.save(buffer, format="PNG", optimize=True)
         return RasterCrop(png=buffer.getvalue(), width=cropped.width, height=cropped.height)
