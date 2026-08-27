@@ -57,9 +57,71 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  main { max-width: 940px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+  main { max-width: 940px; margin: 0 auto; padding: 20px; display: grid; gap: 12px; }
 
-  /* ---- header ------------------------------------------------------- */
+  /* ---- the card ----------------------------------------------------- */
+
+  /* One object, two halves: a rail that answers "where in the document", and
+     a body that answers "what was said, and can it be trusted". */
+  .card {
+    display: grid;
+    grid-template-columns: 188px minmax(0, 1fr);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  @media (max-width: 620px) { .card { grid-template-columns: minmax(0, 1fr); } }
+
+  /* ---- rail: the page, and where the passage sits on it -------------- */
+
+  .rail {
+    background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
+    border-right: 1px solid var(--border);
+    padding: 18px 16px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    justify-items: center;
+  }
+  @media (max-width: 620px) {
+    .rail { border-right: 0; border-bottom: 1px solid var(--border); }
+  }
+  .sheet {
+    position: relative;
+    line-height: 0;
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .sheet img { display: block; width: 100%; height: auto; }
+  /* Where the passage is. A filled band, not a hairline box: at this size a
+     paragraph is four grey lines, and an outline that thin reads as noise. */
+  .sheet .mark {
+    position: absolute;
+    background: color-mix(in srgb, var(--accent) 34%, transparent);
+    outline: 1.5px solid var(--accent);
+    border-radius: 2px;
+  }
+  .sheet.pending { aspect-ratio: 1 / 1.35; background: var(--bg-elevated); }
+  .pager { font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--accent); }
+  .pager b { font-weight: 600; }
+  /* Position in the document, not progress through a task: the fill is a
+     marker of where you are, which is why it is thin and never animates. */
+  .track {
+    width: 100%;
+    height: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    overflow: hidden;
+  }
+  .track span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+
+  /* ---- body --------------------------------------------------------- */
+
+  .body { padding: 18px 20px 20px; display: grid; gap: 14px; align-content: start; min-width: 0; }
 
   .crumbs {
     font-size: 12px;
@@ -72,91 +134,46 @@
   .crumbs .sep { color: var(--border-light); }
   .crumbs b { color: var(--text-secondary); font-weight: 500; }
 
-  .headline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .headline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
-  /* Element-type swatch — colour comes from the payload's `label` through the
-     Studio palette (frontend/src/shared/elementColors.ts). */
+  /* Element type. The pill is the same for every kind so the row stays calm;
+     the dot carries the colour, from the Studio palette
+     (frontend/src/shared/elementColors.ts). */
   .kind {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    font-size: 11px;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 10.5px;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    padding: 5px 11px;
+    padding: 6px 12px;
     border-radius: 999px;
-    border: 1px solid currentColor;
-    background: var(--bg-surface);
+    background: var(--text);
+    color: var(--bg-surface);
   }
-  .kind .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: currentColor; flex: none;
-  }
-  .page-chip {
-    font-size: 12px;
-    color: var(--text-secondary);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 5px 11px;
-  }
+  .kind .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
   .shape { font-size: 12px; color: var(--text-muted); }
-  /* Context cost of the quoted text. Muted on purpose: it is an estimate, and
-     an estimate that looks like a measurement gets trusted like one. */
-  .cost {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-secondary);
-    background: var(--accent-muted);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 5px 11px;
-    cursor: help;
-  }
+  /* Which server, which tool: a card outlives the conversation that produced
+     it, and should still say where it came from. */
+  .origin { margin-left: auto; font-size: 12px; color: var(--text-muted); }
 
-  /* ---- page image --------------------------------------------------- */
-
-  figure {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    background: #fff;
-  }
-  /* Capped in px, deliberately not in vh: the app asks the host to resize the
-     frame to its content, and a viewport-relative image would grow with the
-     frame it just caused to grow. */
-  figure img { display: block; width: 100%; height: auto; max-height: 460px; object-fit: contain; }
-  figure.pending { min-height: 3.5rem; display: grid; place-items: center; }
-  /* Where the passage sits on its page. Small on purpose: it answers "where",
-     the crop above answers "what". */
-  .locator { margin: 0; display: flex; gap: 10px; align-items: flex-start; }
-  .locator .sheet { position: relative; flex: 0 0 auto; line-height: 0;
-                    border: 1px solid var(--line); border-radius: 3px; overflow: hidden;
-                    background: #fff; }
-  .locator .sheet img { display: block; width: 150px; height: auto; }
-  .locator .mark { position: absolute; background: color-mix(in srgb, var(--mark) 30%, transparent);
-                   outline: 1.5px solid var(--mark); border-radius: 1px; }
-  .locator figcaption { border: 0; padding: 0; margin: 0; }
-  figcaption {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-muted);
-    background: var(--bg-elevated);
-    padding: 8px 12px;
-    border-top: 1px solid var(--border);
-  }
+  .rule { height: 1px; background: var(--border); }
 
   /* ---- the quote ---------------------------------------------------- */
 
-  .quote {
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 var(--radius) var(--radius) 0;
-    background: var(--bg-surface);
-    padding: 16px 18px;
-    overflow-wrap: anywhere;
+  .quote { overflow-wrap: anywhere; }
+  /* A heading — or anything short enough to read as one — is the card's
+     title. A paragraph is not: 400 characters set at 25px is shouting. */
+  .quote.as-title {
+    font-size: 25px;
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
   }
+  .quote.as-title p { margin: 0; }
   .quote > :first-child { margin-top: 0; }
   .quote > :last-child { margin-bottom: 0; }
 
@@ -224,47 +241,50 @@
   /* ---- provenance --------------------------------------------------- */
 
   .meta {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg-surface);
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px 20px;
   }
-  .meta div {
-    padding: 10px 14px;
-    border-right: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    min-width: 0;
-  }
+  .meta div { min-width: 0; }
   .meta dt {
     font-size: 10px;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--text-muted);
     font-weight: 600;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
   }
   .meta dd {
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 12.5px;
     color: var(--text-secondary);
     overflow-wrap: anywhere;
   }
+  /* The server tally belongs in the last column, beside the citation it is
+     counting, not wherever the flow happens to put it. */
+  .meta .last-column { grid-column: -2 / -1; }
 
+  /* The anchor sits beside the buttons that copy it, truncated: it is there
+     to be recognised, not read. */
   .anchor {
     font-family: var(--mono);
     font-size: 11px;
     color: var(--text-muted);
-    overflow-wrap: anywhere;
+    flex: 1 1 200px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* ---- actions ------------------------------------------------------ */
 
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   button {
     font: inherit;
     font-size: 13px;
-    padding: 8px 14px;
+    font-weight: 500;
+    padding: 9px 16px;
     border-radius: var(--radius-sm);
     cursor: pointer;
     border: 1px solid var(--border-light);
@@ -272,6 +292,8 @@
     color: var(--text);
     transition: color var(--transition), border-color var(--transition), background var(--transition);
   }
+  button.primary { background: var(--text); border-color: var(--text); color: var(--bg-surface); }
+  button.primary:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
   button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-muted); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .said { font-size: 12px; color: var(--accent); }
@@ -288,7 +310,7 @@
 </style>
 </head>
 <body>
-<main id="root"><p class="status">Waiting for a citation…</p></main>
+<main id="root"><p class="status">En attente d'une citation…</p></main>
 <script>
   "use strict";
   const root = document.getElementById("root");
@@ -420,10 +442,19 @@
   // `ui/open-link` would do nothing: offer the button only when the link can
   // actually be opened, and say why when it cannot.
   const isAbsolute = (url) => /^[a-z][a-z0-9+.-]*:\/\//i.test(String(url || ""));
+  // Grouped the way the rest of the product writes numbers. A narrow
+  // no-break space, so a five-figure tally never wraps mid-number.
+  const num = (value) => String(value ?? "").replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
   const shortHash = (h) => {
     const hex = String(h || "").replace(/^sha256:/, "");
     return hex ? "sha256:" + hex.slice(0, 12) + "…" : "—";
   };
+
+  // A heading is the card's title. So is anything short enough to read as
+  // one — a date, a figure caption, a clause number — because setting four
+  // words as body text under a rule looks like an accident.
+  const TITLE_CHARS = 90;
+  const HEADING_LABELS = new Set(["title", "section_header", "page_header", "caption"]);
 
   function render(view) {
     if (!view || !view.quote) return;
@@ -431,6 +462,7 @@
     const { html, stats } = renderMarkdown(view.quote);
     const color = colorFor(view.label);
     const kind = String(view.label || "element").replace(/_/g, " ");
+    const asTitle = HEADING_LABELS.has(String(view.label || "")) || stats.chars <= TITLE_CHARS;
 
     const crumbs = (view.headings || []).length
       ? `<nav class="crumbs">${(view.headings || [])
@@ -439,57 +471,67 @@
       : "";
 
     const shape = stats.rows
-      ? `${stats.rows} rows × ${stats.columns} columns`
-      : `${stats.chars} characters`;
+      ? `${num(stats.rows)} lignes × ${stats.columns} colonnes`
+      : `${num(stats.chars)} caractères`;
+    const cost = view.est_tokens ? ` · ≈ ${num(view.est_tokens)} tokens` : "";
 
-    // The figure is always emitted; when the payload carries no raster the
-    // view fetches its own through the app-only tool, so the picture never
-    // travels through the model's context.
-    const image = view.page_image
-      ? `<figure id="citation-figure">
-           <img alt="The cited passage on page ${esc(view.page)}" src="${esc(view.page_image)}">
-           <figcaption>page ${esc(view.page)} · ${esc(view.ref)}</figcaption>
-         </figure>`
-      : `<figure id="citation-figure" class="pending">
-           <figcaption>Loading the page…</figcaption>
-         </figure>`;
-    // Filled by `hydrateLocator` — a page thumbnail with the passage marked
-    // on it, so a reader sees *where* as well as *what*.
-    const locator = `<figure id="page-locator" hidden></figure>`;
+    // The rail's picture: the page thumbnail this view fetches for itself, or
+    // the crop the server inlined when MCP_INLINE_CITATION_IMAGE is on.
+    const sheet = view.page_image
+      ? `<div class="sheet" id="page-sheet"><img alt="Le passage cité, page ${esc(
+          view.page
+        )}" src="${esc(view.page_image)}"></div>`
+      : `<div class="sheet pending" id="page-sheet"></div>`;
 
     root.innerHTML = `
-      ${crumbs}
-      <div class="headline">
-        <span class="kind" style="color: ${esc(color)}"><span class="dot"></span>${esc(kind)}</span>
-        ${view.page ? `<span class="page-chip">page ${esc(view.page)}</span>` : ""}
-        ${view.total_est_tokens
-          ? `<span class="cost" title="Everything this MCP server has served since it started, across all its tools — priced at ~4 characters per token, page images excluded. Over stdio that is this session; over HTTP it is every client of this backend.">Σ ≈ ${esc(view.total_est_tokens)} tokens · ${esc(view.total_calls)} calls</span>`
-          : ""}
-        <span class="shape">${esc(shape)}</span>
+      <div class="card">
+        <aside class="rail">
+          ${sheet}
+          <div class="pager" id="pager">page <b>${esc(view.page ?? "—")}</b></div>
+          <div class="track" id="track" hidden><span style="width:0"></span></div>
+        </aside>
+        <div class="body">
+          ${crumbs}
+          <div class="headline">
+            <span class="kind"><span class="dot" style="background:${esc(
+              color
+            )}"></span>${esc(kind)}</span>
+            <span class="shape">${esc(shape)}${cost}</span>
+            <span class="origin">docling-studio · show_citation</span>
+          </div>
+          <div class="quote${asTitle ? " as-title" : ""}">${html}</div>
+          <div class="rule"></div>
+          <dl class="meta">
+            <div><dt>Element</dt><dd>${esc(view.ref)}</dd></div>
+            <div><dt>Document</dt><dd title="${esc(view.document_id)}">${esc(
+              short(view.document_id)
+            )}</dd></div>
+            <div><dt>Parse version</dt><dd title="${esc(view.version_id)}">${esc(
+              short(view.version_id)
+            )}</dd></div>
+            <div><dt>Quote hash</dt><dd title="${esc(view.quote_hash)}">${esc(
+              shortHash(view.quote_hash)
+            )}</dd></div>
+            <div class="last-column"><dt>Total serveur</dt><dd title="Tout ce que ce serveur MCP a servi depuis son démarrage, tous outils confondus — estimé à ~4 caractères par token, images exclues. En stdio c'est cette session ; en HTTP, tous les clients de ce backend.">${
+              view.total_est_tokens
+                ? num(view.total_est_tokens) + " tok · " + esc(view.total_calls) + " appels"
+                : "—"
+            }</dd></div>
+          </dl>
+          <div class="row">
+            <button class="primary" data-act="copy">Copier la citation</button>
+            <button data-act="anchor">Copier l'ancre</button>
+            ${isAbsolute(view.deep_link) ? '<button data-act="open">Ouvrir dans Studio</button>' : ""}
+            <span class="anchor" title="${esc(view.uri)}">${esc(view.uri)}</span>
+            <span class="said" id="said"></span>
+          </div>
+        </div>
       </div>
-      ${image}
-      ${locator}
       ${view.image_note ? `<div class="note">${esc(view.image_note)}</div>` : ""}
-      <div class="quote">${html}</div>
-      <dl class="meta">
-        <div><dt>Element</dt><dd>${esc(view.ref)}</dd></div>
-        <div><dt>Page</dt><dd>${view.page ? esc(view.page) : "—"}</dd></div>
-        <div><dt>Document</dt><dd title="${esc(view.document_id)}">${esc(short(view.document_id))}</dd></div>
-        <div><dt>Parse version</dt><dd title="${esc(view.version_id)}">${esc(short(view.version_id))}</dd></div>
-        <div><dt>Quote hash</dt><dd title="${esc(view.quote_hash)}">${esc(shortHash(view.quote_hash))}</dd></div>
-        <div><dt>This citation</dt><dd>${view.est_tokens ? "≈ " + esc(view.est_tokens) + " tokens" : "—"}</dd></div>
-        <div><dt>Page image</dt><dd>${esc(kb(view.image_bytes) || "not rendered")}</dd></div>
-        <div><dt>Server total</dt><dd>${view.total_est_tokens ? "≈ " + esc(view.total_est_tokens) + " tokens · " + esc(view.total_calls) + " calls" : "—"}</dd></div>
-      </dl>
-      <div class="anchor">${esc(view.uri)}</div>
-      <div class="row">
-        <button data-act="copy">Copy citation</button>
-        <button data-act="anchor">Copy anchor</button>
-        ${isAbsolute(view.deep_link) ? '<button data-act="open">Open in Studio</button>' : ""}
-        <span class="said" id="said"></span>
-      </div>
       ${view.deep_link && !isAbsolute(view.deep_link)
-        ? `<div class="note">Set <code>MCP_STUDIO_BASE_URL</code> on the server to enable “Open in Studio” — the deep link is currently a bare path (<code>${esc(view.deep_link)}</code>), which the host cannot resolve.</div>`
+        ? `<div class="note">Renseigne <code>MCP_STUDIO_BASE_URL</code> côté serveur pour activer « Ouvrir dans Studio » — le lien profond est pour l'instant un chemin nu (<code>${esc(
+            view.deep_link
+          )}</code>), que l'hôte ne sait pas résoudre.</div>`
         : ""}`;
 
     for (const button of root.querySelectorAll("button")) {
@@ -509,11 +551,11 @@
 
   function act(kind, view) {
     if (kind === "copy") {
-      copy(`"${view.quote}" — ${view.uri}`, "Citation copied");
+      copy(`"${view.quote}" — ${view.uri}`, "Citation copiée");
       return;
     }
     if (kind === "anchor") {
-      copy(view.uri, "Anchor copied");
+      copy(view.uri, "Ancre copiée");
       return;
     }
     if (kind === "open") {
@@ -591,8 +633,8 @@
   // would have been ~7 400 tokens through a tool result, and twice that on a
   // host that forwards both representations.
   async function hydrateLocator(view) {
-    const figure = document.getElementById("page-locator");
-    if (!figure) return;
+    const sheet = document.getElementById("page-sheet");
+    if (!sheet || !sheet.classList.contains("pending")) return;
     try {
       const result = await call("tools/call", {
         name: "get_citation_image",
@@ -604,9 +646,10 @@
         result?.structured_content ??
         JSON.parse(result?.content?.[0]?.text ?? "{}");
       if (!img || !img.data_uri || !img.width || !img.height) return;
-      // The server hands back the box in this image's own pixels, so the
-      // overlay is a percentage of the rendered size and survives any width
-      // the host gives us.
+
+      // The server hands the box back in this image's own pixels, so the
+      // overlay is a percentage of the rendered size and survives whatever
+      // width the host gives the frame.
       const box = img.highlight;
       const mark = box
         ? `<div class="mark" style="left:${(box[0] / img.width) * 100}%;top:${
@@ -615,44 +658,26 @@
             ((box[3] - box[1]) / img.height) * 100
           }%"></div>`
         : "";
-      const of = img.page_count ? ` of ${esc(img.page_count)}` : "";
-      figure.innerHTML =
-        `<div class="sheet"><img alt="Page ${esc(img.page)}${of}, the cited passage marked" ` +
-        `src="${esc(img.data_uri)}">${mark}</div>` +
-        `<figcaption>Page ${esc(img.page)}${of}<br>The marked band is the passage above.</figcaption>`;
-      figure.classList.add("locator");
-      figure.hidden = false;
+      sheet.classList.remove("pending");
+      sheet.innerHTML =
+        `<img alt="Page ${esc(img.page)}, le passage cité surligné" src="${esc(
+          img.data_uri
+        )}">` + mark;
+
+      const pager = document.getElementById("pager");
+      const track = document.getElementById("track");
+      if (pager && img.page_count) {
+        pager.innerHTML = `page <b>${esc(img.page)}</b> / ${esc(img.page_count)}`;
+      }
+      if (track && img.page_count > 1) {
+        // Where this page sits in the document. Full width means the last
+        // page, not "finished".
+        const at = Math.max(0, Math.min(1, img.page / img.page_count));
+        track.firstElementChild.style.width = `${at * 100}%`;
+        track.hidden = false;
+      }
     } catch (_) {
       // A locator is a nicety; its absence is not worth a message.
-    }
-    reportSize();
-  }
-
-  // ---- the page raster -------------------------------------------------
-  async function hydrateImage(view) {
-    const figure = document.getElementById("citation-figure");
-    if (!figure || !figure.classList.contains("pending")) return;
-    try {
-      const result = await call("tools/call", {
-        name: "get_citation_image",
-        arguments: { uri: view.uri },
-      });
-      if (result && result.isError) throw new Error("the server could not render the page");
-      const payload =
-        result?.structuredContent ??
-        result?.structured_content ??
-        JSON.parse(result?.content?.[0]?.text ?? "{}");
-      if (!payload || !payload.data_uri) throw new Error("no image came back");
-      figure.classList.remove("pending");
-      figure.innerHTML =
-        `<img alt="The cited passage on page ${esc(view.page)}" src="${esc(payload.data_uri)}">` +
-        `<figcaption>page ${esc(view.page)} · ${esc(view.ref)}</figcaption>`;
-    } catch (err) {
-      // The citation itself is unaffected — say what is missing and why.
-      figure.classList.remove("pending");
-      figure.innerHTML =
-        `<figcaption>The page image is unavailable (${esc(err.message)}). ` +
-        `The citation above is unaffected.</figcaption>`;
     }
     reportSize();
   }
@@ -714,7 +739,6 @@
     const view = extract(event.data);
     if (view) {
       render(view);
-      hydrateImage(view);
       hydrateLocator(view);
     }
   });
