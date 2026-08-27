@@ -208,7 +208,27 @@
 
   /* ---- body --------------------------------------------------------- */
 
-  .body { padding: 18px 20px 20px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+  /* `grid-template-columns`, not the implicit `auto` column it had. An `auto`
+     track is `minmax(min-content, max-content)`, and an `auto` *minimum* has
+     no floor: its base size is the largest min-content contribution among the
+     items, and that base size is allowed to exceed the grid's own content box.
+     One item demanded 722px — `.row`, because `.anchor` is `white-space:
+     nowrap` and its min-content is the whole unbroken `dstudio://` URI — so
+     every row of the body was laid out 722px wide inside a 700px card and
+     clipped by `.card`'s `overflow: hidden`. Every line, at the same place,
+     mid-word.
+
+     `minmax(0, 1fr)` floors the track at zero, and because its max is a
+     flexible `1fr` the items' own automatic minimum stops applying too. Same
+     idiom `.card` already uses for this same reason. */
+  .body {
+    padding: 18px 20px 20px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    align-content: start;
+    min-width: 0;
+  }
 
   .crumbs {
     font-size: 12px;
@@ -1069,6 +1089,15 @@
   //
   // Bounded at 80%: past that the fix is worse than the symptom, and a frame
   // that narrow wants the single-column layout, which it already gets.
+  //
+  // What this CANNOT fix, and must not be relied on for: an overflow whose
+  // cause is an intrinsic minimum. `zoom` scales the whole coordinate system,
+  // so a `white-space: nowrap` string — a length in that same space — grows in
+  // lockstep and the shortfall never closes. That is exactly how the card was
+  // being cut before `.body`'s column got its `minmax(0, 1fr)` floor: one pass
+  // moved the card's width from 874 to 928 against an invariant 929.33 target.
+  // A row that cannot shrink has to be made able to; scaling only ever buys
+  // room for one that can.
   const MIN_ZOOM = 0.8;
   let fitNote = "";
   // The width the current zoom was computed for. Re-fitting is driven by the
