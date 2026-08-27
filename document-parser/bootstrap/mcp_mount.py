@@ -75,8 +75,15 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
     mcp_app = server.streamable_http_app(
         streamable_http_path=MCP_PATH,
         # Stateless: every request stands alone, so the surface survives a
-        # reload or a second worker without sticky sessions. Nothing the
-        # tools do needs continuity between calls.
+        # reload or a second worker without sticky sessions. The tools need no
+        # continuity between calls — but note what it costs, because it is not
+        # nothing: on the 2025-era protocol path the SDK serves each request
+        # from a fresh `Connection.from_envelope(pv, None, None)`, so
+        # `ctx.client_capabilities` is None and anything derived from the
+        # client's `initialize` — `client_supports_apps` above all — reads as
+        # "not supported" for every HTTP caller. Nothing here consults it (see
+        # `mcp_adapter/apps.py`); a future branch on negotiated capabilities
+        # would have to go stateful, and pay for session affinity, first.
         stateless_http=True,
         transport_security=_transport_security(),
     )
