@@ -287,6 +287,12 @@ class TestTemplate:
         assert CITATION_APP_HTML.lstrip().startswith("<!doctype html>")
         assert "</html>" in CITATION_APP_HTML
 
+    def test_the_view_asks_for_both_rasters_itself(self):
+        # Neither the crop nor the page thumbnail travels through the model.
+        assert 'name: "get_citation_image"' in CITATION_APP_HTML
+        assert 'kind: "page"' in CITATION_APP_HTML
+        assert "page_image" in CITATION_APP_HTML  # the escape hatch still renders
+
     def test_loads_nothing_from_the_network(self):
         # The default MCP Apps CSP is `connect-src 'none'` with `img-src 'self'
         # data:`; anything remote would silently fail to load, so the template

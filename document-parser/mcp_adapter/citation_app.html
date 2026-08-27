@@ -128,6 +128,16 @@
      frame it just caused to grow. */
   figure img { display: block; width: 100%; height: auto; max-height: 460px; object-fit: contain; }
   figure.pending { min-height: 3.5rem; display: grid; place-items: center; }
+  /* Where the passage sits on its page. Small on purpose: it answers "where",
+     the crop above answers "what". */
+  .locator { margin: 0; display: flex; gap: 10px; align-items: flex-start; }
+  .locator .sheet { position: relative; flex: 0 0 auto; line-height: 0;
+                    border: 1px solid var(--line); border-radius: 3px; overflow: hidden;
+                    background: #fff; }
+  .locator .sheet img { display: block; width: 150px; height: auto; }
+  .locator .mark { position: absolute; background: color-mix(in srgb, var(--mark) 30%, transparent);
+                   outline: 1.5px solid var(--mark); border-radius: 1px; }
+  .locator figcaption { border: 0; padding: 0; margin: 0; }
   figcaption {
     font-family: var(--mono);
     font-size: 11px;
@@ -443,6 +453,9 @@
       : `<figure id="citation-figure" class="pending">
            <figcaption>Loading the page…</figcaption>
          </figure>`;
+    // Filled by `hydrateLocator` — a page thumbnail with the passage marked
+    // on it, so a reader sees *where* as well as *what*.
+    const locator = `<figure id="page-locator" hidden></figure>`;
 
     root.innerHTML = `
       ${crumbs}
@@ -455,6 +468,7 @@
         <span class="shape">${esc(shape)}</span>
       </div>
       ${image}
+      ${locator}
       ${view.image_note ? `<div class="note">${esc(view.image_note)}</div>` : ""}
       <div class="quote">${html}</div>
       <dl class="meta">
@@ -571,6 +585,49 @@
     return true;
   }
 
+  // ---- where the passage sits on its page ------------------------------
+  // A second app-only fetch. It is affordable precisely because it does not
+  // pass through the model's context: a 320px page is ~25 KB of WebP, which
+  // would have been ~7 400 tokens through a tool result, and twice that on a
+  // host that forwards both representations.
+  async function hydrateLocator(view) {
+    const figure = document.getElementById("page-locator");
+    if (!figure) return;
+    try {
+      const result = await call("tools/call", {
+        name: "get_citation_image",
+        arguments: { uri: view.uri, kind: "page" },
+      });
+      if (result && result.isError) return;
+      const img =
+        result?.structuredContent ??
+        result?.structured_content ??
+        JSON.parse(result?.content?.[0]?.text ?? "{}");
+      if (!img || !img.data_uri || !img.width || !img.height) return;
+      // The server hands back the box in this image's own pixels, so the
+      // overlay is a percentage of the rendered size and survives any width
+      // the host gives us.
+      const box = img.highlight;
+      const mark = box
+        ? `<div class="mark" style="left:${(box[0] / img.width) * 100}%;top:${
+            (box[1] / img.height) * 100
+          }%;width:${((box[2] - box[0]) / img.width) * 100}%;height:${
+            ((box[3] - box[1]) / img.height) * 100
+          }%"></div>`
+        : "";
+      const of = img.page_count ? ` of ${esc(img.page_count)}` : "";
+      figure.innerHTML =
+        `<div class="sheet"><img alt="Page ${esc(img.page)}${of}, the cited passage marked" ` +
+        `src="${esc(img.data_uri)}">${mark}</div>` +
+        `<figcaption>Page ${esc(img.page)}${of}<br>The marked band is the passage above.</figcaption>`;
+      figure.classList.add("locator");
+      figure.hidden = false;
+    } catch (_) {
+      // A locator is a nicety; its absence is not worth a message.
+    }
+    reportSize();
+  }
+
   // ---- the page raster -------------------------------------------------
   async function hydrateImage(view) {
     const figure = document.getElementById("citation-figure");
@@ -658,6 +715,7 @@
     if (view) {
       render(view);
       hydrateImage(view);
+      hydrateLocator(view);
     }
   });
 

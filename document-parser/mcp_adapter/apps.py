@@ -53,7 +53,13 @@ CITATION_APP_HTML = (Path(__file__).parent / "citation_app.html").read_text(enco
 
 @dataclass(frozen=True)
 class CitationImageOut:
-    """A raster for the viewer, never for the model."""
+    """A raster for the viewer, never for the model.
+
+    `highlight` is the cited passage's box **in this image's own pixels** —
+    the renderer knows the dpi it settled on, so the view draws a rectangle
+    instead of converting page points. Present on a page thumbnail, absent on
+    a crop, which is already the passage.
+    """
 
     data_uri: str
     media_type: str
@@ -61,6 +67,8 @@ class CitationImageOut:
     height: int
     page: int
     bytes: int
+    highlight: list[int] | None = None
+    page_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -237,6 +245,8 @@ def build_apps_extension(
             height=image.height,
             page=image.page,
             bytes=len(image.png),
+            highlight=list(image.highlight) if image.highlight else None,
+            page_count=image.page_count,
         )
 
     apps.add_html_resource(
