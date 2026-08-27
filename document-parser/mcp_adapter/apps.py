@@ -25,12 +25,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mcp.server.apps import Apps, ResourcePermissions, client_supports_apps
-
-# `Context` is a runtime import: the SDK reads this annotation at registration
-# time to decide whether to inject the request context, so a checker-only
-# import would silently turn `ctx` into an ordinary tool argument.
-from mcp.server.mcpserver import Context  # noqa: TC002
+from mcp.server.apps import Apps, ResourcePermissions
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
@@ -152,7 +147,7 @@ def build_apps_extension(
             "display it, it returns the same citation as text."
         ),
     )
-    async def show_citation(ctx: Context, uri: str, padding: int = 8) -> CitationView:
+    async def show_citation(uri: str, padding: int = 8) -> CitationView:
         # `get_citation` is the named use case for "what does this anchor
         # point at". This used to call `verify_citation(uri, "")` and harvest
         # the citation off its rejection branch — a dependency on the shape of
@@ -184,13 +179,18 @@ def build_apps_extension(
         usage = ledger.snapshot()
         view = replace(view, total_est_tokens=usage.est_tokens, total_calls=usage.calls)
 
-        if not client_supports_apps(ctx):
-            return view
         if not inline_image:
             # The view fetches its own image through `get_citation_image`, an
             # app-only tool. Sending it here put a base64 raster in the model's
             # context — twice, since the SDK mirrors structured output as text —
             # for 21 432 tokens a call on a picture no reader can read.
+            #
+            # `MCP_INLINE_CITATION_IMAGE` is the operator's escape hatch for a
+            # host where that fetch does not work. It used to sit behind
+            # `client_supports_apps` too, which made it dead over HTTP — the
+            # transport is stateless, so no client ever reads as apps-capable
+            # there. The flag is the operator's decision to pay for the bytes;
+            # it does not need a second opinion from the transport.
             return view
 
         try:
@@ -219,17 +219,32 @@ def build_apps_extension(
         ),
     )
     async def get_citation_image(
-        ctx: Context,
         uri: str,
         kind: str = "crop",
         padding: int = 8,
         max_width: int = 320,
     ) -> CitationImageOut:
-        if not client_supports_apps(ctx):
-            raise ToolError(
-                "get_citation_image serves the citation viewer and answers with binary "
-                "data. Call show_citation instead — it carries the citation as text."
-            )
+        # No `client_supports_apps` gate. It used to be here, to keep a model
+        # from spending 21 432 tokens on a picture it cannot read, and it
+        # refused the one caller the tool exists for.
+        #
+        # Two independent reasons it had to go. It asks the wrong question:
+        # `client_supports_apps` reads the *connection's* negotiated
+        # capabilities, which are identical for a model-originated call and an
+        # app-originated one on the same session, so it can never mean "only
+        # the view may call this". And over this server's HTTP transport it
+        # can only ever answer no — see `bootstrap/mcp_mount.py`, where
+        # `stateless_http=True` makes the SDK build a fresh connection per
+        # request with `client_capabilities=None`.
+        #
+        # What keeps this away from the model is `visibility: ["app"]`: the
+        # spec requires a host to omit such a tool from the agent's tool list
+        # (apps.mdx: "Host MUST NOT include tools in the agent's tool list when
+        # their visibility does not include `model`"). That is the host's to
+        # enforce, and the SDK adds no server-side filter of its own — so on a
+        # host that ignores it, a model could reach this. The worst case is a
+        # wasteful read-only call returning a picture it already has the text
+        # for, not an unsafe one.
         try:
             if kind == "page":
                 image = await tools().images.render_page(uri, max_width=max_width)

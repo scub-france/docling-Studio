@@ -287,6 +287,32 @@ class TestGracefulDegradation:
         # The view keeps its text card and shows why the picture is missing.
         assert result.is_error is True
 
+    async def test_the_view_is_served_even_when_the_session_never_negotiated_apps(self, tmp_path):
+        # Capability negotiation cannot gate this. It is connection-scoped, so
+        # it reads the same for a model call and an app call; and over the
+        # HTTP transport this server mounts (`stateless_http=True`) the SDK
+        # builds a connection per request with `client_capabilities=None`, so
+        # it reads no for everyone. The view got its own refusal back:
+        #   "get_citation_image serves the citation viewer and answers with
+        #    binary data. Call show_citation instead"
+        # `visibility: ["app"]` is what keeps this away from the model.
+        async with _client(_service_with_file(tmp_path), negotiates=False) as client:
+            result = await client.call_tool(
+                "get_citation_image", {"uri": anchor_uri(PREAVIS_REF), "kind": "page"}
+            )
+        assert result.is_error is False
+        assert result.structured_content["data_uri"].startswith("data:image/")
+
+    async def test_the_escape_hatch_works_through_a_proxy(self, tmp_path):
+        # MCP_INLINE_CITATION_IMAGE exists for a host where the app-only fetch
+        # does not work. Gating it on the negotiated capabilities made it dead
+        # over HTTP, where nothing ever negotiates.
+        async with _client(_service_with_file(tmp_path), negotiates=False, inline=True) as client:
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        view = result.structured_content
+        assert view["page_image"].startswith("data:image/")
+        assert view["image_bytes"] > 0
+
     async def test_a_malformed_anchor_is_still_a_tool_error(self, tmp_path):
         async with _client(_service_with_file(tmp_path)) as client:
             result = await client.call_tool("show_citation", {"uri": "nope"})
@@ -384,6 +410,22 @@ class TestTemplate:
         # and a long table only gets the room it needs if the app asks for it.
         assert "ui/notifications/size-changed" in CITATION_APP_HTML
         assert "ResizeObserver" in CITATION_APP_HTML
+
+    def test_the_frame_is_never_sized_in_viewport_units(self):
+        # `100vw` counts the scrollbar gutter, `clientWidth` does not. A card
+        # told to be exactly as wide as its frame in `vw` ends up a scrollbar
+        # wider than it — cropped down the side by the very code meant to make
+        # it fit. The spec's own snippet says `100vw`; this does not. (The
+        # prose above that function names the unit, so the assertion is on the
+        # value the code assigns, not on the file.)
+        assert '"100vw"' not in CITATION_APP_HTML
+        assert '"100vh"' not in CITATION_APP_HTML
+        assert 'root.width = "100%"' in CITATION_APP_HTML
+
+    def test_never_asks_for_more_width_than_the_host_offered(self):
+        # A host that honours the reported width sets the frame from it.
+        assert "ceiling" in CITATION_APP_HTML
+        assert "Math.min(document.documentElement.clientWidth, ceiling)" in CITATION_APP_HTML
 
     def test_no_image_is_sized_against_the_viewport(self):
         # A `vh` size in the stylesheet plus a resize request is a feedback
