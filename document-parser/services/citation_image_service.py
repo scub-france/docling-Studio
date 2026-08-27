@@ -24,7 +24,7 @@ from domain.value_objects import DEFAULT_PAGE_WIDTH
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError
 
 if TYPE_CHECKING:
-    from domain.navigation import BoundingBox
+    from domain.navigation import BoundingBox, ResolvedElement
     from domain.ports import PageRasterizer
     from services.navigation_config import NavigationConfig
     from services.parse_loader import ParseLoader
@@ -98,13 +98,33 @@ class CitationImageService:
         width_pt = (element.bbox.page_width if element.bbox else None) or DEFAULT_PAGE_WIDTH
         dpi = max(24, min(int(max_width / (width_pt / 72.0)), self._config.image_dpi))
         return await asyncio.to_thread(
-            self._page_thumbnail, parse.document.storage_path, element.page, dpi
+            self._page_thumbnail,
+            parse.document.storage_path,
+            element,
+            dpi,
+            parse.index.page_count or None,
         )
 
-    def _page_thumbnail(self, storage_path: str, page: int, dpi: int) -> CitationImage:
-        page_png = self._raster.render_page(storage_path, page=page, dpi=dpi)
+    def _page_thumbnail(
+        self,
+        storage_path: str,
+        element: ResolvedElement,
+        dpi: int,
+        page_count: int | None,
+    ) -> CitationImage:
+        page_png = self._raster.render_page(storage_path, page=element.page, dpi=dpi)
         crop = self._raster.crop(page_png, (0, 0, 10_000, 10_000), fmt="WEBP")
-        return self._image(crop, page=page, dpi=dpi, media_type="image/webp")
+        # The passage's box in the thumbnail's own pixels: the service knows
+        # the dpi it rendered at, so nothing downstream has to convert points.
+        highlight = element.bbox.pixel_box(dpi=dpi, padding=0) if element.bbox else None
+        return self._image(
+            crop,
+            page=element.page,
+            dpi=dpi,
+            media_type="image/webp",
+            highlight=highlight,
+            page_count=page_count,
+        )
 
     def _crop(
         self,
@@ -134,7 +154,15 @@ class CitationImageService:
             current = max(self._config.image_min_dpi, current // 2)
 
     @staticmethod
-    def _image(crop, *, page: int, dpi: int, media_type: str) -> CitationImage:
+    def _image(
+        crop,
+        *,
+        page: int,
+        dpi: int,
+        media_type: str,
+        highlight: tuple[int, int, int, int] | None = None,
+        page_count: int | None = None,
+    ) -> CitationImage:
         encoded = base64.b64encode(crop.png).decode("ascii")
         return CitationImage(
             png=crop.png,
@@ -144,4 +172,6 @@ class CitationImageService:
             page=page,
             dpi=dpi,
             media_type=media_type,
+            highlight=highlight,
+            page_count=page_count,
         )
