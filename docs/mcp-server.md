@@ -236,6 +236,18 @@ ends up laid out at a width the host then cuts off. Its own breakpoints are
 container queries against the card, not media queries against the window — in a
 400 px frame a viewport query answers a question about the frame.
 
+When the frame is fixed and the card still does not fit, the card scales.
+`.card` is an `overflow: hidden` box, so content its grid cannot fit is cut off
+*inside* it — mid-word, with no scrollbar, and invisible to any check on the
+document's width, because the document never overflowed. `scrollWidth` reports
+clipped content all the same, so the shortfall is measured and applied as
+`zoom` (which takes part in layout, unlike `transform: scale()`, so the height
+reported back is the height the card now occupies), bounded at 80%. The two
+numbers behind that decision sit in the origin label's tooltip: `frame 921 ·
+content 984` means the content was too wide; a frame larger than the content,
+with no zoom applied, means the frame was — which is the one thing a
+screenshot cannot tell apart.
+
 Turn it off with `MCP_APPS_ENABLED=false`; the four text tools are unaffected.
 
 **The image never reaches the model.** The view fetches it itself, through
