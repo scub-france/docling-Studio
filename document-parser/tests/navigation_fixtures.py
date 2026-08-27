@@ -347,7 +347,15 @@ class FakeRasterizer:
     def crop(self, png: bytes, box, *, fmt: str = "PNG"):
         from domain.navigation import RasterCrop
 
+        # Clamped to the rendered page, exactly as `PdfPageRasterizer.crop`
+        # does. Without it the "whole page" box the thumbnail asks for
+        # (0, 0, 10_000, 10_000) produced a 10_000 x 10_000 raster — a
+        # hundred megapixels of fixture per call, and a page whose reported
+        # size had nothing to do with the page.
+        page_width, page_height = self._size
         left, top, right, bottom = box
+        left, top = max(0, min(left, page_width - 1)), max(0, min(top, page_height - 1))
+        right, bottom = min(right, page_width), min(bottom, page_height)
         width, height = max(1, right - left), max(1, bottom - top)
         self.formats.append(fmt)
         raw = self._encode(width, height, fmt)

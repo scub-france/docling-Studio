@@ -30,6 +30,9 @@ from tests.navigation_fixtures import (
     SECTIONED,
 )
 from tests.navigation_fixtures import (
+    FakeRasterizer as _FakeRasterizer,
+)
+from tests.navigation_fixtures import (
     anchor_uri as _uri,
 )
 from tests.navigation_fixtures import (
@@ -463,3 +466,43 @@ class TestSpanCitations:
         image = await tools.images.render(_uri("#/texts/2..#/texts/3"))
         assert image.page == 1
         assert image.width > 0
+
+
+class TestPageRasterBudget:
+    """The page path used to be the one raster path with no byte ceiling."""
+
+    def _tools(self, tmp_path, **kwargs):
+        pdf = tmp_path / "contrat.pdf"
+        pdf.write_bytes(b"%PDF-1.4 not really a pdf")
+        document = _document()
+        document.storage_path = str(pdf)
+        return _tools(documents=[document], **kwargs)
+
+    async def test_a_page_that_blows_the_budget_is_rendered_smaller(self, tmp_path):
+        raster = _FakeRasterizer(png_bytes=900_000)
+        tools = self._tools(tmp_path, rasterizer=raster)
+        await tools.images.render_page(_uri(PREAVIS_REF), max_width=1400)
+        # The ladder halved rather than handing back the first render.
+        assert len(raster.renders) > 1
+        assert raster.renders[-1][1] < raster.renders[0][1]
+
+    async def test_the_marker_is_placed_at_the_dpi_the_ladder_settled_on(self, tmp_path):
+        # Computing it from the dpi that was *asked* for would put the marker
+        # somewhere the passage is not.
+        raster = _FakeRasterizer(png_bytes=900_000)
+        tools = self._tools(tmp_path, rasterizer=raster)
+        shrunk = await tools.images.render_page(_uri(PREAVIS_REF), max_width=1400)
+
+        roomy = self._tools(tmp_path).images
+        full = await roomy.render_page(_uri(PREAVIS_REF), max_width=1400)
+
+        assert shrunk.dpi < full.dpi
+        assert shrunk.highlight is not None
+        # Same box, projected at a smaller dpi: strictly closer to the origin.
+        assert shrunk.highlight[1] < full.highlight[1]
+
+    async def test_an_ordinary_thumbnail_still_renders_once(self, tmp_path):
+        raster = _FakeRasterizer()
+        tools = self._tools(tmp_path, rasterizer=raster)
+        await tools.images.render_page(_uri(PREAVIS_REF), max_width=320)
+        assert len(raster.renders) == 1

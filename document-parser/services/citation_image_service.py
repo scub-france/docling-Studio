@@ -112,15 +112,19 @@ class CitationImageService:
         dpi: int,
         page_count: int | None,
     ) -> CitationImage:
-        page_png = self._raster.render_page(storage_path, page=element.page, dpi=dpi)
-        crop = self._raster.crop(page_png, (0, 0, 10_000, 10_000), fmt="WEBP")
-        # The passage's box in the thumbnail's own pixels: the service knows
-        # the dpi it rendered at, so nothing downstream has to convert points.
-        highlight = element.bbox.pixel_box(dpi=dpi, padding=0) if element.bbox else None
+        def render(at: int):
+            page_png = self._raster.render_page(storage_path, page=element.page, dpi=at)
+            return self._raster.crop(page_png, (0, 0, 10_000, 10_000), fmt="WEBP")
+
+        crop, at = self._shrink_to_budget(render, dpi=dpi, budget=self._config.image_page_max_bytes)
+        # The passage's box in the thumbnail's own pixels, at the dpi the
+        # ladder actually settled on — computing it from the dpi that was
+        # *asked* for would put the marker somewhere the passage is not.
+        highlight = element.bbox.pixel_box(dpi=at, padding=0) if element.bbox else None
         return self._image(
             crop,
             page=element.page,
-            dpi=dpi,
+            dpi=at,
             media_type="image/webp",
             highlight=highlight,
             page_count=page_count,
@@ -134,23 +138,32 @@ class CitationImageService:
         padding: int,
         dpi: int,
     ) -> CitationImage:
-        """Render, crop, and shrink until the result fits the byte budget.
+        """Render, crop, and shrink until the result fits the byte budget."""
+
+        def render(at: int):
+            page_png = self._raster.render_page(storage_path, page=bbox.page, dpi=at)
+            return self._raster.crop(page_png, bbox.pixel_box(dpi=at, padding=padding), fmt="WEBP")
+
+        crop, at = self._shrink_to_budget(render, dpi=dpi, budget=self._config.image_max_bytes)
+        return self._image(crop, page=bbox.page, dpi=at, media_type="image/webp")
+
+    def _shrink_to_budget(self, render, *, dpi: int, budget: int):
+        """Render at `dpi`, halving until the result fits `budget`.
 
         Blocking on purpose — rasterising a PDF page is CPU work — and called
         through `asyncio.to_thread` so the event loop keeps serving.
+
+        Overshoot deliberately: encoded size falls roughly with the pixel
+        count, so halving the dpi quarters the bytes and one or two rounds
+        converge instead of a long descent. Returns the dpi it settled on,
+        because a caller that projects coordinates onto the raster needs the
+        one that was used, not the one that was asked for.
         """
-        budget = self._config.image_max_bytes
         current = dpi
         while True:
-            page_png = self._raster.render_page(storage_path, page=bbox.page, dpi=current)
-            crop = self._raster.crop(
-                page_png, bbox.pixel_box(dpi=current, padding=padding), fmt="WEBP"
-            )
+            crop = render(current)
             if len(crop.png) <= budget or current <= self._config.image_min_dpi:
-                return self._image(crop, page=bbox.page, dpi=current, media_type="image/webp")
-            # Overshoot deliberately: encoded size falls roughly with the pixel
-            # count, so halving the dpi quarters the bytes and one or two
-            # rounds converge instead of a long descent.
+                return crop, current
             current = max(self._config.image_min_dpi, current // 2)
 
     @staticmethod

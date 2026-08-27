@@ -478,6 +478,33 @@ class TestTemplate:
         assert "container-type: inline-size" in CITATION_APP_HTML
         assert "@container" in CITATION_APP_HTML
 
+    def test_the_page_can_be_opened_full_size(self):
+        # The rail answers "where on the page"; at 128 px it cannot answer
+        # "what is around it", which is the other half of showing a reader
+        # where a quote comes from.
+        assert "openLens" in CITATION_APP_HTML
+        assert "LENS_WIDTH" in CITATION_APP_HTML
+        assert 'name: "get_citation_image"' in CITATION_APP_HTML
+
+    def test_fullscreen_is_requested_never_assumed(self):
+        # `ui/request-display-mode` is the host's to grant. A host that refuses
+        # still gets the overlay, filling the inline frame — nothing in the
+        # expanded view depends on the answer.
+        assert "ui/request-display-mode" in CITATION_APP_HTML
+        assert ".catch(() => {})" in CITATION_APP_HTML
+        assert 'availableDisplayModes: ["inline", "fullscreen"]' in CITATION_APP_HTML
+
+    def test_the_expanded_page_can_be_dismissed_every_ordinary_way(self):
+        assert "closeLens" in CITATION_APP_HTML
+        assert '"Escape"' in CITATION_APP_HTML
+        assert "aria-modal" in CITATION_APP_HTML
+
+    def test_a_new_citation_does_not_inherit_the_last_one_s_page(self):
+        # The rasters are cached per citation; kept across one, the previous
+        # document's page would sit behind this one's marker.
+        assert "thumbnail = null" in CITATION_APP_HTML
+        assert "enlarged = null" in CITATION_APP_HTML
+
     def test_the_rail_says_where_the_page_sits_in_the_document(self):
         # A citation on page 12 of 13 is near the end, and that is worth a
         # glance — the pager and its track carry it.
