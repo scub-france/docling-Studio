@@ -369,11 +369,15 @@ class TestClose:
 class TestView:
     async def test_the_record_comes_back_with_its_navigation_tree(self, service):
         investigation = await service_with_one_kept(service)
-        record, nodes = await service.view(investigation.id)
+        report = await service.view(investigation.id)
 
-        assert record.steps[0].attempts[0].outcome is AttemptOutcome.KEPT
-        assert [node.ref for node in nodes] == ["#/texts/0", "#/texts/1", "#/texts/3"]
-        assert nodes[-1].status == "kept"
+        assert report.investigation.steps[0].attempts[0].outcome is AttemptOutcome.KEPT
+        assert [node.ref for node in report.map] == ["#/texts/0", "#/texts/1", "#/texts/3"]
+        assert report.map[-1].status == "kept"
+
+    async def test_the_report_names_the_document_so_a_reader_need_not_look_it_up(self, service):
+        investigation = await service_with_one_kept(service)
+        assert (await service.view(investigation.id)).filename == "contrat.pdf"
 
     async def test_an_unknown_investigation_is_refused(self, service):
         with pytest.raises(InvestigationNotFoundError):
@@ -381,8 +385,8 @@ class TestView:
 
     async def test_an_open_investigation_can_be_read_back_to_resume(self, service):
         investigation = await planned(service)
-        record, _ = await service.view(investigation.id)
-        assert record.state is InvestigationState.OPEN
+        report = await service.view(investigation.id)
+        assert report.investigation.state is InvestigationState.OPEN
 
 
 class TestRepositoryContract:

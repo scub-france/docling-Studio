@@ -113,7 +113,16 @@ def build_mcp_server(
     # only what it cost itself.
     ledger = Ledger()
     extensions = (
-        [build_apps_extension(tools, ledger, inline_image=inline_citation_image)] if apps else None
+        [
+            build_apps_extension(
+                tools,
+                ledger,
+                inline_image=inline_citation_image,
+                investigations=investigations,
+            )
+        ]
+        if apps
+        else None
     )
     server = MCPServer(
         name=name,
@@ -127,7 +136,7 @@ def build_mcp_server(
     )
     # Slash commands: the thorough protocols, invoked by the user rather than
     # inflicted on every call (see mcp_adapter/prompts.py).
-    register_prompts(server, investigations=investigations)
+    register_prompts(server, investigations=investigations, apps=apps)
     if investigations:
         # #329 — the journal. Off leaves the four read-only tools of #327
         # byte-identical to what they were.
