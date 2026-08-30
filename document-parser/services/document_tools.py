@@ -1,7 +1,7 @@
 """The document-agent services, wired together.
 
-Three collaborators that a driving adapter needs as a set: reading, citing,
-and showing. Bundled so the adapter resolves one thing from the container
+Four collaborators that a driving adapter needs as a set: reading, citing,
+showing, and — since #329 — recording what an agent tried and why. Bundled so the adapter resolves one thing from the container
 instead of three, and so adding a fourth use case does not change every
 signature between the composition root and the tools.
 
@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from services.citation_image_service import CitationImageService
     from services.citation_service import CitationService
+    from services.investigation_service import InvestigationService
     from services.navigation_service import NavigationService
 
 
@@ -25,3 +26,4 @@ class DocumentTools:
     navigation: NavigationService
     citations: CitationService
     images: CitationImageService
+    investigations: InvestigationService

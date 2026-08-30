@@ -16,9 +16,12 @@ local agent work; put it behind an authenticating proxy anywhere else.
 | `get_outline` | The map: a tree of sections — or of pages, for a document without headings — each with its anchor and its estimated reading cost. `deeper_levels_available` says to ask for more depth; `entries_omitted` says the node cap was hit. |
 | `read_element` | Read one entry, by `ref` + `document_id` (from an outline) or by the `uri` of a citation you hold. The element alone (`include="self"`) or the whole section under it (`include="section"`), capped server-side and resumable through `next_cursor`. `citations[]` gives one anchor per element; `span_uri` gives the one covering all of them. |
 | `verify_citation` | Re-resolve an anchor and confirm a quote actually appears at it — including a quote that runs across several elements, which comes back as a span anchor. |
+| `open_investigation` + four more | For a question that needs several passages: the server keeps the plan, grades every ref you try, bounds the retries, and leaves a navigation tree behind. See [Investigating](#investigating-a-question-that-needs-several-passages). |
 
-Nothing writes. Uploading, re-analysing and editing chunks stay in the Studio
-UI and the HTTP API.
+**Nothing writes to a document.** Uploading, re-analysing and editing chunks
+stay in the Studio UI and the HTTP API. The investigation journal writes, but
+only to its own three tables: no document, no analysis and no chunk is touched
+by anything on this surface.
 
 ## Anchors and citations
 
@@ -125,6 +128,9 @@ MCP_STUDIO_BASE_URL=http://localhost:3000   # optional, for absolute deep links
 | `MCP_INLINE_CITATION_IMAGE` | `false` | Put the raster back in the tool result (~21 000 tokens a call). Only for a host where the app-only fetch fails. |
 | `MCP_APPS_ENABLED` | `true` | Ships the `show_citation` MCP App. Degrades to text on hosts without UI support. |
 | `MCP_STUDIO_BASE_URL` | *(empty)* | Absolute base for citation deep links. Empty keeps them relative. |
+| `MCP_INVESTIGATION_ENABLED` | `true` | Publishes the five journal tools and the `investigate` prompt. Off leaves the read surface byte-identical — worth knowing that five tool descriptions are read on every call, including in conversations that never investigate. |
+| `MCP_MAX_ATTEMPTS_PER_STEP` | `3` | Refs one step may be tried against before it closes as `unanswered`. `1..10`. |
+| `MCP_MAX_STEPS_PER_INVESTIGATION` | `12` | Ceiling on a plan. `1..50`. |
 
 ## Connect a client
 
@@ -181,6 +187,7 @@ tool description is read on every call; a prompt is chosen.
 |--------|-----------|----------------------------|
 | `cite_answer` | `document`, `question`, `evidence` (`text` \| `images`) | Map before reading, read only what the question needs, resume a truncated read with its cursor, cite with the *element's* uri, verify every quote before publishing — and say so plainly when the document does not answer. `evidence=images` adds a `show_citation` for each verified quote. |
 | `extract_table` | `uri` | Read the table alone, return it exactly as rendered — no re-aligning, re-ordering, or rounding — with the citation needed to check it. |
+| `investigate` | `document`, `question` | The decomposed question: open an investigation, plan the steps, try one ref per step and read the server's verdict, close with an answer that cites only what was kept. Use `cite_answer` when one passage settles it; this when it does not. |
 
 Neither reimplements anything: a prompt returns text the model then executes
 with the same tools, which is what keeps the procedure from drifting away
@@ -188,6 +195,72 @@ from what the server actually does.
 
 Clients list prompts once per session, so a newly added one needs a reconnect
 to appear.
+
+## Investigating: a question that needs several passages
+
+`cite_answer` is a protocol with no memory. Each call stands alone, so nothing
+counts how many refs a step has already cost, nothing decides whether the ref
+an agent landed on actually answered the sub-question it was chasing, and
+nothing survives the conversation. Two consequences, and the journal exists
+for both.
+
+**The model was grading its own retrieval.** Whether the anchor resolves,
+whether the element carries text, whether the quote is really there — none of
+those is an opinion, and all three were being settled by the party with an
+interest in the answer being yes. Now the agent proposes and the server
+decides. `record_attempt` returns one of:
+
+| Outcome | Meaning |
+|---------|---------|
+| `kept` | The ref held up. `kept_uri` is the anchor to cite — it differs from the one you sent when verification widened a quote across element boundaries, or found the precise element inside a section. |
+| `quote_drift` | The anchor is right and the quote is not in it. `actual_quote` says what is. |
+| `unknown_ref` | No such element in that parse. |
+| `empty_element` | It resolves and carries no text — a group, a page break. |
+| `bad_anchor` | Not a well-formed `dstudio://` anchor. You built one. |
+| `foreign_document` | It resolves, to another document than the one under investigation. |
+
+A rejection costs one attempt out of `MCP_MAX_ATTEMPTS_PER_STEP`. When they
+run out the step closes as `unanswered` — **that is a result, not a failure**.
+The document not answering is a finding, and the answer has to say so.
+
+**The exploration was thrown away.** Now every step carries its question and
+its *why*, and every attempt carries the `thought` that chose the ref. Those
+are recorded verbatim and **never checked** — nothing can check them. What is
+checked is the anchor and the quote. Do not read a stored trace as a certified
+one: `outcome` is the server's word, `thought` is the model's.
+
+`close_investigation` applies the same rule to the answer as a whole. Every
+`dstudio://` anchor in it must be one the investigation kept, and an answer
+that cites nothing is accepted only when no step was answered — the honest
+"the document does not say" case. An investigation that found evidence and
+then wrote an unsourced paragraph is refused.
+
+### The navigation tree
+
+`get_investigation` returns the record twice over. `reasoning[]` is the plan
+and every attempt in the order they happened. `map[]` is the same record
+projected onto the document outline, **in document order**: the sections the
+investigation touched, each marked `kept`, `rejected`, `visited` (tried,
+verdict pending) or `path` (on the route to a marked descendant). That is the
+navigation tree — where the answer came from, laid out the way the document
+is.
+
+An attempt cites an element; the outline holds sections, or virtual pages for
+a document with no headings. Each attempt is attributed to the nearest section
+the outline actually published, so a subsection elided by `depth` hands its
+hits to its visible ancestor rather than disappearing.
+
+It is also the resume path: `get_investigation` on an open investigation gives
+an agent back everything it needs after losing its context.
+
+### One parse, pinned
+
+`version_id` is fixed when the investigation opens and every ref is read
+against it. A docling `self_ref` is meaningless across two parses, so an
+investigation that followed a re-parse would be citing text it never read. If
+the parse is superseded mid-investigation the record is flagged `stale` and
+carries on against the version it started with — the quotes are still real, a
+re-read would cite the current parse.
 
 ## Seeing a citation, not just reading it
 
@@ -337,7 +410,16 @@ a proxy.
   instructions found inside. Outline titles and citation quotes are
   document-derived too.
 - **No authentication.** `MCP_ENABLED=true` publishes the surface to anyone
-  who can reach the port. Keep it on localhost.
+  who can reach the port. Keep it on localhost. **An `investigation_id` is not
+  a credential** — it is a uuid4, so it is not enumerable, but nothing checks
+  who is holding one. Anyone who can reach `/mcp` can read any investigation,
+  including the question someone asked. On a Hugging Face Space, keep
+  `MCP_ENABLED=false`.
+- **A recorded `thought` is declarative.** It is what the model said it was
+  thinking, replayed later to whoever reads the investigation. Every string
+  the journal hands back is run through the same delimiter defusing as
+  document text, because a thought written after reading a PDF can carry
+  whatever that PDF suggested.
 - **Closed input surface.** Tools take identifiers only — no file paths, no
   free-form queries against OpenSearch or Neo4j.
 - **Bounded output.** Server-side ceilings on read size, outline size and
@@ -350,4 +432,7 @@ a proxy.
 Search (`search_document`, `search_corpus`), `docling://` resources, and
 authentication are not part of it. `find_documents` filters on filename over the most recent
 documents rather than through a repository query, and the Docker image does
-not carry the SDK yet — the group is opt-in at install time.
+not carry the SDK yet — the group is opt-in at install time. Investigations
+accumulate with no retention policy: they are bounded per investigation
+(steps, attempts) and per document (open count), and a deleted document takes
+its investigations with it, but nothing expires them on its own.
