@@ -213,6 +213,12 @@ class TestTemplate:
         the docs is not saying so to the person reading the card."""
         assert "never checked" in INVESTIGATION_APP_HTML
 
+    def test_it_tells_a_dropped_step_from_an_exhausted_one(self):
+        """Two honest outcomes, two different findings. Showing both as
+        `unanswered` would blame the document for the agent's decision."""
+        assert "wasAbandoned" in INVESTIGATION_APP_HTML
+        assert '"abandoned"' in INVESTIGATION_APP_HTML
+
     def test_it_makes_no_call_but_the_handshake(self):
         # No second fetch to go wrong: everything rendered arrives in the
         # tool result.

@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from domain.investigation import StepState, step_tally
+from domain.investigation import StepState, next_pending, step_tally
 
 # Runtime import, not TYPE_CHECKING: `OutlineResult` is a dataclass field
 # annotation below, and the SDK resolves those when it derives a tool's
@@ -91,6 +91,17 @@ class AttemptSettled:
     actual_quote: str | None = None
     next_step_id: str | None = None
     stale: bool = False
+
+
+@dataclass(frozen=True)
+class StepAbandoned:
+    """A step dropped on purpose, with the plan's remaining work restated."""
+
+    investigation_id: str
+    step_id: str
+    steps_pending: int
+    next_step: str
+    next_step_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -232,6 +243,23 @@ def attempt_result(verdict, *, investigation_id: str) -> AttemptSettled:
     )
 
 
+def abandoned_result(investigation: Investigation, step_id: str) -> StepAbandoned:
+    pending = next_pending(investigation)
+    remaining = step_tally(investigation)[StepState.PENDING]
+    return StepAbandoned(
+        investigation_id=investigation.id,
+        step_id=step_id,
+        steps_pending=remaining,
+        next_step_id=pending.id if pending else None,
+        next_step=(
+            f"Recorded as dropped. Next: step {pending.id}."
+            if pending
+            else "Every step is settled. close_investigation with an answer that cites only "
+            "anchors this investigation kept, and says which steps went unanswered."
+        ),
+    )
+
+
 def closed_result(investigation: Investigation, citations: list[str]) -> InvestigationClosed:
     tally = step_tally(investigation)
     return InvestigationClosed(
@@ -326,12 +354,23 @@ def _attempt_next_step(verdict) -> str:
     """What to do with the verdict — the steering, at the moment it applies."""
     attempt = verdict.attempt
     outcome = str(attempt.outcome or "")
+    if outcome == "kept" and not (attempt.quote or "").strip():
+        # It resolves, so it is citable; nothing about the passage was checked,
+        # so the step is not answered by it. Saying only "kept" here is what
+        # let a step close on a ref nobody verified.
+        return (
+            f"The ref resolves and is citable as {attempt.citation_uri}, but no quote was "
+            f"given, so nothing was verified and the step is still open "
+            f"({verdict.attempts_left} attempts left). "
+            "Send the passage you intend to publish to settle it."
+        )
     if outcome == "kept":
         if verdict.next_step_id:
-            return f"Kept. Cite it as {attempt.citation_uri}. Next: step {verdict.next_step_id}."
+            return f"Kept and verified. Cite it as {attempt.citation_uri}. Next: step {verdict.next_step_id}."
         return (
-            f"Kept. Cite it as {attempt.citation_uri}. Every step is settled — close_"
-            "investigation with an answer that cites only anchors this investigation kept."
+            f"Kept and verified. Cite it as {attempt.citation_uri}. Every step is settled — "
+            "close_investigation with an answer that cites only anchors this investigation "
+            "kept, then show_investigation so the reader can see where it came from."
         )
     if str(verdict.step_state) == "unanswered":
         return (

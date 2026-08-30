@@ -165,6 +165,32 @@ def is_exhausted(step: Step, cap: int) -> bool:
     return attempts_left(step, cap) <= 0
 
 
+def settles_step(attempt: Attempt) -> bool:
+    """True when this attempt is allowed to close its step as answered.
+
+    A ref kept without a quote is a ref that *resolves* — nothing about the
+    passage was checked, because there was nothing to check it against. It is
+    worth recording and worth citing, and it is not an answer: letting it
+    settle a step made `answered` mean "the agent stopped here", which is the
+    model's own account of its retrieval by another name.
+    """
+    return attempt.outcome is AttemptOutcome.KEPT and bool((attempt.quote or "").strip())
+
+
+def pending_steps(investigation: Investigation) -> list[Step]:
+    """Steps that were planned and never settled — worked or abandoned."""
+    return [step for step in investigation.steps if step.state is StepState.PENDING]
+
+
+def was_abandoned(step: Step) -> bool:
+    """Unanswered without a single attempt: dropped rather than exhausted.
+
+    Both are honest outcomes and they are not the same finding — one says the
+    document did not answer, the other says nobody asked it.
+    """
+    return step.state is StepState.UNANSWERED and not step.attempts
+
+
 def find_step(investigation: Investigation, step_id: str) -> Step | None:
     return next((step for step in investigation.steps if step.id == step_id), None)
 

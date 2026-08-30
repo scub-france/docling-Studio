@@ -85,3 +85,15 @@ class UnbackedAnswerError(NavigationServiceError):
     """
 
     http_status = 400
+
+
+class UnworkedStepError(NavigationServiceError):
+    """The plan still has a step nobody worked.
+
+    Closing over a pending step let an investigation publish a claim about
+    something it never looked at — the plan said it would, the record shows it
+    did not, and the answer asserted it anyway. Working the step or abandoning
+    it explicitly are both fine; skipping it silently is what is not.
+    """
+
+    http_status = 409

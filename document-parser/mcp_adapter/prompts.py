@@ -137,10 +137,17 @@ def _register_investigate(server: MCPServer, *, apps: bool = True) -> None:
     ) -> str:
         # Only when the viewer is registered. Telling a model to call a tool
         # this server did not publish spends a turn on a failure.
+        # Named, and told apart from `show_citation` — whose description asks
+        # to be preferred "whenever someone asks to see a passage", which is
+        # most of the time. A card per citation shows what was kept; it cannot
+        # show what was tried and rejected, which is the thing this whole
+        # protocol produced.
         step_six = (
-            "\n6. `show_investigation(investigation_id)` — so the reader sees the steps, the "
-            "refs that did not hold up, and where in the document the answer came from, "
-            "instead of taking your word for the last of the three."
+            "\n7. **Finish with `show_investigation(investigation_id)`.** Not "
+            "`show_citation` — a citation card shows one passage, and the reader has just "
+            "been handed an investigation: the steps, the refs that did not hold up, and "
+            "where in the document the answer came from. Show that. Add `show_citation` "
+            "afterwards only if one particular passage is itself in dispute."
             if apps
             else ""
         )
@@ -161,7 +168,12 @@ that ref, in your own words. `quote` is the passage you would publish.
 the quote is not there — `actual_quote` says what is. `unknown_ref` means take a ref from the \
 outline or a read instead of building one. When `attempts_left` reaches 0 the step closes as \
 `unanswered`: that is a finding about the document, not a problem to route around.
-5. `close_investigation(investigation_id, answer)` — every anchor in the answer must be one \
+5. Settle every step before closing. A step you decide not to work — the map does not cover \
+it, an earlier step already answered it — is `abandon_step(investigation_id, step_id, thought)`, \
+with the reason. Do not leave it pending and answer around it: the server refuses to close \
+over a step nobody worked, because an answer that speaks to something you never looked at is \
+exactly what this protocol exists to prevent.
+6. `close_investigation(investigation_id, answer)` — every anchor in the answer must be one \
 this investigation kept, and the server will refuse it otherwise. Say plainly which steps the \
 document did not answer.{step_six}
 

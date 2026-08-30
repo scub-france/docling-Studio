@@ -23,6 +23,7 @@ from services.navigation_errors import (
     StepNotFoundError,
     StepSettledError,
     UnbackedAnswerError,
+    UnworkedStepError,
 )
 from tests.navigation_fixtures import (
     DOC_ID,
@@ -146,6 +147,19 @@ class TestAdjudication:
         )
         assert verdict.attempt.outcome is AttemptOutcome.KEPT
         assert "nothing was verified" in verdict.attempt.detail
+
+    async def test_a_ref_kept_without_a_quote_does_not_settle_the_step(self, service):
+        """`answered` has to mean a quote was checked. Letting a bare ref close
+        a step made it mean "the agent stopped here"."""
+        investigation = await planned(service)
+        verdict = await service.record_attempt(
+            investigation_id=investigation.id,
+            step_id=investigation.steps[0].id,
+            thought="this section looks relevant",
+            uri=PREAVIS_URI,
+        )
+        assert verdict.step_state is StepState.PENDING
+        assert verdict.attempts_left == 2
 
     async def test_a_fabricated_quote_drifts_and_leaves_the_step_open(self, service):
         investigation = await planned(service)
@@ -322,6 +336,28 @@ class TestAttemptBudget:
         assert verdict.attempt.thought == "I reasoned my way to a wrong ref"
 
 
+class TestAbandonStep:
+    async def test_a_dropped_step_leaves_no_attempt_behind(self, service):
+        """That absence is what tells a reader it was dropped, not exhausted."""
+        investigation = await planned(service, questions=("Préavis ?", "Indemnité ?"))
+        updated = await service.abandon_step(
+            investigation.id, investigation.steps[1].id, "le plan ne couvre pas ça"
+        )
+        step = updated.steps[1]
+        assert step.state is StepState.UNANSWERED
+        assert step.attempts == []
+
+    async def test_it_needs_a_reason(self, service):
+        investigation = await planned(service)
+        with pytest.raises(InvalidArgumentError, match="needs a reason"):
+            await service.abandon_step(investigation.id, investigation.steps[0].id, "  ")
+
+    async def test_an_already_settled_step_cannot_be_abandoned(self, service):
+        investigation = await service_with_one_kept(service)
+        with pytest.raises(StepSettledError):
+            await service.abandon_step(investigation.id, investigation.steps[0].id, "bof")
+
+
 class TestClose:
     async def test_an_answer_citing_a_kept_anchor_is_published(self, service):
         investigation = await service_with_one_kept(service)
@@ -352,6 +388,39 @@ class TestClose:
                 quote="Le préavis est de six mois.",
             )
         closed = await service.close(investigation.id, "Ce document ne le dit pas.")
+        assert closed.state is InvestigationState.CLOSED
+
+    async def test_it_refuses_while_a_planned_step_was_never_worked(self, service):
+        """The hole a real run went through: step 2 planned, never tried, and
+        the answer spoke to it anyway."""
+        investigation = await planned(service, questions=("Préavis ?", "Indemnité ?"))
+        await service.record_attempt(
+            investigation_id=investigation.id,
+            step_id=investigation.steps[0].id,
+            thought="12.2",
+            uri=PREAVIS_URI,
+            quote=PREAVIS_TEXT,
+        )
+        with pytest.raises(UnworkedStepError, match="never worked"):
+            await service.close(
+                investigation.id, f"Trois mois {PREAVIS_URI}. Rien sur l'indemnité."
+            )
+
+    async def test_abandoning_the_unworked_step_unblocks_the_close(self, service):
+        investigation = await planned(service, questions=("Préavis ?", "Indemnité ?"))
+        await service.record_attempt(
+            investigation_id=investigation.id,
+            step_id=investigation.steps[0].id,
+            thought="12.2",
+            uri=PREAVIS_URI,
+            quote=PREAVIS_TEXT,
+        )
+        await service.abandon_step(
+            investigation.id, investigation.steps[1].id, "aucune section n'en parle"
+        )
+        closed = await service.close(
+            investigation.id, f"Trois mois {PREAVIS_URI}. Rien sur l'indemnité."
+        )
         assert closed.state is InvestigationState.CLOSED
 
     async def test_an_empty_answer_is_refused(self, service):

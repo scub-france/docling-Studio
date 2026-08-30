@@ -16,7 +16,7 @@ local agent work; put it behind an authenticating proxy anywhere else.
 | `get_outline` | The map: a tree of sections — or of pages, for a document without headings — each with its anchor and its estimated reading cost. `deeper_levels_available` says to ask for more depth; `entries_omitted` says the node cap was hit. |
 | `read_element` | Read one entry, by `ref` + `document_id` (from an outline) or by the `uri` of a citation you hold. The element alone (`include="self"`) or the whole section under it (`include="section"`), capped server-side and resumable through `next_cursor`. `citations[]` gives one anchor per element; `span_uri` gives the one covering all of them. |
 | `verify_citation` | Re-resolve an anchor and confirm a quote actually appears at it — including a quote that runs across several elements, which comes back as a span anchor. |
-| `open_investigation` + four more | For a question that needs several passages: the server keeps the plan, grades every ref you try, bounds the retries, and leaves a navigation tree behind. See [Investigating](#investigating-a-question-that-needs-several-passages). |
+| `open_investigation` + five more | For a question that needs several passages: the server keeps the plan, grades every ref you try, bounds the retries, refuses to close over a step nobody worked, and leaves a navigation tree behind. See [Investigating](#investigating-a-question-that-needs-several-passages). |
 
 **Nothing writes to a document.** Uploading, re-analysing and editing chunks
 stay in the Studio UI and the HTTP API. The investigation journal writes, but
@@ -128,7 +128,7 @@ MCP_STUDIO_BASE_URL=http://localhost:3000   # optional, for absolute deep links
 | `MCP_INLINE_CITATION_IMAGE` | `false` | Put the raster back in the tool result (~21 000 tokens a call). Only for a host where the app-only fetch fails. |
 | `MCP_APPS_ENABLED` | `true` | Ships the `show_citation` MCP App. Degrades to text on hosts without UI support. |
 | `MCP_STUDIO_BASE_URL` | *(empty)* | Absolute base for citation deep links. Empty keeps them relative. |
-| `MCP_INVESTIGATION_ENABLED` | `true` | Publishes the five journal tools and the `investigate` prompt. Off leaves the read surface byte-identical — worth knowing that five tool descriptions are read on every call, including in conversations that never investigate. |
+| `MCP_INVESTIGATION_ENABLED` | `true` | Publishes the six journal tools, the `investigate` prompt and the investigation viewer. Off leaves the read surface byte-identical — worth knowing that five tool descriptions are read on every call, including in conversations that never investigate. |
 | `MCP_MAX_ATTEMPTS_PER_STEP` | `3` | Refs one step may be tried against before it closes as `unanswered`. `1..10`. |
 | `MCP_MAX_STEPS_PER_INVESTIGATION` | `12` | Ceiling on a plan. `1..50`. |
 
@@ -223,6 +223,21 @@ A rejection costs one attempt out of `MCP_MAX_ATTEMPTS_PER_STEP`. When they
 run out the step closes as `unanswered` — **that is a result, not a failure**.
 The document not answering is a finding, and the answer has to say so.
 
+**A quote is what settles a step.** A ref recorded without one comes back
+`kept` — it resolves, and it is citable — but nothing about the passage was
+checked, so the step stays open. Letting a bare ref close a step made
+`answered` mean *the agent stopped here*, which is the model's own account of
+its retrieval wearing the server's word.
+
+**No step is skipped silently.** `close_investigation` refuses while any
+planned step is still pending. A step you decide not to work — the map does
+not cover it, an earlier step already settled it — is `abandon_step`, with the
+reason. It leaves no attempt behind, and that absence is what tells a later
+reader the step was *dropped* rather than *exhausted*: two honest outcomes,
+two different findings. This rule exists because a real run planned two steps,
+worked one, and published an answer asserting it had checked four sections for
+the second. The record showed it had checked none.
+
 **The exploration was thrown away.** Now every step carries its question and
 its *why*, and every attempt carries the `thought` that chose the ref. Those
 are recorded verbatim and **never checked** — nothing can check them. What is
@@ -260,7 +275,15 @@ card: the navigation tree on the left, the timeline on the right, and the two
 linked — clicking a step lights the sections it reached, clicking a section
 lights the steps that reached it. Each step draws its attempt budget as marks
 filled left to right, so *three marks and none of them kept* reads at a glance
-as a step the document did not answer.
+as a step the document did not answer; a step that was abandoned draws no
+marks at all and says so.
+
+It is the view an investigation should end on, and the `investigate` prompt
+says so in as many words. Left to itself a model reaches for `show_citation`,
+whose own description asks to be preferred whenever someone wants to *see* a
+passage — which is most of the time. A citation card shows one passage that
+held up. It cannot show the steps, the refs that did not hold up, or the parts
+the document did not answer, which is everything the protocol just produced.
 
 Two things the card does deliberately. A **thought is set in italic and its
 verdict in a chip beside it**, because one is testimony and the other is
