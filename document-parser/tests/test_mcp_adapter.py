@@ -42,8 +42,13 @@ TOOL_NAMES = {"find_documents", "get_outline", "read_element", "verify_citation"
 @asynccontextmanager
 async def _client(service=None, *, provider=None):
     navigation = provider or (lambda: service or make_document_tools())
-    # apps=False: this module owns the text contract.
-    async with Client(build_mcp_server(navigation, version="test", apps=False)) as client:
+    # apps=False, investigations=False: this module owns the *read* contract.
+    # The Apps extension has tests/test_mcp_apps.py and the journal (#329) has
+    # tests/test_mcp_investigation.py; pinning them out here is what makes the
+    # "exactly these tools" assertion below mean something.
+    async with Client(
+        build_mcp_server(navigation, version="test", apps=False, investigations=False)
+    ) as client:
         yield client
 
 

@@ -116,6 +116,18 @@ class Settings:
     # Empty leaves them relative, which is right when Studio serves the API
     # and the UI from the same origin.
     mcp_studio_base_url: str = ""
+    # Investigation journal (#329) — the five stateful tools. On by default
+    # inside a surface that is itself off by default, but flippable because
+    # five extra tool descriptions are read on every call, including in the
+    # conversations that never investigate anything.
+    mcp_investigation_enabled: bool = True
+    # How many refs a step may be tried against before it closes as
+    # `unanswered`. The number that turns a bad ref into a second attempt
+    # rather than a wrong answer — and that eventually stops an agent
+    # grinding on a section the document does not have.
+    mcp_max_attempts_per_step: int = 3
+    # Ceiling on a plan. A client may plan fewer steps, never more.
+    mcp_max_steps_per_investigation: int = 12
 
     def __post_init__(self) -> None:
         errors: list[str] = []
@@ -157,6 +169,15 @@ class Settings:
             errors.append(f"mcp_max_read_tokens must be >= 1 (got {self.mcp_max_read_tokens})")
         if self.mcp_enabled and not self.mcp_allowed_hosts:
             errors.append("mcp_allowed_hosts must not be empty when MCP_ENABLED is true")
+        if not (1 <= self.mcp_max_attempts_per_step <= 10):
+            errors.append(
+                f"mcp_max_attempts_per_step must be 1..10 (got {self.mcp_max_attempts_per_step})"
+            )
+        if not (1 <= self.mcp_max_steps_per_investigation <= 50):
+            errors.append(
+                "mcp_max_steps_per_investigation must be 1..50 "
+                f"(got {self.mcp_max_steps_per_investigation})"
+            )
         if not (self.studio_mode_enabled or self.rag_pipeline_enabled):
             errors.append("at least one of STUDIO_MODE_ENABLED / RAG_PIPELINE_ENABLED must be true")
         if not (_MAX_ITERATIONS_MIN <= self.reasoning_max_iterations <= _MAX_ITERATIONS_MAX):
@@ -256,6 +277,12 @@ class Settings:
             mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
             mcp_cache_ttl_seconds=int(os.environ.get("MCP_CACHE_TTL_SECONDS", "600")),
             mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
+            mcp_investigation_enabled=os.environ.get("MCP_INVESTIGATION_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_max_attempts_per_step=int(os.environ.get("MCP_MAX_ATTEMPTS_PER_STEP", "3")),
+            mcp_max_steps_per_investigation=int(
+                os.environ.get("MCP_MAX_STEPS_PER_INVESTIGATION", "12")
+            ),
         )
 
 
