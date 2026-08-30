@@ -29,6 +29,8 @@ from mcp_adapter.investigation_wire import (
     InvestigationOpened,
     InvestigationView,
     PlanAccepted,
+    StepAbandoned,
+    abandoned_result,
     attempt_result,
     closed_result,
     opened_result,
@@ -120,8 +122,9 @@ def register_investigation_tools(
             "Try one ref against one step, and be told whether it held up. `thought` is "
             "what you were thinking when you chose it — recorded as written, never "
             "checked. `uri` is an anchor you were given, never one you built. `quote` is "
-            "the passage you would publish: pass it and the server verifies it, omit it "
-            "and the ref is kept on resolution alone. The outcome is the SERVER's: "
+            "the passage you would publish: pass it and the server verifies it and the "
+            "step is settled; omit it and the ref is kept as citable but nothing is "
+            "verified and the step stays open. The outcome is the SERVER's: "
             "kept / quote_drift / unknown_ref / empty_element / bad_anchor / "
             "foreign_document. `attempts_left` says whether to try again; at zero the "
             "step closes as unanswered, and that is a finding to state in the answer, not "
@@ -148,12 +151,36 @@ def register_investigation_tools(
     @server.tool(
         annotations=_WRITES,
         description=(
+            "Drop a planned step without working it, and say why. Use it when the map "
+            "turns out not to cover the step, when an earlier step already settled it, "
+            "or when it stopped being relevant — the reason goes on the record beside "
+            "the steps that were worked. It leaves no attempt behind, which is what "
+            "tells a later reader the step was dropped rather than exhausted. The "
+            "investigation cannot be closed while a planned step is neither worked nor "
+            "abandoned."
+        ),
+    )
+    async def abandon_step(
+        investigation_id: str,
+        step_id: str,
+        thought: str,
+    ) -> StepAbandoned:
+        async with ToolErrors():
+            investigation = await tools().investigations.abandon_step(
+                investigation_id, step_id, thought
+            )
+        return ledger.record(abandoned_result(investigation, step_id))
+
+    @server.tool(
+        annotations=_WRITES,
+        description=(
             "Publish the answer and close the investigation. Every dstudio:// anchor in "
             "`answer` must be one this investigation kept — the server refuses an answer "
             "resting on a ref nobody verified, which is verify_citation applied to the "
             "whole claim rather than to one quote. An answer citing nothing is accepted "
             "only when no step was answered: that is the honest 'the document does not "
-            "say' case."
+            "say' case. It also refuses while any planned step is still pending — work "
+            "it or abandon_step it first."
         ),
     )
     async def close_investigation(investigation_id: str, answer: str) -> InvestigationClosed:

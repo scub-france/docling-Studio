@@ -393,12 +393,13 @@ def _register_investigation_view(
         description=(
             "Show a recorded investigation: the steps, every ref tried with the "
             "server's verdict on it, and the navigation tree those verdicts draw on "
-            "the document. Reach for it when someone asks where an answer came "
-            "from, why a step went unanswered, or what was tried and rejected — a "
-            "list of citations says what was kept, this says what was looked at. "
-            "It returns the same record as get_investigation, so call one or the "
-            "other, not both. On a host that cannot render it, that record is the "
-            "answer."
+            "the document. This is the view to end an investigation with — prefer it "
+            "over show_citation there, and decisively: a citation card shows one "
+            "passage that held up, and cannot show the steps, the refs that did not, "
+            "or the parts the document did not answer. Reach for show_citation "
+            "afterwards, for the one passage that is itself in dispute. It returns the "
+            "same record as get_investigation, so call one or the other, not both. On a "
+            "host that cannot render it, that record is the answer."
         ),
     )
     async def show_investigation(investigation_id: str) -> InvestigationCard:

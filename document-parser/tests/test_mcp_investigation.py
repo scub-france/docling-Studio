@@ -33,6 +33,7 @@ TOOL_NAMES = {
     "open_investigation",
     "plan_steps",
     "record_attempt",
+    "abandon_step",
     "close_investigation",
     "get_investigation",
 }
@@ -84,12 +85,12 @@ class TestSurface:
             names = {t.name for t in (await client.list_tools()).tools}
         assert names >= TOOL_NAMES
 
-    async def test_the_flag_withholds_all_five(self):
+    async def test_the_flag_withholds_them_all(self):
         async with _client(investigations=False) as client:
             names = {t.name for t in (await client.list_tools()).tools}
         assert not (TOOL_NAMES & names)
 
-    async def test_the_four_writing_tools_say_so(self):
+    async def test_the_writing_tools_say_so(self):
         """#327 promised read-only. These write to the journal's own tables —
         the annotation has to say it rather than inherit a promise it breaks."""
         async with _client() as client:
@@ -207,6 +208,69 @@ class TestRecordAttempt:
                 )
         assert settled["step_state"] == "unanswered"
         assert "finding" in settled["next_step"]
+
+
+class TestAbandonStep:
+    async def test_closing_is_refused_while_a_step_was_never_worked(self):
+        """The hole a real run went through: a step planned, never tried, and
+        the answer spoke to it anyway."""
+        async with _client() as client:
+            opened, planned = await _open_and_plan(client, ("Préavis ?", "Indemnité ?"))
+            await client.call_tool(
+                "record_attempt",
+                {
+                    "investigation_id": opened["investigation_id"],
+                    "step_id": planned["first_step_id"],
+                    "thought": "12.2",
+                    "uri": PREAVIS_URI,
+                    "quote": PREAVIS_TEXT,
+                },
+            )
+            message = _error(
+                await client.call_tool(
+                    "close_investigation",
+                    {
+                        "investigation_id": opened["investigation_id"],
+                        "answer": f"Trois mois {PREAVIS_URI}. Rien sur l'indemnité.",
+                    },
+                )
+            )
+        assert "never worked" in message
+        assert "abandon_step" in message
+
+    async def test_abandoning_names_the_step_left_to_work(self):
+        async with _client() as client:
+            opened, planned = await _open_and_plan(client, ("Préavis ?", "Indemnité ?"))
+            dropped = _payload(
+                await client.call_tool(
+                    "abandon_step",
+                    {
+                        "investigation_id": opened["investigation_id"],
+                        "step_id": planned["steps"][1]["step_id"],
+                        "thought": "aucune section n'en parle",
+                    },
+                )
+            )
+        assert dropped["steps_pending"] == 1
+        assert dropped["next_step_id"] == planned["first_step_id"]
+
+    async def test_a_bare_ref_no_longer_settles_a_step(self):
+        async with _client() as client:
+            opened, planned = await _open_and_plan(client)
+            settled = _payload(
+                await client.call_tool(
+                    "record_attempt",
+                    {
+                        "investigation_id": opened["investigation_id"],
+                        "step_id": planned["first_step_id"],
+                        "thought": "ça a l'air d'être là",
+                        "uri": PREAVIS_URI,
+                    },
+                )
+            )
+        assert settled["outcome"] == "kept"
+        assert settled["step_state"] == "pending"
+        assert "nothing was verified" in settled["next_step"]
 
 
 class TestClose:

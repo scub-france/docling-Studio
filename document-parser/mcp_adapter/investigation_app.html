@@ -372,6 +372,14 @@
   const isKept = (outcome) => outcome === "kept";
   const isRejected = (outcome) => Boolean(outcome) && outcome !== "kept";
 
+  // Unanswered with nothing tried is a step that was dropped, not one the
+  // document failed to answer. Two honest outcomes, two different findings —
+  // showing both as "unanswered" would blame the document for a decision the
+  // agent made.
+  const wasAbandoned = (step) =>
+    step.state === "unanswered" && !(step.attempts || []).length;
+  const stateLabel = (step) => (wasAbandoned(step) ? "abandoned" : step.state);
+
   const root = document.getElementById("root");
 
   function render(view) {
@@ -436,8 +444,8 @@
           ${step.why ? `<div class="step-why">${esc(step.why)}</div>` : ""}
         </span>
         <span>
-          <span class="pips">${pips(attempts, view.max_attempts_per_step)}</span>
-          <span class="state ${esc(step.state)}">${esc(step.state)}</span>
+          <span class="pips">${wasAbandoned(step) ? "" : pips(attempts, view.max_attempts_per_step)}</span>
+          <span class="state ${esc(step.state)}">${esc(stateLabel(step))}</span>
         </span>
       </button>
       ${attempts.length ? `<div class="attempts">${attempts.map(attemptRow).join("")}</div>` : ""}
