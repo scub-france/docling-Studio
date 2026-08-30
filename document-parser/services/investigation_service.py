@@ -27,7 +27,6 @@ from uuid import uuid4
 
 from domain.investigation import (
     Attempt,
-    AttemptOutcome,
     AttemptVerdict,
     Investigation,
     InvestigationState,
@@ -35,6 +34,8 @@ from domain.investigation import (
     StepState,
     cites_nothing,
     find_step,
+    pending_steps,
+    settles_step,
     step_tally,
     unbacked_anchors,
 )
@@ -51,6 +52,7 @@ from services.navigation_errors import (
     StepNotFoundError,
     StepSettledError,
     UnbackedAnswerError,
+    UnworkedStepError,
 )
 
 if TYPE_CHECKING:
@@ -149,12 +151,47 @@ class InvestigationService:
             await self._repo.mark_stale(investigation.id)
         return await self._settle_step(investigation, step, settled, stale=stale)
 
+    async def abandon_step(
+        self,
+        investigation_id: str,
+        step_id: str,
+        thought: str,
+    ) -> Investigation:
+        """Drop a step without working it — on the record.
+
+        The escape hatch that makes refusing to close over a pending step
+        reasonable. A step the map turns out not to cover, or that a previous
+        step already settled, is a finding about the plan; deciding not to
+        work it is a decision, and a decision nobody wrote down is
+        indistinguishable from an oversight.
+
+        It leaves no attempt behind, which is exactly what tells a later
+        reader this step was dropped rather than exhausted.
+        """
+        investigation = await self._load_open(investigation_id)
+        step = self._pending_step(investigation, step_id)
+        if not (thought or "").strip():
+            raise InvalidArgumentError(
+                "Abandoning a step needs a reason — it goes on the record beside the "
+                "steps that were worked."
+            )
+        await self._repo.set_step_state(step.id, StepState.UNANSWERED)
+        logger.info("Investigation %s abandoned step %s", investigation.id, step.id)
+        return replace(
+            investigation,
+            steps=[
+                replace(s, state=StepState.UNANSWERED) if s.id == step.id else s
+                for s in investigation.steps
+            ],
+        )
+
     async def close(self, investigation_id: str, answer: str) -> Investigation:
         """Publish the answer — if every anchor in it was allowed to be kept."""
         investigation = await self._load_open(investigation_id)
         answer = (answer or "").strip()
         if not answer:
             raise InvalidArgumentError("An investigation is closed with an answer, not silence.")
+        self._check_every_step_settled(investigation)
         self._check_backing(investigation, answer)
 
         at = datetime.now(UTC)
@@ -247,11 +284,13 @@ class InvestigationService:
         stale: bool,
     ) -> AttemptVerdict:
         cap = self._config.max_attempts_per_step
-        if attempt.outcome is AttemptOutcome.KEPT:
+        if settles_step(attempt):
             state = StepState.ANSWERED
         elif attempt.ordinal >= cap:
             state = StepState.UNANSWERED
         else:
+            # Includes a ref kept without a quote: recorded, citable, and not
+            # an answer. The step stays open for the quote that would be.
             state = StepState.PENDING
         if state is not StepState.PENDING:
             await self._repo.set_step_state(step.id, state)
@@ -263,6 +302,18 @@ class InvestigationService:
             attempts_left=max(0, cap - attempt.ordinal),
             next_step_id=next((s.id for s in updated if s.state is StepState.PENDING), None),
             stale=stale or investigation.stale,
+        )
+
+    def _check_every_step_settled(self, investigation: Investigation) -> None:
+        """Refuse to close over a step the plan promised and nobody worked."""
+        unworked = pending_steps(investigation)
+        if not unworked:
+            return
+        listed = "; ".join(f"{step.id} ({step.question})" for step in unworked)
+        raise UnworkedStepError(
+            f"{len(unworked)} planned step(s) were never worked: {listed}. Record an "
+            "attempt on each, or abandon_step it with the reason. An answer that speaks "
+            "to a step nobody looked at is the claim this whole protocol exists to stop."
         )
 
     def _check_backing(self, investigation: Investigation, answer: str) -> None:
