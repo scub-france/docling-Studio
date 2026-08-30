@@ -26,10 +26,16 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from domain.anchors import AnchorParseError
 from mcp_adapter.apps import build_apps_extension
+from mcp_adapter.investigation_tools import (
+    INSTRUCTIONS as INVESTIGATION_INSTRUCTIONS,
+)
+from mcp_adapter.investigation_tools import (
+    register_investigation_tools,
+)
 from mcp_adapter.ledger import Ledger
 from mcp_adapter.prompts import register_prompts
+from mcp_adapter.tool_errors import ToolErrors, parse_anchor
 from mcp_adapter.wire import (
     UNTRUSTED_NOTE,
     DocumentSearchResult,
@@ -43,7 +49,6 @@ from mcp_adapter.wire_mapping import (
     search_result,
     verification_result,
 )
-from services.navigation_errors import NavigationServiceError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -93,6 +98,7 @@ def build_mcp_server(
     apps: bool = True,
     cache_ttl_seconds: int = 0,
     inline_citation_image: bool = False,
+    investigations: bool = True,
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -112,13 +118,20 @@ def build_mcp_server(
     server = MCPServer(
         name=name,
         version=version,
-        instructions=INSTRUCTIONS,
+        # One sentence when the journal is on, pointing at the prompt rather
+        # than restating the protocol: instructions are read on every
+        # connection, and a protocol belongs where it is chosen.
+        instructions=INSTRUCTIONS + (INVESTIGATION_INSTRUCTIONS if investigations else ""),
         extensions=extensions,
         cache_hints=_cache_hints(cache_ttl_seconds),
     )
     # Slash commands: the thorough protocols, invoked by the user rather than
     # inflicted on every call (see mcp_adapter/prompts.py).
-    register_prompts(server)
+    register_prompts(server, investigations=investigations)
+    if investigations:
+        # #329 — the journal. Off leaves the four read-only tools of #327
+        # byte-identical to what they were.
+        register_investigation_tools(server, tools, ledger)
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -133,7 +146,7 @@ def build_mcp_server(
         ),
     )
     async def find_documents(query: str | None = None, limit: int = 20) -> DocumentSearchResult:
-        async with _ToolErrors():
+        async with ToolErrors():
             search = await tools().navigation.find_documents(query=query, limit=limit)
         return ledger.record(search_result(search))
 
@@ -154,7 +167,7 @@ def build_mcp_server(
         version_id: str | None = None,
         depth: int = 2,
     ) -> OutlineResult:
-        async with _ToolErrors():
+        async with ToolErrors():
             outline = await tools().navigation.get_outline(
                 document_id, version_id=version_id, depth=depth
             )
@@ -190,7 +203,7 @@ def build_mcp_server(
         cursor: str | None = None,
     ) -> ExcerptResult:
         if uri:
-            anchor = _parse_anchor(uri)
+            anchor = parse_anchor(uri)
             document_id, ref, version_id = anchor.document_id, anchor.ref, anchor.version_id
         elif not (document_id and ref):
             raise ToolError(
@@ -198,7 +211,7 @@ def build_mcp_server(
                 "(from a get_outline entry and the document_id that outline reported). Pass "
                 "back values you received — never invent a ref."
             )
-        async with _ToolErrors():
+        async with ToolErrors():
             excerpt = await tools().navigation.read_element(
                 document_id,
                 ref,
@@ -226,8 +239,8 @@ def build_mcp_server(
         ),
     )
     async def verify_citation(uri: str, quote: str) -> VerificationResult:
-        _parse_anchor(uri)
-        async with _ToolErrors():
+        parse_anchor(uri)
+        async with ToolErrors():
             check = await tools().citations.verify_citation(uri, quote)
         return ledger.record(verification_result(check))
 
@@ -250,34 +263,3 @@ def _cache_hints(ttl_seconds: int) -> dict[Any, CacheHint] | None:
         return None
     hint = CacheHint(ttl_ms=ttl_seconds * 1000, scope="public")
     return dict.fromkeys(CACHEABLE_METHODS, hint)
-
-
-def _parse_anchor(uri: str):
-    from domain.anchors import DocumentAnchor
-
-    try:
-        return DocumentAnchor.parse(uri)
-    except AnchorParseError as exc:
-        raise ToolError(str(exc)) from exc
-
-
-class _ToolErrors:
-    """Translate service errors into MCP tool errors.
-
-    An async context manager rather than a decorator so each tool keeps its
-    own signature — the SDK derives the input schema from it, so wrapping the
-    functions would erase the schema the agent reads.
-    """
-
-    async def __aenter__(self) -> None:
-        return None
-
-    async def __aexit__(self, exc_type, exc, tb) -> bool:
-        if exc is None:
-            return False
-        if isinstance(exc, NavigationServiceError | AnchorParseError):
-            # Includes NavigationUnavailableError — "still booting" is a
-            # service state, not a crash, and the agent can act on it.
-            raise ToolError(str(exc)) from exc
-        logger.exception("Unhandled error in MCP tool")
-        raise ToolError(f"Internal error: {exc}") from exc

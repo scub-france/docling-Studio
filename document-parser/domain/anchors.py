@@ -33,6 +33,16 @@ _URI_RE = re.compile(r"^dstudio://doc/(?P<doc>[^@/#]+)@(?P<version>[^@/#]+)(?P<r
 
 URI_SCHEME = "dstudio"
 
+# Anchors as they appear *inside prose* — an answer citing its sources. The
+# character class stops at whitespace and at the punctuation a sentence wraps
+# a uri in, so `(dstudio://doc/a@b#/texts/1)` and a trailing full stop both
+# yield the anchor and not the bracket. Deliberately more permissive than
+# `_URI_RE`: what it finds is then parsed, and a near-miss should fail
+# parsing rather than be silently skipped as "not an anchor".
+_IN_TEXT_RE = re.compile(r"dstudio://doc/[^\s()\[\]{}<>\"\'`]+")
+
+_TRAILING = ".,;:!?"
+
 
 class AnchorParseError(ValueError):
     """Raised when a string is not a well-formed `dstudio://` anchor."""
@@ -96,3 +106,19 @@ def normalise_quote(text: str) -> str:
     text = (text or "").replace("<\\/", "</")
     # `\s` also matches NBSP and friends in Unicode mode, so one pass is enough.
     return re.sub(r"\s+", " ", text).strip()
+
+
+def find_anchors(text: str) -> list[str]:
+    """Every `dstudio://` anchor cited in `text`, in order, de-duplicated.
+
+    Used to check an answer against what its investigation was allowed to
+    keep: a claim that names an anchor nobody verified is the failure the
+    whole protocol exists to prevent, and it can only be caught by reading
+    the prose the model is about to publish.
+    """
+    seen: list[str] = []
+    for raw in _IN_TEXT_RE.findall(text or ""):
+        candidate = raw.rstrip(_TRAILING)
+        if candidate and candidate not in seen:
+            seen.append(candidate)
+    return seen

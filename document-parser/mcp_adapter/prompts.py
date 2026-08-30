@@ -25,8 +25,15 @@ if TYPE_CHECKING:
 EVIDENCE_MODES = ("text", "images")
 
 
-def register_prompts(server: MCPServer) -> None:
-    """Register the server's user-invoked procedures."""
+def register_prompts(server: MCPServer, *, investigations: bool = True) -> None:
+    """Register the server's user-invoked procedures.
+
+    `investigations` follows `MCP_INVESTIGATION_ENABLED`: a prompt that
+    drives five tools the server did not publish would be a procedure the
+    agent cannot execute, which is worse than one it never sees.
+    """
+    if investigations:
+        _register_investigate(server)
 
     @server.prompt(
         name="cite_answer",
@@ -101,3 +108,50 @@ that someone will want to check it, `show_citation` on that uri puts the origina
 of them.
 
 If the uri does not point at a table, say what it does point at and stop."""
+
+
+def _register_investigate(server: MCPServer) -> None:
+    """The decomposed question — the protocol the journal exists to hold.
+
+    `cite_answer` stays for the question one passage settles. This is for the
+    one that does not: the server keeps the plan, grades every ref, bounds
+    the retries, and leaves a navigation tree behind.
+    """
+
+    @server.prompt(
+        name="investigate",
+        title="Investigate a document, step by step",
+        description=(
+            "Answer a question that needs several passages, recording the reasoning: "
+            "the server keeps the plan, checks every ref, and bounds the retries."
+        ),
+    )
+    def investigate(
+        document: Annotated[str, Field(description="Filename, or a fragment of one.")],
+        question: Annotated[str, Field(description="What to answer from that document.")],
+    ) -> str:
+        return f"""\
+Investigate "{document}" to answer this, and record the investigation as you go:
+
+{question}
+
+1. `open_investigation(document="{document}", question="…")` — resolves the document, pins \
+its parse, and returns the outline. If it reports several matches, ask which before going on.
+2. Decompose the question into steps the document can each answer, and call `plan_steps`. \
+Use the outline: a step you cannot point at a section for is a step to fold into another. \
+Give each one a `why` — it is what makes the record readable afterwards.
+3. For each step: read what the outline says is likely to answer it (`read_element`), then \
+`record_attempt(investigation_id, step_id, thought, uri, quote)`. `thought` is why you chose \
+that ref, in your own words. `quote` is the passage you would publish.
+4. Read the verdict, do not argue with it. `kept` means cite `kept_uri`. `quote_drift` means \
+the quote is not there — `actual_quote` says what is. `unknown_ref` means take a ref from the \
+outline or a read instead of building one. When `attempts_left` reaches 0 the step closes as \
+`unanswered`: that is a finding about the document, not a problem to route around.
+5. `close_investigation(investigation_id, answer)` — every anchor in the answer must be one \
+this investigation kept, and the server will refuse it otherwise. Say plainly which steps the \
+document did not answer.
+
+Two things worth knowing. The server, not you, decides whether a ref held up — propose, and \
+read the verdict. And your thoughts are recorded verbatim and never checked, so write what \
+you actually reasoned rather than what would look right in a transcript: the record is only \
+worth keeping if it is true."""

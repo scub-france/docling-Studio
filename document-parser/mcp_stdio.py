@@ -2,8 +2,8 @@
 
 Second composition entrypoint of the backend, beside `main.py`. Claude Code
 and Claude Desktop launch a stdio server as a subprocess, so this module
-builds only what the tools actually need — the two repositories and the
-navigation service — instead of the full `AppStateBuilder` sequence. No
+builds only what the tools actually need — the three repositories and the
+document services over them — instead of the full `AppStateBuilder` sequence. No
 Docling import, no Neo4j dial-out, no converter: startup stays instant, which
 matters when the client spawns the process on every session.
 
@@ -32,6 +32,7 @@ from mcp_adapter import build_mcp_server, deps_present, deps_provenance
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
+from persistence.investigation_repo import SqliteInvestigationRepository
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +50,7 @@ async def _serve() -> None:
     tools = build_document_tools(
         SqliteDocumentRepository(),
         SqliteAnalysisRepository(),
+        SqliteInvestigationRepository(),
     )
     server = build_mcp_server(
         lambda: tools,
@@ -56,6 +58,7 @@ async def _serve() -> None:
         apps=settings.mcp_apps_enabled,
         cache_ttl_seconds=settings.mcp_cache_ttl_seconds,
         inline_citation_image=settings.mcp_inline_citation_image,
+        investigations=settings.mcp_investigation_enabled,
     )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()

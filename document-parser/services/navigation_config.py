@@ -43,3 +43,21 @@ class NavigationConfig:
     # an iframe, not by what a model can afford. Wide enough for the expanded
     # view to be readable, bounded so a dense scan cannot hand back megabytes.
     image_page_max_bytes: int = 400_000
+
+
+@dataclass(frozen=True)
+class InvestigationConfig:
+    """Ceilings for the investigation journal (#329).
+
+    Same rule as `NavigationConfig`: a client may plan fewer steps or spend
+    fewer attempts, never more. `max_attempts_per_step` is the one that
+    changes behaviour rather than cost — it is what turns a bad ref into a
+    second try instead of a wrong answer, and what eventually closes a step
+    as `unanswered` rather than letting an agent grind.
+    """
+
+    max_attempts_per_step: int = 3
+    max_steps_per_investigation: int = 12
+    # A per-document ceiling on *open* investigations. Nothing else bounds
+    # how many an agent may start, and an unbounded table is a slow leak.
+    max_open_per_document: int = 20
