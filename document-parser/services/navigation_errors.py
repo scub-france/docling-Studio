@@ -49,3 +49,39 @@ class NavigationUnavailableError(NavigationServiceError):
     """
 
     http_status = 503
+
+
+class InvestigationNotFoundError(NavigationServiceError):
+    http_status = 404
+
+
+class InvestigationClosedError(NavigationServiceError):
+    """The investigation is no longer accepting writes.
+
+    Also raised when a plan is submitted twice: a plan that grows while it is
+    being executed is not a plan, and appending to one silently would make
+    the attempt budget meaningless.
+    """
+
+    http_status = 409
+
+
+class StepNotFoundError(NavigationServiceError):
+    http_status = 404
+
+
+class StepSettledError(NavigationServiceError):
+    """The step is already answered, or has spent its attempt budget."""
+
+    http_status = 409
+
+
+class UnbackedAnswerError(NavigationServiceError):
+    """The answer cites an anchor no attempt was allowed to keep.
+
+    `verify_citation` applied to the answer as a whole: the server is the
+    source of truth for what the document says, and that has to hold at the
+    moment the claim is published, not only when it was read.
+    """
+
+    http_status = 400
