@@ -253,6 +253,27 @@ hits to its visible ancestor rather than disappearing.
 It is also the resume path: `get_investigation` on an open investigation gives
 an agent back everything it needs after losing its context.
 
+### Seeing the trace, not only reading it
+
+On a host that supports MCP Apps, `show_investigation` renders the record as a
+card: the navigation tree on the left, the timeline on the right, and the two
+linked — clicking a step lights the sections it reached, clicking a section
+lights the steps that reached it. Each step draws its attempt budget as marks
+filled left to right, so *three marks and none of them kept* reads at a glance
+as a step the document did not answer.
+
+Two things the card does deliberately. A **thought is set in italic and its
+verdict in a chip beside it**, because one is testimony and the other is
+evidence, and a trace that presented them alike would be claiming something it
+cannot. And the caveat is printed **on the card**, not only here: a stored
+trace looks certified, and half of it is not.
+
+It makes no call of its own beyond the handshake — everything it renders
+arrives in the tool result, which is why it also works over stdio with no
+backend running. It returns the same record as `get_investigation`, so call
+one or the other, not both. `MCP_APPS_ENABLED=false` withholds it, and the
+journal's five text tools are unaffected.
+
 ### One parse, pinned
 
 `version_id` is fixed when the investigation opens and every ref is read
@@ -264,15 +285,18 @@ re-read would cite the current parse.
 
 ## Seeing a citation, not just reading it
 
-The server also ships one **MCP App** (SEP-1865, extension
-`io.modelcontextprotocol/ui`): a `show_citation` tool bound to a predeclared
-`ui://docling-studio/citation.html` template. A host that supports it renders
-the cited passage **as an image of the page region it was lifted from**, next
-to its verbatim text — `verify_citation` says a quote is real, this shows it.
+The server ships two **MCP Apps** (SEP-1865, extension
+`io.modelcontextprotocol/ui`), each a tool bound to a predeclared `ui://`
+template. `show_citation` renders the cited passage **as an image of the page
+region it was lifted from**, next to its verbatim text — `verify_citation`
+says a quote is real, this shows it. `show_investigation` renders a whole
+recorded investigation: the steps, every ref tried with the server's verdict
+on it, and the navigation tree those verdicts draw on the document.
 
 | Tool | Purpose |
 |------|---------|
 | `show_citation` | Takes a citation uri and returns the passage with a raster crop of its page region. Falls back to the citation as text on hosts that cannot render it. |
+| `show_investigation` | Takes an `investigation_id` and returns the record as a card: the plan, each attempt with its verdict, and the navigation tree. Falls back to exactly what `get_investigation` returns. |
 
 **Which clients render it**
 

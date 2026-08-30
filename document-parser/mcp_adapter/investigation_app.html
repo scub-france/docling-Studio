@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Investigation</title>
+<style>
+  /* Design tokens lifted from the Studio shell (frontend/src/app/App.vue) and
+     shared with citation_app.html — same names, same values, so the two
+     viewers and the product do not drift into three palettes. The product
+     picks its theme with a class on <html>; an app in a sandboxed iframe
+     cannot read the host's, so the media query decides and the handshake
+     overrides it. */
+  :root {
+    color-scheme: light dark;
+    --bg: #fafafa;
+    --bg-surface: #ffffff;
+    --bg-elevated: #f4f4f5;
+    --bg-hover: #e4e4e7;
+    --accent: #f97316;
+    --accent-muted: rgba(249, 115, 22, 0.1);
+    --text: #18181b;
+    --text-secondary: #52525b;
+    --text-muted: #a1a1aa;
+    --border: #e4e4e7;
+    --border-light: #d4d4d8;
+    /* Verdict colours. Only three states are ever coloured — what the server
+       kept, what it refused, and what it has not judged yet. `path` is a
+       route rather than a finding, so it stays grey on purpose: colouring it
+       would claim something happened there. */
+    --kept: #15803d;
+    --kept-bg: rgba(22, 163, 74, 0.12);
+    --bad: #b91c1c;
+    --bad-bg: rgba(220, 38, 38, 0.1);
+    --radius: 8px;
+    --radius-sm: 6px;
+    --radius-lg: 12px;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a0a0b;
+      --bg-surface: #111113;
+      --bg-elevated: #1a1a1d;
+      --bg-hover: #222226;
+      --accent-muted: rgba(249, 115, 22, 0.15);
+      --text: #ececef;
+      --text-secondary: #a1a1aa;
+      --text-muted: #63636e;
+      --border: #27272a;
+      --border-light: #3f3f46;
+      --kept: #4ade80;
+      --kept-bg: rgba(74, 222, 128, 0.14);
+      --bad: #f87171;
+      --bad-bg: rgba(248, 113, 113, 0.13);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0a0a0b;
+    --bg-surface: #111113;
+    --bg-elevated: #1a1a1d;
+    --bg-hover: #222226;
+    --accent-muted: rgba(249, 115, 22, 0.15);
+    --text: #ececef;
+    --text-secondary: #a1a1aa;
+    --text-muted: #63636e;
+    --border: #27272a;
+    --border-light: #3f3f46;
+    --kept: #4ade80;
+    --kept-bg: rgba(74, 222, 128, 0.14);
+    --bad: #f87171;
+    --bad-bg: rgba(248, 113, 113, 0.13);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { max-width: 100%; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The card measures itself against `main`, never against the window: the
+     host owns the frame width, and a viewport media query asked inside a
+     400 px iframe answers a question about the frame, not about the card. */
+  main {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: clamp(10px, 4vw, 20px);
+    container-type: inline-size;
+  }
+
+  .card {
+    min-width: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  /* ---- header ------------------------------------------------------- */
+
+  .head { padding: 16px 18px 14px; border-bottom: 1px solid var(--border); }
+  .question {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+  }
+  .origin {
+    margin-top: 7px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .origin .doc { color: var(--text-secondary); overflow-wrap: anywhere; }
+  .dot-sep { opacity: 0.5; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--border-light);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+  .badge.closed { color: var(--kept); border-color: var(--kept); background: var(--kept-bg); }
+  .badge.open { color: var(--accent); border-color: var(--accent); background: var(--accent-muted); }
+  .badge.stale { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
+
+  /* ---- the two halves ------------------------------------------------ */
+  /* A rail that answers "where in the document did this go", and a timeline
+     that answers "what was tried, and what did the server make of it". */
+
+  .body { display: grid; grid-template-columns: minmax(0, 1fr); }
+  @container (min-width: 620px) {
+    .body { grid-template-columns: minmax(190px, 34cqi) minmax(0, 1fr); }
+    .tree { border-right: 1px solid var(--border); border-bottom: none; }
+  }
+
+  .tree, .timeline { min-width: 0; padding: 14px 16px 16px; }
+  .tree { background: var(--bg-elevated); border-bottom: 1px solid var(--border); }
+
+  h2 {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 9px;
+  }
+
+  /* ---- navigation tree ----------------------------------------------- */
+
+  .node {
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr);
+    gap: 7px;
+    align-items: baseline;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    padding: 3px 5px;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .node:hover { background: var(--bg-hover); }
+  .node.lit { background: var(--accent-muted); color: var(--text); }
+  .node .pin {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--border-light);
+    justify-self: center;
+    transform: translateY(-1px);
+  }
+  .node[data-status="kept"] { color: var(--text); font-weight: 550; }
+  .node[data-status="kept"] .pin { background: var(--kept); }
+  .node[data-status="rejected"] .pin { background: var(--bad); }
+  .node[data-status="visited"] .pin { background: var(--text-muted); }
+  .node[data-status="path"] .pin { background: transparent; border: 1px solid var(--border-light); }
+  .node .label { overflow-wrap: anywhere; }
+  .node .page { color: var(--text-muted); font-size: 11px; }
+
+  .empty { font-size: 12.5px; color: var(--text-muted); font-style: italic; }
+
+  /* ---- timeline ------------------------------------------------------ */
+
+  .step { border-top: 1px solid var(--border); padding: 11px 0 3px; }
+  .step:first-of-type { border-top: 0; padding-top: 2px; }
+  .step.lit .step-q { color: var(--accent); }
+
+  .step-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: baseline;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+    color: inherit;
+  }
+  .step-q { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
+  .step-q .ord { color: var(--text-muted); font-weight: 500; margin-right: 5px; }
+  .step-why {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 1px;
+    overflow-wrap: anywhere;
+  }
+
+  /* The attempt budget, spent left to right. A step is legible at a glance:
+     three filled marks and no green means the document did not answer. */
+  .pips { display: inline-flex; gap: 3px; align-items: center; white-space: nowrap; }
+  .pip {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border-light);
+  }
+  .pip.kept { background: var(--kept); }
+  .pip.rejected { background: var(--bad); }
+  .pip.pending { background: var(--text-muted); }
+  .pip.left { background: transparent; border: 1px solid var(--border-light); }
+  .state {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-left: 7px;
+  }
+  .state.answered { color: var(--kept); }
+  .state.unanswered { color: var(--bad); }
+
+  .attempts { margin: 8px 0 4px; display: grid; gap: 7px; }
+  .attempt {
+    border-left: 2px solid var(--border-light);
+    padding: 1px 0 1px 10px;
+  }
+  .attempt[data-outcome="kept"] { border-left-color: var(--kept); }
+  .attempt.rejected { border-left-color: var(--bad); }
+
+  /* The thought is the model's own words, and nothing checked it. Italic is
+     doing real work here: it is what tells a reader this line is testimony
+     and the chip beside it is evidence. */
+  .thought {
+    font-style: italic;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
+  .verdict {
+    margin-top: 3px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .chip {
+    padding: 0 6px;
+    border-radius: var(--radius-sm);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+  .chip.kept { background: var(--kept-bg); color: var(--kept); }
+  .chip.rejected { background: var(--bad-bg); color: var(--bad); }
+  .ref {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+  .detail { font-size: 11.5px; color: var(--text-muted); overflow-wrap: anywhere; }
+  .said {
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border-radius: var(--radius-sm);
+    padding: 4px 7px;
+    overflow-wrap: anywhere;
+  }
+  .said b { font-weight: 600; color: var(--text-muted); font-style: normal; }
+
+  /* ---- footer -------------------------------------------------------- */
+
+  .foot { border-top: 1px solid var(--border); padding: 13px 18px 15px; }
+  .answer { font-size: 13.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .tally {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  /* Said once, plainly, on the artefact itself — not only in the docs nobody
+     reads next to the card. A stored trace looks certified; half of it is
+     not. */
+  .caveat {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    border-left: 2px solid var(--border-light);
+    padding-left: 8px;
+  }
+
+  .fallback { padding: 18px; font-size: 13px; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<main>
+  <div class="fallback" id="root">Waiting for the investigation…</div>
+</main>
+<script>
+  "use strict";
+
+  // Every interpolation of model- or document-derived text goes through this
+  // before it becomes markup. The server already defuses the content-wrapper
+  // delimiter on its way out; this is the second half of the same promise,
+  // because a thought is a string a model wrote after reading a PDF.
+  const esc = (value) =>
+    String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+  const num = (value) => String(value ?? "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const short = (id) => (id && id.length > 12 ? id.slice(0, 8) + "…" : id || "—");
+
+  // Rejections read better as words than as enum names, and the reader needs
+  // to tell "the quote is not there" from "the ref is not there".
+  const OUTCOMES = {
+    kept: "kept",
+    quote_drift: "quote drift",
+    unknown_ref: "unknown ref",
+    empty_element: "empty element",
+    bad_anchor: "bad anchor",
+    foreign_document: "other document",
+  };
+
+  const isKept = (outcome) => outcome === "kept";
+  const isRejected = (outcome) => Boolean(outcome) && outcome !== "kept";
+
+  const root = document.getElementById("root");
+
+  function render(view) {
+    const steps = Array.isArray(view.reasoning) ? view.reasoning : [];
+    const nodes = Array.isArray(view.map) ? view.map : [];
+    const closed = view.state === "closed";
+
+    root.className = "card";
+    root.innerHTML = `
+      <div class="head">
+        <div class="question">${esc(view.question)}</div>
+        <div class="origin">
+          <span class="badge ${closed ? "closed" : "open"}">${esc(view.state)}</span>
+          ${view.stale ? '<span class="badge stale">stale parse</span>' : ""}
+          <span class="doc">${esc(view.filename || view.document_id)}</span>
+          <span class="dot-sep">·</span>
+          <span>parse ${esc(short(view.version_id))}</span>
+        </div>
+      </div>
+      <div class="body">
+        <section class="tree">
+          <h2>Where it went</h2>
+          ${nodes.length ? nodes.map(nodeRow).join("") : '<p class="empty">Nothing located in the document yet.</p>'}
+        </section>
+        <section class="timeline">
+          <h2>What it did</h2>
+          ${steps.length ? steps.map((step) => stepBlock(step, view)).join("") : '<p class="empty">No steps planned yet.</p>'}
+        </section>
+      </div>
+      <div class="foot">
+        ${view.answer ? `<div class="answer">${esc(view.answer)}</div>` : ""}
+        <div class="tally">${tally(view, steps).join('<span class="dot-sep">·</span>')}</div>
+        <p class="caveat">Each thought is what the agent said it was doing, recorded as
+        written and never checked. The verdict beside it — kept, quote drift, unknown
+        ref — is the server's, reached by re-reading the document.</p>
+      </div>`;
+
+    wire();
+  }
+
+  function nodeRow(node) {
+    // `level` is the document's own heading depth; the first level sits flush
+    // so a single-chapter map does not open on a wasted indent.
+    const indent = Math.max(0, (Number(node.level) || 0) - 1) * 11;
+    const steps = (node.step_ids || []).join(" ");
+    return `<button class="node" data-status="${esc(node.status)}" data-steps="${esc(steps)}"
+      title="${esc(node.ref)}">
+      <span class="pin"></span>
+      <span>
+        <span class="label" style="padding-left:${indent}px">${esc(node.title)}</span>
+        ${node.page ? `<span class="page"> p.${esc(node.page)}</span>` : ""}
+      </span>
+    </button>`;
+  }
+
+  function stepBlock(step, view) {
+    const attempts = Array.isArray(step.attempts) ? step.attempts : [];
+    return `<div class="step" data-step="${esc(step.step_id)}">
+      <button class="step-head" data-step-toggle="${esc(step.step_id)}">
+        <span>
+          <span class="step-q"><span class="ord">${esc(step.ordinal)}.</span>${esc(step.question)}</span>
+          ${step.why ? `<div class="step-why">${esc(step.why)}</div>` : ""}
+        </span>
+        <span>
+          <span class="pips">${pips(attempts, view.max_attempts_per_step)}</span>
+          <span class="state ${esc(step.state)}">${esc(step.state)}</span>
+        </span>
+      </button>
+      ${attempts.length ? `<div class="attempts">${attempts.map(attemptRow).join("")}</div>` : ""}
+    </div>`;
+  }
+
+  // One mark per attempt the step was allowed, filled left to right as they
+  // are spent. Three filled and none green is a step the document did not
+  // answer — which is a finding, and should look like one.
+  function pips(attempts, cap) {
+    const budget = Math.max(Number(cap) || attempts.length, attempts.length);
+    const marks = attempts.map((attempt) => {
+      if (isKept(attempt.outcome)) return '<span class="pip kept"></span>';
+      if (isRejected(attempt.outcome)) return '<span class="pip rejected"></span>';
+      return '<span class="pip pending"></span>';
+    });
+    for (let i = attempts.length; i < budget; i += 1) marks.push('<span class="pip left"></span>');
+    return marks.join("");
+  }
+
+  function attemptRow(attempt) {
+    const outcome = attempt.outcome || "";
+    const cited = attempt.kept_uri || attempt.uri;
+    return `<div class="attempt ${isRejected(outcome) ? "rejected" : ""}" data-outcome="${esc(outcome)}">
+      ${attempt.thought ? `<div class="thought">${esc(attempt.thought)}</div>` : ""}
+      <div class="verdict">
+        <span class="chip ${isKept(outcome) ? "kept" : isRejected(outcome) ? "rejected" : ""}">${esc(OUTCOMES[outcome] || "pending")}</span>
+        <span class="ref">${esc(refOf(cited))}</span>
+        ${attempt.detail ? `<span class="detail">${esc(attempt.detail)}</span>` : ""}
+      </div>
+      ${attempt.actual_quote ? `<div class="said"><b>The page says:</b> ${esc(attempt.actual_quote)}</div>` : ""}
+    </div>`;
+  }
+
+  // The fragment is the readable half of an anchor; the document and version
+  // are already stated once in the header and repeating them on every row
+  // would push the verdict off the side of a narrow card.
+  function refOf(uri) {
+    const text = String(uri || "");
+    const hash = text.indexOf("#");
+    return hash === -1 ? text : text.slice(hash);
+  }
+
+  function tally(view, steps) {
+    const attempts = steps.reduce((total, step) => total + (step.attempts || []).length, 0);
+    const kept = steps.reduce(
+      (total, step) => total + (step.attempts || []).filter((a) => isKept(a.outcome)).length,
+      0
+    );
+    const parts = [
+      `${view.steps_answered ?? 0} answered`,
+      `${view.steps_unanswered ?? 0} unanswered`,
+      `${attempts} attempt${attempts === 1 ? "" : "s"}, ${kept} kept`,
+    ];
+    // The surface total, not this card's: `Ledger` is scoped to one server
+    // process, which over HTTP is every client of that backend. Said as
+    // "this server", never as "this conversation".
+    if (view.total_calls) {
+      parts.push(`${num(view.total_est_tokens)} est. tokens over ${view.total_calls} calls on this server`);
+    }
+    return parts;
+  }
+
+  // ---- the two-way link ------------------------------------------------
+  // Clicking a step lights the sections it reached; clicking a section lights
+  // the steps that reached it. It is the same relation read from either end,
+  // and it is the whole reason the map and the timeline sit on one card.
+
+  function wire() {
+    root.querySelectorAll("[data-step-toggle]").forEach((button) => {
+      button.addEventListener("click", () => highlight([button.dataset.stepToggle]));
+    });
+    root.querySelectorAll(".node").forEach((button) => {
+      button.addEventListener("click", () => {
+        const ids = (button.dataset.steps || "").split(" ").filter(Boolean);
+        highlight(ids);
+      });
+    });
+  }
+
+  let lit = "";
+  function highlight(stepIds) {
+    const key = stepIds.slice().sort().join(" ");
+    const clearing = key === lit || !stepIds.length;
+    lit = clearing ? "" : key;
+    const wanted = new Set(clearing ? [] : stepIds);
+
+    root.querySelectorAll(".step").forEach((element) => {
+      element.classList.toggle("lit", wanted.has(element.dataset.step));
+    });
+    root.querySelectorAll(".node").forEach((element) => {
+      const reached = (element.dataset.steps || "").split(" ").filter(Boolean);
+      element.classList.toggle("lit", reached.some((id) => wanted.has(id)));
+    });
+  }
+
+  function post(message) {
+    try { window.parent?.postMessage(message, "*"); } catch (_) { /* no host, no-op */ }
+  }
+
+  // ---- the bridge ------------------------------------------------------
+  // JSON-RPC 2.0 over postMessage, as the MCP Apps spec defines it. This view
+  // makes exactly one call — the handshake — because everything it renders
+  // arrives in the tool result. There is no second fetch to go wrong.
+
+  const pending = new Map();
+  let nextRequestId = 1;
+
+  function call(method, params, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      const id = `app-${nextRequestId++}`;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error("the host did not answer"));
+      }, timeoutMs);
+      pending.set(id, { resolve, reject, timer });
+      post({ jsonrpc: "2.0", id, method, params });
+    });
+  }
+
+  function settle(data) {
+    const entry = data && data.id != null && pending.get(data.id);
+    if (!entry) return false;
+    pending.delete(data.id);
+    clearTimeout(entry.timer);
+    if (data.error) entry.reject(new Error(data.error.message || "call failed"));
+    else entry.resolve(data.result);
+    return true;
+  }
+
+  // ---- handshake -------------------------------------------------------
+  // `ui/initialize`, then `ui/notifications/initialized` once the host has
+  // answered. The notification is what allows the host to push the tool
+  // result at all, so it is sent even when the request fails — withholding it
+  // on a host that predates the handshake would trade a theme for a blank
+  // card. The answer carries the theme to render in and the frame to fit.
+  const PROTOCOL_VERSION = "2026-01-26";
+  const HANDSHAKE_MS = 2500;
+  let host = { capabilities: null, context: {} };
+  let ready = null;
+
+  function handshake() {
+    if (ready) return ready;
+    ready = call(
+      "ui/initialize",
+      {
+        protocolVersion: PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: "docling-studio-investigation", version: "1" },
+        appCapabilities: { availableDisplayModes: ["inline"] },
+      },
+      HANDSHAKE_MS
+    )
+      .then((result) => {
+        host = {
+          capabilities: result?.hostCapabilities ?? null,
+          context: result?.hostContext ?? {},
+        };
+        applyHostContext(host.context);
+        return true;
+      })
+      .catch(() => false)
+      .then((negotiated) => {
+        post({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+        return negotiated;
+      });
+    return ready;
+  }
+
+  function applyHostContext(context) {
+    if (!context || typeof context !== "object") return;
+    if (context.theme === "dark" || context.theme === "light") {
+      document.documentElement.setAttribute("data-theme", context.theme);
+    }
+    applyContainerDimensions(context.containerDimensions);
+    reportSize();
+  }
+
+  // The host owns the frame. A fixed `width` means "fill exactly this"; a
+  // `maxWidth` means "grow up to here". `100%` rather than the spec snippet's
+  // `100vw`, which counts the scrollbar gutter the client width does not —
+  // on any platform with classic scrollbars that is a card a scrollbar wider
+  // than its frame, cropped down the side.
+  let frame = null;
+  function applyContainerDimensions(dimensions) {
+    if (!dimensions || typeof dimensions !== "object") return;
+    frame = dimensions;
+    const style = document.documentElement.style;
+    if (typeof dimensions.width === "number") {
+      style.width = "100%";
+      style.maxWidth = "100%";
+    } else if (typeof dimensions.maxWidth === "number") {
+      style.maxWidth = `${dimensions.maxWidth}px`;
+    }
+    if (typeof dimensions.height === "number") style.height = "100%";
+    else if (typeof dimensions.maxHeight === "number") {
+      style.maxHeight = `${dimensions.maxHeight}px`;
+    }
+  }
+
+  let lastHeight = 0;
+  let lastWidth = 0;
+  function reportSize() {
+    const main = document.querySelector("main");
+    if (!main) return;
+    const height = Math.ceil(main.getBoundingClientRect().height);
+    // Clamped to what the host declared: a host that honours this width sets
+    // the frame from it, so asking for more than it offered is asking to be
+    // cropped.
+    const ceiling =
+      typeof frame?.width === "number"
+        ? frame.width
+        : typeof frame?.maxWidth === "number"
+          ? frame.maxWidth
+          : Infinity;
+    const width = Math.ceil(Math.min(document.documentElement.clientWidth, ceiling));
+    if (!height) return;
+    if (Math.abs(height - lastHeight) < 8 && width === lastWidth) return;
+    lastHeight = height;
+    lastWidth = width;
+    post({
+      jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { width, height },
+    });
+  }
+
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(reportSize).observe(document.querySelector("main"));
+  }
+
+  // Host -> app. Hosts differ in how much of the JSON-RPC envelope reaches
+  // the guest, so the payload is dug out of every documented shape rather
+  // than betting on one: params.result / result / the message itself,
+  // structured content first, then the JSON in the text content block.
+  function extract(data) {
+    if (!data || typeof data !== "object") return null;
+    for (const candidate of [data.params?.result, data.params, data.result, data]) {
+      if (!candidate || typeof candidate !== "object") continue;
+      const structured = candidate.structuredContent ?? candidate.structured_content;
+      if (structured?.investigation_id && structured.reasoning) return structured;
+      if (candidate.investigation_id && candidate.reasoning) return candidate;
+      const text = candidate.content?.[0]?.text;
+      if (typeof text === "string") {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.investigation_id && parsed.reasoning) return parsed;
+        } catch (_) { /* not our payload */ }
+      }
+    }
+    return null;
+  }
+
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (settle(data)) return;
+
+    // The host asks before tearing the view down and waits for the answer.
+    if (data?.method === "ui/resource-teardown") {
+      if (data.id != null) post({ jsonrpc: "2.0", id: data.id, result: {} });
+      return;
+    }
+    if (data?.method === "ui/notifications/host-context-changed") {
+      host = { ...host, context: { ...host.context, ...(data.params || {}) } };
+      applyHostContext(host.context);
+      return;
+    }
+
+    const view = extract(data);
+    if (view) render(view);
+  });
+
+  handshake();
+</script>
+</body>
+</html>

@@ -31,7 +31,7 @@ from mcp_adapter.wire_mapping import outline_result
 
 if TYPE_CHECKING:
     from domain.investigation import Attempt, Investigation, Step
-    from domain.investigation_map import MapNode
+    from domain.investigation_map import InvestigationReport, MapNode
 
 
 @dataclass(frozen=True)
@@ -161,6 +161,7 @@ class InvestigationView:
     investigation_id: str
     document_id: str
     version_id: str
+    filename: str
     question: str
     state: str
     stale: bool
@@ -252,23 +253,36 @@ def closed_result(investigation: Investigation, citations: list[str]) -> Investi
     )
 
 
-def view_result(investigation: Investigation, nodes: list[MapNode]) -> InvestigationView:
+def view_result(report: InvestigationReport) -> InvestigationView:
+    investigation = report.investigation
     return InvestigationView(
         investigation_id=investigation.id,
         document_id=investigation.document_id,
         version_id=investigation.version_id,
+        filename=neutralise(report.filename),
         question=neutralise(investigation.question),
         state=str(investigation.state),
         stale=investigation.stale,
         answer=neutralise(investigation.answer) if investigation.answer else None,
-        reasoning=[_trace_step(step) for step in investigation.steps],
-        map=[_map_entry(node) for node in nodes],
+        reasoning=trace_steps(investigation),
+        map=map_entries(report.map),
         next_step=(
             "`reasoning` is what the agent said it was doing — thoughts are recorded, not "
             "verified. `outcome` on each attempt is the server's verdict, and `map` is those "
             "verdicts placed on the document. Resume by working the first pending step."
         ),
     )
+
+
+def trace_steps(investigation: Investigation) -> list[TraceStep]:
+    """The record as the wire publishes it. Shared with the Apps viewer, which
+    renders exactly what a text-only host reads — the same shapes, so the two
+    surfaces cannot drift into two different accounts of one investigation."""
+    return [_trace_step(step) for step in investigation.steps]
+
+
+def map_entries(nodes: list[MapNode]) -> list[MapEntry]:
+    return [_map_entry(node) for node in nodes]
 
 
 def _trace_step(step: Step) -> TraceStep:

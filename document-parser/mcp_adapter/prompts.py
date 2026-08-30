@@ -25,7 +25,12 @@ if TYPE_CHECKING:
 EVIDENCE_MODES = ("text", "images")
 
 
-def register_prompts(server: MCPServer, *, investigations: bool = True) -> None:
+def register_prompts(
+    server: MCPServer,
+    *,
+    investigations: bool = True,
+    apps: bool = True,
+) -> None:
     """Register the server's user-invoked procedures.
 
     `investigations` follows `MCP_INVESTIGATION_ENABLED`: a prompt that
@@ -33,7 +38,7 @@ def register_prompts(server: MCPServer, *, investigations: bool = True) -> None:
     agent cannot execute, which is worse than one it never sees.
     """
     if investigations:
-        _register_investigate(server)
+        _register_investigate(server, apps=apps)
 
     @server.prompt(
         name="cite_answer",
@@ -110,7 +115,7 @@ of them.
 If the uri does not point at a table, say what it does point at and stop."""
 
 
-def _register_investigate(server: MCPServer) -> None:
+def _register_investigate(server: MCPServer, *, apps: bool = True) -> None:
     """The decomposed question — the protocol the journal exists to hold.
 
     `cite_answer` stays for the question one passage settles. This is for the
@@ -130,6 +135,15 @@ def _register_investigate(server: MCPServer) -> None:
         document: Annotated[str, Field(description="Filename, or a fragment of one.")],
         question: Annotated[str, Field(description="What to answer from that document.")],
     ) -> str:
+        # Only when the viewer is registered. Telling a model to call a tool
+        # this server did not publish spends a turn on a failure.
+        step_six = (
+            "\n6. `show_investigation(investigation_id)` — so the reader sees the steps, the "
+            "refs that did not hold up, and where in the document the answer came from, "
+            "instead of taking your word for the last of the three."
+            if apps
+            else ""
+        )
         return f"""\
 Investigate "{document}" to answer this, and record the investigation as you go:
 
@@ -149,7 +163,7 @@ outline or a read instead of building one. When `attempts_left` reaches 0 the st
 `unanswered`: that is a finding about the document, not a problem to route around.
 5. `close_investigation(investigation_id, answer)` — every anchor in the answer must be one \
 this investigation kept, and the server will refuse it otherwise. Say plainly which steps the \
-document did not answer.
+document did not answer.{step_six}
 
 Two things worth knowing. The server, not you, decides whether a ref held up — propose, and \
 read the verdict. And your thoughts are recorded verbatim and never checked, so write what \
