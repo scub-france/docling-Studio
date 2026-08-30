@@ -8,7 +8,7 @@ Rules enforced:
 - services -> no import from api, infra, persistence
 - api      -> no import from infra, persistence
 - infra    -> no import from api, services
-- mcp_adapter -> no import from api, infra, persistence
+- mcp_adapter -> no import from api, infra, persistence (incl. the #329 journal)
 - persistence -> no import from api, services, infra
 - domain   -> no import of fastapi, sqlalchemy, httpx, opensearchpy
 - services -> no import of fastapi
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -218,7 +219,39 @@ class TestDocumentAgentServicesAreFrameworkFree:
         "citation_service",
         "citation_image_service",
         "parse_loader",
+        "investigation_service",
+        "investigation_adjudicator",
     )
+
+    # Per-module, not one shared set. #329's journal legitimately composes the
+    # reading and citing services (the composition root injects them, exactly
+    # as `NavigationService` already takes a `CitationService`), and widening
+    # a single allow-list to let it would have stopped the rule biting for the
+    # four modules that came first.
+    PEERS: ClassVar[dict[str, set[str]]] = {
+        "navigation_service": {
+            "citation_service",
+            "navigation_config",
+            "navigation_errors",
+            "parse_loader",
+        },
+        "citation_service": {"navigation_config", "navigation_errors", "parse_loader"},
+        "citation_image_service": {"navigation_config", "navigation_errors", "parse_loader"},
+        "parse_loader": {"navigation_config", "navigation_errors"},
+        "investigation_service": {
+            "citation_service",
+            "investigation_adjudicator",
+            "navigation_config",
+            "navigation_errors",
+            "navigation_service",
+            "parse_loader",
+        },
+        "investigation_adjudicator": {
+            "citation_service",
+            "navigation_errors",
+            "navigation_service",
+        },
+    }
 
     @pytest.mark.parametrize("lib", ["PIL", "pdf2image", "fastapi"])
     def test_no_imaging_or_web_framework(self, lib: str):
@@ -233,19 +266,19 @@ class TestDocumentAgentServicesAreFrameworkFree:
                     imported.add(node.module.split(".")[0])
             assert lib not in imported, f"services/{module}.py imports '{lib}'"
 
-    def test_they_do_not_import_a_peer_service(self):
-        """A service reaching into another service is a missing port."""
-        for module in self.MODULES:
-            source = (Path(_PROJECT_ROOT) / "services" / f"{module}.py").read_text()
-            for node in ast.walk(ast.parse(source)):
-                if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("services."):
-                    peer = node.module.split(".")[1]
-                    assert peer in {
-                        "navigation_config",
-                        "navigation_errors",
-                        "parse_loader",
-                        "citation_service",
-                    }, f"services/{module}.py imports peer service '{peer}'"
+    @pytest.mark.parametrize("module", MODULES)
+    def test_they_do_not_import_an_unexpected_peer_service(self, module: str):
+        """A service reaching into another service is a missing port —
+        unless the composition root injects it, which the allow-list records."""
+        allowed = self.PEERS[module]
+        source = (Path(_PROJECT_ROOT) / "services" / f"{module}.py").read_text()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("services."):
+                peer = node.module.split(".")[1]
+                assert peer in allowed, (
+                    f"services/{module}.py imports peer service '{peer}' — add a port, or "
+                    "record the injection in PEERS with a reason"
+                )
 
 
 class TestPersistenceLayerIsolation:
