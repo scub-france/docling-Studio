@@ -27,8 +27,13 @@ from tests.navigation_fixtures import (
 
 
 @asynccontextmanager
-async def _client(*, apps: bool = False):
-    server = build_mcp_server(lambda: make_document_tools(), version="test", apps=apps)
+async def _client(*, apps: bool = False, investigations: bool = True):
+    server = build_mcp_server(
+        lambda: make_document_tools(),
+        version="test",
+        apps=apps,
+        investigations=investigations,
+    )
     async with Client(server) as client:
         yield client
 
@@ -40,11 +45,18 @@ async def _render(name: str, args: dict[str, str]) -> str:
 
 
 class TestSurface:
-    async def test_lists_the_two_procedures(self):
+    async def test_lists_the_procedures(self):
         async with _client() as client:
             prompts = {p.name: p for p in (await client.list_prompts()).prompts}
-        assert set(prompts) == {"cite_answer", "extract_table"}
+        assert set(prompts) == {"cite_answer", "extract_table", "investigate"}
         assert prompts["cite_answer"].title == "Answer with verified citations"
+
+    async def test_investigate_is_withheld_when_its_tools_are_not_published(self):
+        """A procedure driving five tools the server did not register would be
+        one the agent cannot execute — worse than one it never sees."""
+        async with _client(investigations=False) as client:
+            prompts = {p.name for p in (await client.list_prompts()).prompts}
+        assert prompts == {"cite_answer", "extract_table"}
 
     async def test_arguments_are_described_for_the_person_typing_them(self):
         async with _client() as client:
@@ -60,7 +72,7 @@ class TestSurface:
     async def test_prompts_do_not_depend_on_the_ui_extension(self):
         # They drive the text tools; enabling a UI is orthogonal.
         async with _client(apps=True) as client:
-            assert len((await client.list_prompts()).prompts) == 2
+            assert len((await client.list_prompts()).prompts) == 3
 
     async def test_a_missing_argument_is_refused(self):
         with pytest.raises(Exception):  # noqa: B017 — the SDK wraps it as a protocol error
