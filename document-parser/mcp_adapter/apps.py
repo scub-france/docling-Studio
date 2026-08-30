@@ -1,10 +1,12 @@
-"""MCP Apps extension — the citation viewer (`io.modelcontextprotocol/ui`).
+"""MCP Apps extension — the two viewers (`io.modelcontextprotocol/ui`).
 
-One tool, `show_citation`, bound to one predeclared `ui://` template. That
-shape is the spec's, not a preference: SEP-1865 models UI as a *static*
-resource the host fetches once and caches, with the tool result pushed into
-the sandboxed iframe afterwards. So there is one HTML document for the view
-and no HTML generated per citation.
+`show_citation` shows one passage on its page; `show_investigation` (#329)
+shows a whole recorded investigation — the steps, the verdict on every ref
+tried, and the navigation tree those verdicts draw on the document. Each is
+bound to one predeclared `ui://` template. That shape is the spec's, not a
+preference: SEP-1865 models UI as a *static* resource the host fetches once
+and caches, with the tool result pushed into the sandboxed iframe afterwards.
+So there is one HTML document per view and no HTML generated per result.
 
 Why this view first: `verify_citation` answers "is this quote really in the
 document" with a boolean, which is exactly the kind of claim a reader wants to
@@ -14,8 +16,10 @@ citation view exists.
 
 Degradation is a spec requirement (SEP-2133) and it is the reason this costs
 nothing to ship: a host that never advertises the extension never fetches the
-template, and `show_citation` returns the same text-only payload it would have
-returned anyway. Claude Code sees exactly what it sees today.
+template, and both tools return the same text-only payload they would have
+returned anyway. Claude Code sees exactly what it sees today —
+`show_investigation` degrades to precisely what `get_investigation` returns,
+which is why it carries no extra field a reader could only see rendered.
 """
 
 from __future__ import annotations
@@ -30,7 +34,14 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from domain.anchors import AnchorParseError
+from domain.investigation import AttemptOutcome, StepState, step_tally
 from domain.navigation import estimate_tokens
+from mcp_adapter.investigation_wire import (
+    MapEntry,
+    TraceStep,
+    map_entries,
+    trace_steps,
+)
 from mcp_adapter.wire import neutralise
 from services.navigation_errors import NavigationServiceError
 
@@ -44,6 +55,11 @@ logger = logging.getLogger(__name__)
 
 CITATION_APP_URI = "ui://docling-studio/citation.html"
 CITATION_APP_HTML = (Path(__file__).parent / "citation_app.html").read_text(encoding="utf-8")
+
+INVESTIGATION_APP_URI = "ui://docling-studio/investigation.html"
+INVESTIGATION_APP_HTML = (Path(__file__).parent / "investigation_app.html").read_text(
+    encoding="utf-8"
+)
 
 
 @dataclass(frozen=True)
@@ -116,13 +132,56 @@ class CitationView:
     image_note: str | None = None
 
 
+@dataclass(frozen=True)
+class InvestigationCard:
+    """A whole investigation, for the viewer and for a host without one.
+
+    Field for field the same record `get_investigation` returns — same
+    `reasoning`, same `map`, same mappers — plus the three numbers a card
+    states and prose would have to recount: the step tally, the attempt
+    budget each step was allowed, and the surface total. A viewer that showed
+    something the text payload does not carry would be a second account of
+    the investigation, and the two would drift.
+
+    `max_attempts_per_step` is what lets the card draw a budget rather than a
+    count: three marks with none of them kept says the document did not
+    answer, which a bare "3 attempts" does not.
+
+    `total_est_tokens` / `total_calls` come from `Ledger`, whose scope is one
+    server process — the card says "on this server" for that reason.
+    """
+
+    investigation_id: str
+    document_id: str
+    version_id: str
+    filename: str
+    question: str
+    state: str
+    stale: bool
+    reasoning: list[TraceStep]
+    map: list[MapEntry]
+    steps_answered: int
+    steps_unanswered: int
+    steps_pending: int
+    attempts_kept: int
+    max_attempts_per_step: int
+    total_est_tokens: int = 0
+    total_calls: int = 0
+    answer: str | None = None
+
+
 def build_apps_extension(
     tools: Callable[[], DocumentTools],
     ledger: Ledger,
     *,
     inline_image: bool = False,
+    investigations: bool = True,
 ) -> Apps:
-    """Build the Apps extension over the same lazily-resolved service."""
+    """Build the Apps extension over the same lazily-resolved service.
+
+    `investigations` follows `MCP_INVESTIGATION_ENABLED`: a viewer for a
+    record the server does not keep would be a tool that always errors.
+    """
     apps = Apps()
 
     @apps.tool(
@@ -272,6 +331,9 @@ def build_apps_extension(
             page_count=image.page_count,
         )
 
+    if investigations:
+        _register_investigation_view(apps, tools, ledger)
+
     apps.add_html_resource(
         CITATION_APP_URI,
         CITATION_APP_HTML,
@@ -288,6 +350,17 @@ def build_apps_extension(
         # travels as a URL — and then the view only works while the Studio
         # backend is reachable from the host, which it is not over stdio.
     )
+    if investigations:
+        apps.add_html_resource(
+            INVESTIGATION_APP_URI,
+            INVESTIGATION_APP_HTML,
+            title="Investigation",
+            description="Shows what an agent tried in a document, and what held up.",
+            prefers_border=True,
+            # No clipboard permission and no `csp=`: this view loads nothing and
+            # writes nothing. It renders the tool result it was handed, and the
+            # only call it makes is the handshake.
+        )
     return apps
 
 
@@ -299,3 +372,69 @@ def _with_image(view: CitationView, data_uri: str, page: int, png_bytes: int) ->
 
 def _with_note(view: CitationView, note: str) -> CitationView:
     return replace(view, image_note=note)
+
+
+def _register_investigation_view(
+    apps: Apps,
+    tools: Callable[[], DocumentTools],
+    ledger: Ledger,
+) -> None:
+    """Publish the investigation viewer.
+
+    Split out so the flag guards the *registration* rather than the handler:
+    a tool that exists and always errors is worse than one that is absent,
+    because a model reads the description before it learns otherwise.
+    """
+
+    @apps.tool(
+        resource_uri=INVESTIGATION_APP_URI,
+        visibility=["model"],
+        annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+        description=(
+            "Show a recorded investigation: the steps, every ref tried with the "
+            "server's verdict on it, and the navigation tree those verdicts draw on "
+            "the document. Reach for it when someone asks where an answer came "
+            "from, why a step went unanswered, or what was tried and rejected — a "
+            "list of citations says what was kept, this says what was looked at. "
+            "It returns the same record as get_investigation, so call one or the "
+            "other, not both. On a host that cannot render it, that record is the "
+            "answer."
+        ),
+    )
+    async def show_investigation(investigation_id: str) -> InvestigationCard:
+        try:
+            report = await tools().investigations.view(investigation_id)
+        except NavigationServiceError as exc:
+            raise ToolError(str(exc)) from exc
+
+        investigation = report.investigation
+        tally = step_tally(investigation)
+        card = InvestigationCard(
+            investigation_id=investigation.id,
+            document_id=investigation.document_id,
+            version_id=investigation.version_id,
+            filename=neutralise(report.filename),
+            question=neutralise(investigation.question),
+            state=str(investigation.state),
+            stale=investigation.stale,
+            reasoning=trace_steps(investigation),
+            map=map_entries(report.map),
+            steps_answered=tally[StepState.ANSWERED],
+            steps_unanswered=tally[StepState.UNANSWERED],
+            steps_pending=tally[StepState.PENDING],
+            attempts_kept=sum(
+                1
+                for step in investigation.steps
+                for attempt in step.attempts
+                if attempt.outcome is AttemptOutcome.KEPT
+            ),
+            max_attempts_per_step=tools().investigations.config.max_attempts_per_step,
+            answer=neutralise(investigation.answer) if investigation.answer else None,
+        )
+
+        # Price this card into the tally first, then read it back, so the
+        # figure it shows includes the call it is showing — same order as
+        # `show_citation`, for the same reason.
+        ledger.record(card)
+        usage = ledger.snapshot()
+        return replace(card, total_est_tokens=usage.est_tokens, total_calls=usage.calls)

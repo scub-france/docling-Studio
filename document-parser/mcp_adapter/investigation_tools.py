@@ -174,8 +174,8 @@ def register_investigation_tools(
     )
     async def get_investigation(investigation_id: str) -> InvestigationView:
         async with ToolErrors():
-            investigation, nodes = await tools().investigations.view(investigation_id)
-        return ledger.record(view_result(investigation, nodes))
+            report = await tools().investigations.view(investigation_id)
+        return ledger.record(view_result(report))
 
 
 def _drafts(steps: list[Any]) -> list[tuple[str, str]]:

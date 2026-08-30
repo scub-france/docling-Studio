@@ -62,6 +62,21 @@ class MapNode:
     step_ids: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class InvestigationReport:
+    """An investigation as its readers want it: the record, the tree it draws,
+    and the name of the document both are about.
+
+    `filename` is here rather than looked up again by each caller — the
+    service has the parse open when it builds the map, and a viewer that has
+    to make a second call to say which document it is showing is a viewer
+    that will sometimes show the wrong one."""
+
+    investigation: Investigation
+    filename: str
+    map: list[MapNode]
+
+
 def build_navigation_map(
     outline: DocumentOutline,
     investigation: Investigation,

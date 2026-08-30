@@ -38,7 +38,7 @@ from domain.investigation import (
     step_tally,
     unbacked_anchors,
 )
-from domain.investigation_map import build_navigation_map
+from domain.investigation_map import InvestigationReport, build_navigation_map
 from domain.ports import AttemptBudgetSpentError
 from services.investigation_adjudicator import Adjudicator
 from services.navigation_config import InvestigationConfig
@@ -54,7 +54,6 @@ from services.navigation_errors import (
 )
 
 if TYPE_CHECKING:
-    from domain.investigation_map import MapNode
     from domain.navigation import DocumentOutline, DocumentSummary
     from domain.ports import InvestigationRepository
     from services.citation_service import CitationService
@@ -169,7 +168,7 @@ class InvestigationService:
         )
         return replace(investigation, state=InvestigationState.CLOSED, answer=answer, closed_at=at)
 
-    async def view(self, investigation_id: str) -> tuple[Investigation, list[MapNode]]:
+    async def view(self, investigation_id: str) -> InvestigationReport:
         """The record, and the navigation tree derived from it."""
         investigation = await self._repo.find_by_id(investigation_id)
         if investigation is None:
@@ -180,7 +179,11 @@ class InvestigationService:
             version_id=investigation.version_id,
             depth=_MAP_DEPTH,
         )
-        return investigation, build_navigation_map(outline, investigation, parse.index)
+        return InvestigationReport(
+            investigation=investigation,
+            filename=parse.document.filename,
+            map=build_navigation_map(outline, investigation, parse.index),
+        )
 
     # ------------------------------------------------------------------
     # Bookkeeping
