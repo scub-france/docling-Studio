@@ -36,6 +36,7 @@ from mcp_adapter.investigation_tools import (
 from mcp_adapter.ledger import Ledger
 from mcp_adapter.prompts import register_prompts
 from mcp_adapter.tool_errors import ToolErrors, parse_anchor
+from mcp_adapter.unshown import UnshownInvestigations
 from mcp_adapter.wire import (
     UNTRUSTED_NOTE,
     DocumentSearchResult,
@@ -112,6 +113,10 @@ def build_mcp_server(
     # back, so a card can say what the surface has cost so far rather than
     # only what it cost itself.
     ledger = Ledger()
+    # Only when both the journal and its viewer exist: without a viewer there
+    # is nothing to redirect show_citation to, and without the journal there
+    # is no close to owe a showing (see mcp_adapter/unshown.py).
+    unshown = UnshownInvestigations() if (apps and investigations) else None
     extensions = (
         [
             build_apps_extension(
@@ -119,6 +124,7 @@ def build_mcp_server(
                 ledger,
                 inline_image=inline_citation_image,
                 investigations=investigations,
+                unshown=unshown,
             )
         ]
         if apps
@@ -141,7 +147,7 @@ def build_mcp_server(
         # #329 — the journal. Off leaves the four read-only tools of #327
         # byte-identical to what they were. `viewer` tracks `apps`: that is
         # the flag `show_investigation`'s registration follows.
-        register_investigation_tools(server, tools, ledger, viewer=apps)
+        register_investigation_tools(server, tools, ledger, viewer=apps, unshown=unshown)
 
     @server.tool(
         annotations=_READ_ONLY,

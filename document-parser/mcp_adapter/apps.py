@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from mcp_adapter.ledger import Ledger
+    from mcp_adapter.unshown import UnshownInvestigations
     from services.document_tools import DocumentTools
 
 logger = logging.getLogger(__name__)
@@ -176,11 +177,15 @@ def build_apps_extension(
     *,
     inline_image: bool = False,
     investigations: bool = True,
+    unshown: UnshownInvestigations | None = None,
 ) -> Apps:
     """Build the Apps extension over the same lazily-resolved service.
 
     `investigations` follows `MCP_INVESTIGATION_ENABLED`: a viewer for a
     record the server does not keep would be a tool that always errors.
+    `unshown` is the display debt a close incurs: while it stands,
+    `show_citation` refuses the kept anchors and redirects to the record
+    (see mcp_adapter/unshown.py for why text steering was not enough).
     """
     apps = Apps()
 
@@ -221,6 +226,19 @@ def build_apps_extension(
         description=citation_description,
     )
     async def show_citation(uri: str, padding: int = 8) -> CitationView:
+        # The one hard rule on this tool: a passage kept by an investigation
+        # nobody has shown is refused, with the call to make instead. Three
+        # live runs proved the advisory versions of this sentence — in the
+        # prompt, in the close's next_step, in this tool's description — are
+        # followed sometimes; an error is followed.
+        if unshown is not None and (keeper := unshown.keeper_of(uri)):
+            raise ToolError(
+                "This passage was kept by an investigation the reader has not "
+                f'seen. Call show_investigation(investigation_id="{keeper}") '
+                "first — the whole record: the steps, every verdict, the "
+                "navigation tree. After that, show_citation is for the one "
+                "passage that is itself in dispute."
+            )
         # `get_citation` is the named use case for "what does this anchor
         # point at". This used to call `verify_citation(uri, "")` and harvest
         # the citation off its rejection branch — a dependency on the shape of
@@ -346,7 +364,7 @@ def build_apps_extension(
         )
 
     if investigations:
-        _register_investigation_view(apps, tools, ledger)
+        _register_investigation_view(apps, tools, ledger, unshown=unshown)
 
     apps.add_html_resource(
         CITATION_APP_URI,
@@ -394,6 +412,8 @@ def _register_investigation_view(
     apps: Apps,
     tools: Callable[[], DocumentTools],
     ledger: Ledger,
+    *,
+    unshown: UnshownInvestigations | None = None,
 ) -> None:
     """Publish the investigation viewer.
 
@@ -423,6 +443,10 @@ def _register_investigation_view(
             report = await tools().investigations.view(investigation_id)
         except NavigationServiceError as exc:
             raise ToolError(str(exc)) from exc
+        if unshown is not None:
+            # The record has been shown; its anchors owe nothing and
+            # show_citation is free again for the passage in dispute.
+            unshown.shown(investigation_id)
 
         investigation = report.investigation
         tally = step_tally(investigation)
