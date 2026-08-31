@@ -285,6 +285,15 @@ passage — which is most of the time. A citation card shows one passage that
 held up. It cannot show the steps, the refs that did not hold up, or the parts
 the document did not answer, which is everything the protocol just produced.
 
+Live runs showed the advisory versions of that sentence — in the prompt, in
+the close's `next_step`, in `show_citation`'s description — are followed
+sometimes, so the server enforces it the way it enforces everything else:
+after a close, `show_citation` on a kept anchor is **refused with the
+redirect** until the record has been shown once — `show_investigation`, or
+`get_investigation` on a host without a viewer. The gate is keyed by anchor,
+so ad-hoc reading elsewhere is never caught in it, and it lives in process
+memory: a restart merely means a record may be asked to show itself again.
+
 Two things the card does deliberately. A **thought is set in italic and its
 verdict in a chip beside it**, because one is testimony and the other is
 evidence, and a trace that presented them alike would be claiming something it
