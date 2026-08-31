@@ -26,6 +26,7 @@ from tests.navigation_fixtures import (
     PREAVIS_REF,
     PREAVIS_TEXT,
     anchor_uri,
+    make_document,
     make_document_tools,
 )
 
@@ -113,7 +114,30 @@ class TestSurface:
         async with _client(make_document_tools(), investigations=False) as client:
             tools = {t.name for t in (await client.list_tools()).tools}
         assert "show_investigation" not in tools
+        assert "get_investigation_page" not in tools
         assert "show_citation" in tools, "the citation view is a separate decision"
+
+    async def test_the_page_fetch_is_the_views_own_and_app_only(self):
+        """Bound to this view's resource, not the citation view's: a host is
+        free to scope an app's calls to the tools its template declares."""
+        async with _client(make_document_tools()) as client:
+            tools = {t.name: t for t in (await client.list_tools()).tools}
+        fetch = tools["get_investigation_page"]
+        assert fetch.meta["ui"] == {
+            "resourceUri": INVESTIGATION_APP_URI,
+            "visibility": ["app"],
+        }
+        assert fetch.annotations.read_only_hint
+
+    async def test_the_page_fetch_answers_with_a_raster(self, tmp_path):
+        pdf = tmp_path / "contrat.pdf"
+        pdf.write_bytes(b"%PDF-1.4 not really a pdf")
+        document = make_document()
+        document.storage_path = str(pdf)
+        async with _client(make_document_tools(documents=[document])) as client:
+            image = _payload(await client.call_tool("get_investigation_page", {"uri": PREAVIS_URI}))
+        assert image["data_uri"].startswith("data:image/")
+        assert image["width"] > 0 and image["height"] > 0
 
     async def test_disabling_apps_leaves_the_journal_tools_alone(self):
         async with _client(make_document_tools(), apps=False) as client:
@@ -260,6 +284,9 @@ class TestTemplate:
             "node.title",
             "step.question",
             "step.why",
+            "image.data_uri",
+            "image.page",
+            "cached.error",
         ):
             assert f"esc({field})" in INVESTIGATION_APP_HTML, field
 
@@ -274,9 +301,26 @@ class TestTemplate:
         assert "wasAbandoned" in INVESTIGATION_APP_HTML
         assert '"abandoned"' in INVESTIGATION_APP_HTML
 
-    def test_it_makes_no_call_but_the_handshake(self):
-        # No second fetch to go wrong: everything rendered arrives in the
-        # tool result.
+    def test_the_only_tool_it_calls_is_its_own_page_fetch(self):
+        # The record renders from the tool result alone. The path tab is the
+        # one exception, and it goes through the view's own app-only tool —
+        # one call site, so nothing else can quietly start fetching.
         assert '"ui/initialize"' in INVESTIGATION_APP_HTML
         assert '"ui/notifications/initialized"' in INVESTIGATION_APP_HTML
-        assert "tools/call" not in INVESTIGATION_APP_HTML
+        assert 'name: "get_investigation_page"' in INVESTIGATION_APP_HTML
+        assert INVESTIGATION_APP_HTML.count('"tools/call"') == 1
+
+    def test_it_offers_the_two_readings_and_the_fold(self):
+        # The record and the path are tabs over one record; the tree folds.
+        for marker in ('data-tab="record"', 'data-tab="path"', "data-fold", "How it moved"):
+            assert marker in INVESTIGATION_APP_HTML, marker
+
+    def test_an_unanswered_step_gets_no_page_thumbnail(self):
+        """Only a kept ref earns a page. A thumbnail under an unanswered step
+        would claim the investigation found something there."""
+        assert "the document did not answer" in INVESTIGATION_APP_HTML
+        assert "find((attempt) => isKept(attempt.outcome))" in INVESTIGATION_APP_HTML
+        # The guard itself, not just its ingredients: no kept attempt, no uri —
+        # and no uri, no data-uri for the hydrator to fetch.
+        assert 'const uri = kept ? kept.kept_uri || kept.uri : ""' in INVESTIGATION_APP_HTML
+        assert '${uri ? `data-uri="${esc(uri)}"` : ""}' in INVESTIGATION_APP_HTML
