@@ -262,6 +262,41 @@ class TestCard:
         assert "No investigation" in result.content[0].text
 
 
+class TestShowGate:
+    """The display debt. The prompt asks for show_investigation, the close's
+    next_step asks again, show_citation's description yields — and live runs
+    still ended in a card per kept anchor. So the server enforces what the
+    text advised: a kept anchor refuses show_citation, with the redirect,
+    until the record has been shown once."""
+
+    async def test_a_kept_anchor_is_refused_until_the_record_is_shown(self):
+        async with _client(make_document_tools()) as client:
+            investigation_id = await _investigated(client)
+            refused = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
+            assert refused.is_error is True
+            assert investigation_id in refused.content[0].text
+            assert "show_investigation" in refused.content[0].text
+            await client.call_tool("show_investigation", {"investigation_id": investigation_id})
+            freed = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
+            assert freed.is_error is False
+
+    async def test_reading_the_record_as_text_also_settles_it(self):
+        """On a host without a viewer, get_investigation IS the display —
+        holding the debt open there would refuse citations forever."""
+        async with _client(make_document_tools()) as client:
+            investigation_id = await _investigated(client)
+            await client.call_tool("get_investigation", {"investigation_id": investigation_id})
+            freed = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
+            assert freed.is_error is False
+
+    async def test_an_anchor_no_investigation_kept_shows_freely(self):
+        """The gate is keyed by anchor, not by time: ad-hoc reading and other
+        conversations are never caught in an investigation's redirect."""
+        async with _client(make_document_tools()) as client:
+            result = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
+        assert result.is_error is False
+
+
 class TestTemplate:
     def test_is_a_self_contained_html5_document(self):
         assert INVESTIGATION_APP_HTML.lstrip().startswith("<!doctype html>")

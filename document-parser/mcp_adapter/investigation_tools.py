@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
     from mcp_adapter.ledger import Ledger
+    from mcp_adapter.unshown import UnshownInvestigations
     from services.document_tools import DocumentTools
 
 # These tools change server state. `open_world_hint` stays false: the state
@@ -67,12 +68,15 @@ def register_investigation_tools(
     ledger: Ledger,
     *,
     viewer: bool = False,
+    unshown: UnshownInvestigations | None = None,
 ) -> None:
     """Publish the journal's five tools on `server`.
 
     `viewer` says whether `show_investigation` exists on this surface, so the
     close result can steer to it — pointing a model at a tool this server did
-    not publish would spend a turn on a failure.
+    not publish would spend a turn on a failure. `unshown` is the display
+    debt ledger the close feeds and `get_investigation` settles; None when
+    there is no viewer to owe a showing to.
     """
 
     @server.tool(
@@ -193,7 +197,12 @@ def register_investigation_tools(
     async def close_investigation(investigation_id: str, answer: str) -> InvestigationClosed:
         async with ToolErrors():
             investigation = await tools().investigations.close(investigation_id, answer)
-        return ledger.record(closed_result(investigation, find_anchors(answer), viewer=viewer))
+        anchors = find_anchors(answer)
+        if unshown is not None:
+            # From here until the record is shown once, these anchors refuse
+            # show_citation and redirect — see mcp_adapter/unshown.py.
+            unshown.closed(investigation.id, anchors)
+        return ledger.record(closed_result(investigation, anchors, viewer=viewer))
 
     @server.tool(
         annotations=_READS,
@@ -209,6 +218,11 @@ def register_investigation_tools(
     async def get_investigation(investigation_id: str) -> InvestigationView:
         async with ToolErrors():
             report = await tools().investigations.view(investigation_id)
+        if unshown is not None:
+            # Reading the record back counts as showing it: on a host without
+            # a viewer this text IS the display, and holding the debt open
+            # would refuse citations forever.
+            unshown.shown(investigation_id)
         return ledger.record(view_result(report))
 
 
