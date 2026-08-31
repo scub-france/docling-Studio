@@ -276,10 +276,12 @@ def closed_result(
         stale=investigation.stale,
         next_step=(
             (
-                "Published. Now show it: `show_investigation` renders the whole record — "
-                "the steps, every verdict, the navigation tree. Not a show_citation per "
-                "kept anchor: a citation card shows one passage, and the reader has just "
-                "been handed an investigation."
+                "Published. Now call `show_investigation`, before any other display: it "
+                "renders the whole record — the steps, every verdict, the navigation "
+                "tree. Not a show_citation per kept anchor: a citation card shows one "
+                "passage, and the reader has just been handed an investigation. A "
+                "show_citation belongs after the card, and only for a passage itself "
+                "in dispute."
                 if viewer
                 else "Published. get_investigation returns the record and the navigation "
                 "tree — the sections this answer came from, in document order."
