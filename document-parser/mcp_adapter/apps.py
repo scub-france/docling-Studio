@@ -371,9 +371,11 @@ def build_apps_extension(
             title="Investigation",
             description="Shows what an agent tried in a document, and what held up.",
             prefers_border=True,
-            # No clipboard permission and no `csp=`: this view loads nothing and
-            # writes nothing. It renders the tool result it was handed, and the
-            # only call it makes is the handshake.
+            # No clipboard permission and no `csp=`: the default policy already
+            # allows `img-src data:`, which is all the path view's thumbnails
+            # need. The record renders the tool result it was handed; only the
+            # path tab fetches, through `get_investigation_page`, and only when
+            # opened.
         )
     return apps
 
@@ -453,3 +455,39 @@ def _register_investigation_view(
         ledger.record(card)
         usage = ledger.snapshot()
         return replace(card, total_est_tokens=usage.est_tokens, total_calls=usage.calls)
+
+    @apps.tool(
+        resource_uri=INVESTIGATION_APP_URI,
+        # App-only, like `get_citation_image`, and bound to this view's own
+        # resource: a host is free to scope an app's calls to the tools its
+        # template declares, so the path view fetches through a tool that is
+        # unambiguously its.
+        visibility=["app"],
+        annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+        description=(
+            "Internal — the investigation viewer's own page fetch. Returns a "
+            "thumbnail of the page a kept ref sits on, with the passage's box in "
+            "the image's own pixels, as a data URI. Not for reading: it answers "
+            "with binary, and show_investigation already carries everything a "
+            "reader needs."
+        ),
+    )
+    async def get_investigation_page(uri: str, max_width: int = 240) -> CitationImageOut:
+        # Same clamp as `get_citation_image(kind='page')`: the dpi ladder
+        # bounds the bytes, this bounds the work.
+        try:
+            image = await tools().images.render_page(uri, max_width=max(120, min(max_width, 1600)))
+        except AnchorParseError as exc:
+            raise ToolError(str(exc)) from exc
+        except NavigationServiceError as exc:
+            raise ToolError(str(exc)) from exc
+        return CitationImageOut(
+            data_uri=image.data_uri,
+            media_type=image.media_type,
+            width=image.width,
+            height=image.height,
+            page=image.page,
+            bytes=len(image.png),
+            highlight=list(image.highlight) if image.highlight else None,
+            page_count=image.page_count,
+        )

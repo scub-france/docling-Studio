@@ -291,11 +291,16 @@ evidence, and a trace that presented them alike would be claiming something it
 cannot. And the caveat is printed **on the card**, not only here: a stored
 trace looks certified, and half of it is not.
 
-It makes no call of its own beyond the handshake — everything it renders
-arrives in the tool result, which is why it also works over stdio with no
-backend running. It returns the same record as `get_investigation`, so call
-one or the other, not both. `MCP_APPS_ENABLED=false` withholds it, and the
-journal's five text tools are unaffected.
+The card offers two readings of the record. **Record** is the ledger — the
+navigation tree (foldable) beside the timeline, every verdict in place.
+**Path** lays the same steps end to end in the order they were worked, one
+page thumbnail per kept ref with the passage boxed; a step nothing was kept
+for shows its state instead of borrowing a page it did not earn. The record
+renders from the tool result alone; only the path tab fetches, lazily,
+through `get_investigation_page` — the view's own app-only tool, the sibling
+of `get_citation_image`. It returns the same record as `get_investigation`,
+so call one or the other, not both. `MCP_APPS_ENABLED=false` withholds it,
+and the journal's five text tools are unaffected.
 
 ### One parse, pinned
 

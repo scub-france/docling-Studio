@@ -164,6 +164,165 @@
     margin-bottom: 9px;
   }
 
+  /* ---- tabs ----------------------------------------------------------- */
+  /* Two readings of one record. The record is the ledger — tree + timeline,
+     every verdict in place. The path is the same steps laid out as the
+     journey they took through the document, one page thumbnail per kept ref. */
+
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    appearance: none;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 8px 10px 7px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .tab:hover { color: var(--text-secondary); }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  [data-view="record"] .pane-path { display: none; }
+  [data-view="path"] .pane-record { display: none; }
+
+  /* ---- the fold ------------------------------------------------------- */
+  /* The tree is a rail on a wide card and a wall on a narrow one; folding it
+     is only ever needed there, but the control costs nothing everywhere. */
+
+  h2 .fold {
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+  }
+  .chev {
+    display: inline-block;
+    font-size: 8px;
+    transition: transform 0.15s ease;
+  }
+  .tree.collapsed .chev { transform: rotate(-90deg); }
+  .tree.collapsed .nodes { display: none; }
+  .tree.collapsed h2 { margin-bottom: 0; }
+
+  /* ---- the path ------------------------------------------------------- */
+  /* One tile per step, in the order they were worked, joined left to right.
+     The tile shows the page the kept ref sits on with the passage boxed; a
+     step nothing was kept for shows its state instead of borrowing a page it
+     did not earn. */
+
+  .pane-path { padding: 14px 16px 16px; }
+  .flow {
+    display: flex;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding: 4px 2px 10px;
+  }
+  .hop {
+    flex: 0 0 138px;
+    display: grid;
+    gap: 5px;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+  }
+  .hop-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .hop-top .ord { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+  .hop-state {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .hop-state.answered { color: var(--kept); }
+  .hop-state.unanswered { color: var(--bad); }
+  .shot {
+    position: relative;
+    display: block;
+    width: 100%;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    overflow: hidden;
+  }
+  .shot.pending, .shot.none, .shot.failed { height: 150px; }
+  .hop[data-state="answered"] .shot { border-color: var(--kept); }
+  .hop[data-state="unanswered"] .shot { border-style: dashed; border-color: var(--bad); }
+  .hop[data-state="abandoned"] .shot,
+  .hop[data-state="pending"] .shot { border-style: dashed; }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot .mark {
+    position: absolute;
+    border: 1.5px solid var(--accent);
+    background: var(--accent-muted);
+    border-radius: 2px;
+  }
+  .shot .ph {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 8px;
+    font-size: 10.5px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .hop:hover .shot { border-color: var(--accent); }
+  .hop-where {
+    font-size: 11px;
+    font-weight: 550;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .hop-where .page { color: var(--text-muted); font-weight: 400; }
+  .hop-q {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .flow .link {
+    flex: 0 0 auto;
+    align-self: center;
+    padding: 0 6px;
+    color: var(--text-muted);
+    font-size: 13px;
+    user-select: none;
+  }
+
   /* ---- navigation tree ----------------------------------------------- */
 
   .node {
@@ -382,12 +541,18 @@
 
   const root = document.getElementById("root");
 
+  // Presentation state, kept outside `render` so a re-push of the result —
+  // or a hop into the record — lands on the reading the person had chosen.
+  let activeTab = "record";
+  let treeCollapsed = false;
+
   function render(view) {
     const steps = Array.isArray(view.reasoning) ? view.reasoning : [];
     const nodes = Array.isArray(view.map) ? view.map : [];
     const closed = view.state === "closed";
 
     root.className = "card";
+    root.dataset.view = activeTab;
     root.innerHTML = `
       <div class="head">
         <div class="question">${esc(view.question)}</div>
@@ -399,16 +564,32 @@
           <span>parse ${esc(short(view.version_id))}</span>
         </div>
       </div>
-      <div class="body">
-        <section class="tree">
-          <h2>Where it went</h2>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-record" data-tab="record"
+          aria-controls="pane-record" aria-selected="${activeTab === "record"}"
+          tabindex="${activeTab === "record" ? 0 : -1}">Record</button>
+        <button class="tab" role="tab" id="tab-path" data-tab="path"
+          aria-controls="pane-path" aria-selected="${activeTab === "path"}"
+          tabindex="${activeTab === "path" ? 0 : -1}">Path</button>
+      </div>
+      <div class="body pane-record" role="tabpanel" id="pane-record" aria-labelledby="tab-record">
+        <section class="tree${treeCollapsed ? " collapsed" : ""}">
+          <h2><button class="fold" data-fold aria-controls="tree-nodes"
+            aria-expanded="${!treeCollapsed}"><span
+            class="chev" aria-hidden="true">▾</span>Where it went</button></h2>
+          <div class="nodes" id="tree-nodes">
           ${nodes.length ? nodes.map(nodeRow).join("") : '<p class="empty">Nothing located in the document yet.</p>'}
+          </div>
         </section>
         <section class="timeline">
           <h2>What it did</h2>
           ${steps.length ? steps.map((step) => stepBlock(step, view)).join("") : '<p class="empty">No steps planned yet.</p>'}
         </section>
       </div>
+      <section class="pane-path" role="tabpanel" id="pane-path" aria-labelledby="tab-path">
+        <h2>How it moved</h2>
+        ${steps.length ? `<div class="flow">${flowStrip(steps, nodes)}</div>` : '<p class="empty">No steps planned yet.</p>'}
+      </section>
       <div class="foot">
         ${view.answer ? `<div class="answer">${esc(view.answer)}</div>` : ""}
         <div class="tally">${tally(view, steps).join('<span class="dot-sep">·</span>')}</div>
@@ -418,6 +599,210 @@
       </div>`;
 
     wire();
+    // The rebuilt DOM carries no .lit classes, so the tracker must not
+    // claim otherwise — a stale key would turn the next click into a clear.
+    lit = "";
+    if (activeTab === "path") hydratePath();
+  }
+
+  // ---- the path ------------------------------------------------------
+  // The same steps the timeline lists, laid end to end in the order they
+  // were worked. Only a kept ref earns a page: a step the document did not
+  // answer shows its state, because a thumbnail under an unanswered step
+  // would claim the investigation found something there.
+
+  function flowStrip(steps, nodes) {
+    const where = nodesByStep(nodes);
+    return steps
+      .map((step) => hopTile(step, where.get(step.step_id)))
+      .join('<span class="link" aria-hidden="true">→</span>');
+  }
+
+  // The map already knows which outline section each step reached; prefer
+  // the node a ref was kept at over one that was merely tried.
+  function nodesByStep(nodes) {
+    const byStep = new Map();
+    for (const node of nodes) {
+      for (const id of node.step_ids || []) {
+        const seen = byStep.get(id);
+        if (!seen || (node.status === "kept" && seen.status !== "kept")) byStep.set(id, node);
+      }
+    }
+    return byStep;
+  }
+
+  function hopTile(step, node) {
+    const kept = (step.attempts || []).find((attempt) => isKept(attempt.outcome));
+    const uri = kept ? kept.kept_uri || kept.uri : "";
+    const state = stateLabel(step);
+    const where = node ? node.title : uri ? refOf(uri) : "";
+    return `<button class="hop" data-state="${esc(state)}" data-hop="${esc(step.step_id)}"
+      ${uri ? `data-uri="${esc(uri)}"` : ""} title="${esc(step.question)}">
+      <span class="hop-top">
+        <span class="ord">${esc(step.ordinal)}</span>
+        <span class="hop-state ${esc(state)}">${esc(state)}</span>
+      </span>
+      <span class="shot ${uri ? "pending" : "none"}">${
+        uri ? "" : `<span class="ph">${esc(OUTCOMES_EMPTY[state] || state)}</span>`
+      }</span>
+      <span class="hop-where">${esc(where || "—")}${
+        node && node.page ? `<span class="page"> · p.${esc(node.page)}</span>` : ""
+      }</span>
+      <span class="hop-q">${esc(step.question)}</span>
+    </button>`;
+  }
+
+  // What an empty tile says. Terser than the timeline's chips: a tile has
+  // room for a verdict, not for a sentence.
+  const OUTCOMES_EMPTY = {
+    unanswered: "the document did not answer",
+    abandoned: "dropped, with a reason on the record",
+    pending: "not worked yet",
+  };
+
+  // ---- thumbnails -----------------------------------------------------
+  // Fetched only when the path is opened, through the view's own app-only
+  // tool, and remembered: the record tab stays as cheap as it was, and a
+  // second visit to the path costs nothing.
+
+  // No one-shot latch here, on purpose: `render` rebuilds every tile on a
+  // re-pushed result, so the work is derived from state each time — a tile
+  // whose uri has no settled entry is a tile to fetch. `inflight` is what
+  // stops two overlapping invocations fetching the same page twice, and a
+  // capability refusal is remembered so rebuilt tiles regain their message
+  // instead of regressing to a blank rectangle that never fills in.
+
+  const thumbs = new Map();
+  const inflight = new Set();
+  let noServerTools = false;
+
+  async function hydratePath() {
+    const hops = [...root.querySelectorAll(".hop[data-uri]")];
+    hops.forEach((hop) => {
+      const cached = thumbs.get(hop.dataset.uri);
+      if (cached) paintShot(hop, cached);
+    });
+
+    const negotiated = await handshake();
+    if (negotiated && host.capabilities && !host.capabilities.serverTools) noServerTools = true;
+    if (noServerTools) {
+      failShots("This host does not relay tool calls: no page previews.");
+      return;
+    }
+
+    // A small pool rather than a volley: each fetch rasterizes a page. A
+    // timed-out fetch is queued again — the timeout was the local clock's
+    // verdict, not the server's — while a server refusal stays refused.
+    const queue = [...new Set(hops.map((hop) => hop.dataset.uri))].filter((uri) => {
+      if (inflight.has(uri)) return false;
+      const cached = thumbs.get(uri);
+      return !cached || cached.retriable === true;
+    });
+    queue.forEach((uri) => inflight.add(uri));
+    const workers = Array.from({ length: Math.min(3, queue.length) }, async () => {
+      for (let uri = queue.shift(); uri; uri = queue.shift()) {
+        try {
+          const image = await fetchThumb(uri);
+          thumbs.set(uri, { image });
+        } catch (error) {
+          thumbs.set(uri, {
+            error: error.message || "no preview",
+            retriable: error.message === TIMEOUT_MESSAGE,
+          });
+        } finally {
+          inflight.delete(uri);
+        }
+        root.querySelectorAll(`.hop[data-uri="${cssEscape(uri)}"]`).forEach((hop) => {
+          paintShot(hop, thumbs.get(uri));
+        });
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  async function fetchThumb(uri) {
+    // Twice the default budget: the first fetch of a page can pay for the
+    // whole document to be rasterized, and a premature timeout would cache
+    // a failure the server never produced.
+    const result = await call(
+      "tools/call",
+      {
+        name: "get_investigation_page",
+        arguments: { uri, max_width: 240 },
+      },
+      20000
+    );
+    if (result && (result.isError || result.is_error)) {
+      throw new Error(result?.content?.[0]?.text || "the server refused");
+    }
+    const image =
+      result?.structuredContent ??
+      result?.structured_content ??
+      JSON.parse(result?.content?.[0]?.text ?? "{}");
+    if (!image || !image.data_uri || !image.width || !image.height) {
+      throw new Error("the answer carried no image");
+    }
+    return image;
+  }
+
+  function paintShot(hop, cached) {
+    const shot = hop.querySelector(".shot");
+    if (!shot) return;
+    if (cached.error) {
+      shot.classList.remove("pending");
+      shot.classList.add("failed");
+      shot.innerHTML = `<span class="ph">${esc(cached.error)}</span>`;
+      return;
+    }
+    const image = cached.image;
+    // The box arrives in the image's own pixels, so the overlay is a
+    // percentage of the rendered size — same contract as the citation view.
+    const box = image.highlight;
+    const mark = box
+      ? `<span class="mark" style="left:${(box[0] / image.width) * 100}%;top:${
+          (box[1] / image.height) * 100
+        }%;width:${((box[2] - box[0]) / image.width) * 100}%;height:${
+          ((box[3] - box[1]) / image.height) * 100
+        }%"></span>`
+      : "";
+    shot.classList.remove("pending", "failed");
+    shot.style.aspectRatio = `${image.width} / ${image.height}`;
+    shot.style.height = "auto";
+    shot.innerHTML =
+      `<img alt="Page ${esc(image.page)}, the kept passage boxed" src="${esc(image.data_uri)}">` +
+      mark;
+    const label = hop.querySelector(".hop-where");
+    if (label && !label.querySelector(".page") && image.page) {
+      label.insertAdjacentHTML("beforeend", `<span class="page"> · p.${esc(image.page)}</span>`);
+    }
+  }
+
+  function failShots(message) {
+    root.querySelectorAll(".hop[data-uri] .shot").forEach((shot) => {
+      shot.classList.remove("pending");
+      shot.classList.add("failed");
+      shot.innerHTML = `<span class="ph">${esc(message)}</span>`;
+    });
+  }
+
+  // CSS.escape is everywhere the sandbox runs; the fallback quotes enough
+  // for a dstudio:// uri or a server-minted step id, the only two things
+  // ever interpolated through it.
+  const cssEscape = (value) =>
+    typeof CSS !== "undefined" && CSS.escape
+      ? CSS.escape(value)
+      : String(value).replaceAll(/["\\\]]/g, "\\$&");
+
+  function selectTab(tab) {
+    activeTab = tab;
+    root.dataset.view = tab;
+    root.querySelectorAll(".tab").forEach((button) => {
+      const selected = button.dataset.tab === tab;
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    if (tab === "path") hydratePath();
+    reportSize();
   }
 
   function nodeRow(node) {
@@ -524,6 +909,40 @@
         highlight(ids);
       });
     });
+    root.querySelectorAll(".tab").forEach((button) => {
+      button.addEventListener("click", () => selectTab(button.dataset.tab));
+    });
+    // The tablist contract: arrows move selection, the selected tab is the
+    // one tab stop. Two tabs make the arrows symmetric.
+    root.querySelector(".tabs")?.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      selectTab(activeTab === "record" ? "path" : "record");
+      root.querySelector(`.tab[data-tab="${activeTab}"]`)?.focus();
+    });
+    const fold = root.querySelector("[data-fold]");
+    if (fold) {
+      fold.addEventListener("click", () => {
+        treeCollapsed = !treeCollapsed;
+        fold.setAttribute("aria-expanded", String(!treeCollapsed));
+        root.querySelector(".tree")?.classList.toggle("collapsed", treeCollapsed);
+        reportSize();
+      });
+    }
+    // A hop is the same step the timeline lists: clicking it lands on that
+    // step in the record, lit — the two readings stay one record. `lit` is
+    // cleared first because highlight() is a toggle, and landing on a step
+    // that happened to be lit already must not arrive with the light off.
+    root.querySelectorAll(".hop").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectTab("record");
+        lit = "";
+        highlight([button.dataset.hop]);
+        root
+          .querySelector(`.step[data-step="${cssEscape(button.dataset.hop)}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+      });
+    });
   }
 
   let lit = "";
@@ -547,19 +966,23 @@
   }
 
   // ---- the bridge ------------------------------------------------------
-  // JSON-RPC 2.0 over postMessage, as the MCP Apps spec defines it. This view
-  // makes exactly one call — the handshake — because everything it renders
-  // arrives in the tool result. There is no second fetch to go wrong.
+  // JSON-RPC 2.0 over postMessage, as the MCP Apps spec defines it. The
+  // record renders from the tool result alone; the only fetches are the
+  // handshake and, when the path is opened, `get_investigation_page` — one
+  // thumbnail per kept ref, never eagerly.
 
   const pending = new Map();
   let nextRequestId = 1;
+  // Named so the thumbnail cache can tell a local timeout — worth retrying —
+  // from an answer the server actually gave.
+  const TIMEOUT_MESSAGE = "the host did not answer";
 
   function call(method, params, timeoutMs = 8000) {
     return new Promise((resolve, reject) => {
       const id = `app-${nextRequestId++}`;
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new Error("the host did not answer"));
+        reject(new Error(TIMEOUT_MESSAGE));
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer });
       post({ jsonrpc: "2.0", id, method, params });
