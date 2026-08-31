@@ -260,8 +260,14 @@ def abandoned_result(investigation: Investigation, step_id: str) -> StepAbandone
     )
 
 
-def closed_result(investigation: Investigation, citations: list[str]) -> InvestigationClosed:
+def closed_result(
+    investigation: Investigation, citations: list[str], *, viewer: bool = False
+) -> InvestigationClosed:
     tally = step_tally(investigation)
+    # `viewer` says whether `show_investigation` is on this surface. The prompt
+    # already asks for it, but the prompt is thirty turns behind by now; this
+    # line is what the model reads at the moment it chooses how to display —
+    # steering it here is what stopped a show_citation per kept anchor.
     return InvestigationClosed(
         investigation_id=investigation.id,
         steps_answered=tally[StepState.ANSWERED],
@@ -269,8 +275,15 @@ def closed_result(investigation: Investigation, citations: list[str]) -> Investi
         citations=citations,
         stale=investigation.stale,
         next_step=(
-            "Published. get_investigation returns the record and the navigation tree — the "
-            "sections this answer came from, in document order."
+            (
+                "Published. Now show it: `show_investigation` renders the whole record — "
+                "the steps, every verdict, the navigation tree. Not a show_citation per "
+                "kept anchor: a citation card shows one passage, and the reader has just "
+                "been handed an investigation."
+                if viewer
+                else "Published. get_investigation returns the record and the navigation "
+                "tree — the sections this answer came from, in document order."
+            )
             + (
                 " This investigation ran on a parse that has since been superseded: the "
                 "quotes are real, a re-read would cite the current parse."

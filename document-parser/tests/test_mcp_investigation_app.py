@@ -121,6 +121,61 @@ class TestSurface:
         assert "show_investigation" not in tools
         assert "get_investigation" in tools
 
+    async def test_closing_steers_at_the_viewer_not_a_card_per_citation(self):
+        """The prompt's step 7 is thirty turns behind by close time; the close
+        result is what the model reads at the moment it chooses how to display.
+        Observed failure: a show_citation per kept anchor instead of the one
+        card that shows the record."""
+        async with _client(make_document_tools()) as client:
+            opened = _payload(
+                await client.call_tool(
+                    "open_investigation",
+                    {"document": "contrat", "question": "Comment résilier ?"},
+                )
+            )
+            planned = _payload(
+                await client.call_tool(
+                    "plan_steps",
+                    {
+                        "investigation_id": opened["investigation_id"],
+                        "steps": [{"question": "Quel est le préavis ?", "why": "tout en dépend"}],
+                    },
+                )
+            )
+            await client.call_tool(
+                "record_attempt",
+                {
+                    "investigation_id": opened["investigation_id"],
+                    "step_id": planned["first_step_id"],
+                    "thought": "12.2 le dit littéralement",
+                    "uri": PREAVIS_URI,
+                    "quote": PREAVIS_TEXT,
+                },
+            )
+            closed = _payload(
+                await client.call_tool(
+                    "close_investigation",
+                    {
+                        "investigation_id": opened["investigation_id"],
+                        "answer": f"Trois mois. {PREAVIS_URI}",
+                    },
+                )
+            )
+        assert "show_investigation" in closed["next_step"]
+        assert "show_citation" in closed["next_step"], "the wrong move is named, not implied"
+
+    async def test_the_citation_view_yields_to_the_investigation_view(self):
+        """show_citation's 'prefer it whenever someone asks to see' is right
+        for ad-hoc reading and wrong at the end of an investigation — the
+        carve-out exists only while show_investigation does."""
+        async with _client(make_document_tools()) as client:
+            tools = {t.name: t for t in (await client.list_tools()).tools}
+        assert "show_investigation" in tools["show_citation"].description
+
+        async with _client(make_document_tools(), investigations=False) as client:
+            tools = {t.name: t for t in (await client.list_tools()).tools}
+        assert "show_investigation" not in tools["show_citation"].description
+
 
 class TestCard:
     async def test_it_carries_the_record_the_text_payload_carries(self):
