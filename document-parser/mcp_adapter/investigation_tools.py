@@ -65,8 +65,15 @@ def register_investigation_tools(
     server: MCPServer,
     tools: Callable[[], DocumentTools],
     ledger: Ledger,
+    *,
+    viewer: bool = False,
 ) -> None:
-    """Publish the journal's five tools on `server`."""
+    """Publish the journal's five tools on `server`.
+
+    `viewer` says whether `show_investigation` exists on this surface, so the
+    close result can steer to it — pointing a model at a tool this server did
+    not publish would spend a turn on a failure.
+    """
 
     @server.tool(
         annotations=_WRITES,
@@ -186,7 +193,7 @@ def register_investigation_tools(
     async def close_investigation(investigation_id: str, answer: str) -> InvestigationClosed:
         async with ToolErrors():
             investigation = await tools().investigations.close(investigation_id, answer)
-        return ledger.record(closed_result(investigation, find_anchors(answer)))
+        return ledger.record(closed_result(investigation, find_anchors(answer), viewer=viewer))
 
     @server.tool(
         annotations=_READS,

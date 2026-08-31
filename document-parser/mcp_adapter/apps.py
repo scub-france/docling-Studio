@@ -184,6 +184,32 @@ def build_apps_extension(
     """
     apps = Apps()
 
+    # One sentence more when the journal is on: `show_citation`'s "prefer it
+    # whenever someone asks to see a passage" is right for ad-hoc reading and
+    # wrong at the end of an investigation, where it produced a card per kept
+    # anchor instead of the one card that shows the record. The carve-out is
+    # conditional because it names `show_investigation`, and a description
+    # pointing at a tool this server did not publish would be a trap.
+    citation_description = (
+        "Show a citation where it lives: the region of the page it was lifted "
+        "from, rendered as an image, next to its verbatim text. verify_citation "
+        "answers whether a quote is real; this one lets the reader see that it "
+        "is. Prefer it whenever the citation itself is the point — a figure, a "
+        "table, a number, a date, a clause, a contested wording — and whenever "
+        "someone asks to see, check or point at a passage. It carries a raster "
+        "of the page, so it costs more than a text citation: for ordinary "
+        "explanatory prose, quote the text instead. Takes the uri of a citation "
+        "returned by read_element — `citations[].uri` for one element, or "
+        "`span_uri` for a passage running across several. On a host that cannot "
+        "display it, it returns the same citation as text."
+    ) + (
+        " To display an investigation's findings, end with show_investigation "
+        "instead — one card carries the whole record — and keep this for the "
+        "single passage that is itself in dispute."
+        if investigations
+        else ""
+    )
+
     @apps.tool(
         resource_uri=CITATION_APP_URI,
         # The model addresses this tool; the app never calls back into it.
@@ -192,19 +218,7 @@ def build_apps_extension(
         # view actually needs.
         visibility=["model"],
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
-        description=(
-            "Show a citation where it lives: the region of the page it was lifted "
-            "from, rendered as an image, next to its verbatim text. verify_citation "
-            "answers whether a quote is real; this one lets the reader see that it "
-            "is. Prefer it whenever the citation itself is the point — a figure, a "
-            "table, a number, a date, a clause, a contested wording — and whenever "
-            "someone asks to see, check or point at a passage. It carries a raster "
-            "of the page, so it costs more than a text citation: for ordinary "
-            "explanatory prose, quote the text instead. Takes the uri of a citation "
-            "returned by read_element — `citations[].uri` for one element, or "
-            "`span_uri` for a passage running across several. On a host that cannot "
-            "display it, it returns the same citation as text."
-        ),
+        description=citation_description,
     )
     async def show_citation(uri: str, padding: int = 8) -> CitationView:
         # `get_citation` is the named use case for "what does this anchor

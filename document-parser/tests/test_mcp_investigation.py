@@ -323,6 +323,11 @@ class TestClose:
         assert closed["steps_answered"] == 1
         assert closed["steps_unanswered"] == 0
         assert closed["citations"] == [PREAVIS_URI]
+        # This client was built with apps=False: no viewer exists here, so the
+        # steering falls back to the record — naming show_investigation would
+        # send the model at a tool this server never published.
+        assert "get_investigation" in closed["next_step"]
+        assert "show_investigation" not in closed["next_step"]
 
 
 class TestGetInvestigation:

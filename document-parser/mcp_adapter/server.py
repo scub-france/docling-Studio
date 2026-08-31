@@ -139,8 +139,9 @@ def build_mcp_server(
     register_prompts(server, investigations=investigations, apps=apps)
     if investigations:
         # #329 — the journal. Off leaves the four read-only tools of #327
-        # byte-identical to what they were.
-        register_investigation_tools(server, tools, ledger)
+        # byte-identical to what they were. `viewer` tracks `apps`: that is
+        # the flag `show_investigation`'s registration follows.
+        register_investigation_tools(server, tools, ledger, viewer=apps)
 
     @server.tool(
         annotations=_READ_ONLY,
