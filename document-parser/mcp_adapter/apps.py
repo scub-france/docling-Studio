@@ -24,6 +24,7 @@ which is why it carries no extra field a reader could only see rendered.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -54,13 +55,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-CITATION_APP_URI = "ui://docling-studio/citation.html"
-CITATION_APP_HTML = (Path(__file__).parent / "citation_app.html").read_text(encoding="utf-8")
 
-INVESTIGATION_APP_URI = "ui://docling-studio/investigation.html"
+def _versioned_uri(name: str, html: str) -> str:
+    """The template's uri carries a hash of its content.
+
+    SEP-1865 says a host fetches a `ui://` resource once and caches it, and a
+    live host took that literally: across three server restarts it never
+    fetched the template again — its MCP session (a long-lived proxy) outlives
+    the server, so a redeployed card rendered with last session's markup,
+    indefinitely. Versioning the uri is the spec-shaped answer: a changed
+    template is a *different resource*, one the host has never seen, so the
+    fetch-once rule works for it instead of against it. Staleness is then
+    bounded by the tools/list cache (`MCP_CACHE_TTL_SECONDS`), not by how
+    long the host keeps a session open.
+    """
+    digest = hashlib.sha256(html.encode("utf-8")).hexdigest()[:12]
+    return f"ui://docling-studio/{name}.{digest}.html"
+
+
+CITATION_APP_HTML = (Path(__file__).parent / "citation_app.html").read_text(encoding="utf-8")
+CITATION_APP_URI = _versioned_uri("citation", CITATION_APP_HTML)
+
 INVESTIGATION_APP_HTML = (Path(__file__).parent / "investigation_app.html").read_text(
     encoding="utf-8"
 )
+INVESTIGATION_APP_URI = _versioned_uri("investigation", INVESTIGATION_APP_HTML)
 
 
 @dataclass(frozen=True)
