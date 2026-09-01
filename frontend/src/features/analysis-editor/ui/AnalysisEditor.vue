@@ -49,14 +49,20 @@
       </section>
       <div class="editor-grid">
         <aside class="structure-column">
-          <div class="column-heading">{{ t('analysisEditor.readingOrder') }}</div>
+          <div class="column-heading">
+            <span>{{ t('analysisEditor.readingOrder') }}</span>
+            <button type="button" class="tree-fold-button" @click="toggleTreeOpen">
+              {{ treeDefaultOpen ? t('analysisEditor.collapseAll') : t('analysisEditor.expandAll') }}
+            </button>
+          </div>
           <EditableStructureNode
             v-for="node in store.tree"
-            :key="node.elementId"
+            :key="`${node.elementId}-${treeRemountKey}`"
             :node="node"
             :selected-id="store.selectedElementId"
             :checked-ids="store.mergeSelection"
             :is-text="isMergeable"
+            :default-open="treeDefaultOpen"
             @select="select"
             @toggle-merge="toggleMerge"
             @toggle-subtree="toggleMergeSubtree"
@@ -115,6 +121,8 @@ const currentPage = ref(1)
 const previewMode = ref<'page' | 'markdown'>('page')
 const historyOpen = ref(false)
 const draggedId = ref<string | null>(null)
+const treeDefaultOpen = ref(true)
+const treeRemountKey = ref(0)
 const isMergeable = (id: string) => store.elements.find((element) => element.id === id)?.type === 'text'
 const highlightedRefs = computed(() => {
   const ids = new Set(store.mergeSelection.length ? store.mergeSelection : store.selectedElementId ? [store.selectedElementId] : [])
@@ -147,6 +155,10 @@ function toggleMerge(id: string): void {
 }
 function toggleMergeSubtree(ids: string[]): void {
   store.toggleMergeSelectionMany(ids)
+}
+function toggleTreeOpen(): void {
+  treeDefaultOpen.value = !treeDefaultOpen.value
+  treeRemountKey.value += 1
 }
 function discard(): void {
   store.discard()
@@ -196,6 +208,7 @@ button.primary { border-color: var(--accent); background: var(--accent-muted); c
 .history-entry time { color: var(--text-muted); white-space: nowrap; }
 .history-entry code { display: block; margin-top: 4px; color: var(--text-muted); font: 10px 'IBM Plex Mono', monospace; white-space: pre-wrap; }
 .history-empty { padding: 12px 0; color: var(--text-muted); font-size: 12px; }
+.tree-fold-button { margin-left: auto; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 11px; }
 .editor-error, .error { color: var(--error); }
 .editor-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr) 280px; flex: 1; min-height: 0; }
 .structure-column, .properties-column { min-width: 0; overflow: auto; padding: 12px; border-right: 1px solid var(--border); }

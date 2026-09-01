@@ -53,6 +53,7 @@
         :selected-id="selectedId"
         :checked-ids="checkedIds"
         :is-text="isText"
+        :default-open="defaultOpen"
         :depth="depth + 1"
         @select="$emit('select', $event)"
         @toggle-merge="$emit('toggle-merge', $event)"
@@ -73,10 +74,11 @@ const props = defineProps<{
   selectedId: string | null
   checkedIds: string[]
   isText: (id: string) => boolean
+  defaultOpen?: boolean
   depth?: number
 }>()
 
-const open = ref(true)
+const open = ref(props.defaultOpen ?? true)
 const depth = computed(() => props.depth ?? 0)
 const isHeading = computed(() => props.node.type === 'title' || props.node.type === 'section_header')
 const descendantTextIds = computed(() => {
