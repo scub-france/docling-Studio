@@ -38,11 +38,11 @@
         v-if="node.children.length"
         class="section-selector"
         type="checkbox"
-        :checked="descendantTextIds.every((id) => checkedIds.includes(id))"
-        :indeterminate="Boolean(descendantTextIds.some((id) => checkedIds.includes(id)) && !descendantTextIds.every((id) => checkedIds.includes(id)))"
+        :checked="descendantIds.every((id) => checkedIds.includes(id))"
+        :indeterminate="Boolean(descendantIds.some((id) => checkedIds.includes(id)) && !descendantIds.every((id) => checkedIds.includes(id)))"
         aria-label="Select section children"
         @click.stop
-        @change="$emit('toggle-subtree', descendantTextIds)"
+        @change="$emit('toggle-subtree', descendantIds)"
       />
     </div>
     <div v-if="node.children.length && open" class="editor-node-children">
@@ -81,10 +81,10 @@ const props = defineProps<{
 const open = ref(props.defaultOpen ?? true)
 const depth = computed(() => props.depth ?? 0)
 const isHeading = computed(() => props.node.type === 'title' || props.node.type === 'section_header')
-const descendantTextIds = computed(() => {
+const descendantIds = computed(() => {
   const ids: string[] = []
   const visit = (node: EditorTreeNode): void => {
-    if (props.isText(node.elementId)) ids.push(node.elementId)
+    ids.push(node.elementId)
     node.children.forEach(visit)
   }
   props.node.children.forEach(visit)
