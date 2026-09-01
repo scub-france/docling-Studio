@@ -59,6 +59,7 @@
             :is-text="isMergeable"
             @select="select"
             @toggle-merge="toggleMerge"
+            @toggle-subtree="toggleMergeSubtree"
             @drag-start="(id) => (draggedId = id)"
             @drop="dropBefore"
           />
@@ -143,6 +144,9 @@ function toggleMerge(id: string): void {
   store.toggleMergeSelection(id)
   store.selectedElementId = id
   focusPage(id)
+}
+function toggleMergeSubtree(ids: string[]): void {
+  store.toggleMergeSelectionMany(ids)
 }
 function discard(): void {
   store.discard()

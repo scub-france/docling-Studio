@@ -25,11 +25,12 @@
       </button>
       <span v-else class="disclosure disclosure--empty" />
       <input
-        v-if="isText(node.elementId)"
+        v-if="node.children.length || isText(node.elementId)"
         type="checkbox"
-        :checked="checkedIds.includes(node.elementId)"
+        :checked="node.children.length ? descendantTextIds.every((id) => checkedIds.includes(id)) : checkedIds.includes(node.elementId)"
+        :indeterminate="Boolean(node.children.length && descendantTextIds.some((id) => checkedIds.includes(id)) && !descendantTextIds.every((id) => checkedIds.includes(id)))"
         @click.stop
-        @change="$emit('toggle-merge', node.elementId)"
+        @change="node.children.length ? $emit('toggle-subtree', descendantTextIds) : $emit('toggle-merge', node.elementId)"
       />
       <span class="drag-handle" title="Reorder">::</span>
       <span class="node-type">{{ isHeading ? '§' : node.type }}</span>
@@ -46,6 +47,7 @@
         :depth="depth + 1"
         @select="$emit('select', $event)"
         @toggle-merge="$emit('toggle-merge', $event)"
+        @toggle-subtree="$emit('toggle-subtree', $event)"
         @drag-start="$emit('drag-start', $event)"
         @drop="$emit('drop', $event)"
       />
@@ -68,10 +70,20 @@ const props = defineProps<{
 const open = ref(true)
 const depth = computed(() => props.depth ?? 0)
 const isHeading = computed(() => props.node.type === 'title' || props.node.type === 'section_header')
+const descendantTextIds = computed(() => {
+  const ids: string[] = []
+  const visit = (node: EditorTreeNode): void => {
+    if (props.isText(node.elementId)) ids.push(node.elementId)
+    node.children.forEach(visit)
+  }
+  props.node.children.forEach(visit)
+  return ids
+})
 
 defineEmits<{
   select: [id: string]
   'toggle-merge': [id: string]
+  'toggle-subtree': [ids: string[]]
   'drag-start': [id: string]
   drop: [beforeId: string]
 }>()

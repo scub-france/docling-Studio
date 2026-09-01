@@ -83,6 +83,14 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
       : [...mergeSelection.value, elementId]
   }
 
+  function toggleMergeSelectionMany(elementIds: string[]): void {
+    if (!elementIds.length) return
+    const allSelected = elementIds.every((id) => mergeSelection.value.includes(id))
+    mergeSelection.value = allSelected
+      ? mergeSelection.value.filter((id) => !elementIds.includes(id))
+      : [...new Set([...mergeSelection.value, ...elementIds])]
+  }
+
   function mergeSelected(separator = ' '): void {
     if (!mergeAllowed.value) return
     queue({ type: 'mergeText', elementIds: [...mergeSelection.value], separator })
@@ -179,6 +187,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     queueHeadingLevel,
     queueDelete,
     toggleMergeSelection,
+    toggleMergeSelectionMany,
     mergeSelected,
     moveElement,
     previewNow,
