@@ -66,7 +66,7 @@
           :nodes="filteredNodes"
           :loading="treeLoading"
           :error="treeError"
-          :selected="documentStore.focusedRef"
+          :selected="selectedRefs"
           :highlight="documentStore.focusedRef"
           :default-open="treeDefaultOpen"
           :revealed-refs="revealedRefs"
@@ -263,6 +263,7 @@ function onCollapseAll(): void {
 }
 
 const tree = ref<DocTreeNode[]>([])
+const selectedRefs = ref<string[]>([])
 const treeLoading = ref(false)
 const treeError = ref<string | null>(null)
 const filter = ref('')
@@ -344,6 +345,7 @@ async function loadTree(): Promise<void> {
 function onTreeSelect(ref: string): void {
   // Route through the shared focus (drives the bbox highlight, page flip and
   // Properties via the focusTick watcher) and reverse-select a citing step.
+  selectedRefs.value = [ref]
   documentStore.focusElement(ref)
   reasoningStore.selectStepByCitation(ref)
 }
@@ -352,8 +354,13 @@ function onHoverElement(_el: PageElement | null): void {
   // Hover is informational only — selection drives the tree highlight.
 }
 
-function onClickElement(el: PageElement, _pageNumber: number): void {
+function onClickElement(el: PageElement, _pageNumber: number, event?: MouseEvent): void {
   if (!el.self_ref) return
+  selectedRefs.value = event?.ctrlKey || event?.metaKey
+    ? selectedRefs.value.includes(el.self_ref)
+      ? selectedRefs.value.filter((ref) => ref !== el.self_ref)
+      : [...selectedRefs.value, el.self_ref]
+    : [el.self_ref]
   documentStore.focusElement(el.self_ref)
   reasoningStore.selectStepByCitation(el.self_ref)
 }
@@ -386,6 +393,7 @@ watch(
     rightTab.value = 'props'
     reasoningStore.reset(id)
     documentStore.focusElement(null)
+    selectedRefs.value = []
     if (props.analysisId) {
       documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
       await loadTree()
