@@ -129,12 +129,12 @@ services:
         # See docker-compose.yml for the full rationale on these build-args.
         BAKE_MODELS: ${BAKE_MODELS:-false}
         WITH_REASONING: ${WITH_REASONING:-false}
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     volumes:
       - ./document-parser:/app
-      - uploads_data:/app/uploads
-      - db_data:/app/data
+      - ./document-parser/uploads:/app/uploads
+      - ./document-parser/data:/app/data
     environment:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
       # Defaults match docker-compose.yml — see that file's rationale.
@@ -166,7 +166,7 @@ services:
     image: node:20-alpine
     working_dir: /app
     ports:
-      - "3000:3000"
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules

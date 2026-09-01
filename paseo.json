@@ -1,0 +1,12 @@
+{
+  "worktree": {
+    "setup": "SOURCE_CHECKOUT_PATH=\"$PASEO_SOURCE_CHECKOUT_PATH\" WORKTREE_PATH=\"$PASEO_WORKTREE_PATH\" ./.development_scripts/worktree_setup.sh",
+    "teardown": "COMPOSE_PROJECT_NAME=\"docling-$PASEO_WORKSPACE_ID\" docker compose -f docker-compose.dev.yml down -v"
+  },
+  "scripts": {
+    "dev": {
+      "type": "service",
+      "command": "COMPOSE_PROJECT_NAME=\"docling-$PASEO_WORKSPACE_ID\" FRONTEND_HOST_PORT=$PASEO_PORT docker compose -f docker-compose.dev.yml --profile default up --build"
+    }
+  }
+}
