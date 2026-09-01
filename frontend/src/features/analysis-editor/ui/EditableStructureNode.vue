@@ -25,16 +25,25 @@
       </button>
       <span v-else class="disclosure disclosure--empty" />
       <input
-        v-if="node.children.length || isText(node.elementId)"
+        v-if="isText(node.elementId)"
         type="checkbox"
-        :checked="node.children.length ? descendantTextIds.every((id) => checkedIds.includes(id)) : checkedIds.includes(node.elementId)"
-        :indeterminate="Boolean(node.children.length && descendantTextIds.some((id) => checkedIds.includes(id)) && !descendantTextIds.every((id) => checkedIds.includes(id)))"
+        :checked="checkedIds.includes(node.elementId)"
         @click.stop
-        @change="node.children.length ? $emit('toggle-subtree', descendantTextIds) : $emit('toggle-merge', node.elementId)"
+        @change="$emit('toggle-merge', node.elementId)"
       />
       <span class="drag-handle" title="Reorder">::</span>
       <span class="node-type">{{ isHeading ? '§' : node.type }}</span>
       <span class="node-label" :title="node.label">{{ node.label }}</span>
+      <input
+        v-if="node.children.length"
+        class="section-selector"
+        type="checkbox"
+        :checked="descendantTextIds.every((id) => checkedIds.includes(id))"
+        :indeterminate="Boolean(descendantTextIds.some((id) => checkedIds.includes(id)) && !descendantTextIds.every((id) => checkedIds.includes(id)))"
+        aria-label="Select section children"
+        @click.stop
+        @change="$emit('toggle-subtree', descendantTextIds)"
+      />
     </div>
     <div v-if="node.children.length && open" class="editor-node-children">
       <EditableStructureNode
@@ -103,6 +112,7 @@ defineEmits<{
   font-size: 12px;
   position: relative;
 }
+.section-selector { margin-left: auto; }
 .editor-node-row:hover,
 .editor-node-row.selected {
   background: var(--bg-elevated);
