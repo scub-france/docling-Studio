@@ -34,6 +34,14 @@ def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) 
         created_at=str(doc.created_at),
         lifecycle_state=doc.lifecycle_state.value,
         lifecycle_state_at=(str(doc.lifecycle_state_at) if doc.lifecycle_state_at else None),
+        active_analysis_id=doc.active_analysis_id,
+        active_edit_stream_id=doc.active_edit_stream_id,
+        chunks_source_analysis_id=doc.chunks_source_analysis_id,
+        chunks_source_edit_sequence=doc.chunks_source_edit_sequence,
+        # Exact parse/edit freshness is resolved by AnalysisEditService,
+        # which owns the edit stream sequence.  The document endpoint keeps
+        # this conservative default for callers that do not load that service.
+        chunks_stale=False,
         store_links=store_links,
     )
 

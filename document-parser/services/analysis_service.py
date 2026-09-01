@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 import json
 import logging
 import math
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
         AnalysisRepository,
         DocumentChunker,
         DocumentConverter,
+        DocumentMerger,
         DocumentRepository,
         GraphWriter,
     )
@@ -73,6 +75,10 @@ class AnalysisConfig:
 
     default_table_mode: str = "accurate"
     batch_page_size: int = 0
+    # The editor and tree projections require the complete DoclingDocument.
+    # Batched conversion cannot safely merge Docling's internal references,
+    # so normal analyses retain the canonical document by using one pass.
+    preserve_document_json: bool = False
     neo4j_required: bool = False  # if True, ingestion fails when Neo4j write fails
 
 
@@ -85,6 +91,7 @@ class AnalysisService:
         analysis_repo: AnalysisRepository,
         document_repo: DocumentRepository,
         chunker: DocumentChunker | None = None,
+        merger: DocumentMerger | None = None,
         conversion_timeout: int = 600,
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
         config: AnalysisConfig | None = None,
@@ -92,6 +99,7 @@ class AnalysisService:
     ):
         self._converter = converter
         self._chunker = chunker
+        self._merger = merger
         self._analysis_repo = analysis_repo
         self._document_repo = document_repo
         self._conversion_timeout = conversion_timeout
@@ -304,7 +312,7 @@ class AnalysisService:
                 job_id,
             )
 
-        return merge_results(results)
+        return self._merger.merge(results) if self._merger is not None else merge_results(results)
 
     def _on_task_done(self, task: asyncio.Task, *, job_id: str) -> None:
         """Cleanup running tasks and handle failures."""
@@ -412,9 +420,19 @@ class AnalysisService:
         """
         total_pages = _count_pdf_pages(file_path)
         batch_size = self._config.batch_page_size
-        if batch_size > 0 and total_pages > batch_size and self._converter.supports_page_batching:
+        if (
+            batch_size > 0
+            and total_pages > batch_size
+            and self._converter.supports_page_batching
+            and not self._config.preserve_document_json
+        ):
             return await self._run_batched_conversion(
                 job_id, file_path, options, total_pages, batch_size
+            )
+        if batch_size > 0 and total_pages > batch_size and self._config.preserve_document_json:
+            logger.info(
+                "Skipping page batching for job %s so the complete DoclingDocument is retained",
+                job_id,
             )
         return await asyncio.wait_for(
             self._converter.convert(file_path, options),
@@ -470,6 +488,15 @@ class AnalysisService:
                 )
 
         await self._analysis_repo.update_status(job)
+
+        # A successful conversion becomes the immutable base for the active
+        # document result.  Edit streams are keyed by this base ID, so a new
+        # conversion naturally starts a clean stream.
+        activate = getattr(self._document_repo, "update_active_analysis", None)
+        if activate is not None:
+            activation_result = activate(job.document_id, job.id, None)
+            if inspect.isawaitable(activation_result):
+                await activation_result
 
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)

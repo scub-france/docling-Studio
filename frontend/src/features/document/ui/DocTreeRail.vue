@@ -36,7 +36,7 @@ const props = defineProps<{
   nodes: DocTreeNode[]
   loading?: boolean
   error?: string | null
-  selected?: string | null
+  selected?: string | string[] | null
   highlight?: string | null
   /** Forwarded to every node — null lets each node use its depth-based default. */
   defaultOpen?: boolean | null

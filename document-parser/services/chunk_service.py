@@ -159,6 +159,7 @@ class ChunkService:
         store_repo: SqliteStoreRepository | None = None,
         link_repo: SqliteDocumentStoreLinkRepository | None = None,
         backend_resolver: StoreBackendResolver | None = None,
+        active_result_service=None,
         actor: str = "user",
     ) -> None:
         self._chunks = chunk_repo
@@ -189,6 +190,7 @@ class ChunkService:
         # falls back to its service-level defaults (env-based, pre-#279
         # behaviour).
         self._backend_resolver = backend_resolver
+        self._active_result_service = active_result_service
         self._actor = actor
         # Duck-typed recorder for document versions (#267). Wired in
         # main.py to `VersionService.record_on_rechunk` so each
@@ -459,7 +461,11 @@ class ChunkService:
         if not self._chunker:
             raise ChunkServiceError("Chunker not configured", http_status=503)
 
-        job = await self._analyses.find_latest_completed_by_document(document_id)
+        job = (
+            (await self._active_result_service.active_result(document_id)).job
+            if self._active_result_service is not None
+            else await self._analyses.find_latest_completed_by_document(document_id)
+        )
         if not job or not job.document_json:
             raise ChunkServiceError(
                 "No completed analysis with document_json available for rechunk",
@@ -519,12 +525,22 @@ class ChunkService:
             len(new_chunks),
         )
 
+        source_analysis_id = job.id
+        if self._active_result_service is not None:
+            active = await self._active_result_service.active_result(document_id)
+            source_analysis_id = active.base_analysis_id
+            await self._documents.update_chunk_source(
+                document_id, active.base_analysis_id, active.applied_through_sequence
+            )
+        else:
+            await self._documents.update_chunk_source(document_id, job.id, 0)
+
         # Record a frozen (analysis, chunks_snapshot) pair in the
         # workspace History timeline (#267). Snapshots the chunks we
         # just wrote, paired with the analysis they came from.
         if self._version_recorder is not None:
             try:
-                await self._version_recorder.record_on_rechunk(document_id, job.id)
+                await self._version_recorder.record_on_rechunk(document_id, source_analysis_id)
             except Exception:
                 # Best-effort hook — never fail the rechunk if the
                 # version snapshot write hits a snag.
@@ -799,7 +815,11 @@ class ChunkService:
             if not job or job.document_id != document_id or job.status != AnalysisStatus.COMPLETED:
                 raise ChunkNotFoundError(f"Analysis not found: {analysis_id}")
         else:
-            job = await self._analyses.find_latest_completed_by_document(document_id)
+            job = (
+                (await self._active_result_service.active_result(document_id)).job
+                if self._active_result_service is not None
+                else await self._analyses.find_latest_completed_by_document(document_id)
+            )
         if not job or not job.document_json:
             return []
         try:

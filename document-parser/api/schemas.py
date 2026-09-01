@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
+from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
 
@@ -101,6 +102,11 @@ class DocumentResponse(_CamelModel):
     # backwards compat and currently still maps to `DOCUMENT_STATUS_UPLOADED`.
     lifecycle_state: str = "Uploaded"
     lifecycle_state_at: str | datetime | None = None
+    active_analysis_id: str | None = None
+    active_edit_stream_id: str | None = None
+    chunks_source_analysis_id: str | None = None
+    chunks_source_edit_sequence: int = 0
+    chunks_stale: bool = False
     # 0.6.1 (#283) — per-store ingestion state. Always present on
     # `GET /api/documents/{id}`; the list endpoint omits it to keep
     # the listing payload light (callers that need it can drill in).
@@ -122,6 +128,88 @@ class AnalysisResponse(_CamelModel):
     progress_total: int | None = None
     started_at: str | datetime | None = None
     completed_at: str | datetime | None = None
+    created_at: str | datetime
+
+
+class ReplaceTextEditRequest(_CamelModel):
+    type: Literal["replaceText"]
+    element_id: str
+    text: str
+
+
+class MergeTextEditRequest(_CamelModel):
+    type: Literal["mergeText"]
+    element_ids: list[str]
+    separator: str = " "
+
+
+class SetHeadingLevelEditRequest(_CamelModel):
+    type: Literal["setHeadingLevel"]
+    element_id: str
+    level: int
+
+
+class MoveElementEditRequest(_CamelModel):
+    type: Literal["moveElement"]
+    element_id: str
+    before_element_id: str | None = None
+
+
+class DeleteElementEditRequest(_CamelModel):
+    type: Literal["deleteElement"]
+    element_id: str
+
+
+AnalysisEditCommandRequest = Annotated[
+    ReplaceTextEditRequest | MergeTextEditRequest | SetHeadingLevelEditRequest | MoveElementEditRequest | DeleteElementEditRequest,
+    Field(discriminator="type"),
+]
+
+
+class AnalysisEditRequest(_CamelModel):
+    commands: list[AnalysisEditCommandRequest] = Field(default_factory=list)
+    expected_applied_through_sequence: int = 0
+
+
+class EditorElementResponse(_CamelModel):
+    id: str
+    self_ref: str
+    parent_id: str | None = None
+    type: str
+    text: str | None = None
+    heading_level: int | None = None
+    children: list[str] = Field(default_factory=list)
+    provenance: list[dict] = Field(default_factory=list)
+    editable: bool = False
+    supported_operations: list[str] = Field(default_factory=list)
+    non_editable_reason: str | None = None
+
+
+class AnalysisEditorResponse(_CamelModel):
+    model: dict
+    tree: list[dict]
+    reading_order: list[str] = Field(default_factory=list)
+    result: AnalysisResponse
+    applied_through_sequence: int
+    chunks_stale: bool
+    warnings: list[str] = Field(default_factory=list)
+    reference_changes: dict[str, str] = Field(default_factory=dict)
+
+
+class AnalysisEditSaveResponse(_CamelModel):
+    result: AnalysisResponse
+    base_analysis_id: str
+    applied_through_sequence: int
+    chunks_stale: bool
+
+
+class AnalysisEditHistoryEntryResponse(_CamelModel):
+    id: str
+    sequence: int
+    command_version: int
+    command_type: str
+    payload: dict
+    command_hash: str
     created_at: str | datetime
 
 

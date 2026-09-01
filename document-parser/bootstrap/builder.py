@@ -21,6 +21,8 @@ import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from infra.docling_merger import DoclingDocumentMerger
+
 from api.state import AppState
 from bootstrap.factories import (
     build_analysis_service,
@@ -35,8 +37,11 @@ from bootstrap.factories import (
 )
 from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import deps_present, deps_provenance
+from infra.docling_editor import DoclingDocumentEditor
+from infra.docling_projector import DoclingAnalysisProjector
 from infra.llm.ollama_probe import OllamaProbe
 from infra.settings import settings
+from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.app_settings_repo import SqliteAppSettingsRepository
 from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
@@ -46,6 +51,7 @@ from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
 from persistence.store_repo import SqliteStoreRepository
+from services.analysis_edit_service import AnalysisEditService
 from services.app_config_service import AppConfigService
 from services.export_service import ExportService
 from services.graph_service import GraphService
@@ -97,7 +103,20 @@ class AppStateBuilder:
         ingestion_service = build_ingestion_service(graph_writer)
         backend_resolver = build_backend_resolver(store_repo)
 
-        analysis_service = build_analysis_service(document_repo, analysis_repo, graph_writer)
+        analysis_service = build_analysis_service(
+            document_repo,
+            analysis_repo,
+            graph_writer,
+            merger=DoclingDocumentMerger(),
+        )
+        analysis_edit_service = AnalysisEditService(
+            analysis_repo=analysis_repo,
+            document_repo=document_repo,
+            edit_repo=SqliteAnalysisEditRepository(),
+            editor=DoclingDocumentEditor(),
+            projector=DoclingAnalysisProjector(),
+            graph_writer=graph_writer,
+        )
         chunk_service = build_chunk_service(
             document_repo=document_repo,
             analysis_repo=analysis_repo,
@@ -108,6 +127,7 @@ class AppStateBuilder:
             link_repo=link_repo,
             ingestion_service=ingestion_service,
             backend_resolver=backend_resolver,
+            active_result_service=analysis_edit_service,
         )
         version_service = VersionService(
             version_repo=SqliteDocumentVersionRepository(),
@@ -132,7 +152,12 @@ class AppStateBuilder:
             document_store_link_repo=link_repo,
             document_service=build_document_service(document_repo, analysis_repo),
             analysis_service=analysis_service,
-            export_service=ExportService(document_repo=document_repo, analysis_repo=analysis_repo),
+            analysis_edit_service=analysis_edit_service,
+            export_service=ExportService(
+                document_repo=document_repo,
+                analysis_repo=analysis_repo,
+                active_result_service=analysis_edit_service,
+            ),
             store_service=StoreService(
                 store_repo=store_repo,
                 link_repo=link_repo,

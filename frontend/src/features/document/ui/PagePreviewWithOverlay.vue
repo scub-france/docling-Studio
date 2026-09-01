@@ -153,7 +153,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:currentPage': [page: number]
   hoverElement: [el: PageElement | null]
-  clickElement: [el: PageElement, pageNumber: number]
+  clickElement: [el: PageElement, pageNumber: number, event: MouseEvent]
 }>()
 
 const stageRef = ref<HTMLDivElement | null>(null)
@@ -216,9 +216,9 @@ function onImageLoad(pageNumber: number): void {
   if (highlightTarget()?.page.page_number === pageNumber) nextTick(centerHighlighted)
 }
 
-function onClickElement(el: PageElement, pageNumber: number): void {
+function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent): void {
   pendingClickRef = el.self_ref ?? null
-  emit('clickElement', el, pageNumber)
+  emit('clickElement', el, pageNumber, event)
 }
 
 function shouldRenderPage(pageNumber: number): boolean {
@@ -330,6 +330,9 @@ function highlightTarget(): { page: Page; element: PageElement } | null {
  * image is not loaded yet.
  */
 function centerHighlighted(): void {
+  // In single-page mode the selected page is already visible. Scrolling to
+  // the bbox after changing pages causes a distracting top-then-target jump.
+  if (viewMode.value !== 'scroll') return
   const stage = stageRef.value
   const target = highlightTarget()
   if (!target || !stage) return

@@ -19,7 +19,7 @@ describe('router', () => {
       { path: '/docs', name: ROUTES.DOCS_LIBRARY },
       { path: '/docs/new', name: ROUTES.DOCS_NEW },
       { path: '/docs/abc', name: ROUTES.DOC_WORKSPACE },
-      { path: '/analyses', name: ROUTES.ANALYSES },
+      { path: '/analyses', name: ROUTES.ANALYSIS_LIBRARY },
       { path: '/analyses/abc', name: ROUTES.ANALYSIS_DETAIL },
       { path: '/runs', name: ROUTES.RUNS },
       { path: '/runs/run-42', name: ROUTES.RUN_DETAIL },
