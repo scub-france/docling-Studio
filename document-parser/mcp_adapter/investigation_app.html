@@ -238,6 +238,8 @@
     flex: 0 0 138px;
     display: grid;
     gap: 5px;
+  }
+  .hop button {
     background: none;
     border: 0;
     padding: 0;
@@ -246,6 +248,8 @@
     color: inherit;
     cursor: pointer;
   }
+  .hop-meta { display: grid; gap: 5px; }
+  .hop-meta:hover .hop-where { color: var(--accent); }
   .hop-top {
     display: flex;
     align-items: baseline;
@@ -262,7 +266,7 @@
   }
   .hop-state.answered { color: var(--kept); }
   .hop-state.unanswered { color: var(--bad); }
-  .shot {
+  .hop .shot {
     position: relative;
     display: block;
     width: 100%;
@@ -272,6 +276,23 @@
     overflow: hidden;
   }
   .shot.pending, .shot.none, .shot.failed { height: 150px; }
+  .shot .glass {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: #fff;
+    background: color-mix(in srgb, var(--text) 72%, transparent);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .hop .shot:hover .glass,
+  .hop .shot:focus-visible .glass { opacity: 1; }
   .hop[data-state="answered"] .shot { border-color: var(--kept); }
   .hop[data-state="unanswered"] .shot { border-style: dashed; border-color: var(--bad); }
   .hop[data-state="abandoned"] .shot,
@@ -293,7 +314,58 @@
     text-align: center;
     color: var(--text-muted);
   }
-  .hop:hover .shot { border-color: var(--accent); }
+  .hop .shot:hover,
+  .hop .shot:focus-visible { border-color: var(--accent); }
+
+  /* ---- the enlarged page ---------------------------------------------- */
+  /* Same shape as the citation view's lens: on <body>, not inside <main>,
+     because an overlay meant to fill the frame must not inherit the card's
+     layout. The thumbnail stands in, upscaled, while the readable render is
+     on its way — the same page, marker already in place. */
+  .lens {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+    background: color-mix(in srgb, var(--bg) 88%, #000);
+  }
+  .lens[hidden] { display: none; }
+  .lens-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .lens-title { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
+  .lens-title b { color: var(--accent); font-weight: 600; }
+  .lens-bar button {
+    margin-left: auto;
+    font: inherit;
+    font-size: 12.5px;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+    background: var(--bg-surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .lens-bar button:hover { border-color: var(--accent); color: var(--accent); }
+  .lens-bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .lens-stage { display: grid; place-items: center; min-height: 0; overflow: auto; }
+  .lens-page {
+    position: relative;
+    line-height: 0;
+    background: #fff;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.34);
+  }
+  .lens-page img { display: block; max-width: 100%; height: auto; }
+  .lens-page.provisional img { filter: blur(0.4px); }
+  .lens-page .mark {
+    position: absolute;
+    border: 1.5px solid var(--accent);
+    background: var(--accent-muted);
+    border-radius: 2px;
+  }
   .hop-where {
     font-size: 11px;
     font-weight: 550;
@@ -631,25 +703,31 @@
     return byStep;
   }
 
+  // Two buttons, not one: the page enlarges, the words jump to the step in
+  // the record. One button doing both would have to guess which the click
+  // meant. A shot with no page to enlarge jumps too, so no tile is dead.
   function hopTile(step, node) {
     const kept = (step.attempts || []).find((attempt) => isKept(attempt.outcome));
     const uri = kept ? kept.kept_uri || kept.uri : "";
     const state = stateLabel(step);
     const where = node ? node.title : uri ? refOf(uri) : "";
-    return `<button class="hop" data-state="${esc(state)}" data-hop="${esc(step.step_id)}"
-      ${uri ? `data-uri="${esc(uri)}"` : ""} title="${esc(step.question)}">
+    return `<div class="hop" data-state="${esc(state)}" data-hop="${esc(step.step_id)}"
+      ${uri ? `data-uri="${esc(uri)}"` : ""}>
       <span class="hop-top">
         <span class="ord">${esc(step.ordinal)}</span>
         <span class="hop-state ${esc(state)}">${esc(state)}</span>
       </span>
-      <span class="shot ${uri ? "pending" : "none"}">${
-        uri ? "" : `<span class="ph">${esc(OUTCOMES_EMPTY[state] || state)}</span>`
-      }</span>
-      <span class="hop-where">${esc(where || "—")}${
-        node && node.page ? `<span class="page"> · p.${esc(node.page)}</span>` : ""
-      }</span>
-      <span class="hop-q">${esc(step.question)}</span>
-    </button>`;
+      <button class="shot ${uri ? "pending" : "none"}" data-shot
+        aria-label="${uri ? "Enlarge the page" : "Open this step in the record"}">${
+          uri ? "" : `<span class="ph">${esc(OUTCOMES_EMPTY[state] || state)}</span>`
+        }</button>
+      <button class="hop-meta" data-jump title="${esc(step.question)}">
+        <span class="hop-where">${esc(where || "—")}${
+          node && node.page ? `<span class="page"> · p.${esc(node.page)}</span>` : ""
+        }</span>
+        <span class="hop-q">${esc(step.question)}</span>
+      </button>
+    </div>`;
   }
 
   // What an empty tile says. Terser than the timeline's chips: a tile has
@@ -720,7 +798,7 @@
     await Promise.all(workers);
   }
 
-  async function fetchThumb(uri) {
+  async function fetchThumb(uri, maxWidth = 240) {
     // Twice the default budget: the first fetch of a page can pay for the
     // whole document to be rasterized, and a premature timeout would cache
     // a failure the server never produced.
@@ -728,7 +806,7 @@
       "tools/call",
       {
         name: "get_investigation_page",
-        arguments: { uri, max_width: 240 },
+        arguments: { uri, max_width: maxWidth },
       },
       20000
     );
@@ -770,7 +848,9 @@
     shot.style.height = "auto";
     shot.innerHTML =
       `<img alt="Page ${esc(image.page)}, the kept passage boxed" src="${esc(image.data_uri)}">` +
-      mark;
+      mark +
+      '<span class="glass" aria-hidden="true">⤢</span>';
+    shot.setAttribute("aria-label", `Enlarge page ${image.page}`);
     const label = hop.querySelector(".hop-where");
     if (label && !label.querySelector(".page") && image.page) {
       label.insertAdjacentHTML("beforeend", `<span class="page"> · p.${esc(image.page)}</span>`);
@@ -783,6 +863,93 @@
       shot.classList.add("failed");
       shot.innerHTML = `<span class="ph">${esc(message)}</span>`;
     });
+  }
+
+  // ---- the enlarged page ----------------------------------------------
+  // A 138px tile answers "which page"; it cannot answer "what does it say",
+  // which is why someone clicks it. Same contract as the citation view:
+  // fullscreen is requested, never assumed, and the host that refuses still
+  // gets the overlay filling the card's own frame. The thumbnail stands in,
+  // upscaled and faintly blurred, until the readable render lands — the same
+  // page, marker already in place, so nothing jumps under the reader.
+
+  const LENS_WIDTH = 1400;
+  const bigThumbs = new Map();
+  let lensUri = null;
+  let lensLoading = false;
+
+  const lens = document.createElement("div");
+  lens.className = "lens";
+  lens.hidden = true;
+  lens.setAttribute("role", "dialog");
+  lens.setAttribute("aria-modal", "true");
+  lens.setAttribute("aria-label", "Enlarged page");
+  lens.innerHTML =
+    '<div class="lens-bar"><span class="lens-title" id="lens-title"></span>' +
+    '<button type="button" id="lens-close">Close</button></div>' +
+    '<div class="lens-stage" id="lens-stage"></div>';
+  document.body.appendChild(lens);
+  lens.querySelector("#lens-close").addEventListener("click", closeLens);
+  // The scrim closes; the page itself does not.
+  lens.addEventListener("click", (event) => {
+    if (event.target === lens || event.target.id === "lens-stage") closeLens();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !lens.hidden) closeLens();
+  });
+
+  function openLens(uri) {
+    lensUri = uri;
+    lens.hidden = false;
+    paintLens();
+    lens.querySelector("#lens-close").focus();
+    call("ui/request-display-mode", { mode: "fullscreen" }).catch(() => {});
+    if (!bigThumbs.has(uri) && !lensLoading) loadLens(uri);
+  }
+
+  function closeLens() {
+    if (lens.hidden) return;
+    lens.hidden = true;
+    lensUri = null;
+    call("ui/request-display-mode", { mode: "inline" }).catch(() => {});
+  }
+
+  async function loadLens(uri) {
+    lensLoading = true;
+    try {
+      bigThumbs.set(uri, await fetchThumb(uri, LENS_WIDTH));
+    } catch (_) {
+      // The thumbnail is already on screen and is the same page. A failed
+      // upgrade costs sharpness, not the answer.
+    } finally {
+      lensLoading = false;
+      if (!lens.hidden && lensUri === uri) paintLens();
+    }
+  }
+
+  function paintLens() {
+    const small = thumbs.get(lensUri);
+    const enlarged = bigThumbs.get(lensUri);
+    const image = enlarged || (small && small.image);
+    if (!image) return;
+    const box = image.highlight;
+    const mark = box
+      ? `<span class="mark" style="left:${(box[0] / image.width) * 100}%;top:${
+          (box[1] / image.height) * 100
+        }%;width:${((box[2] - box[0]) / image.width) * 100}%;height:${
+          ((box[3] - box[1]) / image.height) * 100
+        }%"></span>`
+      : "";
+    const provisional = enlarged ? "" : " provisional";
+    const width = enlarged ? `${image.width}px` : "860px";
+    lens.querySelector("#lens-stage").innerHTML =
+      `<div class="lens-page${provisional}" style="width:${width};max-width:100%">` +
+      `<img alt="Page ${esc(image.page)}, the kept passage boxed" src="${esc(
+        image.data_uri
+      )}">${mark}</div>`;
+    const pages = image.page_count ? ` / ${esc(image.page_count)}` : "";
+    lens.querySelector("#lens-title").innerHTML =
+      `page <b>${esc(image.page)}</b>${pages}` + (enlarged ? "" : " · sharpening…");
   }
 
   // CSS.escape is everywhere the sandbox runs; the fallback quotes enough
@@ -929,18 +1096,29 @@
         reportSize();
       });
     }
-    // A hop is the same step the timeline lists: clicking it lands on that
-    // step in the record, lit — the two readings stay one record. `lit` is
+    // A hop is the same step the timeline lists: its words land on that step
+    // in the record, lit — the two readings stay one record. `lit` is
     // cleared first because highlight() is a toggle, and landing on a step
     // that happened to be lit already must not arrive with the light off.
-    root.querySelectorAll(".hop").forEach((button) => {
+    // Its page enlarges instead — and a shot with nothing to enlarge jumps
+    // like the words do, so no part of a tile is dead.
+    const jump = (hop) => {
+      selectTab("record");
+      lit = "";
+      highlight([hop.dataset.hop]);
+      root
+        .querySelector(`.step[data-step="${cssEscape(hop.dataset.hop)}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    };
+    root.querySelectorAll(".hop [data-jump]").forEach((button) => {
+      button.addEventListener("click", () => jump(button.closest(".hop")));
+    });
+    root.querySelectorAll(".hop [data-shot]").forEach((button) => {
       button.addEventListener("click", () => {
-        selectTab("record");
-        lit = "";
-        highlight([button.dataset.hop]);
-        root
-          .querySelector(`.step[data-step="${cssEscape(button.dataset.hop)}"]`)
-          ?.scrollIntoView({ block: "nearest" });
+        const hop = button.closest(".hop");
+        const cached = thumbs.get(hop.dataset.uri);
+        if (cached && cached.image) openLens(hop.dataset.uri);
+        else jump(hop);
       });
     });
   }
@@ -969,7 +1147,8 @@
   // JSON-RPC 2.0 over postMessage, as the MCP Apps spec defines it. The
   // record renders from the tool result alone; the only fetches are the
   // handshake and, when the path is opened, `get_investigation_page` — one
-  // thumbnail per kept ref, never eagerly.
+  // thumbnail per kept ref, never eagerly, and the same page again at
+  // reading width when someone enlarges it.
 
   const pending = new Map();
   let nextRequestId = 1;

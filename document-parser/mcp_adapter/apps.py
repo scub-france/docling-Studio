@@ -509,10 +509,11 @@ def _register_investigation_view(
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         description=(
             "Internal — the investigation viewer's own page fetch. Returns a "
-            "thumbnail of the page a kept ref sits on, with the passage's box in "
-            "the image's own pixels, as a data URI. Not for reading: it answers "
-            "with binary, and show_investigation already carries everything a "
-            "reader needs."
+            "raster of the page a kept ref sits on, sized by `max_width` — the "
+            "path tab's thumbnail, and the same page at reading width when it is "
+            "enlarged — with the passage's box in the image's own pixels, as a "
+            "data URI. Not for reading: it answers with binary, and "
+            "show_investigation already carries everything a reader needs."
         ),
     )
     async def get_investigation_page(uri: str, max_width: int = 240) -> CitationImageOut:
