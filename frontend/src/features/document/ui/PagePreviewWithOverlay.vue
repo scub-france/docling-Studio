@@ -330,6 +330,9 @@ function highlightTarget(): { page: Page; element: PageElement } | null {
  * image is not loaded yet.
  */
 function centerHighlighted(): void {
+  // In single-page mode the selected page is already visible. Scrolling to
+  // the bbox after changing pages causes a distracting top-then-target jump.
+  if (viewMode.value !== 'scroll') return
   const stage = stageRef.value
   const target = highlightTarget()
   if (!target || !stage) return
