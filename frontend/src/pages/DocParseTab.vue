@@ -346,6 +346,8 @@ function onTreeSelect(ref: string): void {
   // Route through the shared focus (drives the bbox highlight, page flip and
   // Properties via the focusTick watcher) and reverse-select a citing step.
   selectedRefs.value = [ref]
+  const pageOfRef = findPageOfRef(documentStore.workspacePages, ref)
+  if (pageOfRef !== null) currentPage.value = pageOfRef
   documentStore.focusElement(ref)
   reasoningStore.selectStepByCitation(ref)
 }
@@ -354,13 +356,14 @@ function onHoverElement(_el: PageElement | null): void {
   // Hover is informational only — selection drives the tree highlight.
 }
 
-function onClickElement(el: PageElement, _pageNumber: number, event?: MouseEvent): void {
+function onClickElement(el: PageElement, pageNumber: number, event?: MouseEvent): void {
   if (!el.self_ref) return
   selectedRefs.value = event?.ctrlKey || event?.metaKey
     ? selectedRefs.value.includes(el.self_ref)
       ? selectedRefs.value.filter((ref) => ref !== el.self_ref)
       : [...selectedRefs.value, el.self_ref]
     : [el.self_ref]
+  currentPage.value = pageNumber
   documentStore.focusElement(el.self_ref)
   reasoningStore.selectStepByCitation(el.self_ref)
 }
