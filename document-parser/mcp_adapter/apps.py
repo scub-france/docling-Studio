@@ -509,18 +509,23 @@ def _register_investigation_view(
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         description=(
             "Internal — the investigation viewer's own page fetch. Returns a "
-            "raster of the page a kept ref sits on, sized by `max_width` — the "
-            "path tab's thumbnail, and the same page at reading width when it is "
-            "enlarged — with the passage's box in the image's own pixels, as a "
-            "data URI. Not for reading: it answers with binary, and "
+            "raster of a page of the document a kept ref pins, sized by "
+            "`max_width` — the path tab's thumbnail, its enlarged reading view, "
+            "and (via `page`) any other page when the reader leafs through — "
+            "with the passage's box, on its own page only, in the image's own "
+            "pixels, as a data URI. Not for reading: it answers with binary, and "
             "show_investigation already carries everything a reader needs."
         ),
     )
-    async def get_investigation_page(uri: str, max_width: int = 240) -> CitationImageOut:
+    async def get_investigation_page(
+        uri: str, max_width: int = 240, page: int | None = None
+    ) -> CitationImageOut:
         # Same clamp as `get_citation_image(kind='page')`: the dpi ladder
         # bounds the bytes, this bounds the work.
         try:
-            image = await tools().images.render_page(uri, max_width=max(120, min(max_width, 1600)))
+            image = await tools().images.render_page(
+                uri, max_width=max(120, min(max_width, 1600)), page=page
+            )
         except AnchorParseError as exc:
             raise ToolError(str(exc)) from exc
         except NavigationServiceError as exc:

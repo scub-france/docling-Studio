@@ -506,3 +506,22 @@ class TestPageRasterBudget:
         tools = self._tools(tmp_path, rasterizer=raster)
         await tools.images.render_page(_uri(PREAVIS_REF), max_width=320)
         assert len(raster.renders) == 1
+
+    async def test_another_page_renders_without_the_passage_marker(self, tmp_path):
+        """`page` lets a viewer leaf through the document — and the highlight
+        stays on the anchor's own page, because on any other there is no
+        passage to mark."""
+        raster = _FakeRasterizer()
+        tools = self._tools(tmp_path, rasterizer=raster)
+        image = await tools.images.render_page(_uri(PREAVIS_REF), max_width=320, page=2)
+        assert raster.renders[-1][0] == 2
+        assert image.page == 2
+        assert image.highlight is None
+        assert image.page_count == 2
+
+    async def test_the_page_is_clamped_to_the_parse(self, tmp_path):
+        tools = self._tools(tmp_path)
+        beyond = await tools.images.render_page(_uri(PREAVIS_REF), max_width=320, page=99)
+        assert beyond.page == 2
+        before = await tools.images.render_page(_uri(PREAVIS_REF), max_width=320, page=0)
+        assert before.page == 1
