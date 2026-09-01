@@ -123,7 +123,10 @@ const historyOpen = ref(false)
 const draggedId = ref<string | null>(null)
 const treeDefaultOpen = ref(true)
 const treeRemountKey = ref(0)
-const isMergeable = (id: string) => store.elements.find((element) => element.id === id)?.type === 'text'
+const isMergeable = (id: string) => {
+  const type = store.elements.find((element) => element.id === id)?.type
+  return type === 'text' || type === 'paragraph'
+}
 const highlightedRefs = computed(() => {
   const ids = new Set(store.mergeSelection.length ? store.mergeSelection : store.selectedElementId ? [store.selectedElementId] : [])
   return new Set(store.elements.filter((element) => ids.has(element.id)).map((element) => element.selfRef))
