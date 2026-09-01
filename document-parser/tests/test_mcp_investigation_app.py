@@ -352,7 +352,9 @@ class TestTemplate:
 
     def test_a_thumbnail_enlarges_like_the_citation_views_page(self):
         """The lens: fullscreen requested (never assumed), the thumbnail
-        standing in until the readable render lands, Escape to leave."""
+        standing in until the readable render lands, Escape to leave —
+        plus what the citation view does not have yet: zoom out to the
+        whole page, and leafing through the document."""
         for marker in (
             '"ui/request-display-mode"',
             "LENS_WIDTH = 1400",
@@ -361,8 +363,26 @@ class TestTemplate:
             '"Escape"',
             "data-shot",
             "data-jump",
+            "data-lens-out",
+            "data-lens-in",
+            "data-lens-fit",
+            "data-lens-prev",
+            "data-lens-next",
+            '"ArrowRight"',
         ):
             assert marker in INVESTIGATION_APP_HTML, marker
+
+    async def test_the_page_fetch_can_leaf_to_another_page(self, tmp_path):
+        pdf = tmp_path / "contrat.pdf"
+        pdf.write_bytes(b"%PDF-1.4 not really a pdf")
+        document = make_document()
+        document.storage_path = str(pdf)
+        async with _client(make_document_tools(documents=[document])) as client:
+            image = _payload(
+                await client.call_tool("get_investigation_page", {"uri": PREAVIS_URI, "page": 2})
+            )
+        assert image["page"] == 2
+        assert image["highlight"] is None, "the marker belongs to the anchor's page only"
 
     def test_an_unanswered_step_gets_no_page_thumbnail(self):
         """Only a kept ref earns a page. A thumbnail under an unanswered step

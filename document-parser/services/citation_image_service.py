@@ -77,14 +77,21 @@ class CitationImageService:
             dpi=min(dpi or self._config.image_dpi, self._config.image_dpi),
         )
 
-    async def render_page(self, uri: str, *, max_width: int = 320) -> CitationImage:
-        """A thumbnail of the whole page the anchor sits on.
+    async def render_page(
+        self, uri: str, *, max_width: int = 320, page: int | None = None
+    ) -> CitationImage:
+        """A thumbnail of the whole page the anchor sits on — or any other.
 
         Same pipeline as the crop, with the box being the page: rendered
         straight at the target width rather than downscaled afterwards, which
         is both faster and sharper. At 320 px a page is ~22 KB of WebP against
         ~108 KB of PNG — the format matters more than the size here, because a
         scaled page is exactly the kind of image PNG encodes badly.
+
+        `page` lets a viewer leaf through the document the anchor pins:
+        clamped to the parse's page range, and the passage's highlight is
+        drawn only on the anchor's own page — a marker on any other would
+        claim the passage is somewhere it is not.
         """
         anchor = DocumentAnchor.parse(uri)
         parse = await self._parses.load(anchor.document_id, anchor.version_id)
@@ -95,35 +102,45 @@ class CitationImageService:
             raise InvalidArgumentError(
                 f"Document {parse.document.id} has no stored file to render."
             )
+        page_count = parse.index.page_count or None
+        target = element.page if page is None else max(1, min(page, page_count or page))
         width_pt = (element.bbox.page_width if element.bbox else None) or DEFAULT_PAGE_WIDTH
         dpi = max(24, min(int(max_width / (width_pt / 72.0)), self._config.image_dpi))
         return await asyncio.to_thread(
             self._page_thumbnail,
             parse.document.storage_path,
             element,
+            target,
             dpi,
-            parse.index.page_count or None,
+            page_count,
         )
 
     def _page_thumbnail(
         self,
         storage_path: str,
         element: ResolvedElement,
+        page: int,
         dpi: int,
         page_count: int | None,
     ) -> CitationImage:
         def render(at: int):
-            page_png = self._raster.render_page(storage_path, page=element.page, dpi=at)
+            page_png = self._raster.render_page(storage_path, page=page, dpi=at)
             return self._raster.crop(page_png, (0, 0, 10_000, 10_000), fmt="WEBP")
 
         crop, at = self._shrink_to_budget(render, dpi=dpi, budget=self._config.image_page_max_bytes)
         # The passage's box in the thumbnail's own pixels, at the dpi the
         # ladder actually settled on — computing it from the dpi that was
-        # *asked* for would put the marker somewhere the passage is not.
-        highlight = element.bbox.pixel_box(dpi=at, padding=0) if element.bbox else None
+        # *asked* for would put the marker somewhere the passage is not. And
+        # only on the passage's own page: on any other, there is no passage
+        # to mark.
+        highlight = (
+            element.bbox.pixel_box(dpi=at, padding=0)
+            if element.bbox and page == element.page
+            else None
+        )
         return self._image(
             crop,
-            page=element.page,
+            page=page,
             dpi=at,
             media_type="image/webp",
             highlight=highlight,
