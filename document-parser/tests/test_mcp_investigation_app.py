@@ -350,6 +350,20 @@ class TestTemplate:
         for marker in ('data-tab="record"', 'data-tab="path"', "data-fold", "How it moved"):
             assert marker in INVESTIGATION_APP_HTML, marker
 
+    def test_a_thumbnail_enlarges_like_the_citation_views_page(self):
+        """The lens: fullscreen requested (never assumed), the thumbnail
+        standing in until the readable render lands, Escape to leave."""
+        for marker in (
+            '"ui/request-display-mode"',
+            "LENS_WIDTH = 1400",
+            'role", "dialog',
+            "provisional",
+            '"Escape"',
+            "data-shot",
+            "data-jump",
+        ):
+            assert marker in INVESTIGATION_APP_HTML, marker
+
     def test_an_unanswered_step_gets_no_page_thumbnail(self):
         """Only a kept ref earns a page. A thumbnail under an unanswered step
         would claim the investigation found something there."""
