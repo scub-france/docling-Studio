@@ -95,6 +95,7 @@ const messages: Messages = {
     'docs.selected': '{n} sélectionné(s)',
     'docs.download': 'Télécharger',
     'docs.downloadPdf': 'Document PDF',
+    'docs.downloadDocx': 'Document Word',
     'docs.downloadMarkdown': 'Markdown',
     'docs.downloadJson': 'JSON Docling',
     'docs.downloadFailed': 'Échec du téléchargement du format {format}.',
@@ -121,8 +122,8 @@ const messages: Messages = {
 
     // Doc import (#214)
     'docsNew.title': 'Importer des documents',
-    'docsNew.drop': 'Déposez des PDFs ici ou cliquez pour choisir',
-    'docsNew.dropHint': 'Plusieurs fichiers acceptés · PDF uniquement',
+    'docsNew.drop': 'Déposez des documents ici ou cliquez pour choisir',
+    'docsNew.dropHint': 'Plusieurs fichiers acceptés · PDF, DOCX',
     'docsNew.queued': 'En attente',
     'docsNew.uploading': 'Import…',
     'docsNew.done': 'Importé',
@@ -155,14 +156,14 @@ const messages: Messages = {
     // Home
     'home.title': 'Docling Studio',
     'home.subtitle':
-      'Analysez, explorez et validez la structure de vos documents PDF grâce à Docling.',
+      'Analysez, explorez et validez la structure de vos documents grâce à Docling.',
     'home.documents': 'Documents',
     'home.analyses': 'Analyses',
     'home.recentDocs': 'Documents récents',
 
     // Studio — import
     'studio.title': 'Intelligence des documents',
-    'studio.subtitle': "Importez un document PDF pour commencer l'analyse avec Docling",
+    'studio.subtitle': "Importez un document (PDF ou DOCX) pour commencer l'analyse avec Docling",
     'studio.recentDocs': 'Documents récents',
 
     // Studio — workspace
@@ -237,10 +238,10 @@ const messages: Messages = {
     'results.page': 'Page',
 
     // Upload
-    'upload.drop': 'Déposez un PDF ici ou cliquez pour importer',
+    'upload.drop': 'Déposez un document ici ou cliquez pour importer',
     'upload.uploading': 'Import en cours...',
     'upload.maxSize': 'Max {n}Mo',
-    'upload.invalidFormat': 'Format invalide — seuls les fichiers PDF sont acceptés.',
+    'upload.invalidFormat': 'Format invalide — formats acceptés : PDF, DOCX.',
     'upload.tooLarge': 'Fichier trop volumineux (max {n} Mo).',
     'upload.maxPages': 'Max {n} pages',
 
@@ -728,6 +729,7 @@ const messages: Messages = {
     'docs.selected': '{n} selected',
     'docs.download': 'Download',
     'docs.downloadPdf': 'PDF Document',
+    'docs.downloadDocx': 'Word Document',
     'docs.downloadMarkdown': 'Markdown',
     'docs.downloadJson': 'Docling JSON',
     'docs.downloadFailed': 'Failed to download the {format} format.',
@@ -751,8 +753,8 @@ const messages: Messages = {
 
     // Doc import (#214)
     'docsNew.title': 'Import documents',
-    'docsNew.drop': 'Drop PDFs here or click to choose',
-    'docsNew.dropHint': 'Multiple files accepted · PDF only',
+    'docsNew.drop': 'Drop documents here or click to choose',
+    'docsNew.dropHint': 'Multiple files accepted · PDF, DOCX',
     'docsNew.queued': 'Queued',
     'docsNew.uploading': 'Uploading…',
     'docsNew.done': 'Imported',
@@ -784,13 +786,13 @@ const messages: Messages = {
 
     'home.title': 'Docling Studio',
     'home.subtitle':
-      'Analyze, explore and validate the structure of your PDF documents with Docling.',
+      'Analyze, explore and validate the structure of your documents with Docling.',
     'home.documents': 'Documents',
     'home.analyses': 'Analyses',
     'home.recentDocs': 'Recent documents',
 
     'studio.title': 'Document Intelligence',
-    'studio.subtitle': 'Upload a PDF document to start analyzing with Docling',
+    'studio.subtitle': 'Upload a PDF or DOCX document to start analyzing with Docling',
     'studio.recentDocs': 'Recent documents',
 
     'studio.configure': 'Configure',
@@ -861,10 +863,10 @@ const messages: Messages = {
     'results.copied': 'Copied!',
     'results.page': 'Page',
 
-    'upload.drop': 'Drop a PDF here or click to upload',
+    'upload.drop': 'Drop a document here or click to upload',
     'upload.uploading': 'Uploading...',
     'upload.maxSize': 'Max {n}MB',
-    'upload.invalidFormat': 'Invalid format — only PDF files are accepted.',
+    'upload.invalidFormat': 'Invalid format — accepted formats: PDF, DOCX.',
     'upload.tooLarge': 'File too large (max {n} MB).',
     'upload.maxPages': 'Max {n} pages',
 

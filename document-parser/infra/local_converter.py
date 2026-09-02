@@ -11,7 +11,12 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
+import shutil
+import subprocess
+import tempfile
 import threading
+from pathlib import Path
 
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
@@ -20,7 +25,7 @@ from docling.datamodel.pipeline_options import (
     TableStructureOptions,
 )
 from docling.document_converter import DocumentConverter as DoclingConverter
-from docling.document_converter import PdfFormatOption
+from docling.document_converter import PdfFormatOption, WordFormatOption
 from docling_core.types.doc import (
     CodeItem,
     DocItem,
@@ -108,6 +113,7 @@ def _build_docling_converter(options: ConversionOptions) -> DoclingConverter:
     return DoclingConverter(
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+            InputFormat.DOCX: WordFormatOption(pipeline_options=pipeline_options),
         }
     )
 
@@ -248,20 +254,17 @@ def _convert_sync(
     page_count = len(doc.pages)
     pages_detail, skipped = _extract_pages_detail(result)
 
-    if not pages_detail and page_count > 0:
+    if not pages_detail:
+        # Fallback for flow-format documents where Docling produced no page
+        # model (e.g. native DOCX analysis when LibreOffice pre-conversion
+        # failed).  Creates one synthetic page so the viewer can at least
+        # show the LibreOffice preview image.
         pages_detail = [
-            PageDetail(
-                page_number=i + 1,
-                width=doc.pages[i + 1].size.width if (i + 1) in doc.pages else DEFAULT_PAGE_WIDTH,
-                height=doc.pages[i + 1].size.height
-                if (i + 1) in doc.pages
-                else DEFAULT_PAGE_HEIGHT,
-            )
-            for i in range(page_count)
+            PageDetail(page_number=1, width=DEFAULT_PAGE_WIDTH, height=DEFAULT_PAGE_HEIGHT)
         ]
 
     if skipped > 0:
-        logger.info("Parsed: %d pages, %d items skipped", page_count, skipped)
+        logger.info("Parsed: %d pages, %d items skipped", len(pages_detail), skipped)
 
     return ConversionResult(
         page_count=page_count or len(pages_detail) or 1,
@@ -271,6 +274,54 @@ def _convert_sync(
         skipped_items=skipped,
         document_json=json.dumps(doc.export_to_dict()),
     )
+
+
+# ---------------------------------------------------------------------------
+# DOCX pre-conversion helper
+# ---------------------------------------------------------------------------
+
+
+def _docx_to_pdf_for_analysis(docx_path: str) -> str | None:
+    """Convert a DOCX to PDF via LibreOffice and save it alongside the source file.
+
+    The PDF is written to <same_dir>/<same_stem>.pdf so it can be reused by
+    both the analysis pipeline (here) and the preview endpoint — LibreOffice
+    runs at most once per document.
+
+    Returns the persistent PDF path on success, None on failure.
+    """
+    companion_pdf = str(Path(docx_path).with_suffix(".pdf"))
+
+    # Reuse if already produced (e.g. a preview request ran first).
+    if os.path.exists(companion_pdf):
+        return companion_pdf
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        subprocess.run(
+            [
+                "libreoffice",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                tmp_dir,
+                docx_path,
+            ],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        tmp_pdf = os.path.join(tmp_dir, Path(docx_path).stem + ".pdf")
+        if os.path.exists(tmp_pdf):
+            shutil.move(tmp_pdf, companion_pdf)
+            return companion_pdf
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        logger.warning("LibreOffice DOCX→PDF pre-conversion failed: %s", exc)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -292,4 +343,21 @@ class LocalConverter:
         *,
         page_range: tuple[int, int] | None = None,
     ) -> ConversionResult:
-        return await asyncio.to_thread(_convert_sync, file_path, options, page_range=page_range)
+        # For DOCX files, pre-convert to PDF outside the converter lock.
+        # LibreOffice can take several seconds; doing it before acquiring
+        # _converter_lock avoids blocking other analyses in the meantime.
+        # Docling then analyses the PDF and returns a proper page/bbox model.
+        analysis_path = file_path
+
+        if Path(file_path).suffix.lower() == ".docx":
+            pdf_path = await asyncio.to_thread(_docx_to_pdf_for_analysis, file_path)
+            if pdf_path:
+                analysis_path = pdf_path
+            else:
+                logger.warning(
+                    "Falling back to native DOCX analysis for %s — "
+                    "page count and bboxes will not be available",
+                    file_path,
+                )
+
+        return await asyncio.to_thread(_convert_sync, analysis_path, options, page_range=page_range)

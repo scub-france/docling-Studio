@@ -73,7 +73,7 @@ _TRANSITIONS: dict[DocumentLifecycleState, frozenset[DocumentLifecycleState]] = 
 
 
 def is_allowed_transition(source: DocumentLifecycleState, target: DocumentLifecycleState) -> bool:
-    """Return True iff transitioning from `source` to `target` is allowed."""
+    """Return True if transitioning from `source` to `target` is allowed."""
     return target in _TRANSITIONS.get(source, frozenset())
 
 

@@ -8,12 +8,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
+from domain.value_objects import InputFileType
+
 if TYPE_CHECKING:
     from domain.ports import AnalysisRepository, DocumentRepository
 
 
 class ExportFormat(StrEnum):
     PDF = "pdf"
+    DOCX = "docx"
     MD = "md"
     JSON = "json"
 
@@ -43,11 +46,24 @@ class ExportService:
             raise ExportNotFoundError("Document not found")
 
         if format is ExportFormat.PDF:
+            if InputFileType.from_filename(doc.filename) is not InputFileType.PDF:
+                raise ExportNotFoundError("Source file is not a PDF document")
             if not Path(doc.storage_path).is_file():
                 raise ExportNotFoundError("PDF file not found")
             return ExportResult(
                 file_path=doc.storage_path,
                 media_type="application/pdf",
+                filename=doc.filename,
+            )
+
+        if format is ExportFormat.DOCX:
+            if InputFileType.from_filename(doc.filename) is not InputFileType.DOCX:
+                raise ExportNotFoundError("Source file is not a DOCX document")
+            if not Path(doc.storage_path).is_file():
+                raise ExportNotFoundError("DOCX file not found")
+            return ExportResult(
+                file_path=doc.storage_path,
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 filename=doc.filename,
             )
 

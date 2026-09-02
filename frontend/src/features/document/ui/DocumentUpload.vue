@@ -8,7 +8,7 @@
     @drop.prevent="onDrop"
     @click="openFilePicker"
   >
-    <input ref="fileInput" type="file" accept=".pdf" hidden @change="onFileSelect" />
+    <input ref="fileInput" type="file" accept=".pdf,.docx" hidden @change="onFileSelect" />
     <div v-if="store.uploading" class="upload-state">
       <div class="spinner" />
       <span>{{ t('upload.uploading') }}</span>
@@ -35,6 +35,7 @@ import { computed, ref } from 'vue'
 import { useDocumentStore } from '../store'
 import { useI18n } from '../../../shared/i18n'
 import { appMaxFileSizeMb, appMaxPageCount } from '../../../shared/appConfig'
+import { isAcceptedFormat } from '../../../shared/format'
 
 const emit = defineEmits<{ uploaded: [docId: string] }>()
 
@@ -58,13 +59,9 @@ function openFilePicker() {
   fileInput.value?.click()
 }
 
-function isPdf(file: File): boolean {
-  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-}
-
 async function handleFile(file: File) {
   store.clearError()
-  if (!isPdf(file)) {
+  if (!isAcceptedFormat(file)) {
     store.error = t('upload.invalidFormat')
     return
   }

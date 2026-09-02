@@ -25,7 +25,14 @@
       @drop.prevent="onDrop"
       @click="openPicker"
     >
-      <input ref="fileInput" type="file" multiple accept=".pdf" hidden @change="onFileSelect" />
+      <input
+        ref="fileInput"
+        type="file"
+        multiple
+        accept=".pdf,.docx"
+        hidden
+        @change="onFileSelect"
+      />
       <svg
         class="drop-icon"
         viewBox="0 0 24 24"
@@ -87,6 +94,7 @@ import { uploadDocument } from '../features/document/api'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import { appMaxFileSizeMb } from '../shared/appConfig'
+import { isAcceptedFormat } from '../shared/format'
 
 type UploadStatus = 'queued' | 'uploading' | 'done' | 'failed'
 
@@ -114,10 +122,6 @@ function statusLabel(status: UploadStatus): string {
   return t(`docsNew.${status}`)
 }
 
-function isPdf(file: File): boolean {
-  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-}
-
 function openPicker(): void {
   if (isUploading.value) return
   fileInput.value?.click()
@@ -142,10 +146,10 @@ function onDrop(e: DragEvent): void {
 }
 
 function enqueue(files: File[]): void {
-  const pdfs = files.filter(isPdf)
-  if (!pdfs.length) return
+  const validFiles = files.filter(isAcceptedFormat)
+  if (!validFiles.length) return
 
-  const newItems: UploadItem[] = pdfs.map((f) => ({ file: f, status: 'queued' }))
+  const newItems: UploadItem[] = validFiles.map((f) => ({ file: f, status: 'queued' }))
   uploads.value = [...uploads.value, ...newItems]
 
   // Upload sequentially to avoid overloading the backend

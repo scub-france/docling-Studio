@@ -1,7 +1,8 @@
-"""Generate deterministic test PDFs for E2E tests.
+"""Generate deterministic test documents for E2E tests.
 
-Uses fpdf2 to create valid PDFs with real text content so Docling
-can extract and chunk them. No binary files committed to the repo.
+Uses fpdf2 to create valid PDFs and Python's zipfile module to create
+valid DOCX files with real text content so Docling can extract and chunk
+them. No binary files committed to the repo.
 
 Usage:
     python e2e/generate-test-data.py
@@ -13,6 +14,7 @@ Dependencies:
 from __future__ import annotations
 
 import os
+import zipfile
 
 from fpdf import FPDF
 
@@ -56,6 +58,51 @@ def _make_pdf(page_count: int, path: str) -> None:
     print(f"  {os.path.basename(path)}: {page_count} pages, {size_kb:.1f} KB")
 
 
+def _make_docx(path: str, para_count: int = 5) -> None:
+    """Create a minimal valid DOCX file using Python's zipfile (no extra deps).
+
+    The DOCX contains real text paragraphs so Docling can extract content.
+    """
+    paras_xml = ""
+    for i in range(para_count):
+        text = _PARAGRAPHS[i % len(_PARAGRAPHS)].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        paras_xml += f'<w:p><w:r><w:t xml:space="preserve">{text}</w:t></w:r></w:p>\n    '
+
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
+        '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n'
+        '  <Default Extension="xml" ContentType="application/xml"/>\n'
+        '  <Override PartName="/word/document.xml"'
+        ' ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>\n'
+        '</Types>'
+    )
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+        '  <Relationship Id="rId1"'
+        ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"'
+        ' Target="word/document.xml"/>\n'
+        '</Relationships>'
+    )
+    document = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">\n'
+        '  <w:body>\n'
+        f'    {paras_xml}\n'
+        '  </w:body>\n'
+        '</w:document>'
+    )
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", rels)
+        zf.writestr("word/document.xml", document)
+
+    size_kb = os.path.getsize(path) / 1024
+    print(f"  {os.path.basename(path)}: {para_count} paragraphs, {size_kb:.1f} KB")
+
+
 def _make_non_pdf(path: str) -> None:
     """Create a non-PDF file for negative testing."""
     with open(path, "wb") as f:
@@ -78,6 +125,7 @@ def main() -> None:
         _make_pdf(5, os.path.join(output_dir, "medium.pdf"))
         _make_pdf(25, os.path.join(output_dir, "large.pdf"))
         _make_non_pdf(os.path.join(output_dir, "not-a-pdf.txt"))
+        _make_docx(os.path.join(output_dir, "small.docx"), para_count=5)
 
     print("Done.")
 

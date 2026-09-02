@@ -49,17 +49,18 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 
 import { useI18n } from '../../../shared/i18n'
 import { getExportUrl } from '../api'
 
-type ExportFormat = 'pdf' | 'md' | 'json'
+type ExportFormat = 'pdf' | 'docx' | 'md' | 'json'
 
 const props = withDefaults(
   defineProps<{
     docId: string
+    filename: string
     buttonClass?: string
     iconOnly?: boolean
     pdfOnly?: boolean
@@ -117,12 +118,12 @@ function focusItem(index: number) {
 
 function focusNextItem() {
   const index = itemRefs.value.findIndex((item) => item === document.activeElement)
-  focusItem((index + 1 + downloadOptions.length) % downloadOptions.length)
+  focusItem((index + 1 + downloadOptions.value.length) % downloadOptions.value.length)
 }
 
 function focusPreviousItem() {
   const index = itemRefs.value.findIndex((item) => item === document.activeElement)
-  focusItem((index - 1 + downloadOptions.length) % downloadOptions.length)
+  focusItem((index - 1 + downloadOptions.value.length) % downloadOptions.value.length)
 }
 
 async function downloadFormat(format: ExportFormat) {
@@ -179,6 +180,8 @@ function formatLabelKey(format: ExportFormat): string {
   switch (format) {
     case 'pdf':
       return 'docs.downloadPdf'
+    case 'docx':
+      return 'docs.downloadDocx'
     case 'md':
       return 'docs.downloadMarkdown'
     case 'json':

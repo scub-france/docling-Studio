@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from domain.models import Document
+from domain.value_objects import InputFileType
 from services.document_service import DocumentConfig, DocumentService, _count_pages
 
 
@@ -29,6 +30,10 @@ def _make_service(
     )
 
 
+# Minimal valid ZIP header — every .docx is a ZIP archive
+DOCX_BYTES = b"PK\x03\x04" + b"\x00" * 26
+
+
 class TestUploadValidation:
     @pytest.mark.asyncio
     async def test_rejects_oversized_file(self):
@@ -38,11 +43,11 @@ class TestUploadValidation:
             await service.upload("big.pdf", "application/pdf", content)
 
     @pytest.mark.asyncio
-    async def test_rejects_non_pdf(self):
+    async def test_rejects_unsupported_extension(self):
         service = _make_service()
-        content = b"NOT-A-PDF-FILE"
-        with pytest.raises(ValueError, match="not a PDF"):
-            await service.upload("fake.pdf", "application/pdf", content)
+        content = b"some content"
+        with pytest.raises(ValueError, match="Invalid file type"):
+            await service.upload("fake.xlsx", "application/vnd.ms-excel", content)
 
     @pytest.mark.asyncio
     async def test_rejects_too_many_pages(self, tmp_path):
@@ -95,6 +100,38 @@ class TestUploadValidation:
         with open(doc.storage_path, "rb") as f:
             assert f.read() == content
 
+    @pytest.mark.asyncio
+    async def test_upload_docx_accepted(self, tmp_path):
+        """DOCX files must pass validation and be stored with a .docx extension."""
+        service = _make_service(upload_dir=str(tmp_path))
+
+        doc = await service.upload(
+            "report.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            DOCX_BYTES,
+        )
+
+        assert doc.filename == "report.docx"
+        assert doc.file_size == len(DOCX_BYTES)
+        assert doc.page_count is None  # not counted at upload time for DOCX
+        assert doc.storage_path.endswith(".docx"), (
+            f"expected .docx extension, got {doc.storage_path}"
+        )
+        assert os.path.exists(doc.storage_path)
+        service._document_repo.insert.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_upload_docx_file_extension_stored_correctly(self, tmp_path):
+        """Stored filename must include the dot before the extension (regression: missing dot bug)."""
+        service = _make_service(upload_dir=str(tmp_path))
+
+        doc = await service.upload("test.docx", "application/octet-stream", DOCX_BYTES)
+
+        # The stored file must have .docx as its suffix — not e.g. "uuid4docx"
+        stored = os.path.basename(doc.storage_path)
+        assert "." in stored, f"Stored filename has no extension: {stored}"
+        assert stored.endswith(".docx"), f"Wrong extension in stored filename: {stored}"
+
 
 class TestGeneratePreview:
     def test_raises_on_invalid_page(self):
@@ -115,6 +152,36 @@ class TestGeneratePreview:
 
         assert result == b"PNG-DATA"
 
+    def test_docx_preview_converts_via_libreoffice(self):
+        """DOCX preview must call _docx_to_pdf_bytes before pdf2image."""
+        mock_image = MagicMock()
+        mock_image.save = MagicMock(side_effect=lambda buf, format: buf.write(b"PNG-DOCX"))
+
+        with (
+            patch(
+                "services.document_service._docx_to_pdf_bytes",
+                return_value=b"%PDF-converted",
+            ) as mock_lo,
+            patch("services.document_service.convert_from_bytes", return_value=[mock_image]),
+        ):
+            result = DocumentService.generate_preview(
+                DOCX_BYTES, page=1, file_type=InputFileType.DOCX
+            )
+
+        mock_lo.assert_called_once_with(DOCX_BYTES)
+        assert result == b"PNG-DOCX"
+
+    def test_docx_preview_raises_when_libreoffice_missing(self):
+        """If LibreOffice is not installed, generate_preview must propagate FileNotFoundError."""
+        with (
+            patch(
+                "services.document_service._docx_to_pdf_bytes",
+                side_effect=FileNotFoundError("libreoffice not found"),
+            ),
+            pytest.raises(FileNotFoundError, match="libreoffice not found"),
+        ):
+            DocumentService.generate_preview(DOCX_BYTES, page=1, file_type=InputFileType.DOCX)
+
 
 class TestCountPages:
     def test_returns_page_count(self):
@@ -122,14 +189,17 @@ class TestCountPages:
             "services.document_service.pdfinfo_from_bytes",
             return_value={"Pages": 42},
         ):
-            assert _count_pages(b"pdf") == 42
+            assert _count_pages(b"pdf", InputFileType.PDF) == 42
 
     def test_returns_none_on_error(self):
         with patch(
             "services.document_service.pdfinfo_from_bytes",
             side_effect=FileNotFoundError("poppler not found"),
         ):
-            assert _count_pages(b"pdf") is None
+            assert _count_pages(b"pdf", InputFileType.PDF) is None
+
+    def test_returns_none_for_docx(self):
+        assert _count_pages(b"docx-bytes", InputFileType.DOCX) is None
 
 
 class TestDelete:

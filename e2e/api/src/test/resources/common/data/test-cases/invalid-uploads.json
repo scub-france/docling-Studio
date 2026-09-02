@@ -1,6 +1,6 @@
 [
   {
-    "description": "non-PDF file",
+    "description": "unsupported format (txt)",
     "file": "not-a-pdf.txt",
     "contentType": "text/plain",
     "expectedStatus": 400,

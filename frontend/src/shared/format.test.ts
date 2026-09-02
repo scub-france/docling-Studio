@@ -1,5 +1,47 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { formatRelativeTime, formatSize } from './format'
+import { formatRelativeTime, formatSize, isAcceptedFormat } from './format'
+
+// ---------------------------------------------------------------------------
+// isAcceptedFormat
+// ---------------------------------------------------------------------------
+
+const makeFile = (name: string, type: string) =>
+  new File([new Uint8Array(4)], name, { type })
+
+describe('isAcceptedFormat', () => {
+  it('accepts a PDF by MIME type', () => {
+    expect(isAcceptedFormat(makeFile('doc.pdf', 'application/pdf'))).toBe(true)
+  })
+
+  it('accepts a PDF by extension when MIME type is empty', () => {
+    expect(isAcceptedFormat(makeFile('doc.pdf', ''))).toBe(true)
+  })
+
+  it('accepts a DOCX by MIME type', () => {
+    const mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    expect(isAcceptedFormat(makeFile('report.docx', mime))).toBe(true)
+  })
+
+  it('accepts a DOCX by extension when MIME type is generic', () => {
+    expect(isAcceptedFormat(makeFile('report.docx', 'application/octet-stream'))).toBe(true)
+  })
+
+  it('accepts DOCX extension regardless of case', () => {
+    expect(isAcceptedFormat(makeFile('REPORT.DOCX', ''))).toBe(true)
+  })
+
+  it('rejects an Excel file (.xlsx)', () => {
+    expect(isAcceptedFormat(makeFile('data.xlsx', 'application/vnd.ms-excel'))).toBe(false)
+  })
+
+  it('rejects a plain text file', () => {
+    expect(isAcceptedFormat(makeFile('notes.txt', 'text/plain'))).toBe(false)
+  })
+
+  it('rejects a file with no extension', () => {
+    expect(isAcceptedFormat(makeFile('noextension', 'application/octet-stream'))).toBe(false)
+  })
+})
 
 describe('formatSize', () => {
   it('returns empty string for falsy value', () => {

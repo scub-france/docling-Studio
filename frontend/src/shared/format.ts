@@ -1,3 +1,14 @@
+const ACCEPTED_MIME = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+])
+const ACCEPTED_EXT = new Set(['.pdf', '.docx'])
+
+export function isAcceptedFormat(file: File): boolean {
+  const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
+  return ACCEPTED_MIME.has(file.type) || ACCEPTED_EXT.has(ext)
+}
+
 export function formatSize(bytes: number | null | undefined): string {
   if (!bytes) return ''
   const mb = bytes / (1024 * 1024)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 # US Letter page dimensions (points) — fallback when page size is unknown
@@ -296,3 +297,16 @@ class GraphPayload:
     edge_count: int
     truncated: bool
     page_count: int
+
+
+class InputFileType(StrEnum):
+    PDF = "pdf"
+    DOCX = "docx"
+
+    @classmethod
+    def from_filename(cls, filename: str) -> InputFileType | None:
+        suffix = Path(filename).suffix.lower().lstrip(".")
+        try:
+            return cls(suffix)
+        except ValueError:
+            return None

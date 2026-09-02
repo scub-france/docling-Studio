@@ -30,9 +30,11 @@ export const useChunksStore = defineStore('chunks', () => {
     strategyOpen.value = false
   }
 
-  /** Pure derived getter — chunks whose `sourcePage` matches the given page. */
+  /** Pure derived getter — chunks whose `sourcePage` matches the given page.
+   * Chunks with no page info (sourcePage null/undefined — e.g. DOCX) are
+   * treated as belonging to page 1. */
   const chunksOnPage = computed(
-    () => (page: number) => chunks.value.filter((c) => c.sourcePage === page),
+    () => (page: number) => chunks.value.filter((c) => (c.sourcePage ?? 1) === page),
   )
 
   async function load(docId: string): Promise<void> {

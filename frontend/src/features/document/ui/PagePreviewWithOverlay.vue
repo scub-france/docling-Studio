@@ -134,7 +134,7 @@ import { clampPageInput, pageInputWidthCh } from './PagePreviewWithOverlay.logic
 import { centeredScrollPosition, isRectVisible, mostVisiblePage } from '../previewScroll'
 
 const { t } = useI18n()
-
+const DEFAULT_PAGE_INPUT_SIZE = 4
 const props = defineProps<{
   documentId: string
   pages: readonly Page[]
@@ -171,8 +171,9 @@ let renderObserver: IntersectionObserver | null = null
 const visibilityRatios = new Map<number, number>()
 
 const totalPages = computed(() => props.pages.length)
-const pageInputSize = computed(() => pageInputWidthCh(totalPages.value))
-
+const pageInputSize = computed(() =>
+  Math.max(DEFAULT_PAGE_INPUT_SIZE, String(totalPages.value).length),
+)
 let pendingClickRef: string | null = null
 
 const currentPageData = computed<Page | null>(() => {

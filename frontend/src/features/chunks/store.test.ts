@@ -66,7 +66,6 @@ describe('useChunksStore', () => {
       makeChunk('c1', 'a', { sourcePage: 1 }),
       makeChunk('c2', 'b', { sourcePage: 2 }),
       makeChunk('c3', 'c', { sourcePage: 1 }),
-      makeChunk('c4', 'd', { sourcePage: null }),
     ]
     api.fetchChunks.mockResolvedValue(chunks)
     const store = useChunksStore()
@@ -74,6 +73,35 @@ describe('useChunksStore', () => {
     expect(store.chunksOnPage(1).map((c) => c.id)).toEqual(['c1', 'c3'])
     expect(store.chunksOnPage(2).map((c) => c.id)).toEqual(['c2'])
     expect(store.chunksOnPage(3)).toEqual([])
+  })
+
+  it('chunksOnPage — DOCX chunks (sourcePage null) appear on page 1', async () => {
+    // DOCX is a flow document — items have no prov/bbox, so sourcePage is null.
+    // They must all be visible on page 1 via the ?? 1 fallback.
+    const chunks = [
+      makeChunk('c1', 'intro', { sourcePage: null }),
+      makeChunk('c2', 'body', { sourcePage: null }),
+      makeChunk('c3', 'conclusion', { sourcePage: null }),
+    ]
+    api.fetchChunks.mockResolvedValue(chunks)
+    const store = useChunksStore()
+    await store.load('d1')
+    expect(store.chunksOnPage(1).map((c) => c.id)).toEqual(['c1', 'c2', 'c3'])
+    expect(store.chunksOnPage(2)).toEqual([])
+  })
+
+  it('chunksOnPage — mixed PDF and DOCX chunks (null falls back to page 1)', async () => {
+    const chunks = [
+      makeChunk('p1', 'pdf page 1', { sourcePage: 1 }),
+      makeChunk('p2', 'pdf page 2', { sourcePage: 2 }),
+      makeChunk('d1', 'docx chunk', { sourcePage: null }),
+    ]
+    api.fetchChunks.mockResolvedValue(chunks)
+    const store = useChunksStore()
+    await store.load('d1')
+    // null sourcePage treated as page 1
+    expect(store.chunksOnPage(1).map((c) => c.id)).toEqual(['p1', 'd1'])
+    expect(store.chunksOnPage(2).map((c) => c.id)).toEqual(['p2'])
   })
 
   it('updateText — replaces chunk in list', async () => {

@@ -218,9 +218,9 @@ class TestCountPdfPages:
         assert _count_pdf_pages(str(path)) == 1
 
     def test_non_pdf_file(self, tmp_path):
-        """A non-PDF file should return 0."""
+        """A DOCX (ZIP) file is not a PDF — returns 0, so batching is skipped."""
         path = tmp_path / "test.docx"
-        path.write_bytes(b"PK\x03\x04 not a pdf")
+        path.write_bytes(b"PK\x03\x04" + b"\x00" * 26)
         assert _count_pdf_pages(str(path)) == 0
 
     def test_nonexistent_file(self):
@@ -232,6 +232,53 @@ class TestCountPdfPages:
         path = tmp_path / "empty.pdf"
         path.write_bytes(b"")
         assert _count_pdf_pages(str(path)) == 0
+
+
+class TestDocxConversion:
+    """Verify that DOCX files bypass page-based batching and are converted in one shot."""
+
+    @pytest.mark.asyncio
+    async def test_docx_skips_batching(self, tmp_path):
+        """_run_conversion must call convert() without page_range for DOCX.
+
+        DOCX is a flow document — _count_pdf_pages returns 0, so total_pages=0
+        which is never > batch_size, meaning the batching branch is never entered.
+        """
+        converter = AsyncMock()
+        single_result = ConversionResult(
+            page_count=1,
+            content_markdown="# Doc",
+            content_html="<html><body><p>Doc</p></body></html>",
+            pages=[PageDetail(page_number=1, width=595, height=842)],
+        )
+        converter.convert.return_value = single_result
+        converter.supports_page_batching = True
+
+        service = _make_service(
+            converter=converter,
+            conversion_timeout=30,
+        )
+        service._config = type(service._config)(
+            default_table_mode="fast",
+            batch_page_size=5,  # batching enabled but DOCX must bypass it
+        )
+
+        docx_path = tmp_path / "report.docx"
+        docx_path.write_bytes(b"PK\x03\x04" + b"\x00" * 26)
+
+        with patch(
+            "services.analysis_service._count_pdf_pages",
+            return_value=0,  # DOCX → 0 PDF pages
+        ):
+            result = await service._run_conversion("job-1", str(docx_path), MagicMock())
+
+        # Must have called convert() exactly once with no page_range keyword
+        converter.convert.assert_called_once()
+        call_kwargs = converter.convert.call_args.kwargs
+        assert "page_range" not in call_kwargs, (
+            "DOCX conversion must not pass page_range — batching should be skipped"
+        )
+        assert result is single_result
 
 
 class TestExtractHtmlBody:

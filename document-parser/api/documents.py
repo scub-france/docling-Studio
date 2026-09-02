@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, Response
 
 from api import deps  # noqa: TC001
 from api.schemas import DocStoreLinkResponse, DocumentResponse
+from domain.value_objects import InputFileType
 from services.document_service import DocumentService
 from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
 
@@ -92,7 +93,7 @@ async def upload(file: UploadFile, service: deps.DocumentServiceDep) -> Document
     try:
         doc = await service.upload(
             filename=file.filename,
-            content_type=file.content_type or "application/pdf",
+            content_type=file.content_type or None,
             file_content=content,
         )
     except ValueError as e:
@@ -179,17 +180,23 @@ async def preview(
         # File read + PDF rasterisation are both blocking; offload to a
         # worker thread so the event loop stays free for other requests.
         file_content = await asyncio.to_thread(Path(doc.storage_path).read_bytes)
+        file_type = InputFileType.from_filename(doc.filename) or InputFileType.PDF
         png_bytes = await asyncio.to_thread(
-            DocumentService.generate_preview, file_content, page=page, dpi=dpi
+            DocumentService.generate_preview,
+            file_content,
+            page=page,
+            dpi=dpi,
+            file_type=file_type,
+            storage_path=doc.storage_path,
         )
         return Response(content=png_bytes, media_type="image/png")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
+        raise HTTPException(status_code=404, detail="Source file not found on disk") from exc
     except OSError as exc:
         logger.exception("I/O error generating preview for %s", doc_id)
-        raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
+        raise HTTPException(status_code=422, detail="Failed to read source file") from exc
     except Exception as exc:
         logger.exception("Unexpected error generating preview for %s", doc_id)
         raise HTTPException(status_code=422, detail="Failed to generate preview") from exc

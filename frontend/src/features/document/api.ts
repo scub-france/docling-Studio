@@ -28,7 +28,7 @@ export function getPreviewUrl(id: string, page = 1, dpi = 150): string {
   return `/api/documents/${id}/preview?page=${page}&dpi=${dpi}`
 }
 
-export function getExportUrl(id: string, format: 'pdf' | 'md' | 'json'): string {
+export function getExportUrl(id: string, format: 'pdf' | 'docx' | 'md' | 'json'): string {
   return `/api/documents/${id}/export?format=${format}`
 }
 

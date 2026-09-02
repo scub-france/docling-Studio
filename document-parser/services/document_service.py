@@ -6,22 +6,22 @@ import asyncio
 import io
 import logging
 import os
+import subprocess
+import tempfile
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pdf2image import convert_from_bytes, pdfinfo_from_bytes
 
 from domain.models import Document
+from domain.value_objects import InputFileType
 
 if TYPE_CHECKING:
     from domain.ports import AnalysisRepository, DocumentRepository
 
 logger = logging.getLogger(__name__)
-
-
-# PDF magic bytes: %PDF
-_PDF_MAGIC = b"%PDF"
 
 _UPLOAD_CHUNK_SIZE = 64 * 1024  # 64 KB chunks for streaming writes
 
@@ -69,27 +69,24 @@ class DocumentService:
         offloaded to a worker thread so the FastAPI event loop stays free
         for other requests during large uploads.
         """
-        if self._max_file_size > 0 and len(file_content) > self._max_file_size:
+        if 0 < self._max_file_size < len(file_content):
             raise ValueError(f"File too large (max {self._config.max_file_size_mb} MB)")
 
-        if not file_content[:4].startswith(_PDF_MAGIC):
-            raise ValueError("Invalid file: not a PDF document")
+        file_type = InputFileType.from_filename(filename)
 
-        ext = ".pdf"  # Content already validated as PDF
-        safe_name = f"{uuid.uuid4()}{ext}"
+        if not file_type:
+            raise ValueError("Invalid file type. Accepted formats: PDF, DOCX.")
+
+        safe_name = f"{uuid.uuid4()}.{file_type.value}"
         file_path = os.path.join(self._upload_dir, safe_name)
 
         # Disk write + poppler subprocess — both blocking. Offload together
         # so we cross the thread boundary once instead of twice.
         page_count = await asyncio.to_thread(
-            _persist_and_count, self._upload_dir, file_path, file_content
+            _persist_and_count, self._upload_dir, file_path, file_content, file_type
         )
 
-        if (
-            self._max_page_count > 0
-            and page_count is not None
-            and page_count > self._max_page_count
-        ):
+        if 0 < self._max_page_count < page_count and page_count is not None:
             await asyncio.to_thread(os.unlink, file_path)
             raise ValueError(
                 f"Too many pages ({page_count}). Maximum allowed: {self._max_page_count}"
@@ -124,10 +121,14 @@ class DocumentService:
 
         # Delete file from disk (only if inside upload dir)
         try:
-            real_path = os.path.realpath(doc.storage_path)
             real_upload_dir = os.path.realpath(self._upload_dir)
+            real_path = os.path.realpath(doc.storage_path)
             if real_path.startswith(real_upload_dir + os.sep) and os.path.exists(real_path):
                 os.unlink(real_path)
+                # Also remove the companion PDF produced for DOCX preview/analysis.
+                companion = Path(doc.storage_path).with_suffix(".pdf")
+                if companion.exists() and str(companion) != doc.storage_path:
+                    companion.unlink(missing_ok=True)
             elif os.path.exists(doc.storage_path):
                 logger.warning("Refused to delete file outside upload dir: %s", doc.storage_path)
         except FileNotFoundError:
@@ -140,18 +141,79 @@ class DocumentService:
         return await self._document_repo.delete(doc_id)
 
     @staticmethod
-    def generate_preview(file_content: bytes, page: int = 1, dpi: int = 150) -> bytes:
-        """Generate a PNG preview of a specific PDF page."""
+    def generate_preview(
+        file_content: bytes,
+        page: int = 1,
+        dpi: int = 150,
+        *,
+        file_type: InputFileType = InputFileType.PDF,
+        storage_path: str | None = None,
+    ) -> bytes:
+        """Generate a PNG preview of a specific document page.
+
+        For DOCX files, a companion PDF (<same_stem>.pdf) is used if it already
+        exists (created by the analysis pipeline). If not, LibreOffice converts
+        on the fly and the result is cached as the companion PDF so subsequent
+        requests and the analysis step can reuse it without calling LibreOffice again.
+        """
+        if file_type == InputFileType.DOCX:
+            companion = Path(storage_path).with_suffix(".pdf") if storage_path else None
+            if companion and companion.exists():
+                file_content = companion.read_bytes()
+            else:
+                file_content = _docx_to_pdf_bytes(file_content)
+                if companion:
+                    companion.write_bytes(file_content)
         images = convert_from_bytes(file_content, first_page=page, last_page=page, dpi=dpi)
         if not images:
             raise ValueError(f"Page {page} not found")
-
         buf = io.BytesIO()
         images[0].save(buf, format="PNG")
         return buf.getvalue()
 
 
-def _persist_and_count(upload_dir: str, file_path: str, file_content: bytes) -> int | None:
+def _docx_to_pdf_bytes(file_content: bytes) -> bytes:
+    """Convert DOCX bytes to PDF bytes via LibreOffice headless.
+
+    Writes the DOCX to a temp directory, runs LibreOffice --headless --convert-to pdf,
+    reads the resulting PDF, then cleans up. Raises FileNotFoundError if LibreOffice
+    is not installed, ValueError if the conversion fails.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        docx_path = os.path.join(tmpdir, "input.docx")
+        pdf_path = os.path.join(tmpdir, "input.pdf")
+        with open(docx_path, "wb") as fh:
+            fh.write(file_content)
+        try:
+            result = subprocess.run(
+                [
+                    "libreoffice",
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    tmpdir,
+                    docx_path,
+                ],
+                capture_output=True,
+                timeout=60,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                "LibreOffice is not installed or not in PATH — cannot generate DOCX preview"
+            ) from exc
+        if not os.path.exists(pdf_path):
+            raise ValueError(
+                "LibreOffice DOCX→PDF conversion failed: " + result.stderr.decode(errors="replace")
+            )
+        with open(pdf_path, "rb") as fh:
+            return fh.read()
+
+
+def _persist_and_count(
+    upload_dir: str, file_path: str, file_content: bytes, file_type: InputFileType
+) -> int | None:
     """Write the uploaded bytes to disk and return the page count.
 
     Synchronous helper meant to be invoked through `asyncio.to_thread` so
@@ -162,17 +224,20 @@ def _persist_and_count(upload_dir: str, file_path: str, file_content: bytes) -> 
     with open(file_path, "wb") as f:
         for offset in range(0, len(file_content), _UPLOAD_CHUNK_SIZE):
             f.write(file_content[offset : offset + _UPLOAD_CHUNK_SIZE])
-    return _count_pages(file_content)
+    return _count_pages(file_content, file_type)
 
 
-def _count_pages(file_content: bytes) -> int | None:
+def _count_pages(file_content: bytes, file_type: InputFileType) -> int | None:
     """Count PDF pages using poppler via pdf2image."""
-    try:
-        info = pdfinfo_from_bytes(file_content)
-        return info.get("Pages")
-    except (FileNotFoundError, OSError) as exc:
-        logger.warning("Could not count pages: %s", exc)
-        return None
-    except Exception:
-        logger.warning("Unexpected error counting pages", exc_info=True)
+    if file_type == InputFileType.PDF:
+        try:
+            info = pdfinfo_from_bytes(file_content)
+            return info.get("Pages")
+        except (FileNotFoundError, OSError) as exc:
+            logger.warning("Could not count pages: %s", exc)
+            return None
+        except Exception:
+            logger.warning("Unexpected error counting pages", exc_info=True)
+            return None
+    else:
         return None
