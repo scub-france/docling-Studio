@@ -12,6 +12,7 @@ local agent work; put it behind an authenticating proxy anywhere else.
 
 | Tool | Purpose |
 |------|---------|
+| `how_to_use` | No arguments. Returns the call recipe: the four tools in order, the id rules, and one literal worked example. For a model that is stuck, not for one that is not — see [Small models](#small-models-and-how_to_use). |
 | `find_documents` | List documents, optionally filtered by filename. Returns `document_id`, the current `version_id`, and the window that was searched — `truncated: true` with an empty list means "not among the documents I looked at", not "no such document". |
 | `get_outline` | The map: a tree of sections — or of pages, for a document without headings — each with its anchor and its estimated reading cost. `deeper_levels_available` says to ask for more depth; `entries_omitted` says the node cap was hit. |
 | `read_element` | Read one entry, by `ref` + `document_id` (from an outline) or by the `uri` of a citation you hold. The element alone (`include="self"`) or the whole section under it (`include="section"`), capped server-side and resumable through `next_cursor`. `citations[]` gives one anchor per element; `span_uri` gives the one covering all of them. |
@@ -22,6 +23,31 @@ local agent work; put it behind an authenticating proxy anywhere else.
 stay in the Studio UI and the HTTP API. The investigation journal writes, but
 only to its own three tables: no document, no analysis and no chunk is touched
 by anything on this surface.
+
+### Small models and `how_to_use`
+
+The protocol is already stated in three places — the server instructions,
+every tool description, and the `next_step` on every result — and none of them
+is *callable*. That is enough for a frontier model and not enough for a small
+one: a host may drop the instructions, the descriptions compete with each
+other, and `next_step` arrives after the mistake rather than before it.
+
+`how_to_use` is the fourth statement, and the only one an agent can reach for
+on its own. It takes no argument, which is the one call shape a weak model
+gets right on the first try, so it is also a way out of a loop where every
+other call is failing.
+
+The split is where the cost is. A tool *description* is re-sent on every turn,
+so this one is two sentences — about 103 tokens on the wire, measured against
+the tool list. The *body* is paid only when the tool is called, which is
+exactly when a model needs it, so it is generous where that helps: ~560
+tokens, ending in a literal worked example, because a small model copies a
+pattern far more reliably than it follows a rule.
+
+It cannot fix a host that fails to route the call at all. If a client reports
+that the tool "is not a deferrable tool" or cannot be found by name, that is
+the client's tool router, not this server: the recipe never reaches a model
+whose host will not dispatch to it.
 
 ## Anchors and citations
 
