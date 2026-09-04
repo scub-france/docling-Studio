@@ -36,7 +36,7 @@ from tests.navigation_fixtures import (
 # The text surface. `show_citation` is added by the Apps extension and is
 # asserted in tests/test_mcp_apps.py, so this set pins that enabling a UI does
 # not quietly change what a text-only host sees.
-TOOL_NAMES = {"find_documents", "get_outline", "read_element", "verify_citation"}
+TOOL_NAMES = {"how_to_use", "find_documents", "get_outline", "read_element", "verify_citation"}
 
 
 @asynccontextmanager
@@ -84,6 +84,46 @@ class TestSurface:
             listed = await client.list_tools()
         tool = next(t for t in listed.tools if t.name == "read_element")
         assert tool.input_schema["properties"]["include"]["enum"] == ["section", "self"]
+
+
+class TestHowToUse:
+    """The recipe tool — the way out of a loop a weak model cannot argue with.
+
+    Its value is that it always succeeds, so what is pinned is the shape a
+    stuck model depends on: no argument to get wrong, and a body that names
+    the four tools in the order they are called.
+    """
+
+    async def test_takes_no_argument(self):
+        async with _client() as client:
+            listed = await client.list_tools()
+        tool = next(t for t in listed.tools if t.name == "how_to_use")
+        assert tool.input_schema.get("required", []) == []
+        assert tool.input_schema.get("properties", {}) == {}
+
+    async def test_returns_the_recipe_as_one_text_block(self):
+        async with _client() as client:
+            result = await client.call_tool("how_to_use", {})
+        assert result.is_error is False
+        # One block of prose, not a JSON envelope: nothing here is parsed.
+        assert len(result.content) == 1
+        assert result.structured_content is None
+
+    async def test_recipe_names_the_tools_in_call_order(self):
+        async with _client() as client:
+            recipe = (await client.call_tool("how_to_use", {})).content[0].text
+        positions = [
+            recipe.index(name)
+            for name in ("find_documents", "get_outline", "read_element", "verify_citation")
+        ]
+        assert positions == sorted(positions)
+
+    async def test_description_stays_cheap_enough_to_resend_every_turn(self):
+        async with _client() as client:
+            listed = await client.list_tools()
+        tool = next(t for t in listed.tools if t.name == "how_to_use")
+        # Paid on every turn by every host, so it is held to two sentences.
+        assert len(tool.description) < 250
 
 
 class TestFindDocuments:

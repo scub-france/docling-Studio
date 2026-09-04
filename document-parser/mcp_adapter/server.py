@@ -37,6 +37,8 @@ from mcp_adapter.ledger import Ledger
 from mcp_adapter.prompts import register_prompts
 from mcp_adapter.tool_errors import ToolErrors, parse_anchor
 from mcp_adapter.unshown import UnshownInvestigations
+from mcp_adapter.usage import DESCRIPTION as USAGE_DESCRIPTION
+from mcp_adapter.usage import RECIPE
 from mcp_adapter.wire import (
     UNTRUSTED_NOTE,
     DocumentSearchResult,
@@ -65,6 +67,7 @@ Docling Studio serves documents that have been parsed by Docling — their struc
 their text, and the page coordinates of every element.
 
 Work in this order:
+  0. how_to_use      — no arguments. The same protocol as a callable, with a worked example. Reach for it if a call has just failed, or skip it if none has.
   1. find_documents  — locate the document, keep its document_id.
   2. get_outline     — read the map before any text. Each entry carries est_tokens, \
 so you can choose what to read instead of paying to find out.
@@ -148,6 +151,13 @@ def build_mcp_server(
         # byte-identical to what they were. `viewer` tracks `apps`: that is
         # the flag `show_investigation`'s registration follows.
         register_investigation_tools(server, tools, ledger, viewer=apps, unshown=unshown)
+
+    # First in declaration order, so it is first in the list a model reads.
+    # No arguments: the one call shape a small model cannot get wrong, and the
+    # only way out of the loop where it fails a call it cannot yet spell.
+    @server.tool(annotations=_READ_ONLY, description=USAGE_DESCRIPTION, structured_output=False)
+    async def how_to_use() -> str:
+        return ledger.record(RECIPE)
 
     @server.tool(
         annotations=_READ_ONLY,
