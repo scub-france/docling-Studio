@@ -79,6 +79,55 @@ class Settings:
     # Sub-flags effective only when rag_pipeline_enabled is true.
     inspect_mode_enabled: bool = True
     linked_mode_enabled: bool = True
+    # MCP document server — off by default. It publishes a read-only tool
+    # surface over the parsed documents and carries NO authentication of its
+    # own, so enabling it on a backend reachable from anywhere hands that
+    # surface to anyone who can reach the port. Enable it for local agent
+    # work (`MCP_ENABLED=true`), and keep it behind an authenticating proxy
+    # anywhere else.
+    mcp_enabled: bool = False
+    # Host/Origin allow-list for the streamable-HTTP transport (DNS-rebinding
+    # protection). "*" disables the check — only correct behind a proxy that
+    # already validates the Host header.
+    mcp_allowed_hosts: list[str] = field(
+        default_factory=lambda: ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    )
+    # Hard server-side ceiling on a single read. A client argument may lower
+    # it, never raise it.
+    mcp_max_read_tokens: int = 4000
+    # MCP Apps (SEP-1865) — the citation viewer rendered inline by hosts
+    # that negotiate `io.modelcontextprotocol/ui`. On by default because it
+    # degrades to text on hosts that do not: a client that never advertises
+    # the extension never fetches the template, and the tool answers as text.
+    mcp_apps_enabled: bool = True
+    # Escape hatch: send the citation raster inside the tool result again,
+    # the way it worked before the viewer fetched its own. Costs ~21 000
+    # tokens a call on a host that renders, which is why it is off — flip it
+    # only if a host cannot make the app-only fetch work.
+    mcp_inline_citation_image: bool = False
+    # Freshness hint (SEP-2549) for the cacheable MCP methods — the tool
+    # list, the prompt list and the `ui://` viewer. It is the only caching
+    # seam the protocol offers: `tools/call` is not cacheable, so this
+    # amortises the fixed cost of connecting, never the cost of reading. A
+    # host may hold a stale surface for this long after a redeploy, which is
+    # why it is minutes rather than hours. 0 disables it.
+    mcp_cache_ttl_seconds: int = 600
+    # Absolute base for citation deep links (e.g. http://localhost:3000).
+    # Empty leaves them relative, which is right when Studio serves the API
+    # and the UI from the same origin.
+    mcp_studio_base_url: str = ""
+    # Investigation journal (#329) — the five stateful tools. On by default
+    # inside a surface that is itself off by default, but flippable because
+    # five extra tool descriptions are read on every call, including in the
+    # conversations that never investigate anything.
+    mcp_investigation_enabled: bool = True
+    # How many refs a step may be tried against before it closes as
+    # `unanswered`. The number that turns a bad ref into a second attempt
+    # rather than a wrong answer — and that eventually stops an agent
+    # grinding on a section the document does not have.
+    mcp_max_attempts_per_step: int = 3
+    # Ceiling on a plan. A client may plan fewer steps, never more.
+    mcp_max_steps_per_investigation: int = 12
 
     def __post_init__(self) -> None:
         errors: list[str] = []
@@ -114,6 +163,21 @@ class Settings:
             )
         if self.embedding_dimension < 1:
             errors.append(f"embedding_dimension must be >= 1 (got {self.embedding_dimension})")
+        if self.mcp_cache_ttl_seconds < 0:
+            errors.append(f"mcp_cache_ttl_seconds must be >= 0 (got {self.mcp_cache_ttl_seconds})")
+        if self.mcp_max_read_tokens < 1:
+            errors.append(f"mcp_max_read_tokens must be >= 1 (got {self.mcp_max_read_tokens})")
+        if self.mcp_enabled and not self.mcp_allowed_hosts:
+            errors.append("mcp_allowed_hosts must not be empty when MCP_ENABLED is true")
+        if not (1 <= self.mcp_max_attempts_per_step <= 10):
+            errors.append(
+                f"mcp_max_attempts_per_step must be 1..10 (got {self.mcp_max_attempts_per_step})"
+            )
+        if not (1 <= self.mcp_max_steps_per_investigation <= 50):
+            errors.append(
+                "mcp_max_steps_per_investigation must be 1..50 "
+                f"(got {self.mcp_max_steps_per_investigation})"
+            )
         if not (self.studio_mode_enabled or self.rag_pipeline_enabled):
             errors.append("at least one of STUDIO_MODE_ENABLED / RAG_PIPELINE_ENABLED must be true")
         if not (_MAX_ITERATIONS_MIN <= self.reasoning_max_iterations <= _MAX_ITERATIONS_MAX):
@@ -196,6 +260,29 @@ class Settings:
             in ("1", "true", "yes", "on"),
             linked_mode_enabled=os.environ.get("LINKED_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
+            # MCP document server (read-only agent surface).
+            mcp_enabled=os.environ.get("MCP_ENABLED", "false").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_allowed_hosts=[
+                h.strip()
+                for h in os.environ.get(
+                    "MCP_ALLOWED_HOSTS", "127.0.0.1:*,localhost:*,[::1]:*"
+                ).split(",")
+                if h.strip()
+            ],
+            mcp_apps_enabled=os.environ.get("MCP_APPS_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_inline_citation_image=os.environ.get("MCP_INLINE_CITATION_IMAGE", "false").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
+            mcp_cache_ttl_seconds=int(os.environ.get("MCP_CACHE_TTL_SECONDS", "600")),
+            mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
+            mcp_investigation_enabled=os.environ.get("MCP_INVESTIGATION_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_max_attempts_per_step=int(os.environ.get("MCP_MAX_ATTEMPTS_PER_STEP", "3")),
+            mcp_max_steps_per_investigation=int(
+                os.environ.get("MCP_MAX_STEPS_PER_INVESTIGATION", "12")
+            ),
         )
 
 

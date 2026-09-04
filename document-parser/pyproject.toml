@@ -41,6 +41,15 @@ local = [
 # to carry the surface the adapter binds to — infra/docling_agent_reasoning
 # .deps_present() returns False, the runner is left unwired and /api/reasoning
 # surfaces 503.
+# Opt-in MCP document server (agent surface). Absent from the default
+# install: `mcp_adapter.deps_present()` returns False, `MCP_ENABLED` logs a
+# warning and nothing is mounted. Install with `uv sync --group mcp`.
+mcp = [
+  # 2.x is the release where FastMCP became MCPServer
+  # (`from mcp.server.mcpserver import MCPServer`); the adapter binds to that
+  # surface, so 1.x will not import.
+  "mcp>=2.1.1,<3.0.0",
+]
 reasoning = [
   # 0.6.0 is the first release carrying the public `run_with_trace()` surface
   # (docling-project/docling-agent#39) and the `backends` package the adapter
@@ -90,7 +99,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["api", "domain", "persistence", "services"]
+known-first-party = ["api", "domain", "mcp_adapter", "persistence", "services"]
 
 [tool.ruff.format]
 quote-style = "double"

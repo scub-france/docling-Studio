@@ -34,6 +34,7 @@ nav:
   - Getting Started: getting-started.md
   - Architecture: architecture.md
   - Bbox Pipeline: bbox-pipeline.md
+  - MCP Server: mcp-server.md
   - Contributing: contributing.md
   - Processes: PROCESSES.md
   - Development:

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from domain.app_config import LLMHostProbeResult
+    from domain.investigation import Attempt, Investigation, Step, StepState
     from domain.models import (
         AnalysisJob,
         Chunk,
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
         DocumentStoreLink,
         Store,
     )
+    from domain.navigation import RasterCrop
     from domain.value_objects import (
         ChunkingOptions,
         ChunkResult,
@@ -371,6 +373,46 @@ class DocumentTreeReader(Protocol):
         """
         ...
 
+    def dfs_order(self, doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
+        """Return `self_ref`s in reading order (DFS pre-order from body),
+        omitting `skip_refs`."""
+        ...
+
+    def iter_provs(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        """Flatten an item's provenance into rows carrying `page_no`,
+        `bbox_l/t/r/b`, `coord_origin` and the char span."""
+        ...
+
+    def iter_pages(self, doc_data: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Yield `{page_no, width, height}` for every page of the parse."""
+        ...
+
+
+@runtime_checkable
+class PageRasterizer(Protocol):
+    """Port for turning a stored document into page images.
+
+    Rasterising is infrastructure — poppler, PIL, a file on disk — while the
+    dpi ladder and the byte budget that drive it are policy. The split runs
+    here: the adapter renders and crops what it is told to, the service
+    decides what to ask for.
+    """
+
+    def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
+        """Return `page` of the document at `storage_path` as PNG bytes."""
+        ...
+
+    def crop(
+        self,
+        png: bytes,
+        box: tuple[int, int, int, int],
+        *,
+        fmt: str = "PNG",
+    ) -> RasterCrop:
+        """Crop a PNG to `box` (left, top, right, bottom in pixels), clamped
+        to the image, and re-encode it as `fmt` (`"PNG"` or `"WEBP"`)."""
+        ...
+
 
 @runtime_checkable
 class GraphReader(Protocol):
@@ -452,3 +494,61 @@ class ReasoningRunner(Protocol):
         """Execute the reasoning loop. `model_id` overrides the provider's
         default for this call only."""
         ...
+
+
+class InvestigationRepository(Protocol):
+    """Port for the MCP investigation journal (#329).
+
+    Reads and writes the whole aggregate rather than rows: an investigation
+    is a tree, and rendering one from three separate round trips is the shape
+    this port exists to avoid. `find_by_id` returns steps and attempts
+    already assembled.
+
+    `record_attempt` is the one method with a precondition of its own — it
+    must enforce `cap` atomically, because under `stateless_http` two workers
+    can race the same step. It returns the attempt as persisted (with its
+    ordinal) or raises when the budget is spent.
+    """
+
+    async def create(self, investigation: Investigation) -> None: ...
+
+    async def find_by_id(self, investigation_id: str) -> Investigation | None: ...
+
+    async def find_for_document(
+        self,
+        document_id: str,
+        *,
+        limit: int = 20,
+    ) -> list[Investigation]: ...
+
+    async def count_open_for_document(self, document_id: str) -> int: ...
+
+    async def add_steps(self, investigation_id: str, steps: list[Step]) -> None: ...
+
+    async def record_attempt(self, attempt: Attempt, *, cap: int) -> Attempt:
+        """Insert `attempt` if the step has budget left, in one transaction.
+
+        Raises `AttemptBudgetSpentError` when it does not — the caller turns that
+        into the step's `unanswered` close rather than a crash.
+        """
+        ...
+
+    async def settle_attempt(self, attempt: Attempt) -> None: ...
+
+    async def set_step_state(self, step_id: str, state: StepState) -> None: ...
+
+    async def mark_stale(self, investigation_id: str) -> None: ...
+
+    async def close(
+        self,
+        investigation_id: str,
+        *,
+        answer: str,
+        at: datetime,
+    ) -> None: ...
+
+
+class AttemptBudgetSpentError(Exception):
+    """Raised by `InvestigationRepository.record_attempt` when the step's
+    attempt cap is already spent — checked inside the same transaction as the
+    insert so two concurrent callers cannot both slip past it."""

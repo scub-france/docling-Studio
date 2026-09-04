@@ -27,6 +27,7 @@ from bootstrap.factories import (
     build_backend_resolver,
     build_chunk_service,
     build_document_service,
+    build_document_tools,
     build_ingestion_service,
     build_reasoning_runner,
     check_store_secret_key,
@@ -45,6 +46,7 @@ from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
+from persistence.investigation_repo import SqliteInvestigationRepository
 from persistence.store_repo import SqliteStoreRepository
 from services.app_config_service import AppConfigService
 from services.export_service import ExportService
@@ -145,6 +147,9 @@ class AppStateBuilder:
             graph_service=GraphService(graph_reader=graph_reader),
             version_service=version_service,
             ingestion_service=ingestion_service,
+            document_tools=build_document_tools(
+                document_repo, analysis_repo, SqliteInvestigationRepository()
+            ),
         )
 
         await self._wire_reasoning(analysis_repo)

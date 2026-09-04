@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Citation</title>
+<style>
+  /* Design tokens lifted from the Studio shell (frontend/src/app/App.vue).
+     Same names, same values, so the viewer and the product do not drift into
+     two palettes. The product picks its theme with a class on <html>; an app
+     in a sandboxed iframe cannot read the host's, so the media query decides.
+     Light is the default because most hosts render on paper. */
+  :root {
+    color-scheme: light dark;
+    --bg: #fafafa;
+    --bg-surface: #ffffff;
+    --bg-elevated: #f4f4f5;
+    --bg-hover: #e4e4e7;
+    --accent: #f97316;
+    --accent-hover: #ea580c;
+    --accent-muted: rgba(249, 115, 22, 0.1);
+    --text: #18181b;
+    --text-secondary: #52525b;
+    --text-muted: #a1a1aa;
+    --border: #e4e4e7;
+    --border-light: #d4d4d8;
+    --radius: 8px;
+    --radius-sm: 6px;
+    --radius-lg: 12px;
+    --transition: 150ms ease;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* Two ways to be dark. The host states its theme in the `ui/initialize`
+     response and this view stamps it on <html>; when it says nothing, the
+     media query decides — a sandboxed iframe cannot read the host's class,
+     which is why the preference is asked for rather than inferred. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a0a0b;
+      --bg-surface: #111113;
+      --bg-elevated: #1a1a1d;
+      --bg-hover: #222226;
+      --accent-hover: #fb923c;
+      --accent-muted: rgba(249, 115, 22, 0.15);
+      --text: #ececef;
+      --text-secondary: #a1a1aa;
+      --text-muted: #63636e;
+      --border: #27272a;
+      --border-light: #3f3f46;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0a0a0b;
+    --bg-surface: #111113;
+    --bg-elevated: #1a1a1d;
+    --bg-hover: #222226;
+    --accent-hover: #fb923c;
+    --accent-muted: rgba(249, 115, 22, 0.15);
+    --text: #ececef;
+    --text-secondary: #a1a1aa;
+    --text-muted: #63636e;
+    --border: #27272a;
+    --border-light: #3f3f46;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  html, body { max-width: 100%; }
+  img { max-width: 100%; }
+
+  /* The card measures itself against `main`, never against the window: the
+     host decides how wide the frame is (`hostContext.containerDimensions`),
+     and a viewport media query asked inside a 400 px iframe answers a
+     question about the frame rather than about the card. */
+  main {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: clamp(10px, 4vw, 20px);
+    display: grid;
+    gap: 12px;
+    container-type: inline-size;
+  }
+
+  /* ---- the card ----------------------------------------------------- */
+
+  /* One object, two halves: a rail that answers "where in the document", and
+     a body that answers "what was said, and can it be trusted". */
+  .card {
+    display: grid;
+    /* A grid item's automatic minimum is its content unless it is told
+       otherwise, and `main`'s implicit column takes its minimum from this
+       item — so without `min-width` the card can size the page rather than
+       the page sizing the card. */
+    min-width: 0;
+    grid-template-columns: clamp(128px, 26cqi, 188px) minmax(0, 1fr);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  @container (max-width: 520px) { .card { grid-template-columns: minmax(0, 1fr); } }
+
+  /* ---- rail: the page, and where the passage sits on it -------------- */
+
+  .rail {
+    background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
+    border-right: 1px solid var(--border);
+    padding: 18px 16px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    justify-items: center;
+    min-width: 0;
+  }
+  @container (max-width: 520px) {
+    .rail { border-right: 0; border-bottom: 1px solid var(--border); }
+  }
+  .sheet {
+    position: relative;
+    line-height: 0;
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .sheet img { display: block; width: 100%; height: auto; }
+  /* The rail's page is a control, not an illustration: a 128px page tells you
+     *where* the passage is and nothing about what surrounds it, which is the
+     other half of "show me where this comes from". */
+  button.sheet {
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    background: #fff;
+    cursor: default;
+    transition: border-color var(--transition);
+  }
+  button.sheet:hover { background: #fff; color: inherit; border-color: var(--border); }
+  button.sheet.ready { cursor: zoom-in; }
+  button.sheet.ready:hover { border-color: var(--accent); }
+  button.sheet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sheet .glass {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: #fff;
+    background: color-mix(in srgb, var(--text) 72%, transparent);
+    opacity: 0;
+    transition: opacity var(--transition);
+  }
+  button.sheet.ready:hover .glass,
+  button.sheet.ready:focus-visible .glass { opacity: 1; }
+  /* Where the passage is. A filled band, not a hairline box: at this size a
+     paragraph is four grey lines, and an outline that thin reads as noise.
+     Positioned in percentages of the raster it sits on, so the same rule
+     serves the rail's thumbnail and the expanded page. */
+  .mark {
+    position: absolute;
+    background: color-mix(in srgb, var(--accent) 34%, transparent);
+    outline: 1.5px solid var(--accent);
+    border-radius: 2px;
+  }
+  .sheet.pending { aspect-ratio: 1 / 1.35; background: var(--bg-elevated); }
+  /* A blank rectangle that never fills in is a bug the reader has to guess
+     at. When the page cannot be fetched, the rail says why instead. */
+  .sheet.failed {
+    aspect-ratio: auto;
+    display: grid;
+    place-items: center;
+    padding: 16px 12px;
+    background: var(--bg-elevated);
+  }
+  .sheet .fallback {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .pager { font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--accent); }
+  .pager b { font-weight: 600; }
+  /* Position in the document, not progress through a task: the fill is a
+     marker of where you are, which is why it is thin and never animates. */
+  .track {
+    width: 100%;
+    height: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    overflow: hidden;
+  }
+  .track span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+
+  /* ---- body --------------------------------------------------------- */
+
+  /* `grid-template-columns`, not the implicit `auto` column it had. An `auto`
+     track is `minmax(min-content, max-content)`, and an `auto` *minimum* has
+     no floor: its base size is the largest min-content contribution among the
+     items, and that base size is allowed to exceed the grid's own content box.
+     One item demanded 722px — `.row`, because `.anchor` is `white-space:
+     nowrap` and its min-content is the whole unbroken `dstudio://` URI — so
+     every row of the body was laid out 722px wide inside a 700px card and
+     clipped by `.card`'s `overflow: hidden`. Every line, at the same place,
+     mid-word.
+
+     `minmax(0, 1fr)` floors the track at zero, and because its max is a
+     flexible `1fr` the items' own automatic minimum stops applying too. Same
+     idiom `.card` already uses for this same reason. */
+  .body {
+    padding: 18px 20px 20px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    align-content: start;
+    min-width: 0;
+  }
+
+  .crumbs {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .crumbs .sep { color: var(--border-light); }
+  .crumbs b { color: var(--text-secondary); font-weight: 500; }
+
+  .headline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  /* Element type. The pill is the same for every kind so the row stays calm;
+     the dot carries the colour, from the Studio palette
+     (frontend/src/shared/elementColors.ts). */
+  .kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--text);
+    color: var(--bg-surface);
+  }
+  .kind .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+  .shape { font-size: 12px; color: var(--text-muted); }
+  /* Which server, which tool: a card outlives the conversation that produced
+     it, and should still say where it came from. */
+  .origin { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+
+  .rule { height: 1px; background: var(--border); }
+
+  /* ---- the quote ---------------------------------------------------- */
+
+  .quote { overflow-wrap: anywhere; min-width: 0; }
+  /* A heading — or anything short enough to read as one — is the card's
+     title. A paragraph is not: 400 characters set at 25px is shouting. */
+  .quote.as-title {
+    font-size: 25px;
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .quote.as-title p { margin: 0; }
+  .quote > :first-child { margin-top: 0; }
+  .quote > :last-child { margin-bottom: 0; }
+
+  /* Markdown, mirroring shared/ui/MarkdownViewer.vue. Docling hands the
+     quote over as markdown — a table element arrives as a pipe table — so
+     rendering it is the difference between a passage and a wall of pipes. */
+  .quote h1, .quote h2, .quote h3, .quote h4, .quote h5, .quote h6 {
+    margin: 20px 0 10px; font-weight: 600; line-height: 1.3;
+  }
+  .quote h1 { font-size: 22px; }
+  .quote h2 { font-size: 19px; }
+  .quote h3 { font-size: 17px; }
+  .quote h4, .quote h5, .quote h6 { font-size: 15px; }
+  .quote p { margin: 10px 0; }
+  .quote ul, .quote ol { margin: 10px 0; padding-left: 22px; }
+  .quote li { margin: 4px 0; }
+  .quote code {
+    background: var(--bg-elevated);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .quote pre {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  .quote pre code { background: none; padding: 0; }
+
+  .md-table {
+    margin: 14px 0;
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+  }
+  .md-table table { border-collapse: collapse; width: 100%; font-size: 13px; line-height: 1.45; }
+  .md-table thead th {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-align: left;
+    white-space: nowrap;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .md-table tbody td {
+    padding: 9px 14px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border);
+  }
+  .md-table tbody td:first-child { font-weight: 500; }
+  .md-table tbody tr:nth-child(even) { background: var(--bg-elevated); }
+  .md-table tbody tr:hover { background: var(--bg-hover); }
+  .md-table tbody tr:last-child td { border-bottom: none; }
+
+  /* ---- provenance --------------------------------------------------- */
+
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+    gap: 14px 20px;
+  }
+  .meta div { min-width: 0; }
+  .meta dt {
+    font-size: 10px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .meta dd {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
+  /* The server tally belongs in the last column, beside the citation it is
+     counting, not wherever the flow happens to put it. */
+  .meta .last-column { grid-column: -2 / -1; }
+
+  /* The anchor sits beside the buttons that copy it, truncated: it is there
+     to be recognised, not read. */
+  .anchor {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    flex: 1 1 200px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---- actions ------------------------------------------------------ */
+
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 1px solid var(--border-light);
+    background: var(--bg-surface);
+    color: var(--text);
+    transition: color var(--transition), border-color var(--transition), background var(--transition);
+  }
+  button.primary { background: var(--text); border-color: var(--text); color: var(--bg-surface); }
+  button.primary:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-muted); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .said { font-size: 12px; color: var(--accent); }
+
+  /* ---- the expanded page -------------------------------------------- */
+  /* Lives on <body>, not inside <main>: `main` carries the fit zoom, and an
+     overlay meant to fill the frame must not be scaled by the correction the
+     card needed. */
+  .lens {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+    background: color-mix(in srgb, var(--bg) 88%, #000);
+  }
+  .lens[hidden] { display: none; }
+  .lens-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .lens-title { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
+  .lens-title b { color: var(--accent); font-weight: 600; }
+  .lens-bar button { margin-left: auto; }
+  .lens-stage { display: grid; place-items: center; min-height: 0; overflow: auto; }
+  .lens-page {
+    position: relative;
+    line-height: 0;
+    background: #fff;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.34);
+  }
+  .lens-page img { display: block; max-width: 100%; height: auto; }
+  /* The thumbnail, upscaled, while the readable render is on its way. Better
+     than an empty stage: it is the same page, and the marker is already in
+     the right place. */
+  .lens-page.provisional img { filter: blur(0.4px); }
+  .lens-status { font-size: 13px; color: var(--text-muted); text-align: center; }
+
+  .status { font-size: 13px; color: var(--text-muted); padding: 28px 20px; text-align: center; }
+  .note {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+  }
+</style>
+</head>
+<body>
+<main id="root"><p class="status">En attente d'une citation…</p></main>
+<script>
+  "use strict";
+  const root = document.getElementById("root");
+
+  // Text lifted from a PDF never becomes markup — it is data, and a document
+  // that contains "<img onerror=…>" is a document, not an instruction.
+  const esc = (value) =>
+    String(value ?? "").replace(/[&<>"']/g, (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+
+  // Element-type palette, kept byte-identical to the Studio one
+  // (frontend/src/shared/elementColors.ts) so the same element carries the
+  // same colour in both surfaces.
+  const ELEMENT_COLORS = {
+    title: "#EF4444", section_header: "#F97316", text: "#3B82F6",
+    table: "#8B5CF6", picture: "#22C55E", list: "#06B6D4",
+    formula: "#EC4899", code: "#14B8A6", caption: "#EAB308",
+    // A span is not an element type Studio draws, so it has no colour there
+    // to match. Indigo is unused by the palette, which is the point: a
+    // citation covering several blocks should not look like any one of them.
+    span: "#6366F1",
+  };
+  const UNKNOWN_ELEMENT_COLOR = "#94A3B8";
+  // Docling's leaf labels are narrower than the palette's keys: a bullet is a
+  // `list_item`, a heading a `section_header`. Fold them onto the swatch a
+  // reader already associates with that kind of block.
+  const LABEL_ALIASES = { list_item: "list", page_header: "text", page_footer: "text", footnote: "text" };
+  // What the pill says. Only where docling's own word would mislead a reader:
+  // "span" is the server's name for a range of elements, "passage" is the
+  // reader's.
+  const KIND_LABELS = { span: "passage", section_header: "titre de section" };
+  const colorFor = (label) => {
+    const key = LABEL_ALIASES[label] || label;
+    return ELEMENT_COLORS[key] || UNKNOWN_ELEMENT_COLOR;
+  };
+
+  // ---- markdown -------------------------------------------------------
+  // A deliberately small subset: what Docling actually emits in an element's
+  // text — tables above all — and nothing that would need a parser worth
+  // auditing. `esc` runs over the whole string first, so every branch below
+  // composes markup out of text that can no longer contain any.
+
+  const inline = (s) =>
+    s.replace(/`([^`]+)`/g, "<code>$1</code>")
+     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+     .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+
+  const isRow = (s) => s.includes("|") && s.trim() !== "";
+  const isDelimiter = (s) => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(s) && s.includes("-");
+  const cells = (s) => s.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+
+  function renderMarkdown(raw) {
+    const text = esc(String(raw ?? "")).replace(/\r\n?/g, "\n");
+    const lines = text.split("\n");
+    const out = [];
+    const stats = { rows: 0, columns: 0, chars: String(raw ?? "").length };
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      if (!line.trim()) { i++; continue; }
+
+      if (/^\s*```/.test(line)) {
+        const body = [];
+        i++;
+        while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
+        i++; // closing fence
+        out.push(`<pre><code>${body.join("\n")}</code></pre>`);
+        continue;
+      }
+
+      // A table needs a delimiter row, or a second row shaped like the first.
+      // Requiring one of the two keeps a paragraph that merely contains a
+      // pipe from being torn into columns.
+      const next = lines[i + 1] ?? "";
+      if (isRow(line) && (isDelimiter(next) || (isRow(next) && !isDelimiter(line)))) {
+        const head = cells(line);
+        i += isDelimiter(next) ? 2 : 1;
+        const body = [];
+        while (i < lines.length && isRow(lines[i])) body.push(cells(lines[i++]));
+        stats.rows = body.length;
+        stats.columns = head.length;
+        const th = head.map((c) => `<th>${inline(c)}</th>`).join("");
+        const tr = body
+          .map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`)
+          .join("");
+        out.push(
+          `<div class="md-table"><table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`
+        );
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = heading[1].length;
+        out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+        i++;
+        continue;
+      }
+
+      if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+        const ordered = /^\s*\d+[.)]\s+/.test(line);
+        const items = [];
+        while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+          items.push(lines[i++].replace(/^\s*([-*+]|\d+[.)])\s+/, ""));
+        }
+        const tag = ordered ? "ol" : "ul";
+        out.push(`<${tag}>${items.map((it) => `<li>${inline(it)}</li>`).join("")}</${tag}>`);
+        continue;
+      }
+
+      const paragraph = [];
+      while (i < lines.length && lines[i].trim() && !/^\s*```/.test(lines[i]) &&
+             !/^(#{1,6})\s+/.test(lines[i]) && !isRow(lines[i]) &&
+             !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+        paragraph.push(lines[i++]);
+      }
+      if (paragraph.length) { out.push(`<p>${inline(paragraph.join(" "))}</p>`); continue; }
+      // A line no branch claimed — a sentence carrying a lone pipe, say, which
+      // looks like a table row until you notice there is no second one. It is
+      // still the document's text: emit it rather than drop it, and advance so
+      // the loop cannot spin.
+      out.push(`<p>${inline(lines[i++])}</p>`);
+    }
+
+    return { html: out.join("") || "<p></p>", stats };
+  }
+
+  // ---- view -----------------------------------------------------------
+
+  const short = (id) => (id && id.length > 12 ? id.slice(0, 8) + "…" : id || "—");
+  const kb = (bytes) => (bytes ? Math.round(bytes / 1024) + " KB" : null);
+
+  // `deep_link` is a bare path (`/docs/…`) unless the server was started with
+  // MCP_STUDIO_BASE_URL. A host has no base to resolve that against, so
+  // `ui/open-link` would do nothing: offer the button only when the link can
+  // actually be opened, and say why when it cannot.
+  const isAbsolute = (url) => /^[a-z][a-z0-9+.-]*:\/\//i.test(String(url || ""));
+  // Grouped the way the rest of the product writes numbers. A narrow
+  // no-break space, so a five-figure tally never wraps mid-number.
+  const num = (value) => String(value ?? "").replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+  const shortHash = (h) => {
+    const hex = String(h || "").replace(/^sha256:/, "");
+    return hex ? "sha256:" + hex.slice(0, 12) + "…" : "—";
+  };
+
+  // A heading is the card's title. So is anything short enough to read as
+  // one — a date, a figure caption, a clause number — because setting four
+  // words as body text under a rule looks like an accident.
+  const TITLE_CHARS = 90;
+  const HEADING_LABELS = new Set(["title", "section_header", "page_header", "caption"]);
+
+  let current = null;
+  let thumbnail = null;
+  let enlarged = null;
+
+  function render(view) {
+    if (!view || !view.quote) return;
+    // A new citation is a new page: the rasters cached for the last one would
+    // put the previous document's page behind this one's marker.
+    current = view;
+    thumbnail = null;
+    enlarged = null;
+    closeLens();
+
+    const { html, stats } = renderMarkdown(view.quote);
+    const color = colorFor(view.label);
+    const label = String(view.label || "element");
+    const kind = KIND_LABELS[label] || label.replace(/_/g, " ");
+    // A span always covers at least two elements, so it is a passage however
+    // short it reads — never the card's title.
+    const asTitle =
+      label !== "span" && (HEADING_LABELS.has(label) || stats.chars <= TITLE_CHARS);
+
+    const crumbs = (view.headings || []).length
+      ? `<nav class="crumbs">${(view.headings || [])
+          .map((h) => `<b>${esc(h)}</b>`)
+          .join('<span class="sep">›</span>')}</nav>`
+      : "";
+
+    const shape = stats.rows
+      ? `${num(stats.rows)} lignes × ${stats.columns} colonnes`
+      : `${num(stats.chars)} caractères`;
+    const cost = view.est_tokens ? ` · ≈ ${num(view.est_tokens)} tokens` : "";
+
+    // The rail's picture: the page thumbnail this view fetches for itself, or
+    // the crop the server inlined when MCP_INLINE_CITATION_IMAGE is on.
+    const sheet = view.page_image
+      ? `<button type="button" class="sheet ready" id="page-sheet" title="Agrandir la page">` +
+        `<img alt="Le passage cité, page ${esc(view.page)}" src="${esc(view.page_image)}">` +
+        `<span class="glass" aria-hidden="true">⤢</span></button>`
+      : `<button type="button" class="sheet pending" id="page-sheet" disabled></button>`;
+
+    root.innerHTML = `
+      <div class="card">
+        <aside class="rail">
+          ${sheet}
+          <div class="pager" id="pager">page <b>${esc(view.page ?? "—")}</b></div>
+          <div class="track" id="track" hidden><span style="width:0"></span></div>
+        </aside>
+        <div class="body">
+          ${crumbs}
+          <div class="headline">
+            <span class="kind"><span class="dot" style="background:${esc(
+              color
+            )}"></span>${esc(kind)}</span>
+            <span class="shape">${esc(shape)}${cost}</span>
+            <span class="origin">docling-studio · show_citation</span>
+          </div>
+          <div class="quote${asTitle ? " as-title" : ""}">${html}</div>
+          <div class="rule"></div>
+          <dl class="meta">
+            <div><dt>Element</dt><dd>${esc(view.ref)}</dd></div>
+            <div><dt>Document</dt><dd title="${esc(view.document_id)}">${esc(
+              short(view.document_id)
+            )}</dd></div>
+            <div><dt>Parse version</dt><dd title="${esc(view.version_id)}">${esc(
+              short(view.version_id)
+            )}</dd></div>
+            <div><dt>Quote hash</dt><dd title="${esc(view.quote_hash)}">${esc(
+              shortHash(view.quote_hash)
+            )}</dd></div>
+            <div class="last-column"><dt>Total serveur</dt><dd title="Tout ce que ce serveur MCP a servi depuis son démarrage, tous outils confondus — estimé à ~4 caractères par token, images exclues. En stdio c'est cette session ; en HTTP, tous les clients de ce backend.">${
+              view.total_est_tokens
+                ? num(view.total_est_tokens) + " tok · " + esc(view.total_calls) + " appels"
+                : "—"
+            }</dd></div>
+          </dl>
+          <div class="row">
+            <button class="primary" data-act="copy">Copier la citation</button>
+            <button data-act="anchor">Copier l'ancre</button>
+            ${isAbsolute(view.deep_link) ? '<button data-act="open">Ouvrir dans Studio</button>' : ""}
+            <span class="anchor" title="${esc(view.uri)}">${esc(view.uri)}</span>
+            <span class="said" id="said"></span>
+          </div>
+        </div>
+      </div>
+      ${view.image_note ? `<div class="note">${esc(view.image_note)}</div>` : ""}
+      ${view.deep_link && !isAbsolute(view.deep_link)
+        ? `<div class="note">Renseigne <code>MCP_STUDIO_BASE_URL</code> côté serveur pour activer « Ouvrir dans Studio » — le lien profond est pour l'instant un chemin nu (<code>${esc(
+            view.deep_link
+          )}</code>), que l'hôte ne sait pas résoudre.</div>`
+        : ""}`;
+
+    for (const button of root.querySelectorAll("button[data-act]")) {
+      button.addEventListener("click", () => act(button.dataset.act, view));
+    }
+    root.querySelector("#page-sheet")?.addEventListener("click", openLens);
+    // Covers a host whose engine has no ResizeObserver; where there is one it
+    // reports again, more accurately, once the image has decoded. The card is
+    // brand new, so the fit is measured rather than reused.
+    fitToFrame(true);
+    reportSize();
+  }
+
+  function say(message) {
+    const slot = document.getElementById("said");
+    if (!slot) return;
+    slot.textContent = message;
+    setTimeout(() => { if (slot.textContent === message) slot.textContent = ""; }, 2000);
+  }
+
+  function act(kind, view) {
+    if (kind === "copy") {
+      copy(`"${view.quote}" — ${view.uri}`, "Citation copiée");
+      return;
+    }
+    if (kind === "anchor") {
+      copy(view.uri, "Ancre copiée");
+      return;
+    }
+    if (kind === "open") {
+      // `ui/open-link` is the host's job: an app cannot navigate the user by
+      // itself, and hosts gate this behind their own confirmation.
+      post({ jsonrpc: "2.0", id: Date.now(), method: "ui/open-link", params: { url: view.deep_link } });
+    }
+  }
+
+  // Three layers, because a sandboxed iframe may have no clipboard at all:
+  // the async API when the host granted `clipboardWrite`, the legacy
+  // execCommand when it did not, and — when both are refused — selecting the
+  // text so the reader can copy it themselves. The previous version called
+  // `.then` on the result of an optional call, which throws when
+  // `navigator.clipboard` is undefined: the button then did nothing at all,
+  // silently, which is worse than saying it is blocked.
+  function copy(text, confirmation) {
+    const fallback = () => {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.top = "0";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      let copied = false;
+      try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
+      document.body.removeChild(area);
+      say(copied ? confirmation : "Clipboard blocked — select the text below");
+    };
+    let promise = null;
+    try {
+      promise = navigator.clipboard && navigator.clipboard.writeText(text);
+    } catch (_) { promise = null; }
+    if (promise && typeof promise.then === "function") promise.then(() => say(confirmation), fallback);
+    else fallback();
+  }
+
+  function post(message) {
+    try { window.parent?.postMessage(message, "*"); } catch (_) { /* no host, no-op */ }
+  }
+
+  // ---- the bridge ------------------------------------------------------
+  // JSON-RPC 2.0 over postMessage, as the MCP Apps spec defines it. Bounded
+  // on purpose: a host that never answers must cost this view a note, not a
+  // spinner that spins forever.
+  const pending = new Map();
+  let nextRequestId = 1;
+
+  function call(method, params, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      const id = `app-${nextRequestId++}`;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error("the host did not answer"));
+      }, timeoutMs);
+      pending.set(id, { resolve, reject, timer });
+      post({ jsonrpc: "2.0", id, method, params });
+    });
+  }
+
+  function settle(data) {
+    const entry = data && data.id != null && pending.get(data.id);
+    if (!entry) return false;
+    pending.delete(data.id);
+    clearTimeout(entry.timer);
+    if (data.error) entry.reject(new Error(data.error.message || "call failed"));
+    else entry.resolve(data.result);
+    return true;
+  }
+
+  // ---- handshake -------------------------------------------------------
+  // `ui/initialize` first, then `ui/notifications/initialized` once the host
+  // has answered it. This view used to send only the notification, which is
+  // enough to be *handed* a tool result and not enough to be allowed to call
+  // one back — there is no negotiated app for the host to attribute the call
+  // to. That is why the page thumbnail never arrived.
+  //
+  // The answer also carries `hostContext`: the theme to render in and the
+  // dimensions of the frame the card has to live inside.
+  const PROTOCOL_VERSION = "2026-01-26";
+  const HANDSHAKE_MS = 2500;
+  let host = { capabilities: null, context: {} };
+  let ready = null;
+
+  function handshake() {
+    if (ready) return ready;
+    ready = call(
+      "ui/initialize",
+      {
+        protocolVersion: PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: "docling-studio-citation", version: "1" },
+        appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+      },
+      HANDSHAKE_MS
+    )
+      .then((result) => {
+        host = {
+          capabilities: result?.hostCapabilities ?? null,
+          context: result?.hostContext ?? {},
+        };
+        applyHostContext(host.context);
+        return true;
+      })
+      .catch(() => false) // a host that predates the handshake, or ignores it
+      .then((negotiated) => {
+        // Sent either way. The spec forbids the host from pushing the tool
+        // result before this notification, so withholding it on a failed
+        // handshake would trade a missing thumbnail for a blank card.
+        post({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+        return negotiated;
+      });
+    return ready;
+  }
+
+  function applyHostContext(context) {
+    if (!context || typeof context !== "object") return;
+    if (context.theme === "dark" || context.theme === "light") {
+      document.documentElement.setAttribute("data-theme", context.theme);
+    }
+    applyContainerDimensions(context.containerDimensions);
+    reportSize();
+  }
+
+  // The host owns the frame. A fixed `width` means "fill exactly this"; a
+  // `maxWidth` means "grow up to here". Applying neither is how a card ends
+  // up laid out at a width the host then cuts off.
+  //
+  // `100%`, not the `100vw` the spec's own snippet suggests: `100vw` counts
+  // the scrollbar gutter and the client width does not, so on any platform
+  // with classic scrollbars a card told to be exactly as wide as the frame
+  // ends up a scrollbar wider than it — cropped down the side, which is the
+  // very failure this function exists to prevent.
+  let frame = null;
+  function applyContainerDimensions(dimensions) {
+    if (!dimensions || typeof dimensions !== "object") return;
+    frame = dimensions;
+    const root = document.documentElement.style;
+    if (typeof dimensions.width === "number") {
+      root.width = "100%";
+      root.maxWidth = "100%";
+    } else if (typeof dimensions.maxWidth === "number") {
+      root.maxWidth = `${dimensions.maxWidth}px`;
+    }
+    if (typeof dimensions.height === "number") root.height = "100%";
+    else if (typeof dimensions.maxHeight === "number") {
+      root.maxHeight = `${dimensions.maxHeight}px`;
+    }
+  }
+
+  // ---- where the passage sits on its page ------------------------------
+  // A second, app-only fetch. It is affordable precisely because it does not
+  // pass through the model's context: a 320 px page is ~25 KB of WebP, which
+  // would have been ~7 400 tokens through a tool result, and twice that on a
+  // host that forwards both representations.
+  async function hydrateLocator(view) {
+    const sheet = document.getElementById("page-sheet");
+    if (!sheet || !sheet.classList.contains("pending")) return;
+
+    const negotiated = await handshake();
+    if (negotiated && host.capabilities && !host.capabilities.serverTools) {
+      failLocator(sheet, "Cet hôte ne relaie pas les appels d'outils : pas d'aperçu de page.");
+      return;
+    }
+
+    let img = null;
+    try {
+      const result = await call("tools/call", {
+        name: "get_citation_image",
+        arguments: { uri: view.uri, kind: "page" },
+      });
+      if (result && (result.isError || result.is_error)) {
+        throw new Error(result?.content?.[0]?.text || "the server refused");
+      }
+      img =
+        result?.structuredContent ??
+        result?.structured_content ??
+        JSON.parse(result?.content?.[0]?.text ?? "{}");
+    } catch (error) {
+      failLocator(sheet, `Aperçu de la page indisponible — ${error.message}.`);
+      return;
+    }
+    if (!img || !img.data_uri || !img.width || !img.height) {
+      failLocator(sheet, "Aperçu de la page indisponible : la réponse ne portait pas d'image.");
+      return;
+    }
+
+    // The server hands the box back in this image's own pixels, so the
+    // overlay is a percentage of the rendered size and survives whatever
+    // width the host gives the frame.
+    const box = img.highlight;
+    const mark = box
+      ? `<div class="mark" style="left:${(box[0] / img.width) * 100}%;top:${
+          (box[1] / img.height) * 100
+        }%;width:${((box[2] - box[0]) / img.width) * 100}%;height:${
+          ((box[3] - box[1]) / img.height) * 100
+        }%"></div>`
+      : "";
+    thumbnail = img;
+    sheet.classList.remove("pending");
+    sheet.classList.add("ready");
+    sheet.disabled = false;
+    sheet.title = "Agrandir la page";
+    sheet.innerHTML =
+      `<img alt="Page ${esc(img.page)}, le passage cité surligné" src="${esc(
+        img.data_uri
+      )}">` + mark + `<span class="glass" aria-hidden="true">⤢</span>`;
+
+    const pager = document.getElementById("pager");
+    const track = document.getElementById("track");
+    if (pager && img.page_count) {
+      pager.innerHTML = `page <b>${esc(img.page)}</b> / ${esc(img.page_count)}`;
+    }
+    if (track && img.page_count > 1) {
+      // Where this page sits in the document. Full width means the last page,
+      // not "finished".
+      const at = Math.max(0, Math.min(1, img.page / img.page_count));
+      track.firstElementChild.style.width = `${at * 100}%`;
+      track.hidden = false;
+    }
+    fitToFrame(true);
+    reportSize();
+  }
+
+  function failLocator(sheet, message) {
+    sheet.classList.remove("pending");
+    sheet.classList.add("failed");
+    sheet.innerHTML = `<p class="fallback">${esc(message)}</p>`;
+    fitToFrame(true);
+    reportSize();
+  }
+
+  // ---- frame size -----------------------------------------------------
+  // The host sizes the iframe, not the page, so a citation with a page image
+  // and a twelve-row table lands in a box built for two lines of text. The
+  // spec's answer is `ui/notifications/size-changed`, in pixels.
+  //
+  // Height is measured on <main>, whose own height is content-driven — never
+  // on `body`/`documentElement`, which follow the frame the host just sized
+  // and would make each report justify the previous one. Width is reported as
+  // the frame's current width, so the notification only ever asks to grow
+  // vertically; the frame's width is the host's to decide, and it has already
+  // said so through `containerDimensions`.
+  // ---- the expanded page -----------------------------------------------
+  // The rail answers "where on the page"; at 128 px it cannot answer "what is
+  // around it", which is the other half of showing a reader where a quote
+  // comes from. Clicking the page asks the host for the whole frame and
+  // fetches the same raster at a readable width.
+  //
+  // Fullscreen is requested, never assumed: `ui/request-display-mode` is the
+  // host's to grant, and a host that refuses still gets the overlay, filling
+  // the inline frame. Nothing here depends on the answer.
+  const LENS_WIDTH = 1400;
+  let lensLoading = false;
+
+  const lens = document.createElement("div");
+  lens.className = "lens";
+  lens.id = "lens";
+  lens.hidden = true;
+  lens.setAttribute("role", "dialog");
+  lens.setAttribute("aria-modal", "true");
+  lens.setAttribute("aria-label", "Page agrandie");
+  lens.innerHTML =
+    '<div class="lens-bar"><span class="lens-title" id="lens-title"></span>' +
+    '<button type="button" id="lens-close">Fermer</button></div>' +
+    '<div class="lens-stage" id="lens-stage"></div>';
+  document.body.appendChild(lens);
+  lens.querySelector("#lens-close").addEventListener("click", closeLens);
+  // The scrim closes; the page itself does not.
+  lens.addEventListener("click", (event) => {
+    if (event.target === lens || event.target.id === "lens-stage") closeLens();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !lens.hidden) closeLens();
+  });
+
+  function openLens() {
+    if (!current || !thumbnail) return;
+    lens.hidden = false;
+    paintLens();
+    lens.querySelector("#lens-close").focus();
+    call("ui/request-display-mode", { mode: "fullscreen" }).catch(() => {});
+    if (!enlarged && !lensLoading) loadLens();
+  }
+
+  function closeLens() {
+    if (lens.hidden) return;
+    lens.hidden = true;
+    call("ui/request-display-mode", { mode: "inline" }).catch(() => {});
+    document.getElementById("page-sheet")?.focus();
+  }
+
+  async function loadLens() {
+    lensLoading = true;
+    try {
+      const result = await call(
+        "tools/call",
+        {
+          name: "get_citation_image",
+          arguments: { uri: current.uri, kind: "page", max_width: LENS_WIDTH },
+        },
+        20000
+      );
+      if (result && (result.isError || result.is_error)) {
+        throw new Error(result?.content?.[0]?.text || "the server refused");
+      }
+      const img =
+        result?.structuredContent ??
+        result?.structured_content ??
+        JSON.parse(result?.content?.[0]?.text ?? "{}");
+      if (img && img.data_uri) enlarged = img;
+    } catch (_) {
+      // The thumbnail is already on screen and is the same page. A failed
+      // upgrade costs sharpness, not the answer.
+    } finally {
+      lensLoading = false;
+      if (!lens.hidden) paintLens();
+    }
+  }
+
+  function paintLens() {
+    const img = enlarged || thumbnail;
+    if (!img) return;
+    const box = img.highlight;
+    const mark = box
+      ? `<div class="mark" style="left:${(box[0] / img.width) * 100}%;top:${
+          (box[1] / img.height) * 100
+        }%;width:${((box[2] - box[0]) / img.width) * 100}%;height:${
+          ((box[3] - box[1]) / img.height) * 100
+        }%"></div>`
+      : "";
+    // The thumbnail stands in until the readable render lands, upscaled to
+    // roughly where it will sit — so the page does not jump size under the
+    // reader when it arrives.
+    const provisional = enlarged ? "" : " provisional";
+    const width = enlarged ? `${img.width}px` : "860px";
+    lens.querySelector("#lens-stage").innerHTML =
+      `<div class="lens-page${provisional}" style="width:${width};max-width:100%">` +
+      `<img alt="Page ${esc(img.page)}, le passage cité surligné" src="${esc(
+        img.data_uri
+      )}">${mark}</div>`;
+    const pages = img.page_count ? ` / ${esc(img.page_count)}` : "";
+    lens.querySelector("#lens-title").innerHTML =
+      `page <b>${esc(img.page)}</b>${pages} · ${esc(current ? current.ref : "")}` +
+      (enlarged ? "" : " · agrandissement en cours…");
+  }
+
+  // ---- fitting a fixed frame ------------------------------------------
+  // The frame's width is the host's, and it does not negotiate: it hands the
+  // view a number and clips whatever exceeds it. The card is built to shrink,
+  // but `.card` is an `overflow: hidden` box — anything its own grid cannot
+  // fit is cut off inside it, mid-word, with no scrollbar to reveal it. That
+  // is what a reader sees as a truncated card, and it is invisible to a check
+  // on the document's width, because the document never overflowed.
+  //
+  // So: measure what the card actually needs, and scale by exactly the
+  // shortfall. `zoom` rather than `transform: scale()` because zoom is part of
+  // layout — the height reported to the host afterwards is the height the card
+  // now occupies, where a transform would report the unscaled one and leave a
+  // gap under the card.
+  //
+  // Bounded at 80%: past that the fix is worse than the symptom, and a frame
+  // that narrow wants the single-column layout, which it already gets.
+  //
+  // What this CANNOT fix, and must not be relied on for: an overflow whose
+  // cause is an intrinsic minimum. `zoom` scales the whole coordinate system,
+  // so a `white-space: nowrap` string — a length in that same space — grows in
+  // lockstep and the shortfall never closes. That is exactly how the card was
+  // being cut before `.body`'s column got its `minmax(0, 1fr)` floor: one pass
+  // moved the card's width from 874 to 928 against an invariant 929.33 target.
+  // A row that cannot shrink has to be made able to; scaling only ever buys
+  // room for one that can.
+  const MIN_ZOOM = 0.8;
+  let fitNote = "";
+  // The width the current zoom was computed for. Re-fitting is driven by the
+  // ResizeObserver, and the fit itself resizes what that observer watches —
+  // so a fit that recomputed every time would answer its own notification
+  // forever. It recomputes when the frame changes, or when the card does.
+  let fittedFor = null;
+
+  function fitToFrame(contentChanged) {
+    const main = document.querySelector("main");
+    const card = main && main.querySelector(".card");
+    if (!main || !card) return;
+    const available = document.documentElement.clientWidth;
+    if (!available) return;
+    if (!contentChanged && fittedFor === available) return;
+    fittedFor = available;
+
+    main.style.zoom = "";
+    main.style.maxWidth = "";
+    // `scrollWidth` still reports content clipped by `overflow: hidden`, which
+    // is the whole reason this can be measured at all.
+    const gutter = Math.max(0, main.offsetWidth - card.offsetWidth);
+    const needed = Math.max(main.scrollWidth, card.scrollWidth + gutter);
+    fitNote = `frame ${available} · content ${needed}`;
+    if (needed <= available + 1) return;
+
+    const zoom = Math.max(MIN_ZOOM, available / needed);
+    main.style.zoom = String(zoom);
+    // `zoom` multiplies every length the element resolves, `max-width`
+    // included — so the stylesheet's 940px comfort cap became 940 × zoom and
+    // started binding at frame widths where it never had. The card then sat
+    // narrower than its frame, centred by `margin: 0 auto`, which reads as the
+    // card being off to one side. The cap is for a frame that is too wide;
+    // while compensating for one that is too narrow it has no business here.
+    main.style.maxWidth = "none";
+    fitNote += ` · zoom ${zoom.toFixed(2)}`;
+  }
+
+  let lastHeight = 0;
+  let lastWidth = 0;
+  function reportSize() {
+    const main = document.querySelector("main");
+    if (!main) return;
+    fitToFrame(false);
+    const origin = main.querySelector(".origin");
+    // Not decoration: if a card still comes back clipped, these two numbers
+    // say whether the content was too wide or the frame was.
+    if (origin && fitNote) origin.title = fitNote;
+    const height = Math.ceil(main.getBoundingClientRect().height);
+    // Clamped to what the host declared. A host that honours this width sets
+    // the frame from it, so reporting more than it offered is how the card
+    // asks to be cropped.
+    const ceiling =
+      typeof frame?.width === "number"
+        ? frame.width
+        : typeof frame?.maxWidth === "number"
+          ? frame.maxWidth
+          : Infinity;
+    const width = Math.ceil(Math.min(document.documentElement.clientWidth, ceiling));
+    if (!height) return;
+    if (Math.abs(height - lastHeight) < 8 && width === lastWidth) return;
+    lastHeight = height;
+    lastWidth = width;
+    post({
+      jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { width, height },
+    });
+  }
+
+  if (typeof ResizeObserver === "function") {
+    // Fires again when the page image finishes decoding, which is when the
+    // height actually settles.
+    new ResizeObserver(reportSize).observe(document.querySelector("main"));
+  }
+
+  // Host -> app. Hosts differ in how much of the JSON-RPC envelope reaches the
+  // guest, so the payload is dug out of every documented shape rather than
+  // betting on one: params.result / result / the message itself, structured
+  // content first, then the JSON in the text content block.
+  function extract(data) {
+    if (!data || typeof data !== "object") return null;
+    for (const candidate of [data.params?.result, data.params, data.result, data]) {
+      if (!candidate || typeof candidate !== "object") continue;
+      const structured = candidate.structuredContent ?? candidate.structured_content;
+      if (structured?.quote) return structured;
+      if (candidate.quote) return candidate;
+      const text = candidate.content?.[0]?.text;
+      if (typeof text === "string") {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.quote) return parsed;
+        } catch (_) { /* not our payload */ }
+      }
+    }
+    return null;
+  }
+
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (settle(data)) return;
+
+    // The host asks before tearing the view down and waits for the answer.
+    // Not answering costs the reader the teardown animation and, on some
+    // hosts, a timeout.
+    if (data?.method === "ui/resource-teardown") {
+      if (data.id != null) post({ jsonrpc: "2.0", id: data.id, result: {} });
+      return;
+    }
+    // Theme toggled, panel resized, display mode changed: partial updates,
+    // merged onto what the handshake established.
+    if (data?.method === "ui/notifications/host-context-changed") {
+      host = { ...host, context: { ...host.context, ...(data.params || {}) } };
+      applyHostContext(host.context);
+      // The host can put the view back inline on its own — through its own
+      // chrome, or because another app asked for the frame. The overlay
+      // follows rather than sitting over a frame that is no longer full.
+      if (data.params?.displayMode === "inline") closeLens();
+      return;
+    }
+
+    const view = extract(data);
+    if (view) {
+      render(view);
+      hydrateLocator(view);
+    }
+  });
+
+  handshake();
+</script>
+</body>
+</html>
