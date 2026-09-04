@@ -151,7 +151,7 @@ MCP_STUDIO_BASE_URL=http://localhost:3000   # optional, for absolute deep links
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host/Origin allow-list (DNS-rebinding protection). `*` delegates the check to a fronting proxy. |
 | `MCP_MAX_READ_TOKENS` | `4000` | Hard ceiling for one `read_element`. A client may ask for less, never more. |
 | `MCP_CACHE_TTL_SECONDS` | `600` | Freshness hint for the tool list, the prompt list and the viewer (SEP-2549). `0` disables it. |
-| `MCP_INLINE_CITATION_IMAGE` | `false` | Put the raster back in the tool result (~21 000 tokens a call). Only for a host where the app-only fetch fails. |
+| `MCP_INLINE_CITATION_IMAGE` | `false` | Put the raster back in the tool result as a `data:` URI (~21 000 tokens a call). It is **not** a way to show an image on a host without MCP Apps: nothing renders a data URI carried in a JSON field, and no code path here emits an image content block. Use `deep_link` for that. |
 | `MCP_APPS_ENABLED` | `true` | Ships the `show_citation` MCP App. Degrades to text on hosts without UI support. |
 | `MCP_STUDIO_BASE_URL` | *(empty)* | Absolute base for citation deep links. Empty keeps them relative. |
 | `MCP_INVESTIGATION_ENABLED` | `true` | Publishes the six journal tools, the `investigate` prompt and the investigation viewer. Off leaves the read surface byte-identical — worth knowing that five tool descriptions are read on every call, including in conversations that never investigate. |
@@ -358,7 +358,7 @@ on it, and the navigation tree those verdicts draw on the document.
 
 | Tool | Purpose |
 |------|---------|
-| `show_citation` | Takes a citation uri and returns the passage with a raster crop of its page region. Falls back to the citation as text on hosts that cannot render it. |
+| `show_citation` | Takes a citation uri and returns the passage with a raster crop of its page region. Falls back to the citation as text on hosts that cannot render it, with `next_step` pointing at `deep_link` — the passage in Docling Studio. |
 | `show_investigation` | Takes an `investigation_id` and returns the record as a card: the plan, each attempt with its verdict, and the navigation tree. Falls back to exactly what `get_investigation` returns. |
 
 **Which clients render it**
@@ -377,6 +377,25 @@ Degradation is a spec requirement and it is what makes this free to ship: a
 host that never advertises the extension never fetches the template, and the
 image is never rendered at all — so the bytes cost nothing on a client that
 could not have shown them.
+
+**What a host without the viewer gets instead.** No image, on any path: every
+raster this server produces travels as a `data:` URI inside a JSON field, for
+the viewer's `<img src>`. Nothing ever returns an MCP image content block, so
+a host that does not mount the app has nothing to render — including under
+`MCP_INLINE_CITATION_IMAGE`, which buys ~21 000 tokens of base64 that neither
+the reader nor the model can read. What such a host *does* get is
+`deep_link`: the passage in Docling Studio, at its page, with the ref in the
+query string.
+
+`show_citation` says so on the payload, in `next_step`, rather than leaving a
+null `page_image` to be interpreted — two live runs against a host without
+MCP Apps ended with the model hunting for the app-only raster instead of
+handing over the link that already worked. It is `next_step` and not
+`image_note` because the card renders `image_note`, and the server cannot
+tell whether a viewer mounted: `client_supports_apps` reads the connection
+rather than the UI, and answers no over stateless HTTP either way. So the
+steer has to be true in both worlds and must never print "no card here"
+inside a card that is on screen.
 
 **Opening the page.** The rail answers *where on the page*; at 128 px it
 cannot answer *what is around it*, which is the other half of showing a reader

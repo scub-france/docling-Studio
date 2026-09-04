@@ -314,6 +314,29 @@ class TestGracefulDegradation:
         assert view["page_image"].startswith("data:image/")
         assert view["image_bytes"] > 0
 
+    async def test_the_payload_says_what_to_do_when_no_card_appears(self, tmp_path):
+        # Two live runs on a host without MCP Apps ended the same way: a null
+        # page_image, nothing saying why, and the model reaching for the
+        # app-only raster. The link that already works is on the payload; this
+        # is what points at it.
+        async with _client(_service_with_file(tmp_path), negotiates=False) as client:
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        view = result.structured_content
+        assert view["deep_link"]
+        assert "deep_link" in view["next_step"]
+        assert "get_citation_image" in view["next_step"]
+        # For the model, not for the card: image_note is rendered inside the
+        # view, and a card that prints "no card here" while being shown is
+        # worse than saying nothing.
+        assert view["image_note"] is None
+
+    async def test_the_steer_changes_when_the_raster_is_in_the_payload(self, tmp_path):
+        async with _client(_service_with_file(tmp_path), negotiates=False, inline=True) as client:
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        view = result.structured_content
+        assert "page_image" in view["next_step"]
+        assert "deep_link" in view["next_step"]
+
     async def test_a_malformed_anchor_is_still_a_tool_error(self, tmp_path):
         async with _client(_service_with_file(tmp_path)) as client:
             result = await client.call_tool("show_citation", {"uri": "nope"})
