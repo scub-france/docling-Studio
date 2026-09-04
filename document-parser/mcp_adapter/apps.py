@@ -132,6 +132,13 @@ class CitationView:
     `total_est_tokens` / `total_calls` are the running tally kept by `Ledger`,
     whose scope is one server process — read its module docstring before
     presenting either number as a per-conversation figure.
+
+    `next_step` is for the model; `image_note` is for the card, which renders
+    it. They are separate because the server cannot tell whether the host
+    mounted the viewer — `client_supports_apps` reads the connection, not the
+    UI, and answers no over stateless HTTP either way — so the steering has to
+    be true in both worlds and must not print "no card here" inside a card
+    that is being shown.
     """
 
     uri: str
@@ -150,6 +157,7 @@ class CitationView:
     page_image: str | None = None
     image_bytes: int | None = None
     image_note: str | None = None
+    next_step: str | None = None
 
 
 @dataclass(frozen=True)
@@ -188,6 +196,28 @@ class InvestigationCard:
     total_est_tokens: int = 0
     total_calls: int = 0
     answer: str | None = None
+
+
+# What to do when the card does not appear — stated on the payload, because
+# that is where a host without MCP Apps ends up. Two live runs on such a host
+# ended the same way: `page_image` came back null, nothing said why, and the
+# model went looking for the app-only raster instead of handing over the link
+# that already works. Phrased to hold whether or not a viewer mounted: the
+# server has no way to know.
+_NO_CARD = (
+    "The page image is not in this payload — the citation viewer fetches it itself. If no "
+    "card appeared for the reader, this host does not render one: give them `deep_link`, "
+    "which opens this passage in Docling Studio at the right page. Do not call "
+    "get_citation_image — it answers with binary you cannot read."
+)
+
+# The operator paid for the bytes (`MCP_INLINE_CITATION_IMAGE`), so the raster
+# is here; it is still not something a model reads.
+_INLINE_IMAGE = (
+    "The page raster is in `page_image`, a data URI for a viewer to render rather than "
+    "something you can read. Quote the text, and give the reader `deep_link` to see the "
+    "passage in Docling Studio."
+)
 
 
 def build_apps_extension(
@@ -287,7 +317,14 @@ def build_apps_extension(
         # figure the card shows includes the call the card is showing.
         ledger.record(view)
         usage = ledger.snapshot()
-        view = replace(view, total_est_tokens=usage.est_tokens, total_calls=usage.calls)
+        view = replace(
+            view,
+            total_est_tokens=usage.est_tokens,
+            total_calls=usage.calls,
+            # The default, and still right when the render below fails: there
+            # is no image in the payload either way.
+            next_step=_NO_CARD,
+        )
 
         if not inline_image:
             # The view fetches its own image through `get_citation_image`, an
@@ -313,6 +350,7 @@ def build_apps_extension(
             logger.exception("Citation rendering failed for %s", uri)
             return _with_note(view, f"The page could not be rendered ({exc}).")
 
+        view = replace(view, next_step=_INLINE_IMAGE)
         return _with_image(view, image.data_uri, image.page, len(image.png))
 
     @apps.tool(
