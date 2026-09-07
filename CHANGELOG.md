@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-22
+
+### Fixed
+
+- **Preview scroll — focus the element once, without the page collapsing** (#336): selecting a node in the structure tree made the stacked preview flicker and land somewhere other than the element. Only pages inside the render window mounted their raster and nothing reserved the box of the others, so an off-window card collapsed to its header and re-inflated when its image decoded — every scroll target was computed against a layout shifting underneath it. Each frame now holds the page's own aspect ratio and natural raster width, so a card keeps its height with no image mounted. The focus scroll measures the frame instead of the image (a bbox on a far page is centred on the first click, not on a later `load` event), the three watchers a single focus wakes coalesce into one scroll per flush instead of three competing smooth scrolls, and the page carrying the highlight keeps its raster — and its overlay — while it is the target.
+
+### Changed
+
+- **Development stack made worktree friendly** (#324): `docker-compose.dev.yml` no longer binds fixed host ports or named volumes, so several worktrees can run their stack side by side. The parser is reached over the compose network (`expose` instead of `ports`) with uploads and SQLite state bind-mounted under `document-parser/`, and the frontend host port comes from `FRONTEND_HOST_PORT` (default `3000`). A new `.development_scripts/worktree_setup.sh` prepares dependencies and copies local state into a fresh worktree, driven either by flags or by environment variables so it stays independent of any one workspace tool; `paseo.json` wires it up for Paseo users.
+
 ## [0.7.1] - 2026-08-24
 
 ### Fixed
