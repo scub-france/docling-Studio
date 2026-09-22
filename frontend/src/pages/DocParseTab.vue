@@ -396,10 +396,13 @@ watch(
 // Triggered after an in-place analysis completes or after the user
 // restores a different version from the History drawer — the tree
 // is built server-side from the active analysis's `document_json`,
-// so it has to be reloaded.
+// so it has to be reloaded. A saved analysis passed as a prop is pinned:
+// mounting it sets the active analysis and loads its tree itself, so
+// reacting here would fetch the same tree a second time.
 watch(
   () => documentStore.workspaceActiveAnalysis?.id,
   (newId, oldId) => {
+    if (props.analysis) return
     if (newId && newId !== oldId) {
       documentStore.focusElement(null)
       loadTree()
