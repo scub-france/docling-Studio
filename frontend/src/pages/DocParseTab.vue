@@ -4,23 +4,7 @@
       :elements="allPageElements"
       :hidden-types="hiddenTypes"
       @update:hidden-types="(next) => (hiddenTypes = next)"
-    >
-      <template #action>
-        <button
-          v-if="showNewAnalysis"
-          type="button"
-          class="tab-action-cta"
-          :disabled="analysisStore.running"
-          :title="t('newAnalysis.title')"
-          data-e2e="parse-new-analysis"
-          @click="onLaunchAnalysis"
-        >
-          <span v-if="analysisStore.running" class="tab-action-spinner" />
-          <span v-else>+</span>
-          {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
-        </button>
-      </template>
-    </LayersBar>
+    />
     <div class="parse-body" :class="{ 'properties-open': propertiesOpen }">
       <aside class="parse-structure" :class="{ 'parse-drawer--closed': !structureOpen }">
         <header class="parse-structure-header">
@@ -178,7 +162,6 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import type { Analysis, Chunk, DocChunk, DocTreeNode, PageElement } from '../shared/types'
-import { useAnalysisStore } from '../features/analysis/store'
 import { fetchAnalysis } from '../features/analysis/api'
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
@@ -195,15 +178,11 @@ import ConversationPanel from '../features/reasoning/ui/ConversationPanel.vue'
 import TraceTimeline from '../features/reasoning/ui/TraceTimeline.vue'
 import { useI18n } from '../shared/i18n'
 
-const props = withDefaults(defineProps<{ docId: string; analysisId?: string; showNewAnalysis?: boolean }>(), {
-  showNewAnalysis: true,
-})
-const showNewAnalysis = computed(() => props.showNewAnalysis)
+const props = defineProps<{ docId: string; analysisId?: string }>()
 
 const { t } = useI18n()
 const documentStore = useDocumentStore()
 const chunksStore = useChunksStore()
-const analysisStore = useAnalysisStore()
 const reasoningStore = useReasoningStore()
 const featureFlags = useFeatureFlagStore()
 
@@ -237,11 +216,6 @@ function analysisChunks(analysis: Analysis): DocChunk[] {
   } catch {
     return []
   }
-}
-
-async function onLaunchAnalysis(): Promise<void> {
-  if (analysisStore.running) return
-  await analysisStore.run(props.docId)
 }
 
 const currentPage = ref(1)
@@ -735,38 +709,6 @@ function findPageOfRef(
 .parse-state--empty {
   flex-direction: column;
   gap: 12px;
-}
-
-.tab-action-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  color: white;
-  font-size: 12px;
-  cursor: pointer;
-  transition: filter var(--transition);
-}
-
-.tab-action-cta:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
-.tab-action-cta:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.tab-action-spinner {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
 }
 
 .spinner {

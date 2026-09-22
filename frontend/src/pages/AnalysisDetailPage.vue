@@ -16,11 +16,7 @@
           <DownloadDropdown :doc-id="analysis.documentId" :analysis-id="analysis.id" />
         </div>
       </header>
-      <DocParseTab
-        :doc-id="analysis.documentId"
-        :analysis-id="analysis.id"
-        :show-new-analysis="false"
-      />
+      <DocParseTab :doc-id="analysis.documentId" :analysis-id="analysis.id" />
     </template>
   </section>
 </template>
