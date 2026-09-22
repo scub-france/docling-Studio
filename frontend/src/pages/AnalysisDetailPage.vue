@@ -13,7 +13,7 @@
           <p class="meta">{{ analysis.id }} · {{ formatDate(analysis.createdAt) }}</p>
         </div>
         <div class="detail-actions">
-          <DownloadDropdown :doc-id="analysis.documentId" />
+          <DownloadDropdown :doc-id="analysis.documentId" :analysis-id="analysis.id" />
         </div>
       </header>
       <DocParseTab

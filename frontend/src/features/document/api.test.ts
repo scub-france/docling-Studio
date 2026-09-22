@@ -5,6 +5,7 @@ import {
   uploadDocument,
   deleteDocument,
   getPreviewUrl,
+  getExportUrl,
   rechunkDocument,
   fetchDocumentTree,
 } from './api'
@@ -69,6 +70,16 @@ describe('document API', () => {
 
   it('getPreviewUrl accepts custom page and dpi', () => {
     expect(getPreviewUrl('abc', 3, 300)).toBe('/api/documents/abc/preview?page=3&dpi=300')
+  })
+
+  it('getExportUrl exports the latest analysis by default', () => {
+    expect(getExportUrl('abc', 'md')).toBe('/api/documents/abc/export?format=md')
+  })
+
+  it('getExportUrl scopes the export to an analysis when provided', () => {
+    expect(getExportUrl('abc', 'json', 'analysis 1')).toBe(
+      '/api/documents/abc/export?format=json&analysisId=analysis%201',
+    )
   })
 
   it('rechunkDocument calls POST /api/documents/:id/rechunk and returns chunks', async () => {

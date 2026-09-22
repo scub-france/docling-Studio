@@ -32,8 +32,14 @@ export function getPreviewUrl(id: string, page = 1, dpi = PREVIEW_DPI): string {
   return `/api/documents/${id}/preview?page=${page}&dpi=${dpi}`
 }
 
-export function getExportUrl(id: string, format: 'pdf' | 'md' | 'json'): string {
-  return `/api/documents/${id}/export?format=${format}`
+/** Markdown / JSON come from `analysisId` when given, else from the latest analysis. */
+export function getExportUrl(
+  id: string,
+  format: 'pdf' | 'md' | 'json',
+  analysisId?: string,
+): string {
+  const analysis = analysisId ? `&analysisId=${encodeURIComponent(analysisId)}` : ''
+  return `/api/documents/${id}/export?format=${format}${analysis}`
 }
 
 /** Rechunk the canonical chunkset. Backend runs synchronously and returns

@@ -60,6 +60,8 @@ type ExportFormat = 'pdf' | 'md' | 'json'
 const props = withDefaults(
   defineProps<{
     docId: string
+    /** Export this analysis's Markdown / JSON instead of the latest one. */
+    analysisId?: string
     buttonClass?: string
     iconOnly?: boolean
     pdfOnly?: boolean
@@ -127,7 +129,7 @@ function focusPreviousItem() {
 
 async function downloadFormat(format: ExportFormat) {
   try {
-    const url = getExportUrl(props.docId, format)
+    const url = getExportUrl(props.docId, format, props.analysisId)
     const response = await fetch(url)
 
     if (!response.ok) {
