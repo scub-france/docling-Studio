@@ -20,7 +20,7 @@
         <span class="topbar-logo-text">Docling Studio</span>
       </div>
       <div v-if="isDev" class="dev-route-indicator" data-e2e="dev-route-indicator">
-        <span>DEV</span>
+        <span class="dev-route-indicator-tag">DEV</span>
         {{ route.name ? String(route.name) : route.path }}
       </div>
       <div class="topbar-spacer" />
@@ -200,14 +200,24 @@ body {
   align-items: center;
   gap: 7px;
   margin-right: 12px;
-  padding: 4px 8px;
+  padding: 4px 8px 4px 4px;
   border: 1px solid var(--warning);
   border-radius: var(--radius-sm);
-  color: var(--warning);
-  font: 10px 'IBM Plex Mono', monospace;
+  color: var(--text-secondary);
+  font:
+    10px 'IBM Plex Mono',
+    monospace;
   letter-spacing: 0.04em;
 }
-.dev-route-indicator span { font-weight: 700; }
+/* Dark text on the amber fill, like the disclaimer banner: `--warning` as a
+   text colour is too faint on the light theme's white topbar. */
+.dev-route-indicator-tag {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--warning);
+  color: #1a1a1d;
+  font-weight: 500;
+}
 
 .burger-btn {
   width: 36px;
