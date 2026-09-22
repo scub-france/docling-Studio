@@ -140,7 +140,7 @@
           :page-number="selectedElementData?.pageNumber ?? currentPage"
           :linked-chunk="linkedChunk"
           :saving="chunksStore.saving"
-          :editable="!analysisId"
+          :editable="!analysis"
           @save-chunk="onSaveChunk"
         />
       </aside>
@@ -162,7 +162,6 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import type { Analysis, Chunk, DocChunk, DocTreeNode, PageElement } from '../shared/types'
-import { fetchAnalysis } from '../features/analysis/api'
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
@@ -178,7 +177,11 @@ import ConversationPanel from '../features/reasoning/ui/ConversationPanel.vue'
 import TraceTimeline from '../features/reasoning/ui/TraceTimeline.vue'
 import { useI18n } from '../shared/i18n'
 
-const props = defineProps<{ docId: string; analysisId?: string }>()
+const props = defineProps<{
+  docId: string
+  /** A saved analysis to show read-only, already loaded by the host page. */
+  analysis?: Analysis
+}>()
 
 const { t } = useI18n()
 const documentStore = useDocumentStore()
@@ -280,10 +283,9 @@ const linkedChunk = computed<DocChunk | null>(() => {
   )
 })
 
-const activeChunks = computed<DocChunk[]>(() => {
-  const analysis = documentStore.workspaceActiveAnalysis
-  return props.analysisId && analysis ? analysisChunks(analysis) : chunksStore.chunks
-})
+const activeChunks = computed<DocChunk[]>(() =>
+  props.analysis ? analysisChunks(props.analysis) : chunksStore.chunks,
+)
 
 const nodeCount = computed(() => countNodes(tree.value))
 
@@ -307,7 +309,7 @@ async function loadTree(): Promise<void> {
   treeLoading.value = true
   treeError.value = null
   try {
-    tree.value = await fetchDocumentTree(props.docId, props.analysisId)
+    tree.value = await fetchDocumentTree(props.docId, props.analysis?.id)
   } catch (e) {
     treeError.value = (e as Error).message || 'Failed to load tree'
   } finally {
@@ -333,14 +335,14 @@ function onClickElement(el: PageElement, _pageNumber: number): void {
 }
 
 async function onSaveChunk(chunkId: string, text: string): Promise<void> {
-  if (props.analysisId) return
+  if (props.analysis) return
   await chunksStore.updateText(props.docId, chunkId, text)
 }
 
 onMounted(async () => {
   reasoningStore.reset(props.docId)
-  if (props.analysisId) {
-    documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
+  if (props.analysis) {
+    documentStore.setWorkspaceAnalysis(props.analysis)
     await loadTree()
   } else {
     await Promise.all([
@@ -360,8 +362,8 @@ watch(
     rightTab.value = 'props'
     reasoningStore.reset(id)
     documentStore.focusElement(null)
-    if (props.analysisId) {
-      documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
+    if (props.analysis) {
+      documentStore.setWorkspaceAnalysis(props.analysis)
       await loadTree()
     } else {
       await Promise.all([documentStore.loadWorkspace(id), chunksStore.load(id), loadTree()])
