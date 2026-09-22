@@ -21,7 +21,7 @@
       </div>
       <div v-if="isDev" class="dev-route-indicator" data-e2e="dev-route-indicator">
         <span class="dev-route-indicator-tag">DEV</span>
-        {{ route.name ? String(route.name) : route.path }}
+        {{ routeLabel(route) }}
       </div>
       <div class="topbar-spacer" />
     </header>
@@ -53,6 +53,7 @@ import { useSettingsStore } from '../features/settings/store'
 import { useFeatureFlag } from '../features/feature-flags'
 import { useFeatureFlagStore } from '../features/feature-flags/store'
 import { useI18n } from '../shared/i18n'
+import { routeLabel } from '../shared/routing/routeLabel'
 
 useSettingsStore()
 const flagStore = useFeatureFlagStore()
