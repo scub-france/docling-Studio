@@ -52,7 +52,8 @@ class AttemptOutcome(StrEnum):
     BAD_ANCHOR = "bad_anchor"
     # It resolves, but to another document than the one under investigation.
     FOREIGN_DOCUMENT = "foreign_document"
-    # No such element in this parse (or the version is unknown).
+    # No such element in the investigation's parse — which is also the verdict
+    # on an anchor pinned to another parse of the same document.
     UNKNOWN_REF = "unknown_ref"
     # It resolves and carries no text — a page break, an empty group.
     EMPTY_ELEMENT = "empty_element"

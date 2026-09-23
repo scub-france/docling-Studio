@@ -51,6 +51,17 @@ class Adjudicator:
                 f"document it opened on ({investigation.document_id}).",
             ), False
 
+        if anchor.version_id != investigation.version_id:
+            # The parse is pinned at open: the same ref names other text in
+            # another parse, so it is not an element of this investigation's.
+            return _settle(
+                attempt,
+                AttemptOutcome.UNKNOWN_REF,
+                f"That anchor is from parse {anchor.version_id}; this investigation reads "
+                f"parse {investigation.version_id} only. Read the element with "
+                f'version_id="{investigation.version_id}" and record the uri that read returns.',
+            ), False
+
         rejection = await self._read_check(anchor, attempt)
         if rejection is not None:
             return rejection, False

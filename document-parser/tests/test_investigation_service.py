@@ -234,21 +234,57 @@ class TestAdjudication:
         assert verdict.attempt.kept_uri == PREAVIS_URI
         assert verdict.attempt.citation_uri == PREAVIS_URI
 
-    async def test_a_superseded_parse_still_verifies_and_flags_the_investigation(self):
-        """`stale_version` is a kept citation — the quote is really there."""
-        old, new = make_job(job_id="an-0"), make_job(job_id="an-1")
-        tools = make_document_tools(jobs=[old, new])
+    async def test_a_parse_superseded_after_the_open_still_verifies_and_flags_it(self):
+        """`stale_version` is a kept citation — the quote is really there, in
+        the parse the investigation pinned; a newer parse only makes it stale."""
+        jobs = [make_job(job_id="an-0")]
+        tools = make_document_tools(jobs=jobs)
         investigation = await planned(tools.investigations)
+        jobs.append(make_job(job_id="an-1"))  # re-parsed mid-investigation
 
         verdict = await tools.investigations.record_attempt(
             investigation_id=investigation.id,
             step_id=investigation.steps[0].id,
-            thought="from an earlier read",
+            thought="read before the re-parse",
             uri=anchor_uri(PREAVIS_REF, job_id="an-0"),
             quote=PREAVIS_TEXT,
         )
         assert verdict.attempt.outcome is AttemptOutcome.KEPT
         assert verdict.stale is True
+
+    async def test_an_anchor_from_a_newer_parse_is_rejected(self):
+        """The pin holds: after a re-parse, a ref read from the new parse names
+        other text than the one the investigation is reading."""
+        jobs = [make_job(job_id="an-0")]
+        tools = make_document_tools(jobs=jobs)
+        investigation = await planned(tools.investigations)
+        jobs.append(make_job(job_id="an-1"))
+
+        verdict = await tools.investigations.record_attempt(
+            investigation_id=investigation.id,
+            step_id=investigation.steps[0].id,
+            thought="read after the re-parse",
+            uri=anchor_uri(PREAVIS_REF, job_id="an-1"),
+            quote=PREAVIS_TEXT,
+        )
+        assert verdict.attempt.outcome is AttemptOutcome.UNKNOWN_REF
+        assert 'version_id="an-0"' in verdict.attempt.detail
+        assert verdict.stale is False
+
+    async def test_an_anchor_from_an_older_parse_is_rejected(self):
+        jobs = [make_job(job_id="an-0"), make_job(job_id="an-1")]
+        tools = make_document_tools(jobs=jobs)
+        investigation = await planned(tools.investigations)
+
+        verdict = await tools.investigations.record_attempt(
+            investigation_id=investigation.id,
+            step_id=investigation.steps[0].id,
+            thought="an anchor kept from an earlier conversation",
+            uri=anchor_uri(PREAVIS_REF, job_id="an-0"),
+            quote=PREAVIS_TEXT,
+        )
+        assert investigation.version_id == "an-1"
+        assert verdict.attempt.outcome is AttemptOutcome.UNKNOWN_REF
 
 
 class TestAttemptBudget:

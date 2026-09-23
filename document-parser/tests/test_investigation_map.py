@@ -116,6 +116,19 @@ class TestContainment:
         nodes, _ = await project(record)
         assert nodes == []
 
+    @pytest.mark.parametrize(
+        ("uri", "outcome"),
+        [
+            (anchor_uri(PREAVIS_REF, doc_id="other-doc"), AttemptOutcome.FOREIGN_DOCUMENT),
+            (anchor_uri(PREAVIS_REF, job_id="another-parse"), AttemptOutcome.UNKNOWN_REF),
+        ],
+    )
+    async def test_an_anchor_outside_the_pinned_parse_lands_nowhere(self, uri, outcome):
+        """The same ref names other text in another document or parse, so the
+        section it would light up here is not the one the agent was reading."""
+        nodes, _ = await project(investigation([attempt(uri, outcome=outcome)]))
+        assert nodes == []
+
 
 class TestStatus:
     @pytest.mark.parametrize(
