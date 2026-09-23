@@ -12,12 +12,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import pytest
-
-pytest.importorskip(
-    "mcp.server.mcpserver",
-    reason="MCP SDK not installed — `uv sync --group mcp` to exercise the adapter",
-)
-
 from mcp import Client
 
 from bootstrap.factories import build_document_tools

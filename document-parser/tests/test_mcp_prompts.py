@@ -7,15 +7,9 @@ These pin all three.
 
 from __future__ import annotations
 
-import pytest
-
-pytest.importorskip(
-    "mcp.server.mcpserver",
-    reason="MCP SDK not installed — `uv sync --group mcp` to exercise the prompts",
-)
-
 from contextlib import asynccontextmanager
 
+import pytest
 from mcp import Client
 
 from mcp_adapter import build_mcp_server

@@ -37,10 +37,8 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
 
-      # `mcp` is optional at runtime, not in CI: without it every MCP adapter
-      # test module skips on import and this job stays green over them.
       - name: Install Python dependencies
-        run: uv sync --frozen --group dev --group mcp
+        run: uv sync --frozen --group dev
 
       - name: Lint
         run: uv run ruff check .

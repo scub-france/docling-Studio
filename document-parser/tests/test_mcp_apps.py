@@ -12,23 +12,15 @@ from __future__ import annotations
 import base64
 import io
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
-
-from domain.navigation import BoundingBox
-
-pytest.importorskip(
-    "mcp.server.apps",
-    reason="MCP SDK not installed — `uv sync --group mcp` to exercise the Apps extension",
-)
-
-from contextlib import asynccontextmanager
-
 from mcp import Client
 from mcp.client.extension import advertise
 from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
+from domain.navigation import BoundingBox
 from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI
 from services.navigation_config import NavigationConfig

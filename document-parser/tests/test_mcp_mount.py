@@ -11,13 +11,6 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from unittest.mock import patch
 
-import pytest
-
-pytest.importorskip(
-    "mcp.server.mcpserver",
-    reason="MCP SDK not installed — `uv sync --group mcp` to exercise the mount",
-)
-
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
