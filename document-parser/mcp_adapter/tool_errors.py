@@ -38,7 +38,10 @@ class ToolErrors:
         return None
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
-        if exc is None:
+        # Cancellation (and every other BaseException) is not a tool failure:
+        # it must reach the task that owns it, or a client hanging up turns
+        # into one error report per in-flight call.
+        if exc is None or not isinstance(exc, Exception):
             return False
         if isinstance(exc, NavigationServiceError | AnchorParseError):
             # Includes NavigationUnavailableError — "still booting" is a
@@ -46,5 +49,7 @@ class ToolErrors:
             # the whole investigation family (#329), whose rejections are
             # part of the protocol rather than failures of it.
             raise ToolError(str(exc)) from exc
+        # Anything else is a crash, and its text belongs to the server log:
+        # an OSError names the storage path, a driver error the SQL.
         logger.exception("Unhandled error in MCP tool")
-        raise ToolError(f"Internal error: {exc}") from exc
+        raise ToolError("Internal error — the server log has the details.") from exc
