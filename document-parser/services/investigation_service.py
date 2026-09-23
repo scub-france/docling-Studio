@@ -82,6 +82,7 @@ class InvestigationService:
     ) -> None:
         self._parses = parses
         self._navigation = navigation
+        self._citations = citations
         self._repo = investigations
         self._config = config or InvestigationConfig()
         self._adjudicator = Adjudicator(navigation=navigation, citations=citations)
@@ -99,6 +100,7 @@ class InvestigationService:
         question = (question or "").strip()
         if not question:
             raise InvalidArgumentError("An investigation needs a question to investigate.")
+        self._bounded("question", question)
         summary = await self._resolve_document(document)
         await self._check_open_budget(summary.document_id)
 
@@ -141,6 +143,10 @@ class InvestigationService:
         quote: str | None = None,
     ) -> AttemptVerdict:
         """Try `uri` against a step, and settle whether it holds up."""
+        # Before the row is written: an oversized call is refused, not charged
+        # to the step's attempt budget.
+        self._bounded("thought", thought or "")
+        self._citations.check_quote(quote)
         investigation = await self._load_open(investigation_id)
         step = self._pending_step(investigation, step_id)
         attempt = await self._open_attempt(step, thought=thought, uri=uri, quote=quote)
@@ -175,6 +181,7 @@ class InvestigationService:
                 "Abandoning a step needs a reason — it goes on the record beside the "
                 "steps that were worked."
             )
+        self._bounded("thought", thought)
         await self._repo.set_step_state(step.id, StepState.UNANSWERED)
         logger.info("Investigation %s abandoned step %s", investigation.id, step.id)
         return replace(
@@ -191,6 +198,7 @@ class InvestigationService:
         answer = (answer or "").strip()
         if not answer:
             raise InvalidArgumentError("An investigation is closed with an answer, not silence.")
+        self._bounded("answer", answer, limit=self._config.max_answer_chars)
         self._check_every_step_settled(investigation)
         self._check_backing(investigation, answer)
 
@@ -226,6 +234,15 @@ class InvestigationService:
     # Bookkeeping
     # ------------------------------------------------------------------
 
+    def _bounded(self, field: str, text: str, *, limit: int | None = None) -> None:
+        """Refuse a string the journal would store past its ceiling."""
+        ceiling = self._config.max_text_chars if limit is None else limit
+        if len(text) > ceiling:
+            raise InvalidArgumentError(
+                f"`{field}` is {len(text)} characters; the journal stores at most {ceiling}. "
+                "Shorten it."
+            )
+
     def _build_steps(self, steps: list[tuple[str, str]]) -> list[Step]:
         cleaned = [(q.strip(), (why or "").strip()) for q, why in steps if (q or "").strip()]
         if not cleaned:
@@ -236,6 +253,9 @@ class InvestigationService:
                 f"A plan is capped at {cap} steps ({len(cleaned)} given). Fold the narrow "
                 "ones together — a step is a question the document can answer, not a sentence."
             )
+        for question, why in cleaned:
+            self._bounded("question", question)
+            self._bounded("why", why)
         return [
             Step(id=uuid4().hex, ordinal=index, question=question, why=why)
             for index, (question, why) in enumerate(cleaned, start=1)

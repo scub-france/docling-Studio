@@ -20,9 +20,19 @@ from urllib.parse import quote as urlquote
 
 from domain.anchors import DocumentAnchor, normalise_quote, quote_hash
 from domain.element_reader import element_text, resolve, section_refs
-from domain.navigation import Citation, CitationCheck, CitationStatus, clip_to_tokens
+from domain.navigation import (
+    Citation,
+    CitationCheck,
+    CitationStatus,
+    clip_to_tokens,
+    estimate_tokens,
+)
 from domain.spans import is_span, span_ref, span_start
-from services.navigation_errors import NavigationServiceError, RefNotFoundError
+from services.navigation_errors import (
+    InvalidArgumentError,
+    NavigationServiceError,
+    RefNotFoundError,
+)
 
 if TYPE_CHECKING:
     from domain.navigation import ResolvedElement
@@ -56,8 +66,23 @@ class CitationService:
             )
         return self.build(parse.document.id, parse.version_id, element)
 
+    def check_quote(self, quote: str | None) -> None:
+        """Refuse a quote longer than one read can return.
+
+        Matching runs on the event loop and costs more the longer the quote,
+        so a quote no read could have produced is refused before any of it.
+        """
+        ceiling = self._config.max_read_tokens
+        size = estimate_tokens(quote or "")
+        if size > ceiling:
+            raise InvalidArgumentError(
+                f"The quote is ~{size} tokens; a quote is capped at {ceiling}, the most one "
+                "read returns. Quote the passage that carries the claim."
+            )
+
     async def verify_citation(self, uri: str, quote: str) -> CitationCheck:
         """Re-resolve an anchor server-side and check the claimed quote."""
+        self.check_quote(quote)
         anchor = DocumentAnchor.parse(uri)
         try:
             parse = await self._parses.load(anchor.document_id, anchor.version_id)
@@ -205,6 +230,9 @@ class CitationService:
         """
         texts = [(ref, normalise_quote(element_text(index, ref))) for ref in refs]
         texts = [(ref, text) for ref, text in texts if text]
+        # Longer than everything the anchor covers, joined: no window can hold it.
+        if len(claimed) > sum(len(text) + 1 for _, text in texts):
+            return None
         for start, (_, head) in enumerate(texts):
             joined = head
             for end in range(start + 1, len(texts)):

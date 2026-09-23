@@ -235,6 +235,13 @@ class TestVerifyCitation:
         check = await _tools().citations.verify_citation(_uri(PREAVIS_REF), "   ")
         assert check.valid is False
 
+    async def test_a_quote_longer_than_one_read_is_refused_before_matching(self):
+        """Matching runs on the event loop; a quote no read could have
+        produced would only buy the caller a stalled server."""
+        tools = _tools(config=NavigationConfig(max_read_tokens=50))
+        with pytest.raises(InvalidArgumentError, match="capped at 50"):
+            await tools.citations.verify_citation(_uri(PREAVIS_REF), "trois mois " * 40)
+
     async def test_flags_an_anchor_pinned_to_a_superseded_parse(self):
         tools = _tools()
         tools.citations._parses.analyses.find_latest_completed_by_document = AsyncMock(

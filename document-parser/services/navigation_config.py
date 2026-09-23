@@ -61,3 +61,8 @@ class InvestigationConfig:
     # A per-document ceiling on *open* investigations. Nothing else bounds
     # how many an agent may start, and an unbounded table is a slow leak.
     max_open_per_document: int = 20
+    # Every string the journal stores verbatim. A question, a why or a
+    # thought is a sentence or two; an answer is a few paragraphs of prose
+    # with its anchors.
+    max_text_chars: int = 2_000
+    max_answer_chars: int = 20_000
