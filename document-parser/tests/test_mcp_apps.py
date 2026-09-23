@@ -396,6 +396,20 @@ class TestTemplate:
         # `ui/open-link` on a bare path does nothing.
         assert "isAbsolute(view.deep_link)" in CITATION_APP_HTML
         assert "MCP_STUDIO_BASE_URL" in CITATION_APP_HTML
+        # And only a web link: the host opens what it is handed, so a
+        # `javascript:` or custom-scheme link never gets the button.
+        assert r"const isAbsolute = (url) => /^https?:\/\//i" in CITATION_APP_HTML
+
+    def test_it_only_listens_to_its_host_frame(self):
+        # Any other frame on the host page can post to this window; without
+        # the check, a sibling app could render a forged citation here or
+        # answer this view's own tool calls.
+        assert "event.source !== window.parent" in CITATION_APP_HTML
+
+    def test_numbers_are_coerced_before_they_reach_markup(self):
+        # `num()` output is interpolated unescaped; it must only ever be digits.
+        assert "Number.isFinite(number)" in CITATION_APP_HTML
+        assert "Number(img.width)" in CITATION_APP_HTML
 
     def test_completes_the_handshake_before_calling_a_tool_back(self):
         # The spec's lifecycle is `ui/initialize` -> the host's result ->

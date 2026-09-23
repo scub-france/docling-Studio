@@ -594,7 +594,13 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
 
-  const num = (value) => String(value ?? "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  // Coerced first, because the result lands in markup unescaped.
+  const num = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? String(number).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
+      : "—";
+  };
   const short = (id) => (id && id.length > 12 ? id.slice(0, 8) + "…" : id || "—");
 
   // Rejections read better as words than as enum names, and the reader needs
@@ -1152,15 +1158,15 @@
       0
     );
     const parts = [
-      `${view.steps_answered ?? 0} answered`,
-      `${view.steps_unanswered ?? 0} unanswered`,
+      `${num(view.steps_answered ?? 0)} answered`,
+      `${num(view.steps_unanswered ?? 0)} unanswered`,
       `${attempts} attempt${attempts === 1 ? "" : "s"}, ${kept} kept`,
     ];
     // The surface total, not this card's: `Ledger` is scoped to one server
     // process, which over HTTP is every client of that backend. Said as
     // "this server", never as "this conversation".
     if (view.total_calls) {
-      parts.push(`${num(view.total_est_tokens)} est. tokens over ${view.total_calls} calls on this server`);
+      parts.push(`${num(view.total_est_tokens)} est. tokens over ${num(view.total_calls)} calls on this server`);
     }
     return parts;
   }
@@ -1406,6 +1412,10 @@
   }
 
   window.addEventListener("message", (event) => {
+    // Only the host frame speaks for the host. Another app on the same page
+    // can reach this window too, and would otherwise be rendered as a record
+    // or answer this view's own calls.
+    if (event.source !== window.parent) return;
     const data = event.data;
     if (settle(data)) return;
 

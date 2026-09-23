@@ -321,6 +321,17 @@ class TestTemplate:
         for marker in ("http://", "https://", "<link", "<script src"):
             assert marker not in INVESTIGATION_APP_HTML, marker
 
+    def test_it_only_listens_to_its_host_frame(self):
+        # A sibling app could otherwise post a forged record into this view.
+        assert "event.source !== window.parent" in INVESTIGATION_APP_HTML
+
+    def test_the_tally_renders_numbers_only(self):
+        # The tally is interpolated unescaped, so every count goes through
+        # `num()`, which coerces before it formats.
+        assert "Number.isFinite(number)" in INVESTIGATION_APP_HTML
+        for field in ("view.steps_answered", "view.steps_unanswered", "view.total_calls"):
+            assert f"num({field}" in INVESTIGATION_APP_HTML, field
+
     def test_every_field_it_renders_is_escaped_first(self):
         """The card renders strings a model wrote after reading a document.
         The server defuses the content delimiter; this is the other half."""
