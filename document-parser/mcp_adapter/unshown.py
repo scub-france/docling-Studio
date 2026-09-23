@@ -14,8 +14,10 @@ In-process state, on purpose. Whether a record has been *shown* is a fact
 about this serving process's conversation with its hosts, not about the
 investigation — the journal in SQLite stays the domain's, and a restart
 merely means one investigation may be asked to show its record again, which
-is never wrong. Keyed by anchor, not by time, so a client working an
-unrelated document is never caught in another conversation's redirect.
+is never wrong. Keyed by anchor, not by time, and built only where the
+process serves one client (stdio): the stateless HTTP mount answers every
+caller from one server, where one conversation's debt would refuse another's
+citations and hand it the investigation id.
 """
 
 from __future__ import annotations

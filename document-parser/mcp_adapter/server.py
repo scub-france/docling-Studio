@@ -103,6 +103,7 @@ def build_mcp_server(
     cache_ttl_seconds: int = 0,
     inline_citation_image: bool = False,
     investigations: bool = True,
+    single_client: bool = True,
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -111,6 +112,10 @@ def build_mcp_server(
     wired anything, so the server is constructed at import time and reaches
     for the container on each tool call. `tools` raises when the app is not
     wired yet, which surfaces as a tool error rather than an import crash.
+
+    `single_client` is true for stdio, where the process serves one
+    conversation. The stateless HTTP mount answers every caller from one
+    server object and passes false: nothing about one conversation is kept.
     """
     # Every tool result passes through it, and the citation viewer reads it
     # back, so a card can say what the surface has cost so far rather than
@@ -118,8 +123,10 @@ def build_mcp_server(
     ledger = Ledger()
     # Only when both the journal and its viewer exist: without a viewer there
     # is nothing to redirect show_citation to, and without the journal there
-    # is no close to owe a showing (see mcp_adapter/unshown.py).
-    unshown = UnshownInvestigations() if (apps and investigations) else None
+    # is no close to owe a showing (see mcp_adapter/unshown.py). And only for
+    # one client: shared, one conversation's debt would refuse another's
+    # citations and hand it the investigation id.
+    unshown = UnshownInvestigations() if (apps and investigations and single_client) else None
     extensions = (
         [
             build_apps_extension(
