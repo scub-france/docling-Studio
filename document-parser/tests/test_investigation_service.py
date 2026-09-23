@@ -13,7 +13,7 @@ import copy
 import pytest
 
 from domain.investigation import AttemptOutcome, InvestigationState, StepState
-from services.navigation_config import InvestigationConfig
+from services.navigation_config import InvestigationConfig, NavigationConfig
 from services.navigation_errors import (
     DocumentNotFoundError,
     InvalidArgumentError,
@@ -285,6 +285,41 @@ class TestAdjudication:
         )
         assert investigation.version_id == "an-1"
         assert verdict.attempt.outcome is AttemptOutcome.UNKNOWN_REF
+
+
+class TestTextCeilings:
+    """Everything the journal stores verbatim is bounded, and refused before
+    it is written — an oversized call never costs the step an attempt."""
+
+    async def test_an_oversized_question_is_refused(self, service):
+        with pytest.raises(InvalidArgumentError, match="`question`"):
+            await service.open(document="contrat", question="x" * 2_001)
+
+    async def test_an_oversized_quote_is_refused_without_spending_an_attempt(self):
+        tools = make_document_tools(config=NavigationConfig(max_read_tokens=50))
+        investigation = await planned(tools.investigations)
+        step_id = investigation.steps[0].id
+        with pytest.raises(InvalidArgumentError, match="capped at 50"):
+            await tools.investigations.record_attempt(
+                investigation_id=investigation.id,
+                step_id=step_id,
+                thought="the whole article",
+                uri=PREAVIS_URI,
+                quote="trois mois " * 40,
+            )
+        verdict = await tools.investigations.record_attempt(
+            investigation_id=investigation.id,
+            step_id=step_id,
+            thought="the sentence itself",
+            uri=PREAVIS_URI,
+            quote=PREAVIS_TEXT,
+        )
+        assert verdict.attempt.ordinal == 1
+
+    async def test_an_oversized_answer_is_refused(self, service):
+        investigation = await service_with_one_kept(service)
+        with pytest.raises(InvalidArgumentError, match="`answer`"):
+            await service.close(investigation.id, f"{PREAVIS_URI} " + "x" * 20_001)
 
 
 class TestAttemptBudget:
