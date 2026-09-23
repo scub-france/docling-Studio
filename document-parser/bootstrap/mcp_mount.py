@@ -72,6 +72,8 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
         cache_ttl_seconds=settings.mcp_cache_ttl_seconds,
         inline_citation_image=settings.mcp_inline_citation_image,
         investigations=settings.mcp_investigation_enabled,
+        # Stateless (below): this one server object answers every caller.
+        single_client=False,
     )
     mcp_app = server.streamable_http_app(
         streamable_http_path=MCP_PATH,

@@ -34,9 +34,15 @@ PREAVIS_URI = anchor_uri(PREAVIS_REF)
 
 
 @asynccontextmanager
-async def _client(tools, *, apps: bool = True, investigations: bool = True):
+async def _client(
+    tools, *, apps: bool = True, investigations: bool = True, single_client: bool = True
+):
     server = build_mcp_server(
-        lambda: tools, version="test", apps=apps, investigations=investigations
+        lambda: tools,
+        version="test",
+        apps=apps,
+        investigations=investigations,
+        single_client=single_client,
     )
     async with Client(server) as client:
         yield client
@@ -293,6 +299,15 @@ class TestShowGate:
         """The gate is keyed by anchor, not by time: ad-hoc reading and other
         conversations are never caught in an investigation's redirect."""
         async with _client(make_document_tools()) as client:
+            result = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
+        assert result.is_error is False
+
+    async def test_a_server_shared_by_every_caller_keeps_no_gate(self):
+        """Over stateless HTTP the caller that closed and the caller that asks
+        are indistinguishable: a gate there would refuse a stranger's citation
+        and name this investigation to them."""
+        async with _client(make_document_tools(), single_client=False) as client:
+            await _investigated(client)
             result = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
         assert result.is_error is False
 
