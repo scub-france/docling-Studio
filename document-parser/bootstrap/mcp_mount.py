@@ -30,7 +30,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from infra.settings import settings
-from mcp_adapter import build_mcp_server, deps_present, deps_provenance
+from mcp_adapter import build_mcp_server
 from services.navigation_errors import NavigationUnavailableError
 
 if TYPE_CHECKING:
@@ -49,20 +49,10 @@ MCP_PATH = "/mcp"
 def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
     """Attach `POST /mcp` to `app`; return the context its lifespan must enter.
 
-    Returns `None` — and mounts nothing — when the surface is disabled or the
-    optional SDK is absent. The caller treats `None` as "no MCP today".
+    Returns `None` — and mounts nothing — when the surface is disabled.
     """
     if not settings.mcp_enabled:
         logger.info("MCP document server disabled (MCP_ENABLED not set)")
-        return None
-
-    if not deps_present():
-        logger.warning(
-            "MCP_ENABLED is true but the MCP SDK is not importable (%s) — surface not "
-            "mounted. Install it with `uv sync --group mcp`; a bare `uvicorn` resolves "
-            "against the ambient interpreter, not the project venv.",
-            deps_provenance(),
-        )
         return None
 
     server = build_mcp_server(
@@ -93,10 +83,9 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
     app.router.routes.extend(mcp_app.routes)
 
     logger.warning(
-        "MCP document server mounted at %s (%s) — READ-ONLY and UNAUTHENTICATED. "
+        "MCP document server mounted at %s — READ-ONLY and UNAUTHENTICATED. "
         "Keep it on localhost or behind an authenticating proxy.",
         MCP_PATH,
-        deps_provenance(),
     )
     return server.session_manager.run()
 

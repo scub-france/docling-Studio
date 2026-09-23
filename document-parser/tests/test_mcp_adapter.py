@@ -8,14 +8,6 @@ when the optional SDK is absent — the default install does not carry it.
 from __future__ import annotations
 
 import json
-
-import pytest
-
-pytest.importorskip(
-    "mcp.server.mcpserver",
-    reason="MCP SDK not installed — `uv sync --group mcp` to exercise the adapter",
-)
-
 from contextlib import asynccontextmanager
 
 from mcp import Client

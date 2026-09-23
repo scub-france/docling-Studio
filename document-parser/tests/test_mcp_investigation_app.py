@@ -9,13 +9,6 @@ a document, so every interpolation has to go through `esc`.
 
 from __future__ import annotations
 
-import pytest
-
-pytest.importorskip(
-    "mcp.server.mcpserver",
-    reason="MCP SDK not installed — `uv sync --group mcp` to exercise the adapter",
-)
-
 from contextlib import asynccontextmanager
 
 from mcp import Client

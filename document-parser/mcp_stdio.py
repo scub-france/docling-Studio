@@ -28,7 +28,7 @@ import sys
 
 from bootstrap.factories import build_document_tools
 from infra.settings import settings
-from mcp_adapter import build_mcp_server, deps_present, deps_provenance
+from mcp_adapter import build_mcp_server
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
@@ -65,13 +65,6 @@ async def _serve() -> None:
 
 
 def main() -> int:
-    if not deps_present():
-        logger.error(
-            "The MCP SDK is not importable (%s). Install it with `uv sync --group mcp` "
-            "and launch this script with the project venv's interpreter.",
-            deps_provenance(),
-        )
-        return 1
     try:
         asyncio.run(_serve())
     except KeyboardInterrupt:  # pragma: no cover — client closed the pipe

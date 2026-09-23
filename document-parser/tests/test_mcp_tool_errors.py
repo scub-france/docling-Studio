@@ -10,12 +10,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
-pytest.importorskip(
-    "mcp.server.mcpserver",
-    reason="MCP SDK not installed — `uv sync --group mcp` to exercise the adapter",
-)
-
 from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp_adapter.tool_errors import ToolErrors
