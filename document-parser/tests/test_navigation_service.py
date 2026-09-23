@@ -217,7 +217,7 @@ class TestVerifyCitation:
         assert check.actual_quote == PREAVIS_TEXT
 
     async def test_catches_an_unknown_ref(self):
-        check = await _tools().citations.verify_citation(_uri("#/texts/999"), "anything")
+        check = await _tools().citations.verify_citation(_uri("#/texts/999"), "anything at all")
         assert (check.valid, check.status) == (False, CitationStatus.UNKNOWN_REF)
 
     async def test_catches_an_unknown_version(self):
@@ -229,6 +229,23 @@ class TestVerifyCitation:
     async def test_empty_quote_is_not_a_verification(self):
         check = await _tools().citations.verify_citation(_uri(PREAVIS_REF), "   ")
         assert check.valid is False
+
+    async def test_a_quote_too_short_to_prove_anything_is_refused(self):
+        with pytest.raises(InvalidArgumentError, match="proves nothing"):
+            await _tools().citations.verify_citation(_uri(PREAVIS_REF), "trois")
+
+    async def test_a_wide_span_is_narrowed_to_the_element_that_holds_the_quote(self):
+        # A span over the whole document with a quote from one element: the
+        # citation handed back is that element, not the range that was sent.
+        check = await _tools().citations.verify_citation(
+            _uri("#/texts/0..#/texts/7"), "trois mois à compter"
+        )
+        assert check.status is CitationStatus.VERIFIED
+        assert check.citation.ref == PREAVIS_REF
+
+    async def test_a_table_row_verifies_as_text(self):
+        check = await _tools().citations.verify_citation(_uri("#/tables/0"), "Faute grave Aucun")
+        assert check.valid is True
 
     async def test_a_quote_longer_than_one_read_is_refused_before_matching(self):
         """Matching runs on the event loop; a quote no read could have
@@ -318,7 +335,7 @@ class TestBudgetEdges:
         assert excerpt.markdown.endswith("[…clipped]")
 
     async def test_a_clipped_quote_still_verifies(self):
-        tools = _tools(config=NavigationConfig(max_read_tokens=5))
+        tools = _tools(config=NavigationConfig(max_read_tokens=8))
         excerpt = await tools.navigation.read_element(DOC_ID, PREAVIS_REF, include="self")
         citation = excerpt.citations[0]
         check = await tools.citations.verify_citation(citation.uri, citation.quote.split(" […")[0])
@@ -339,7 +356,7 @@ class TestUnorderedRefs:
     async def test_read_and_verify_agree_on_such_a_ref(self):
         tools = _tools()
         excerpt = await tools.navigation.read_element(DOC_ID, "#/texts/5")
-        check = await tools.citations.verify_citation(_uri("#/texts/5"), "Figure 1")
+        check = await tools.citations.verify_citation(_uri("#/texts/5"), "Figure 1 — Processus")
         assert excerpt.citations[0].ref == "#/texts/5"
         assert check.valid is True
 

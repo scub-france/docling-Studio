@@ -11,7 +11,13 @@ import re
 
 import pytest
 
-from domain.anchors import AnchorParseError, DocumentAnchor, normalise_quote, quote_hash
+from domain.anchors import (
+    AnchorParseError,
+    DocumentAnchor,
+    find_anchors,
+    normalise_quote,
+    quote_hash,
+)
 from domain.element_reader import element_text, render_markdown, resolve, section_refs
 from domain.navigation import BoundingBox, estimate_tokens
 from domain.outline_builder import build_outline
@@ -58,6 +64,20 @@ class TestAnchorGrammar:
             DocumentAnchor.parse("oops")
 
 
+class TestAnchorsInProse:
+    def test_the_markup_a_sentence_wraps_an_anchor_in_is_not_part_of_it(self):
+        uri = "dstudio://doc/d-1@a-1#/texts/4"
+        found = find_anchors(f"Voir **{uri}**, «{uri}» et ({uri}).")
+        assert found == [uri]
+
+    def test_a_span_is_found_whole(self):
+        span = "dstudio://doc/d-1@a-1#/texts/2..#/texts/3"
+        assert find_anchors(f"Cité : {span}.") == [span]
+
+    def test_a_near_miss_is_kept_so_that_it_fails_parsing(self):
+        assert find_anchors("dstudio://doc/d-1#/texts/4.") == ["dstudio://doc/d-1#/texts/4"]
+
+
 class TestQuoteHashing:
     def test_is_insensitive_to_whitespace_reflow(self):
         assert quote_hash("le préavis\n  est de trois mois") == quote_hash(
@@ -69,6 +89,15 @@ class TestQuoteHashing:
 
     def test_normalisation_strips_and_collapses(self):
         assert normalise_quote("  a \n\t b  ") == "a b"
+
+    def test_typography_a_model_rewrites_is_not_drift(self):
+        # Curly apostrophe, guillemets, em dash, ligature, soft hyphen.
+        pdf = "le «\u00a0préavis\u00a0» de l\u2019article — la ﬁn de rési\u00adliation"
+        model = 'le "préavis" de l\'article - la fin de résiliation'
+        assert normalise_quote(pdf) == normalise_quote(model)
+
+    def test_a_table_row_is_compared_without_its_pipes(self):
+        assert normalise_quote("| Faute grave | Aucun |") == "Faute grave Aucun"
 
     def test_estimate_tokens_is_never_zero_for_text(self):
         assert estimate_tokens("") == 0
