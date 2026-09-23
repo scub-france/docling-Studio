@@ -18,6 +18,11 @@ def _parse_iso(value: str | None) -> datetime | None:
     return parsed
 
 
+def _escape_like(text: str) -> str:
+    """Make `%`, `_` and the escape itself match literally in a LIKE pattern."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _row_to_document(row) -> Document:
     created = row["created_at"]
     if isinstance(created, str):
@@ -71,12 +76,22 @@ class SqliteDocumentRepository:
             )
             await db.commit()
 
-    async def find_all(self, *, limit: int = 200, offset: int = 0) -> list[Document]:
-        """Return documents ordered by creation date (newest first)."""
+    async def find_all(
+        self, *, limit: int = 200, offset: int = 0, filename_like: str | None = None
+    ) -> list[Document]:
+        """Return documents ordered by creation date (newest first).
+
+        `filename_like` keeps those whose filename contains it, case-folded
+        (ASCII only — SQLite's `lower`).
+        """
+        where, params = "", ()
+        if filename_like:
+            where = r"WHERE lower(filename) LIKE ? ESCAPE '\' "
+            params = (f"%{_escape_like(filename_like.lower())}%",)
         async with get_connection() as db:
             cursor = await db.execute(
-                "SELECT * FROM documents ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset),
+                f"SELECT * FROM documents {where}ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset),
             )
             rows = await cursor.fetchall()
             return [_row_to_document(r) for r in rows]

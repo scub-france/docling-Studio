@@ -13,6 +13,7 @@ one: entries, and the source JSON those entries were built from.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections import OrderedDict
@@ -23,7 +24,7 @@ from domain.parse_index import build_index
 from services.navigation_errors import DocumentNotFoundError, NoParseError
 
 if TYPE_CHECKING:
-    from domain.models import AnalysisJob, Document
+    from domain.models import Document
     from domain.parse_index import DocumentIndex
     from domain.ports import AnalysisRepository, DocumentRepository, DocumentTreeReader
     from services.navigation_config import NavigationConfig
@@ -36,12 +37,8 @@ class LoadedParse:
     """A document, the parse being read, and its navigable index."""
 
     document: Document
-    job: AnalysisJob
+    version_id: str
     index: DocumentIndex
-
-    @property
-    def version_id(self) -> str:
-        return self.job.id
 
 
 class ParseLoader:
@@ -83,42 +80,45 @@ class ParseLoader:
             raise DocumentNotFoundError(f"Document not found: {document_id}")
 
         if version_id:
-            job = await self._analyses.find_by_id(version_id)
-            if job is None or job.document_id != document_id:
+            if await self._analyses.parsed_document_id(version_id) != document_id:
                 raise NoParseError(
-                    f"Version {version_id} does not belong to document {document_id}.",
+                    f"Version {version_id} is not a parse of document {document_id}.",
                     http_status=404,
                 )
         else:
-            job = await self._analyses.find_latest_completed_by_document(document_id)
+            version_id = (await self._analyses.latest_parsed_ids([document_id])).get(document_id)
+            if version_id is None:
+                raise NoParseError(
+                    f"Document {document_id} has no parsed content to navigate yet. "
+                    "Run an analysis in Docling Studio first."
+                )
 
-        if job is None or not job.document_json:
-            raise NoParseError(
-                f"Document {document_id} has no parsed content to navigate yet. "
-                "Run an analysis in Docling Studio first."
-            )
+        index = await self._index_for(version_id)
+        return LoadedParse(document=doc, version_id=version_id, index=index)
 
-        return LoadedParse(document=doc, job=job, index=self._index_for(job))
-
-    def _index_for(self, job: AnalysisJob) -> DocumentIndex:
-        cached = self._cache.get(job.id)
+    async def _index_for(self, version_id: str) -> DocumentIndex:
+        cached = self._cache.get(version_id)
         if cached is not None:
-            self._cache.move_to_end(job.id)
+            self._cache.move_to_end(version_id)
             return cached[0]
 
-        raw = job.document_json or "{}"
+        # Only a miss reads the stored JSON — the one heavy column — and the
+        # parse is CPU work, kept off the event loop.
+        raw = await self._analyses.parse_json(version_id) or "{}"
+        index = await asyncio.to_thread(self._build, version_id, raw)
+        self._cache[version_id] = (index, len(raw))
+        self._evict()
+        return index
+
+    def _build(self, version_id: str, raw: str) -> DocumentIndex:
         try:
             doc_data = json.loads(raw)
         except json.JSONDecodeError as exc:
-            logger.exception("Invalid document_json for analysis %s", job.id)
+            logger.exception("Invalid document_json for analysis %s", version_id)
             raise NoParseError(
-                f"The stored parse for version {job.id} is unreadable.", http_status=500
+                f"The stored parse for version {version_id} is unreadable.", http_status=500
             ) from exc
-
-        index = build_index(doc_data, self._tree)
-        self._cache[job.id] = (index, len(raw))
-        self._evict()
-        return index
+        return build_index(doc_data, self._tree)
 
     def _evict(self) -> None:
         """Drop least-recently-used entries until both bounds hold.

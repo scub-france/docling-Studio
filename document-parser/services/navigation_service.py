@@ -70,43 +70,30 @@ class NavigationService:
         query: str | None = None,
         limit: int = 20,
     ) -> DocumentSearch:
-        """List documents, optionally filtered by a filename substring.
+        """List documents, newest first, optionally filtered by a filename substring.
 
-        The filter runs service-side over the most recent `max_documents`
-        rows: the repository has no search predicate today, and adding one is
-        a persistence change this lot deliberately does not make. The window
-        is reported back (`scanned`, `scan_limit`, `truncated`) rather than
-        left implicit — otherwise an empty result reads as "no such document"
-        when it means "not among the newest 50".
+        Two queries whatever the count: the documents, then the latest parse
+        id of each — never a whole analysis row.
         """
         limit = max(1, min(limit, self._config.max_documents))
-        scan_limit = self._config.max_documents
-        docs = await self._parses.documents.find_all(limit=scan_limit)
-        scanned = len(docs)
-
-        needle = (query or "").strip().lower()
-        if needle:
-            docs = [doc for doc in docs if needle in (doc.filename or "").lower()]
-
-        summaries: list[DocumentSummary] = []
-        for doc in docs[:limit]:
-            job = await self._parses.analyses.find_latest_completed_by_document(doc.id)
-            summaries.append(
-                DocumentSummary(
-                    document_id=doc.id,
-                    filename=doc.filename,
-                    lifecycle_state=str(doc.lifecycle_state),
-                    page_count=doc.page_count,
-                    version_id=job.id if job and job.document_json else None,
-                    created_at=doc.created_at.isoformat() if doc.created_at else None,
-                )
-            )
-        return DocumentSearch(
-            documents=summaries,
-            scanned=scanned,
-            scan_limit=scan_limit,
-            truncated=scanned >= scan_limit,
+        docs = await self._parses.documents.find_all(
+            limit=limit + 1, filename_like=(query or "").strip() or None
         )
+        truncated = len(docs) > limit
+        docs = docs[:limit]
+        latest = await self._parses.analyses.latest_parsed_ids([doc.id for doc in docs])
+        summaries = [
+            DocumentSummary(
+                document_id=doc.id,
+                filename=doc.filename,
+                lifecycle_state=str(doc.lifecycle_state),
+                page_count=doc.page_count,
+                version_id=latest.get(doc.id),
+                created_at=doc.created_at.isoformat() if doc.created_at else None,
+            )
+            for doc in docs
+        ]
+        return DocumentSearch(documents=summaries, truncated=truncated)
 
     async def get_outline(
         self,

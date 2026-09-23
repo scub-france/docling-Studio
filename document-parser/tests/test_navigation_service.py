@@ -8,8 +8,6 @@ same ones the domain tests assert.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
 import pytest
 
 from domain.navigation import CitationStatus
@@ -71,16 +69,13 @@ class TestFindDocuments:
         search = await service.find_documents(limit=99)
         assert len(search.documents) == 3
 
-    async def test_reports_the_search_window_so_empty_is_not_ambiguous(self):
-        # A filled window means "there may be older documents I did not look
-        # at" — an empty result then is not proof the document is absent.
+    async def test_more_matches_than_the_limit_is_truncated(self):
         docs = [_document(f"doc-{i}", f"f{i}.pdf") for i in range(3)]
-        service = _service(documents=docs, config=NavigationConfig(max_documents=3))
-        search = await service.find_documents(query="nothing-matches")
-        assert search.documents == []
-        assert (search.scanned, search.scan_limit, search.truncated) == (3, 3, True)
+        search = await _service(documents=docs).find_documents(limit=2)
+        assert len(search.documents) == 2
+        assert search.truncated is True
 
-    async def test_a_partial_window_is_not_flagged_as_truncated(self):
+    async def test_every_match_returned_is_not_truncated(self):
         search = await _service().find_documents()
         assert search.truncated is False
 
@@ -108,7 +103,7 @@ class TestGetOutline:
             await _service(job=None).get_outline(DOC_ID)
 
     async def test_version_belonging_to_another_document_is_refused(self):
-        with pytest.raises(NoParseError, match="does not belong"):
+        with pytest.raises(NoParseError, match="is not a parse of"):
             await _service().get_outline(DOC_ID, version_id="other-analysis")
 
     async def test_parse_is_indexed_once_and_reused(self):
@@ -243,10 +238,9 @@ class TestVerifyCitation:
             await tools.citations.verify_citation(_uri(PREAVIS_REF), "trois mois " * 40)
 
     async def test_flags_an_anchor_pinned_to_a_superseded_parse(self):
-        tools = _tools()
-        tools.citations._parses.analyses.find_latest_completed_by_document = AsyncMock(
-            return_value=_job(job_id="an-2")
-        )
+        jobs = [_job()]
+        tools = _tools(jobs=jobs)
+        jobs.append(_job(job_id="an-2"))
         check = await tools.citations.verify_citation(_uri(PREAVIS_REF), "trois mois")
         # Still valid — the quote is there — but the anchor is not the current
         # parse, and that is a distinct status, not a note buried in prose.
