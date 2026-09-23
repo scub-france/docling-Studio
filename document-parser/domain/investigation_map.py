@@ -86,12 +86,13 @@ def build_navigation_map(
     flat = _flatten(outline.nodes)
     published = {node.ref for node, _ in flat}
     ranges = _heading_ranges(index) if outline.mode == "sections" else []
+    pinned = (investigation.document_id, investigation.version_id)
 
     status: dict[str, str] = {}
     steps: dict[str, list[str]] = {}
     for step in investigation.steps:
         for attempt in step.attempts:
-            target = _target(attempt, index, published, ranges, mode=outline.mode)
+            target = _target(attempt, index, published, ranges, mode=outline.mode, pinned=pinned)
             if target is None:
                 continue
             status[target] = _stronger(status.get(target), _status_of(attempt))
@@ -151,9 +152,10 @@ def _target(
     ranges: list[tuple[str, int, int]],
     *,
     mode: str,
+    pinned: tuple[str, str],
 ) -> str | None:
     """The published outline node this attempt belongs to, if any."""
-    ref = _ref_of(attempt.citation_uri)
+    ref = _ref_of(attempt.citation_uri, pinned)
     if ref is None:
         return None
     for candidate in containing_chain(ref, index, ranges, mode=mode):
@@ -162,18 +164,22 @@ def _target(
     return None
 
 
-def _ref_of(uri: str) -> str | None:
-    """The ref of an anchor, or None when it never was one.
+def _ref_of(uri: str, pinned: tuple[str, str]) -> str | None:
+    """The ref of an anchor into the pinned `(document_id, version_id)`, or None.
 
-    A `bad_anchor` attempt has nowhere to land on the map by definition; it
-    still appears in `reasoning[]`, which is where a malformed uri belongs.
+    A `bad_anchor` attempt has nowhere to land on the map by definition, and
+    neither has an anchor into another document or another parse: the same
+    ref names other text there. Both still appear in `reasoning[]`.
     """
     from domain.anchors import AnchorParseError, DocumentAnchor
 
     try:
-        return DocumentAnchor.parse(uri).ref
+        anchor = DocumentAnchor.parse(uri)
     except AnchorParseError:
         return None
+    if (anchor.document_id, anchor.version_id) != pinned:
+        return None
+    return anchor.ref
 
 
 def _status_of(attempt: Attempt) -> str:

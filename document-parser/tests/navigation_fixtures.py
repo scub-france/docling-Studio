@@ -393,7 +393,8 @@ def make_document_tools(
 
     `jobs` takes several analyses of the same document — the last one is the
     latest completed parse, the others are only reachable by pinning their id,
-    which is what the anchor grammar exists for.
+    which is what the anchor grammar exists for. A list is read live, so a test
+    re-parses the document by appending to it.
     """
     from unittest.mock import AsyncMock
 
@@ -408,14 +409,13 @@ def make_document_tools(
 
     docs = documents if documents is not None else [make_document()]
     if jobs is not None:
-        analyses = list(jobs)
+        analyses = jobs
     elif job is _UNSET:
         analyses = [make_job()]
     elif job is None:
         analyses = []
     else:
         analyses = [job]
-    latest = analyses[-1] if analyses else None
 
     document_repo = AsyncMock()
     document_repo.find_all = AsyncMock(return_value=docs)
@@ -423,7 +423,9 @@ def make_document_tools(
         side_effect=lambda doc_id: next((d for d in docs if d.id == doc_id), None)
     )
     analysis_repo = AsyncMock()
-    analysis_repo.find_latest_completed_by_document = AsyncMock(return_value=latest)
+    analysis_repo.find_latest_completed_by_document = AsyncMock(
+        side_effect=lambda _doc_id: analyses[-1] if analyses else None
+    )
     analysis_repo.find_by_id = AsyncMock(
         side_effect=lambda job_id: next((j for j in analyses if j.id == job_id), None)
     )
