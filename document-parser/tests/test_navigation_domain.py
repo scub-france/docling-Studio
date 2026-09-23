@@ -31,6 +31,51 @@ def _index(payload=None):
     return build_index(payload or SECTIONED, DoclingTreeReader())
 
 
+def _relabelled(**labels):
+    """SECTIONED with some texts relabelled, e.g. `texts_0="text"`."""
+    import copy
+
+    payload = copy.deepcopy(SECTIONED)
+    for key, label in labels.items():
+        payload["texts"][int(key.split("_")[1])]["label"] = label
+    return payload
+
+
+def _headings(*levels: int):
+    """A flat document of section headers at `levels`, one paragraph under each."""
+    texts, children = [], []
+    for position, level in enumerate(levels):
+        texts.append(
+            {
+                "self_ref": f"#/texts/{2 * position}",
+                "label": "section_header",
+                "level": level,
+                "text": f"H{position}",
+                "prov": [],
+            }
+        )
+        texts.append(
+            {
+                "self_ref": f"#/texts/{2 * position + 1}",
+                "label": "text",
+                "text": f"Corps {position}.",
+                "prov": [],
+            }
+        )
+    children = [{"$ref": t["self_ref"]} for t in texts]
+    return {
+        "schema_name": "DoclingDocument",
+        "version": "1.0.0",
+        "name": "h",
+        "pages": {},
+        "body": {"self_ref": "#/body", "children": children},
+        "texts": texts,
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+    }
+
+
 class TestAnchorGrammar:
     def test_round_trips(self):
         anchor = DocumentAnchor("doc-1", "an-7", "#/texts/91")
@@ -192,6 +237,31 @@ class TestOutline:
         assert chapter.title == "Chapitre A"
         assert [c.title for c in chapter.children] == ["A.1 Sous-section"]
         assert chapter.child_count == 1
+
+    def test_child_count_agrees_with_children_across_skipped_levels(self):
+        draft = build_outline(_index(_headings(1, 3, 3, 2, 3)), depth=6)
+        top = draft.nodes[0]
+        assert [c.title for c in top.children] == ["H1", "H2", "H3"]
+        assert top.child_count == len(top.children)
+
+    def test_text_before_the_first_heading_gets_a_node(self):
+        # A contract names its parties before its first article.
+        draft = build_outline(_index(_relabelled(texts_0="text")), depth=2)
+        preamble = draft.nodes[0]
+        assert (preamble.kind, preamble.ref) == ("preamble", "#/texts/0")
+        assert preamble.title == "Contrat de prestation"
+        assert draft.nodes[1].title == "Article 12 — Résiliation"
+
+    def test_a_preamble_of_several_elements_is_one_span(self):
+        index = _index(_relabelled(texts_0="text", texts_1="text"))
+        preamble = build_outline(index, depth=2).nodes[0]
+        assert preamble.ref == "#/texts/0..#/texts/2"
+        assert section_refs(index, preamble.ref) == ["#/texts/0", "#/texts/1", "#/texts/2"]
+
+    def test_a_single_heading_falls_back_to_pages(self):
+        # One heading covering the whole document is a one-node map.
+        single = _relabelled(texts_0="text", texts_1="text", texts_3="text")
+        assert build_outline(_index(single), depth=2).mode == "pages"
 
     def test_falls_back_to_pages_without_headings(self):
         draft = build_outline(_index(FLAT), depth=2)

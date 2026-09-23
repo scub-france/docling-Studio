@@ -111,6 +111,16 @@ class TestContainment:
         nodes, _ = await project(investigation([attempt(span)]))
         assert status_of(nodes)[PREAVIS_SECTION] == STATUS_KEPT
 
+    async def test_an_attempt_before_the_first_heading_lands_on_the_preamble(self):
+        import copy
+
+        from tests.navigation_fixtures import SECTIONED
+
+        payload = copy.deepcopy(SECTIONED)
+        payload["texts"][0]["label"] = "text"  # the title becomes preamble text
+        nodes, _ = await project(investigation([attempt(anchor_uri("#/texts/0"))]), payload=payload)
+        assert status_of(nodes) == {"#/texts/0": STATUS_KEPT}
+
     async def test_a_malformed_anchor_lands_nowhere(self):
         record = investigation([attempt("not-an-anchor", outcome=AttemptOutcome.BAD_ANCHOR)])
         nodes, _ = await project(record)
