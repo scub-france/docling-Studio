@@ -82,7 +82,8 @@ jobs:
       - name: Backend tests
         run: |
           cd document-parser
-          uv sync --frozen --group dev
+          # With `mcp`, or the MCP adapter tests skip on import (see ci.yml).
+          uv sync --frozen --group dev --group mcp
           uv run pytest tests/ -v --tb=short 2>&1 | tee /tmp/backend-tests.txt
 
       - name: Frontend tests
@@ -121,7 +122,7 @@ jobs:
 
       - name: Install deps
         run: |
-          cd document-parser && uv sync --frozen && uv pip install --python .venv/bin/python pip-audit
+          cd document-parser && uv sync --frozen --group mcp && uv pip install --python .venv/bin/python pip-audit
           cd ../frontend && npm ci
 
       - name: Python audit
