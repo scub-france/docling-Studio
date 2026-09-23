@@ -591,11 +591,18 @@
   // `deep_link` is a bare path (`/docs/…`) unless the server was started with
   // MCP_STUDIO_BASE_URL. A host has no base to resolve that against, so
   // `ui/open-link` would do nothing: offer the button only when the link can
-  // actually be opened, and say why when it cannot.
-  const isAbsolute = (url) => /^[a-z][a-z0-9+.-]*:\/\//i.test(String(url || ""));
+  // actually be opened, and say why when it cannot. http(s) only: the host
+  // opens whatever it is handed.
+  const isAbsolute = (url) => /^https?:\/\//i.test(String(url || ""));
   // Grouped the way the rest of the product writes numbers. A narrow
-  // no-break space, so a five-figure tally never wraps mid-number.
-  const num = (value) => String(value ?? "").replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+  // no-break space, so a five-figure tally never wraps mid-number. Coerced
+  // first, because the result lands in markup unescaped.
+  const num = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? String(number).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f")
+      : "—";
+  };
   const shortHash = (h) => {
     const hex = String(h || "").replace(/^sha256:/, "");
     return hex ? "sha256:" + hex.slice(0, 12) + "…" : "—";
@@ -1061,7 +1068,7 @@
     // roughly where it will sit — so the page does not jump size under the
     // reader when it arrives.
     const provisional = enlarged ? "" : " provisional";
-    const width = enlarged ? `${img.width}px` : "860px";
+    const width = enlarged ? `${Number(img.width) || 860}px` : "860px";
     lens.querySelector("#lens-stage").innerHTML =
       `<div class="lens-page${provisional}" style="width:${width};max-width:100%">` +
       `<img alt="Page ${esc(img.page)}, le passage cité surligné" src="${esc(
@@ -1197,6 +1204,10 @@
   }
 
   window.addEventListener("message", (event) => {
+    // Only the host frame speaks for the host. Another app on the same page
+    // can reach this window too, and would otherwise be rendered as a
+    // citation or answer this view's own calls.
+    if (event.source !== window.parent) return;
     const data = event.data;
     if (settle(data)) return;
 
