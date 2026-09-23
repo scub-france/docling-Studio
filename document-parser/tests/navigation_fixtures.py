@@ -561,7 +561,7 @@ class FakeInvestigationRepository:
 async def open_planned_investigation(tools, *, questions=("Quel est le préavis ?",)):
     """Open an investigation on the fixture document and plan `questions`."""
     investigation, _ = await tools.investigations.open(
-        document="contrat", question="Comment résilier ?"
+        document_id=DOC_ID, question="Comment résilier ?"
     )
     planned = await tools.investigations.plan(
         investigation.id, [(question, "because") for question in questions]

@@ -79,16 +79,15 @@ def register_investigation_tools(
             "Start a recorded investigation of one document and return its map. Use it "
             "when a question needs several passages: the server then remembers what you "
             "tried, checks each ref, and bounds how many times a step may be retried. "
-            "Resolves `document` to exactly one document — it refuses when several match, "
-            "so ask which before starting. The parse is pinned for the whole "
+            "Takes the `document_id` from find_documents. The parse is pinned for the whole "
             "investigation, so every ref stays comparable. Returns the outline too: plan "
             "against it rather than paying a second call to see it."
         ),
     )
-    async def open_investigation(document: str, question: str) -> InvestigationOpened:
+    async def open_investigation(document_id: str, question: str) -> InvestigationOpened:
         async with ToolErrors():
             service = tools().investigations
-            investigation, outline = await service.open(document=document, question=question)
+            investigation, outline = await service.open(document_id=document_id, question=question)
         return opened_result(
             investigation,
             outline,
