@@ -14,8 +14,6 @@ from mcp import Client
 
 from mcp_adapter import build_mcp_server
 from tests.navigation_fixtures import (
-    PREAVIS_REF,
-    anchor_uri,
     make_document_tools,
 )
 
@@ -42,7 +40,7 @@ class TestSurface:
     async def test_lists_the_procedures(self):
         async with _client() as client:
             prompts = {p.name: p for p in (await client.list_prompts()).prompts}
-        assert set(prompts) == {"cite_answer", "extract_table", "investigate"}
+        assert set(prompts) == {"cite_answer", "investigate"}
         assert prompts["cite_answer"].title == "Answer with verified citations"
 
     async def test_investigate_is_withheld_when_its_tools_are_not_published(self):
@@ -50,7 +48,7 @@ class TestSurface:
         one the agent cannot execute — worse than one it never sees."""
         async with _client(investigations=False) as client:
             prompts = {p.name for p in (await client.list_prompts()).prompts}
-        assert prompts == {"cite_answer", "extract_table"}
+        assert prompts == {"cite_answer"}
 
     async def test_arguments_are_described_for_the_person_typing_them(self):
         async with _client() as client:
@@ -66,7 +64,7 @@ class TestSurface:
     async def test_prompts_do_not_depend_on_the_ui_extension(self):
         # They drive the text tools; enabling a UI is orthogonal.
         async with _client(apps=True) as client:
-            assert len((await client.list_prompts()).prompts) == 3
+            assert len((await client.list_prompts()).prompts) == 2
 
     async def test_a_missing_argument_is_refused(self):
         with pytest.raises(Exception):  # noqa: B017 — the SDK wraps it as a protocol error
@@ -115,19 +113,3 @@ class TestCiteAnswer:
     async def test_evidence_is_read_leniently(self, value: str):
         text = await _render("cite_answer", {"document": "d", "question": "q", "evidence": value})
         assert ("show_citation" in text) is (value.strip().lower() == "images")
-
-
-class TestExtractTable:
-    async def test_targets_the_element_not_its_section(self):
-        text = await _render("extract_table", {"uri": anchor_uri(PREAVIS_REF)})
-        assert 'include="self"' in text
-        assert anchor_uri(PREAVIS_REF) in text
-
-    async def test_forbids_tidying_the_table(self):
-        text = await _render("extract_table", {"uri": anchor_uri(PREAVIS_REF)})
-        for rule in ("re-align", "re-order", "round numbers", "empty"):
-            assert rule in text, rule
-
-    async def test_handles_being_pointed_at_something_else(self):
-        text = await _render("extract_table", {"uri": anchor_uri(PREAVIS_REF)})
-        assert "does not point at a table" in text

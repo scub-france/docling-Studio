@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from mcp.server.caching import CACHEABLE_METHODS, CacheHint
 from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from mcp_adapter.apps import build_apps_extension
@@ -33,12 +32,8 @@ from mcp_adapter.investigation_tools import (
 from mcp_adapter.investigation_tools import (
     register_investigation_tools,
 )
-from mcp_adapter.ledger import Ledger
 from mcp_adapter.prompts import register_prompts
 from mcp_adapter.tool_errors import ToolErrors, parse_anchor
-from mcp_adapter.unshown import UnshownInvestigations
-from mcp_adapter.usage import DESCRIPTION as USAGE_DESCRIPTION
-from mcp_adapter.usage import RECIPE
 from mcp_adapter.wire import (
     UNTRUSTED_NOTE,
     DocumentSearchResult,
@@ -67,11 +62,10 @@ Docling Studio serves documents that have been parsed by Docling — their struc
 their text, and the page coordinates of every element.
 
 Work in this order:
-  0. how_to_use      — no arguments. The same protocol as a callable, with a worked example. Reach for it if a call has just failed, or skip it if none has.
   1. find_documents  — locate the document, keep its document_id.
   2. get_outline     — read the map before any text. Each entry carries est_tokens, \
 so you can choose what to read instead of paying to find out.
-  3. read_element    — read one entry by its uri. Responses are budgeted; when \
+  3. read_element    — read one entry by its ref. Responses are budgeted; when \
 `truncated` is true, call again with `cursor=next_cursor`.
   4. verify_citation — before you publish a quote, check it, using the uri of the \
 citation you are quoting. The server, not you, is the source of truth for what the \
@@ -101,9 +95,7 @@ def build_mcp_server(
     version: str = "",
     apps: bool = True,
     cache_ttl_seconds: int = 0,
-    inline_citation_image: bool = False,
     investigations: bool = True,
-    single_client: bool = True,
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -112,34 +104,8 @@ def build_mcp_server(
     wired anything, so the server is constructed at import time and reaches
     for the container on each tool call. `tools` raises when the app is not
     wired yet, which surfaces as a tool error rather than an import crash.
-
-    `single_client` is true for stdio, where the process serves one
-    conversation. The stateless HTTP mount answers every caller from one
-    server object and passes false: nothing about one conversation is kept.
     """
-    # Every tool result passes through it, and the citation viewer reads it
-    # back, so a card can say what the surface has cost so far rather than
-    # only what it cost itself.
-    ledger = Ledger()
-    # Only when both the journal and its viewer exist: without a viewer there
-    # is nothing to redirect show_citation to, and without the journal there
-    # is no close to owe a showing (see mcp_adapter/unshown.py). And only for
-    # one client: shared, one conversation's debt would refuse another's
-    # citations and hand it the investigation id.
-    unshown = UnshownInvestigations() if (apps and investigations and single_client) else None
-    extensions = (
-        [
-            build_apps_extension(
-                tools,
-                ledger,
-                inline_image=inline_citation_image,
-                investigations=investigations,
-                unshown=unshown,
-            )
-        ]
-        if apps
-        else None
-    )
+    extensions = [build_apps_extension(tools, investigations=investigations)] if apps else None
     server = MCPServer(
         name=name,
         version=version,
@@ -157,14 +123,7 @@ def build_mcp_server(
         # #329 — the journal. Off leaves the four read-only tools of #327
         # byte-identical to what they were. `viewer` tracks `apps`: that is
         # the flag `show_investigation`'s registration follows.
-        register_investigation_tools(server, tools, ledger, viewer=apps, unshown=unshown)
-
-    # First in declaration order, so it is first in the list a model reads.
-    # No arguments: the one call shape a small model cannot get wrong, and the
-    # only way out of the loop where it fails a call it cannot yet spell.
-    @server.tool(annotations=_READ_ONLY, description=USAGE_DESCRIPTION, structured_output=False)
-    async def how_to_use() -> str:
-        return ledger.record(RECIPE)
+        register_investigation_tools(server, tools, viewer=apps)
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -181,7 +140,7 @@ def build_mcp_server(
     async def find_documents(query: str | None = None, limit: int = 20) -> DocumentSearchResult:
         async with ToolErrors():
             search = await tools().navigation.find_documents(query=query, limit=limit)
-        return ledger.record(search_result(search))
+        return search_result(search)
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -204,14 +163,13 @@ def build_mcp_server(
             outline = await tools().navigation.get_outline(
                 document_id, version_id=version_id, depth=depth
             )
-        return ledger.record(outline_result(outline))
+        return outline_result(outline)
 
     @server.tool(
         annotations=_READ_ONLY,
         description=(
-            "Read the text of one entry. Address it either by `ref` (from a "
-            "get_outline entry) together with the `document_id` that outline "
-            "reported, or by the `uri` of a citation you already hold. "
+            "Read the text of one entry: its `ref` (from a get_outline entry) with "
+            "the `document_id` that outline reported. "
             "`include='section'` (default) reads the entry and everything under "
             "it; `include='self'` reads only that element. The text comes back "
             "in `content`; `citations[]` carries one anchor per element read, "
@@ -227,23 +185,13 @@ def build_mcp_server(
         ),
     )
     async def read_element(
-        uri: str | None = None,
-        document_id: str | None = None,
-        ref: str | None = None,
+        document_id: str,
+        ref: str,
         version_id: str | None = None,
         include: Literal["section", "self"] = "section",
         max_tokens: int | None = None,
         cursor: str | None = None,
     ) -> ExcerptResult:
-        if uri:
-            anchor = parse_anchor(uri)
-            document_id, ref, version_id = anchor.document_id, anchor.ref, anchor.version_id
-        elif not (document_id and ref):
-            raise ToolError(
-                "read_element needs either `uri` (from a citation) or `document_id` + `ref` "
-                "(from a get_outline entry and the document_id that outline reported). Pass "
-                "back values you received — never invent a ref."
-            )
         async with ToolErrors():
             excerpt = await tools().navigation.read_element(
                 document_id,
@@ -253,7 +201,7 @@ def build_mcp_server(
                 max_tokens=max_tokens,
                 cursor=cursor,
             )
-        return ledger.record(excerpt_result(excerpt))
+        return excerpt_result(excerpt)
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -275,7 +223,7 @@ def build_mcp_server(
         parse_anchor(uri)
         async with ToolErrors():
             check = await tools().citations.verify_citation(uri, quote)
-        return ledger.record(verification_result(check))
+        return verification_result(check)
 
     return server
 

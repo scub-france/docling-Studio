@@ -69,20 +69,6 @@ class TestMountFlag:
         with TestClient(app) as client:
             assert "/mcp" not in client.get("/openapi.json").json()["paths"]
 
-    def test_the_mounted_server_keeps_no_per_conversation_state(self):
-        """Stateless HTTP serves every caller from one server object."""
-        from mcp_adapter import build_mcp_server
-
-        seen: dict = {}
-
-        def spy(tools, **options):
-            seen.update(options)
-            return build_mcp_server(tools, **options)
-
-        with patch("bootstrap.mcp_mount.build_mcp_server", spy):
-            _app(mcp_enabled=True)
-        assert seen["single_client"] is False
-
 
 class TestTransport:
     def test_serves_an_initialize_handshake_on_an_allowed_host(self):

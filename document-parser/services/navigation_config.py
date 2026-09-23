@@ -31,17 +31,13 @@ class NavigationConfig:
     index_cache_size: int = 4
     index_cache_max_chars: int = 24_000_000
 
-    # --- raster crops for the citation view ------------------------------
-    # The byte budget is the real constraint: a crop travels inside a tool
-    # result, and hosts stop hydrating an app when the result gets large, so
-    # the image is downscaled until it fits rather than sent at full size.
+    # --- page rasters for the viewers ------------------------------------
+    # A raster never travels in a tool result — a viewer fetches it through
+    # an app-only tool — so it is bounded by what a host will hold in an
+    # iframe: wide enough to read when enlarged, small enough that a dense
+    # scan cannot hand back megabytes. Halved from `image_dpi` until it fits.
     image_dpi: int = 150
-    image_max_bytes: int = 45_000
     image_min_dpi: int = 40
-    # A page raster never travels in a tool result — the view fetches it
-    # through an app-only tool — so it is bounded by what a host will hold in
-    # an iframe, not by what a model can afford. Wide enough for the expanded
-    # view to be readable, bounded so a dense scan cannot hand back megabytes.
     image_page_max_bytes: int = 400_000
 
 

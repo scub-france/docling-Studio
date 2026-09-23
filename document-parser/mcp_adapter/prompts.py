@@ -89,31 +89,6 @@ If the document does not answer the question, say so plainly and stop. Do not co
 the answer from what you already know: one unsourced sentence inside a sourced answer is \
 the failure this whole protocol exists to prevent."""
 
-    @server.prompt(
-        name="extract_table",
-        title="Extract a table verbatim",
-        description=(
-            "Return one table as markdown, unaltered, with the citation needed to "
-            "check it against the page."
-        ),
-    )
-    def extract_table(
-        uri: Annotated[str, Field(description="Anchor uri of the table, from get_outline.")],
-    ) -> str:
-        return f"""\
-Read the table at `{uri}` and give it back as markdown.
-
-1. `read_element(uri="{uri}", include="self")` — a table is one element, and reading its \
-section would pull in the surrounding prose for nothing.
-2. Return the markdown exactly as the server rendered it. Do not re-align columns, \
-re-order rows, round numbers, or repair a cell that looks wrong: a table is evidence, and \
-a corrected table is no longer evidence. An empty cell in the source stays empty.
-3. Close with the citation — `citations[0].uri` and its page. If a number matters enough \
-that someone will want to check it, `show_citation` on that uri puts the original in front \
-of them.
-
-If the uri does not point at a table, say what it does point at and stop."""
-
 
 def _register_investigate(server: MCPServer, *, apps: bool = True) -> None:
     """The decomposed question — the protocol the journal exists to hold.

@@ -463,16 +463,16 @@ class TestSpanCitations:
         citation = await _tools().citations.get_citation(_uri("#/texts/2..#/texts/3"))
         assert citation.deep_link.endswith("ref=%23%2Ftexts%2F2&page=1")
 
-    async def test_a_span_renders_as_one_crop_over_its_members(self, tmp_path):
+    async def test_a_span_is_boxed_as_one_region_over_its_members(self, tmp_path):
         pdf = tmp_path / "contrat.pdf"
         pdf.write_bytes(b"%PDF-1.4 not really a pdf")
         document = _document()
         document.storage_path = str(pdf)
         tools = _tools(documents=[document])
 
-        image = await tools.images.render(_uri("#/texts/2..#/texts/3"))
+        image = await tools.images.render_page(_uri("#/texts/2..#/texts/3"))
         assert image.page == 1
-        assert image.width > 0
+        assert image.highlight is not None
 
 
 class TestPageRasterBudget:

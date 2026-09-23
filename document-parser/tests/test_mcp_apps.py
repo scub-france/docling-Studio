@@ -46,10 +46,8 @@ def _png(width: int = 1275, height: int = 1650) -> bytes:
 
 
 @asynccontextmanager
-async def _client(tools, *, apps: bool = True, negotiates: bool = False, inline: bool = False):
-    server = build_mcp_server(
-        lambda: tools, version="test", apps=apps, inline_citation_image=inline
-    )
+async def _client(tools, *, apps: bool = True, negotiates: bool = False):
+    server = build_mcp_server(lambda: tools, version="test", apps=apps)
     async with Client(server, extensions=[APPS_CLIENT] if negotiates else None) as client:
         yield client
 
@@ -106,46 +104,37 @@ class TestPixelProjection:
         assert left < right and top < bottom
 
 
-class TestRenderCitation:
-    async def test_returns_a_data_uri_for_the_cited_region(self, tmp_path):
+class TestRenderPage:
+    async def test_returns_the_page_with_the_passage_boxed(self, tmp_path):
         tools = _service_with_file(tmp_path)
-        image = await tools.images.render(anchor_uri(PREAVIS_REF))
+        image = await tools.images.render_page(anchor_uri(PREAVIS_REF))
         assert image.data_uri.startswith("data:image/webp;base64,")
-        assert image.media_type == "image/webp"
         assert base64.b64decode(image.data_uri.split(",", 1)[1]) == image.png
         assert image.page == 1
-        assert image.width > 0 and image.height > 0
+        assert image.highlight is not None
 
     async def test_shrinks_until_it_fits_the_byte_budget(self, tmp_path):
         raster = FakeRasterizer()
         tools = _service_with_file(
             tmp_path,
-            config=NavigationConfig(image_max_bytes=10, image_dpi=150, image_min_dpi=40),
+            config=NavigationConfig(image_page_max_bytes=10, image_dpi=150, image_min_dpi=40),
             rasterizer=raster,
         )
-        image = await tools.images.render(anchor_uri(PREAVIS_REF))
+        image = await tools.images.render_page(anchor_uri(PREAVIS_REF), max_width=1600)
         # Unsatisfiable budget: it descends to the floor and stops there
         # rather than looping, and reports the dpi it settled on.
         assert image.dpi == 40
         assert [dpi for _, dpi in raster.renders] == [150, 75, 40]
 
-    async def test_an_element_without_provenance_is_refused_clearly(self, tmp_path):
-        tools = _service_with_file(tmp_path)
-        with pytest.raises(InvalidArgumentError, match="no page coordinates"):
-            # The document title in the fixture has provenance; a caption
-            # hanging off a picture does too. `#/pages/1` is a virtual ref and
-            # carries none.
-            await tools.images.render(anchor_uri("#/pages/1"))
-
     async def test_unknown_ref(self, tmp_path):
         tools = _service_with_file(tmp_path)
         with pytest.raises(RefNotFoundError):
-            await tools.images.render(anchor_uri("#/texts/999"))
+            await tools.images.render_page(anchor_uri("#/texts/999"))
 
     async def test_a_document_without_a_file_is_refused(self):
         tools = make_document_tools()  # storage_path is empty
         with pytest.raises(InvalidArgumentError, match="no stored file"):
-            await tools.images.render(anchor_uri(PREAVIS_REF))
+            await tools.images.render_page(anchor_uri(PREAVIS_REF))
 
 
 class TestAppsSurface:
@@ -187,9 +176,7 @@ class TestGracefulDegradation:
             result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
         view = result.structured_content
         assert view["quote"]
-        assert view["page_image"] is None
-        # Not merely omitted from the payload — never rendered at all, so the
-        # bytes cost nothing on a host that could not have shown them.
+        # The card fetches its own page raster: the model's call renders nothing.
         assert raster.renders == []
 
     async def test_a_span_anchor_shows_the_whole_passage(self, tmp_path):
@@ -228,46 +215,6 @@ class TestGracefulDegradation:
             result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
         view = result.structured_content
         assert view["est_tokens"] == estimate_tokens(view["quote"])
-        # No image was rendered, so there is no weight to report — and the
-        # field says so rather than reporting zero.
-        assert view["image_bytes"] is None
-
-    async def test_the_page_image_is_weighed_in_bytes_not_tokens(self, tmp_path):
-        # How a host prices an image is the host's business; quoting a token
-        # figure for it would be inventing one. Only the escape hatch puts an
-        # image in this payload at all.
-        async with _client(_service_with_file(tmp_path), negotiates=True, inline=True) as client:
-            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
-        view = result.structured_content
-        assert view["image_bytes"] > 0
-        # The raster's own size, not the base64 it travels as.
-        assert view["image_bytes"] < len(view["page_image"])
-
-    async def test_the_card_reports_the_surface_total_not_just_its_own_cost(self, tmp_path):
-        # What a reader wants to know is whether the document work is getting
-        # expensive, which one citation's cost cannot answer. The tally counts
-        # every tool call on the server, this one included.
-        async with _client(_service_with_file(tmp_path), negotiates=False) as client:
-            await client.call_tool("find_documents", {})
-            await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
-            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
-        view = result.structured_content
-        assert view["total_calls"] == 3
-        assert view["total_est_tokens"] > view["est_tokens"]
-
-    async def test_a_failed_render_degrades_to_the_text_citation(self, tmp_path):
-        class BrokenRasterizer(FakeRasterizer):
-            def render_page(self, storage_path, *, page, dpi):
-                raise OSError("poppler is not installed")
-
-        tools = _service_with_file(tmp_path, rasterizer=BrokenRasterizer())
-        async with _client(tools, negotiates=True, inline=True) as client:
-            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
-        view = result.structured_content
-        assert result.is_error is False
-        assert view["quote"]
-        assert view["page_image"] is None
-        assert "poppler" in view["image_note"]
 
     async def test_a_failed_image_fetch_is_an_error_the_view_can_show(self, tmp_path):
         class BrokenRasterizer(FakeRasterizer):
@@ -290,21 +237,9 @@ class TestGracefulDegradation:
         #    binary data. Call show_citation instead"
         # `visibility: ["app"]` is what keeps this away from the model.
         async with _client(_service_with_file(tmp_path), negotiates=False) as client:
-            result = await client.call_tool(
-                "get_citation_image", {"uri": anchor_uri(PREAVIS_REF), "kind": "page"}
-            )
+            result = await client.call_tool("get_citation_image", {"uri": anchor_uri(PREAVIS_REF)})
         assert result.is_error is False
         assert result.structured_content["data_uri"].startswith("data:image/")
-
-    async def test_the_escape_hatch_works_through_a_proxy(self, tmp_path):
-        # MCP_INLINE_CITATION_IMAGE exists for a host where the app-only fetch
-        # does not work. Gating it on the negotiated capabilities made it dead
-        # over HTTP, where nothing ever negotiates.
-        async with _client(_service_with_file(tmp_path), negotiates=False, inline=True) as client:
-            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
-        view = result.structured_content
-        assert view["page_image"].startswith("data:image/")
-        assert view["image_bytes"] > 0
 
     async def test_the_payload_says_what_to_do_when_no_card_appears(self, tmp_path):
         # Two live runs on a host without MCP Apps ended the same way: a null
@@ -317,17 +252,6 @@ class TestGracefulDegradation:
         assert view["deep_link"]
         assert "deep_link" in view["next_step"]
         assert "get_citation_image" in view["next_step"]
-        # For the model, not for the card: image_note is rendered inside the
-        # view, and a card that prints "no card here" while being shown is
-        # worse than saying nothing.
-        assert view["image_note"] is None
-
-    async def test_the_steer_changes_when_the_raster_is_in_the_payload(self, tmp_path):
-        async with _client(_service_with_file(tmp_path), negotiates=False, inline=True) as client:
-            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
-        view = result.structured_content
-        assert "page_image" in view["next_step"]
-        assert "deep_link" in view["next_step"]
 
     async def test_a_malformed_anchor_is_still_a_tool_error(self, tmp_path):
         async with _client(_service_with_file(tmp_path)) as client:
@@ -347,11 +271,10 @@ class TestTemplate:
         assert CITATION_APP_HTML.lstrip().startswith("<!doctype html>")
         assert "</html>" in CITATION_APP_HTML
 
-    def test_the_view_asks_for_both_rasters_itself(self):
-        # Neither the crop nor the page thumbnail travels through the model.
+    def test_the_view_fetches_its_own_page_raster(self):
+        # The raster never travels through the model.
         assert 'name: "get_citation_image"' in CITATION_APP_HTML
-        assert 'kind: "page"' in CITATION_APP_HTML
-        assert "page_image" in CITATION_APP_HTML  # the escape hatch still renders
+        assert "page_image" not in CITATION_APP_HTML
 
     def test_loads_nothing_from_the_network(self):
         # The default MCP Apps CSP is `connect-src 'none'` with `img-src 'self'
@@ -363,7 +286,7 @@ class TestTemplate:
     def test_escapes_document_text_before_it_becomes_markup(self):
         assert "&amp;" in CITATION_APP_HTML and "&lt;" in CITATION_APP_HTML
         # Every interpolation of document-derived text goes through esc().
-        for field in ("view.uri", "view.page_image", "view.ref", "view.quote_hash"):
+        for field in ("view.uri", "view.ref", "view.quote_hash"):
             assert f"esc({field})" in CITATION_APP_HTML, field
 
     def test_the_quote_is_escaped_before_markdown_becomes_markup(self):

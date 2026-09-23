@@ -25,8 +25,7 @@ which is why it carries no extra field a reader could only see rendered.
 from __future__ import annotations
 
 import hashlib
-import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,11 +48,7 @@ from services.navigation_errors import NavigationServiceError
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from mcp_adapter.ledger import Ledger
-    from mcp_adapter.unshown import UnshownInvestigations
     from services.document_tools import DocumentTools
-
-logger = logging.getLogger(__name__)
 
 
 def _versioned_uri(name: str, html: str) -> str:
@@ -106,11 +101,6 @@ class CitationImageOut:
 class CitationView:
     """What the viewer renders — and what a text-only host reads instead.
 
-    `page_image` is a `data:` PNG of the page region the citation points at.
-    It is populated **only** for a host that negotiated MCP Apps: it is tens of
-    kilobytes, and on a host that cannot render it those bytes would land in
-    the model's context for nothing.
-
     `label`, `document_id`, `version_id` and `quote_hash` are the provenance
     the anchor already encodes, unpacked so the viewer does not have to parse
     a `dstudio://` uri to show where a passage comes from. `label` also drives
@@ -125,20 +115,8 @@ class CitationView:
     heuristic applied to the text alone: it prices neither the JSON envelope
     nor the image.
 
-    `image_bytes` is the page raster's size in bytes, not tokens, and is
-    reported separately for that reason: how an image is priced is the host's
-    business, and quoting a token figure for it would be inventing one.
-
-    `total_est_tokens` / `total_calls` are the running tally kept by `Ledger`,
-    whose scope is one server process — read its module docstring before
-    presenting either number as a per-conversation figure.
-
-    `next_step` is for the model; `image_note` is for the card, which renders
-    it. They are separate because the server cannot tell whether the host
-    mounted the viewer — `client_supports_apps` reads the connection, not the
-    UI, and answers no over stateless HTTP either way — so the steering has to
-    be true in both worlds and must not print "no card here" inside a card
-    that is being shown.
+    The page image is not here: the viewer fetches it through
+    `get_citation_image`, so the model never pays for a raster it cannot read.
     """
 
     uri: str
@@ -151,12 +129,7 @@ class CitationView:
     est_tokens: int
     page: int | None
     headings: list[str]
-    total_est_tokens: int = 0
-    total_calls: int = 0
     deep_link: str | None = None
-    page_image: str | None = None
-    image_bytes: int | None = None
-    image_note: str | None = None
     next_step: str | None = None
 
 
@@ -166,17 +139,14 @@ class InvestigationCard:
 
     Field for field the same record `get_investigation` returns — same
     `reasoning`, same `map`, same mappers — plus the three numbers a card
-    states and prose would have to recount: the step tally, the attempt
-    budget each step was allowed, and the surface total. A viewer that showed
+    states and prose would have to recount: the step tally and the attempt
+    budget each step was allowed. A viewer that showed
     something the text payload does not carry would be a second account of
     the investigation, and the two would drift.
 
     `max_attempts_per_step` is what lets the card draw a budget rather than a
     count: three marks with none of them kept says the document did not
     answer, which a bare "3 attempts" does not.
-
-    `total_est_tokens` / `total_calls` come from `Ledger`, whose scope is one
-    server process — the card says "on this server" for that reason.
     """
 
     investigation_id: str
@@ -193,17 +163,11 @@ class InvestigationCard:
     steps_pending: int
     attempts_kept: int
     max_attempts_per_step: int
-    total_est_tokens: int = 0
-    total_calls: int = 0
     answer: str | None = None
 
 
-# What to do when the card does not appear — stated on the payload, because
-# that is where a host without MCP Apps ends up. Two live runs on such a host
-# ended the same way: `page_image` came back null, nothing said why, and the
-# model went looking for the app-only raster instead of handing over the link
-# that already works. Phrased to hold whether or not a viewer mounted: the
-# server has no way to know.
+# What to do when the card does not appear. Phrased to hold whether or not a
+# viewer mounted: the server has no way to know.
 _NO_CARD = (
     "The page image is not in this payload — the citation viewer fetches it itself. If no "
     "card appeared for the reader, this host does not render one: give them `deep_link`, "
@@ -211,30 +175,16 @@ _NO_CARD = (
     "get_citation_image — it answers with binary you cannot read."
 )
 
-# The operator paid for the bytes (`MCP_INLINE_CITATION_IMAGE`), so the raster
-# is here; it is still not something a model reads.
-_INLINE_IMAGE = (
-    "The page raster is in `page_image`, a data URI for a viewer to render rather than "
-    "something you can read. Quote the text, and give the reader `deep_link` to see the "
-    "passage in Docling Studio."
-)
-
 
 def build_apps_extension(
     tools: Callable[[], DocumentTools],
-    ledger: Ledger,
     *,
-    inline_image: bool = False,
     investigations: bool = True,
-    unshown: UnshownInvestigations | None = None,
 ) -> Apps:
     """Build the Apps extension over the same lazily-resolved service.
 
     `investigations` follows `MCP_INVESTIGATION_ENABLED`: a viewer for a
     record the server does not keep would be a tool that always errors.
-    `unshown` is the display debt a close incurs: while it stands,
-    `show_citation` refuses the kept anchors and redirects to the record
-    (see mcp_adapter/unshown.py for why text steering was not enough).
     """
     apps = Apps()
 
@@ -274,32 +224,16 @@ def build_apps_extension(
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         description=citation_description,
     )
-    async def show_citation(uri: str, padding: int = 8) -> CitationView:
-        # The one hard rule on this tool: a passage kept by an investigation
-        # nobody has shown is refused, with the call to make instead. Three
-        # live runs proved the advisory versions of this sentence — in the
-        # prompt, in the close's next_step, in this tool's description — are
-        # followed sometimes; an error is followed.
-        if unshown is not None and (keeper := unshown.keeper_of(uri)):
-            raise ToolError(
-                "This passage was kept by an investigation the reader has not "
-                f'seen. Call show_investigation(investigation_id="{keeper}") '
-                "first — the whole record: the steps, every verdict, the "
-                "navigation tree. After that, show_citation is for the one "
-                "passage that is itself in dispute."
-            )
+    async def show_citation(uri: str) -> CitationView:
         # `get_citation` is the named use case for "what does this anchor
-        # point at". This used to call `verify_citation(uri, "")` and harvest
-        # the citation off its rejection branch — a dependency on the shape of
-        # an error path, which tightening that path would have broken.
+        # point at": no quote to check, just the citation.
         try:
             citation = await tools().citations.get_citation(uri)
         except AnchorParseError as exc:
             raise ToolError(str(exc)) from exc
         except NavigationServiceError as exc:
             raise ToolError(str(exc)) from exc
-
-        view = CitationView(
+        return CitationView(
             uri=citation.uri,
             ref=citation.ref,
             label=citation.label,
@@ -311,47 +245,8 @@ def build_apps_extension(
             page=citation.page,
             headings=[neutralise(h) for h in citation.headings],
             deep_link=citation.deep_link,
-        )
-
-        # Price this citation into the tally first, then read it back, so the
-        # figure the card shows includes the call the card is showing.
-        ledger.record(view)
-        usage = ledger.snapshot()
-        view = replace(
-            view,
-            total_est_tokens=usage.est_tokens,
-            total_calls=usage.calls,
-            # The default, and still right when the render below fails: there
-            # is no image in the payload either way.
             next_step=_NO_CARD,
         )
-
-        if not inline_image:
-            # The view fetches its own image through `get_citation_image`, an
-            # app-only tool. Sending it here put a base64 raster in the model's
-            # context — twice, since the SDK mirrors structured output as text —
-            # for 21 432 tokens a call on a picture no reader can read.
-            #
-            # `MCP_INLINE_CITATION_IMAGE` is the operator's escape hatch for a
-            # host where that fetch does not work. It used to sit behind
-            # `client_supports_apps` too, which made it dead over HTTP — the
-            # transport is stateless, so no client ever reads as apps-capable
-            # there. The flag is the operator's decision to pay for the bytes;
-            # it does not need a second opinion from the transport.
-            return view
-
-        try:
-            image = await tools().images.render(uri, padding=padding)
-        except NavigationServiceError as exc:
-            # A citation without provenance, or an unreadable source file, is
-            # not a failed tool call: the text is still the answer.
-            return _with_note(view, str(exc))
-        except Exception as exc:
-            logger.exception("Citation rendering failed for %s", uri)
-            return _with_note(view, f"The page could not be rendered ({exc}).")
-
-        view = replace(view, next_step=_INLINE_IMAGE)
-        return _with_image(view, image.data_uri, image.page, len(image.png))
 
     @apps.tool(
         resource_uri=CITATION_APP_URI,
@@ -360,51 +255,19 @@ def build_apps_extension(
         visibility=["app"],
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         description=(
-            "Internal — the citation viewer's own image fetch. Returns a raster "
-            "of a cited passage (`kind='crop'`) or of the page it sits on "
-            "(`kind='page'`, sized by `max_width`) as a data URI. Not for "
-            "reading: it answers with binary, and show_citation already carries "
-            "everything a reader needs."
+            "Internal — the citation viewer's own page fetch: a raster of the page a "
+            "cited passage sits on, sized by `max_width`, with the passage's box in "
+            "the image's own pixels, as a data URI. Not for reading."
         ),
     )
-    async def get_citation_image(
-        uri: str,
-        kind: str = "crop",
-        padding: int = 8,
-        max_width: int = 320,
-    ) -> CitationImageOut:
-        # No `client_supports_apps` gate. It used to be here, to keep a model
-        # from spending 21 432 tokens on a picture it cannot read, and it
-        # refused the one caller the tool exists for.
-        #
-        # Two independent reasons it had to go. It asks the wrong question:
-        # `client_supports_apps` reads the *connection's* negotiated
-        # capabilities, which are identical for a model-originated call and an
-        # app-originated one on the same session, so it can never mean "only
-        # the view may call this". And over this server's HTTP transport it
-        # can only ever answer no — see `bootstrap/mcp_mount.py`, where
-        # `stateless_http=True` makes the SDK build a fresh connection per
-        # request with `client_capabilities=None`.
-        #
-        # What keeps this away from the model is `visibility: ["app"]`: the
-        # spec requires a host to omit such a tool from the agent's tool list
-        # (apps.mdx: "Host MUST NOT include tools in the agent's tool list when
-        # their visibility does not include `model`"). That is the host's to
-        # enforce, and the SDK adds no server-side filter of its own — so on a
-        # host that ignores it, a model could reach this. The worst case is a
-        # wasteful read-only call returning a picture it already has the text
-        # for, not an unsafe one.
+    async def get_citation_image(uri: str, max_width: int = 320) -> CitationImageOut:
+        # App-only (`visibility: ["app"]`): the spec requires a host to keep it
+        # out of the agent's tool list. The SDK adds no server-side filter, so
+        # on a host that ignores it the worst case is a wasteful read-only call.
+        # Clamped so a caller cannot ask for a raster nobody can use: the dpi
+        # ladder bounds the bytes, this bounds the work.
         try:
-            if kind == "page":
-                # The view asks for a thumbnail at ~320 and for the expanded
-                # page at ~1400. Clamped so a caller cannot ask for a raster
-                # nobody can use: the dpi ladder bounds the bytes, this bounds
-                # the work.
-                image = await tools().images.render_page(
-                    uri, max_width=max(120, min(max_width, 1600))
-                )
-            else:
-                image = await tools().images.render(uri, padding=padding)
+            image = await tools().images.render_page(uri, max_width=max(120, min(max_width, 1600)))
         except AnchorParseError as exc:
             raise ToolError(str(exc)) from exc
         except NavigationServiceError as exc:
@@ -421,7 +284,7 @@ def build_apps_extension(
         )
 
     if investigations:
-        _register_investigation_view(apps, tools, ledger, unshown=unshown)
+        _register_investigation_view(apps, tools)
 
     apps.add_html_resource(
         CITATION_APP_URI,
@@ -455,23 +318,7 @@ def build_apps_extension(
     return apps
 
 
-def _with_image(view: CitationView, data_uri: str, page: int, png_bytes: int) -> CitationView:
-    # The raster's own size, not the base64 it travels as: the encoding is a
-    # transport detail, the pixels are what was actually produced.
-    return replace(view, page_image=data_uri, page=view.page or page, image_bytes=png_bytes)
-
-
-def _with_note(view: CitationView, note: str) -> CitationView:
-    return replace(view, image_note=note)
-
-
-def _register_investigation_view(
-    apps: Apps,
-    tools: Callable[[], DocumentTools],
-    ledger: Ledger,
-    *,
-    unshown: UnshownInvestigations | None = None,
-) -> None:
+def _register_investigation_view(apps: Apps, tools: Callable[[], DocumentTools]) -> None:
     """Publish the investigation viewer.
 
     Split out so the flag guards the *registration* rather than the handler:
@@ -500,14 +347,10 @@ def _register_investigation_view(
             report = await tools().investigations.view(investigation_id)
         except NavigationServiceError as exc:
             raise ToolError(str(exc)) from exc
-        if unshown is not None:
-            # The record has been shown; its anchors owe nothing and
-            # show_citation is free again for the passage in dispute.
-            unshown.shown(investigation_id)
 
         investigation = report.investigation
         tally = step_tally(investigation)
-        card = InvestigationCard(
+        return InvestigationCard(
             investigation_id=investigation.id,
             document_id=investigation.document_id,
             version_id=investigation.version_id,
@@ -529,13 +372,6 @@ def _register_investigation_view(
             max_attempts_per_step=tools().investigations.config.max_attempts_per_step,
             answer=neutralise(investigation.answer) if investigation.answer else None,
         )
-
-        # Price this card into the tally first, then read it back, so the
-        # figure it shows includes the call it is showing — same order as
-        # `show_citation`, for the same reason.
-        ledger.record(card)
-        usage = ledger.snapshot()
-        return replace(card, total_est_tokens=usage.est_tokens, total_calls=usage.calls)
 
     @apps.tool(
         resource_uri=INVESTIGATION_APP_URI,
