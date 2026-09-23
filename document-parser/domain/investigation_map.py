@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from domain.investigation import AttemptOutcome
 from domain.navigation import is_heading
+from domain.outline_builder import preamble_range
 from domain.parse_index import label_of, page_ref, parse_page_ref
 from domain.spans import span_start
 
@@ -195,8 +196,10 @@ def _stronger(current: str | None, candidate: str) -> str:
 
 
 def _heading_ranges(index: DocumentIndex) -> list[tuple[str, int, int]]:
-    """`(ref, start, end)` for every heading, as half-open reading-order slices."""
-    ranges: list[tuple[str, int, int]] = []
+    """`(ref, start, end)` for every heading and the preamble before the first,
+    as half-open reading-order slices."""
+    preamble = preamble_range(index)
+    ranges: list[tuple[str, int, int]] = [preamble] if preamble else []
     for position, ref in enumerate(index.order):
         if not is_heading(label_of(index.by_ref[ref])):
             continue

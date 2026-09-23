@@ -1,8 +1,9 @@
 """Projecting an indexed parse into the map an agent reads first.
 
-Sections when the parse carries headings, pages when it does not — a scanned
-PDF with no `section_header` is the common case, not the edge case, and a map
-is what makes the rest of the surface usable.
+Sections when the parse carries at least two headings, pages otherwise — a
+scanned PDF with no `section_header` is the common case, not the edge case,
+and a map is what makes the rest of the surface usable. Text before the first
+heading gets a node of its own.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from domain.parse_index import (
     title_of,
     truncate_title,
 )
+from domain.spans import span_ref
 
 if TYPE_CHECKING:
     from domain.parse_index import DocumentIndex
@@ -43,12 +45,13 @@ def build_outline(
 ) -> OutlineDraft:
     """Project the index into a map.
 
-    `mode` is `"sections"` when the parse carries headings, `"pages"` when it
-    doesn't — a scanned PDF still gets a usable map.
+    `mode` is `"sections"` from two headings up, `"pages"` below — a scanned
+    PDF still gets a usable map.
     """
     total = sum(estimate_tokens(element_text(index, ref)) for ref in index.order)
     headings = [ref for ref in index.order if is_heading(label_of(index.by_ref[ref]))]
-    if not headings:
+    # One heading makes a one-node map that says nothing; pages say more.
+    if len(headings) < 2:
         nodes, node_limited = _page_nodes(index, max_nodes=max_nodes)
         return OutlineDraft(
             nodes=nodes, mode="pages", total_est_tokens=total, node_limited=node_limited
@@ -57,6 +60,9 @@ def build_outline(
     nodes, depth_limited, node_limited = _section_nodes(
         index, headings, depth=depth, max_nodes=max_nodes
     )
+    preamble = preamble_range(index)
+    if preamble is not None:
+        nodes.insert(0, _preamble_node(index, preamble[0]))
     return OutlineDraft(
         nodes=nodes,
         mode="sections",
@@ -80,6 +86,7 @@ def _section_nodes(
     emitted = 0
     depth_limited = False
     node_limited = False
+    child_counts = _child_counts(index, headings)
 
     for ref in headings:
         item = index.by_ref[ref]
@@ -107,7 +114,7 @@ def _section_nodes(
             level=level,
             page=index.page_of.get(ref),
             est_tokens=section_est_tokens(index, ref),
-            child_count=_direct_child_headings(index, ref, level),
+            child_count=child_counts.get(ref, 0),
             children=children,
         )
         stack[-1][1].append(node)
@@ -143,27 +150,53 @@ def section_est_tokens(index: DocumentIndex, ref: str) -> int:
     return sum(estimate_tokens(element_text(index, r)) for r in section_refs(index, ref))
 
 
-def _direct_child_headings(index: DocumentIndex, ref: str, level: int) -> int:
-    """Count the subsections that nest *directly* under `ref`.
+def _child_counts(index: DocumentIndex, headings: list[str]) -> dict[str, int]:
+    """How many headings nest directly under each one — by the same rule the
+    outline nests them (pop while the open heading is not shallower), so the
+    count agrees with `children` even when docling skips a level."""
+    counts: dict[str, int] = {}
+    open_headings: list[tuple[int, str]] = []
+    for ref in headings:
+        level = heading_level(index.by_ref[ref])
+        while open_headings and open_headings[-1][0] >= level:
+            open_headings.pop()
+        if open_headings:
+            parent = open_headings[-1][1]
+            counts[parent] = counts.get(parent, 0) + 1
+        open_headings.append((level, ref))
+    return counts
 
-    Not `level + 1`: docling derives heading levels from the document's visual
-    hierarchy and routinely skips numbers (an h1 followed by h3s). The outline
-    nests by relative depth — pop until the top of the stack is shallower — so
-    counting by absolute level would publish `child_count: 0` next to a
-    non-empty `children` list. The direct children are the headings at the
-    *shallowest level present* inside the section.
+
+def preamble_range(index: DocumentIndex) -> tuple[str, int, int] | None:
+    """`(ref, start, end)` of the text before the first heading, or None.
+
+    A contract names its parties before its first article, and a heading-only
+    map would leave that text unreachable. The ref is the element itself when
+    one carries text, the span over those that do otherwise — spans already
+    read, budget and verify like any ref.
     """
-    start = index.position.get(ref)
-    if start is None:
-        return 0
-    end = index.section_end.get(ref, start + 1)
-    levels = [
-        heading_level(index.by_ref[candidate])
-        for candidate in index.order[start + 1 : end]
-        if is_heading(label_of(index.by_ref[candidate]))
-    ]
-    inner = [value for value in levels if value > level]
-    if not inner:
-        return 0
-    shallowest = min(inner)
-    return sum(1 for value in inner if value == shallowest)
+    first = next(
+        (i for i, ref in enumerate(index.order) if is_heading(label_of(index.by_ref[ref]))),
+        None,
+    )
+    if not first:
+        return None
+    texts = [ref for ref in index.order[:first] if element_text(index, ref).strip()]
+    if not texts:
+        return None
+    ref = texts[0] if len(texts) == 1 else span_ref(texts[0], texts[-1])
+    return ref, 0, first
+
+
+def _preamble_node(index: DocumentIndex, ref: str) -> OutlineNode:
+    first = ref.split("..", 1)[0]
+    return OutlineNode(
+        ref=ref,
+        uri="",
+        title=truncate_title(element_text(index, first)),
+        kind="preamble",
+        level=1,
+        page=index.page_of.get(first),
+        est_tokens=section_est_tokens(index, ref),
+        child_count=0,
+    )

@@ -130,6 +130,18 @@ class TestReadElement:
         assert excerpt.truncated is False
         assert excerpt.page_range == (1, 2)
 
+    async def test_the_preamble_entry_reads_like_any_other(self):
+        import copy
+
+        payload = copy.deepcopy(SECTIONED)
+        payload["texts"][0]["label"] = "text"
+        payload["texts"][1]["label"] = "text"
+        service = _service(job=_job(payload))
+        preamble = (await service.get_outline(DOC_ID)).nodes[0]
+        excerpt = await service.read_element(DOC_ID, preamble.ref)
+        assert "Contrat de prestation" in excerpt.markdown
+        assert "Chaque partie peut résilier" in excerpt.markdown
+
     async def test_self_mode_reads_only_that_element(self):
         excerpt = await _service().read_element(DOC_ID, "#/texts/3", include="self")
         assert excerpt.markdown == "### 12.2 Préavis"
