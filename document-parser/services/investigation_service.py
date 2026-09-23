@@ -44,11 +44,9 @@ from domain.ports import AttemptBudgetSpentError
 from services.investigation_adjudicator import Adjudicator
 from services.navigation_config import InvestigationConfig
 from services.navigation_errors import (
-    DocumentNotFoundError,
     InvalidArgumentError,
     InvestigationClosedError,
     InvestigationNotFoundError,
-    NoParseError,
     StepNotFoundError,
     StepSettledError,
     UnbackedAnswerError,
@@ -56,7 +54,7 @@ from services.navigation_errors import (
 )
 
 if TYPE_CHECKING:
-    from domain.navigation import DocumentOutline, DocumentSummary
+    from domain.navigation import DocumentOutline
     from domain.ports import InvestigationRepository
     from services.citation_service import CitationService
     from services.navigation_service import NavigationService
@@ -91,8 +89,10 @@ class InvestigationService:
     def config(self) -> InvestigationConfig:
         return self._config
 
-    async def open(self, *, document: str, question: str) -> tuple[Investigation, DocumentOutline]:
-        """Resolve the document, pin its parse, and hand back the map.
+    async def open(
+        self, *, document_id: str, question: str
+    ) -> tuple[Investigation, DocumentOutline]:
+        """Pin the document's current parse, and hand back the map.
 
         The outline comes back with the investigation rather than in a second
         call: one round trip saved, and *map before text* stops being advice.
@@ -101,10 +101,9 @@ class InvestigationService:
         if not question:
             raise InvalidArgumentError("An investigation needs a question to investigate.")
         self._bounded("question", question)
-        summary = await self._resolve_document(document)
-        await self._check_open_budget(summary.document_id)
-
-        outline = await self._navigation.get_outline(summary.document_id)
+        await self._check_open_budget(document_id)
+        # Raises DocumentNotFound / NoParse for an unknown or unparsed document.
+        outline = await self._navigation.get_outline(document_id)
         investigation = Investigation(
             id=uuid4().hex,
             document_id=outline.document_id,
@@ -367,28 +366,6 @@ class InvestigationService:
                 "further writes. Read it with get_investigation."
             )
         return investigation
-
-    async def _resolve_document(self, document: str) -> DocumentSummary:
-        needle = (document or "").strip()
-        if not needle:
-            raise InvalidArgumentError("Name the document to investigate.")
-        matches = (await self._navigation.find_documents(query=needle, limit=5)).documents
-        if not matches:
-            raise DocumentNotFoundError(
-                f"No document matching {needle!r}. find_documents lists what is available; "
-                "an empty result with truncated=true means 'not in that window'."
-            )
-        if len(matches) > 1:
-            names = ", ".join(f"{d.filename} ({d.document_id})" for d in matches)
-            raise InvalidArgumentError(
-                f"{needle!r} matches several documents: {names}. Ask which one before reading."
-            )
-        if not matches[0].version_id:
-            raise NoParseError(
-                f"{matches[0].filename} has never been parsed, so there is nothing to "
-                "investigate. Run an analysis in Studio first."
-            )
-        return matches[0]
 
     async def _check_open_budget(self, document_id: str) -> None:
         cap = self._config.max_open_per_document

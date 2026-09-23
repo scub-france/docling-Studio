@@ -16,6 +16,7 @@ from mcp import Client
 from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import INVESTIGATION_APP_HTML, INVESTIGATION_APP_URI
 from tests.navigation_fixtures import (
+    DOC_ID,
     PREAVIS_REF,
     PREAVIS_TEXT,
     anchor_uri,
@@ -44,7 +45,7 @@ async def _investigated(client, *, drift_first: bool = True):
     """One investigation: a rejected ref, then a kept one, then closed."""
     opened = _payload(
         await client.call_tool(
-            "open_investigation", {"document": "contrat", "question": "Comment résilier ?"}
+            "open_investigation", {"document_id": DOC_ID, "question": "Comment résilier ?"}
         )
     )
     planned = _payload(
@@ -147,7 +148,7 @@ class TestSurface:
             opened = _payload(
                 await client.call_tool(
                     "open_investigation",
-                    {"document": "contrat", "question": "Comment résilier ?"},
+                    {"document_id": DOC_ID, "question": "Comment résilier ?"},
                 )
             )
             planned = _payload(

@@ -131,8 +131,9 @@ Investigate "{document}" to answer this, and record the investigation as you go:
 
 {question}
 
-1. `open_investigation(document="{document}", question="…")` — resolves the document, pins \
-its parse, and returns the outline. If it reports several matches, ask which before going on.
+1. `find_documents(query="{document}")`, then `open_investigation(document_id, question="…")` \
+for the one document it names — ask which first if several match. It pins the parse and \
+returns the outline.
 2. Decompose the question into steps the document can each answer, and call `plan_steps`. \
 Use the outline: a step you cannot point at a section for is a step to fold into another. \
 Give each one a `why` — it is what makes the record readable afterwards.

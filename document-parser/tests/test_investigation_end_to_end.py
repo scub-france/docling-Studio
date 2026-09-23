@@ -64,7 +64,7 @@ async def test_a_whole_investigation_survives_the_round_trip(tools):
         opened = _payload(
             await client.call_tool(
                 "open_investigation",
-                {"document": "contrat", "question": "Comment résilier le contrat ?"},
+                {"document_id": DOC_ID, "question": "Comment résilier le contrat ?"},
             )
         )
         planned = _payload(

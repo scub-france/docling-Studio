@@ -33,7 +33,6 @@ from tests.navigation_fixtures import (
     SECTIONED,
     FakeInvestigationRepository,
     anchor_uri,
-    make_document,
     make_document_tools,
     make_job,
 )
@@ -48,13 +47,13 @@ def service():
 
 
 async def planned(service, *, questions=("Quel est le préavis ?",)):
-    investigation, _ = await service.open(document="contrat", question="Comment résilier ?")
+    investigation, _ = await service.open(document_id=DOC_ID, question="Comment résilier ?")
     return await service.plan(investigation.id, [(q, "parce que") for q in questions])
 
 
 class TestOpen:
     async def test_it_pins_the_parse_and_returns_the_map(self, service):
-        investigation, outline = await service.open(document="contrat", question="Résiliation ?")
+        investigation, outline = await service.open(document_id=DOC_ID, question="Résiliation ?")
 
         assert investigation.document_id == DOC_ID
         assert investigation.version_id == JOB_ID
@@ -63,31 +62,24 @@ class TestOpen:
 
     async def test_an_empty_question_is_refused(self, service):
         with pytest.raises(InvalidArgumentError):
-            await service.open(document="contrat", question="   ")
+            await service.open(document_id=DOC_ID, question="   ")
 
     async def test_an_unknown_document_is_refused(self, service):
         with pytest.raises(DocumentNotFoundError):
-            await service.open(document="bail-commercial", question="Résiliation ?")
-
-    async def test_an_ambiguous_name_is_refused_rather_than_guessed(self):
-        tools = make_document_tools(
-            documents=[make_document("d1", "contrat-a.pdf"), make_document("d2", "contrat-b.pdf")]
-        )
-        with pytest.raises(InvalidArgumentError, match="matches several documents"):
-            await tools.investigations.open(document="contrat", question="Résiliation ?")
+            await service.open(document_id="bail-commercial", question="Résiliation ?")
 
     async def test_an_unparsed_document_has_nothing_to_investigate(self):
         tools = make_document_tools(job=None)
         with pytest.raises(NoParseError):
-            await tools.investigations.open(document="contrat", question="Résiliation ?")
+            await tools.investigations.open(document_id=DOC_ID, question="Résiliation ?")
 
     async def test_open_investigations_are_capped_per_document(self):
         tools = make_document_tools(
             investigation_config=InvestigationConfig(max_open_per_document=1)
         )
-        await tools.investigations.open(document="contrat", question="Une")
+        await tools.investigations.open(document_id=DOC_ID, question="Une")
         with pytest.raises(InvalidArgumentError, match="already has 1 open"):
-            await tools.investigations.open(document="contrat", question="Deux")
+            await tools.investigations.open(document_id=DOC_ID, question="Deux")
 
 
 class TestPlan:
@@ -104,7 +96,7 @@ class TestPlan:
             await service.plan(investigation.id, [("Autre chose ?", "")])
 
     async def test_an_empty_plan_is_refused(self, service):
-        investigation, _ = await service.open(document="contrat", question="Q")
+        investigation, _ = await service.open(document_id=DOC_ID, question="Q")
         with pytest.raises(InvalidArgumentError):
             await service.plan(investigation.id, [("   ", "")])
 
@@ -112,7 +104,7 @@ class TestPlan:
         tools = make_document_tools(
             investigation_config=InvestigationConfig(max_steps_per_investigation=2)
         )
-        investigation, _ = await tools.investigations.open(document="contrat", question="Q")
+        investigation, _ = await tools.investigations.open(document_id=DOC_ID, question="Q")
         with pytest.raises(InvalidArgumentError, match="capped at 2 steps"):
             await tools.investigations.plan(investigation.id, [(f"q{i}", "") for i in range(3)])
 
@@ -293,7 +285,7 @@ class TestTextCeilings:
 
     async def test_an_oversized_question_is_refused(self, service):
         with pytest.raises(InvalidArgumentError, match="`question`"):
-            await service.open(document="contrat", question="x" * 2_001)
+            await service.open(document_id=DOC_ID, question="x" * 2_001)
 
     async def test_an_oversized_quote_is_refused_without_spending_an_attempt(self):
         tools = make_document_tools(config=NavigationConfig(max_read_tokens=50))

@@ -16,6 +16,7 @@ from mcp import Client
 
 from mcp_adapter import build_mcp_server
 from tests.navigation_fixtures import (
+    DOC_ID,
     PREAVIS_REF,
     PREAVIS_TEXT,
     anchor_uri,
@@ -57,7 +58,7 @@ def _error(result) -> str:
 async def _open_and_plan(client, questions=("Quel est le préavis ?",)):
     opened = _payload(
         await client.call_tool(
-            "open_investigation", {"document": "contrat", "question": "Comment résilier ?"}
+            "open_investigation", {"document_id": DOC_ID, "question": "Comment résilier ?"}
         )
     )
     planned = _payload(
@@ -124,7 +125,7 @@ class TestOpenAndPlan:
         async with _client() as client:
             opened = _payload(
                 await client.call_tool(
-                    "open_investigation", {"document": "contrat", "question": "Q"}
+                    "open_investigation", {"document_id": DOC_ID, "question": "Q"}
                 )
             )
             planned = _payload(
@@ -138,9 +139,11 @@ class TestOpenAndPlan:
     async def test_an_unknown_document_is_a_tool_error(self):
         async with _client() as client:
             message = _error(
-                await client.call_tool("open_investigation", {"document": "bail", "question": "Q"})
+                await client.call_tool(
+                    "open_investigation", {"document_id": "bail", "question": "Q"}
+                )
             )
-        assert "No document matching" in message
+        assert "not found" in message.lower()
 
 
 class TestRecordAttempt:
