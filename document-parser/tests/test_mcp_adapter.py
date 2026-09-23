@@ -86,12 +86,11 @@ class TestFindDocuments:
         assert row["version_id"] == "an-1"
         assert "get_outline" in search["next_step"]
 
-    async def test_reports_the_search_window(self):
+    async def test_an_empty_search_is_not_truncated(self):
         async with _client() as client:
             search = _payload(await client.call_tool("find_documents", {"query": "zzz"}))
         assert search["documents"] == []
-        assert search["scan_limit"] >= 1
-        assert "truncated" in search
+        assert search["truncated"] is False
 
 
 class TestGetOutline:
@@ -269,7 +268,7 @@ class TestGuards:
 
 
 TOOL_FIELDS = {
-    "find_documents": {"documents", "truncated", "scanned", "scan_limit", "next_step"},
+    "find_documents": {"documents", "truncated", "next_step"},
     "get_outline": {
         "document_id",
         "version_id",
@@ -392,14 +391,9 @@ class TestPublishedContract:
         assert (citation["page_width"], citation["page_height"]) == (612.0, 792.0)
 
     async def test_a_stale_anchor_reports_its_own_status(self):
-        from unittest.mock import AsyncMock
-
-        from tests.navigation_fixtures import make_job
-
-        service = make_document_tools()
-        service.citations._parses.analyses.find_latest_completed_by_document = AsyncMock(
-            return_value=make_job(job_id="an-2")
-        )
+        jobs = [make_job()]
+        service = make_document_tools(jobs=jobs)
+        jobs.append(make_job(job_id="an-2"))
         async with _client(service) as client:
             check = _payload(
                 await client.call_tool(

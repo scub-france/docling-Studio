@@ -9,8 +9,6 @@ to start.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
 import pytest
 from mcp import Client
 
@@ -24,6 +22,8 @@ from tests.navigation_fixtures import (
     DOC_ID,
     PREAVIS_REF,
     PREAVIS_TEXT,
+    FakeAnalysisRepository,
+    FakeDocumentRepository,
     anchor_uri,
     make_document,
     make_job,
@@ -43,12 +43,8 @@ async def tools(monkeypatch, tmp_path):
         Document(id=DOC_ID, filename="contrat.pdf", storage_path="/tmp/contrat.pdf")
     )
 
-    document_repo = AsyncMock()
-    document_repo.find_all = AsyncMock(return_value=[make_document()])
-    document_repo.find_by_id = AsyncMock(return_value=make_document())
-    analysis_repo = AsyncMock()
-    analysis_repo.find_latest_completed_by_document = AsyncMock(return_value=make_job())
-    analysis_repo.find_by_id = AsyncMock(return_value=make_job())
+    document_repo = FakeDocumentRepository([make_document()])
+    analysis_repo = FakeAnalysisRepository([make_job()])
 
     return build_document_tools(document_repo, analysis_repo, SqliteInvestigationRepository())
 

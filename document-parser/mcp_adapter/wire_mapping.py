@@ -58,17 +58,12 @@ def search_result(search: DocumentSearch) -> DocumentSearchResult:
     unparsed = [row for row in search.documents if row.version_id is None]
     hint = "Call get_outline(document_id=…) on the document you need."
     if search.truncated:
-        hint += (
-            f" Only the {search.scan_limit} most recent documents were searched — "
-            "narrow the query if what you expected is missing."
-        )
+        hint += " More documents matched: narrow the query."
     if unparsed:
         hint += " Documents with a null version_id have not been parsed and cannot be read."
     return DocumentSearchResult(
         documents=[document_row(summary) for summary in search.documents],
         truncated=search.truncated,
-        scanned=search.scanned,
-        scan_limit=search.scan_limit,
         next_step=hint,
     )
 

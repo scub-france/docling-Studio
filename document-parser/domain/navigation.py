@@ -164,17 +164,10 @@ class DocumentSummary:
 
 @dataclass(frozen=True)
 class DocumentSearch:
-    """What `find_documents` answers.
-
-    `scanned` / `scan_limit` are part of the answer, not diagnostics: the
-    filter runs over the most recent `scan_limit` documents, so an empty
-    `documents` list with `truncated=True` means "not in the window I looked
-    at", which is a different fact from "no such document".
-    """
+    """What `find_documents` answers. `truncated`: more documents matched than
+    the limit let through."""
 
     documents: list[DocumentSummary]
-    scanned: int
-    scan_limit: int
     truncated: bool
 
 

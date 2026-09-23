@@ -131,10 +131,8 @@ def build_mcp_server(
             "List documents available in Docling Studio, optionally filtered by a "
             "filename substring. Returns document_id (needed by get_outline) and "
             "version_id — a null version_id means the document has not been parsed "
-            "yet and cannot be read. The filter only sees the most recently added "
-            "documents (see scan_limit); `truncated: true` with an empty list means "
-            "'not in that window', not 'no such document'. `limit` is capped "
-            "server-side."
+            "yet and cannot be read. `truncated` means more documents matched than "
+            "`limit`, which is capped server-side."
         ),
     )
     async def find_documents(query: str | None = None, limit: int = 20) -> DocumentSearchResult:

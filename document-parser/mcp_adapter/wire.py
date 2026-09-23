@@ -87,16 +87,10 @@ class DocumentRow:
 
 @dataclass(frozen=True)
 class DocumentSearchResult:
-    """`documents` plus the window they were found in.
-
-    `truncated` means the filter only saw the newest `scan_limit` documents,
-    so an empty list is "not in that window", not "no such document".
-    """
+    """`documents`, newest first. `truncated`: more matched than `limit`."""
 
     documents: list[DocumentRow]
     truncated: bool
-    scanned: int
-    scan_limit: int
     next_step: str
 
 

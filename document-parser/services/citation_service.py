@@ -184,8 +184,8 @@ class CitationService:
 
     async def _superseding_parse(self, document_id: str, version_id: str) -> str | None:
         """The id of the current parse when the anchor pins an older one."""
-        latest = await self._parses.analyses.find_latest_completed_by_document(document_id)
-        return latest.id if latest is not None and latest.id != version_id else None
+        latest = (await self._parses.analyses.latest_parsed_ids([document_id])).get(document_id)
+        return latest if latest is not None and latest != version_id else None
 
     @staticmethod
     def _locate_quote(

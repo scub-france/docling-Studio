@@ -379,6 +379,47 @@ class FakeRasterizer:
         return buffer.getvalue()
 
 
+class FakeDocumentRepository:
+    """The document reads the navigation services make, over a list."""
+
+    def __init__(self, documents) -> None:
+        self._documents = documents
+
+    async def find_all(self, *, limit=200, offset=0, filename_like=None):
+        needle = (filename_like or "").lower()
+        matched = [d for d in self._documents if needle in (d.filename or "").lower()]
+        return matched[offset : offset + limit]
+
+    async def find_by_id(self, doc_id):
+        return next((d for d in self._documents if d.id == doc_id), None)
+
+
+class FakeAnalysisRepository:
+    """The parse lookups, over jobs read live: the last parsed job of a
+    document is its latest, so a test re-parses by appending one."""
+
+    def __init__(self, jobs) -> None:
+        self._jobs = jobs
+
+    async def latest_parsed_ids(self, document_ids):
+        latest = {}
+        for job in self._jobs:
+            if job.document_id in document_ids and job.document_json:
+                latest[job.document_id] = job.id
+        return latest
+
+    async def parsed_document_id(self, job_id):
+        job = self._job(job_id)
+        return job.document_id if job and job.document_json else None
+
+    async def parse_json(self, job_id):
+        job = self._job(job_id)
+        return job.document_json if job else None
+
+    def _job(self, job_id):
+        return next((j for j in self._jobs if j.id == job_id), None)
+
+
 def make_document_tools(
     *,
     documents=None,
@@ -389,15 +430,13 @@ def make_document_tools(
     investigations=None,
     investigation_config=None,
 ):
-    """The four document-agent services over AsyncMock repositories.
+    """The four document-agent services over in-memory repositories.
 
     `jobs` takes several analyses of the same document — the last one is the
     latest completed parse, the others are only reachable by pinning their id,
     which is what the anchor grammar exists for. A list is read live, so a test
     re-parses the document by appending to it.
     """
-    from unittest.mock import AsyncMock
-
     from infra.docling_tree import DoclingTreeReader
     from services.citation_image_service import CitationImageService
     from services.citation_service import CitationService
@@ -417,23 +456,10 @@ def make_document_tools(
     else:
         analyses = [job]
 
-    document_repo = AsyncMock()
-    document_repo.find_all = AsyncMock(return_value=docs)
-    document_repo.find_by_id = AsyncMock(
-        side_effect=lambda doc_id: next((d for d in docs if d.id == doc_id), None)
-    )
-    analysis_repo = AsyncMock()
-    analysis_repo.find_latest_completed_by_document = AsyncMock(
-        side_effect=lambda _doc_id: analyses[-1] if analyses else None
-    )
-    analysis_repo.find_by_id = AsyncMock(
-        side_effect=lambda job_id: next((j for j in analyses if j.id == job_id), None)
-    )
-
     settings = config or NavigationConfig(studio_base_url="http://localhost:3000")
     parses = ParseLoader(
-        document_repo=document_repo,
-        analysis_repo=analysis_repo,
+        document_repo=FakeDocumentRepository(docs),
+        analysis_repo=FakeAnalysisRepository(analyses),
         tree_reader=DoclingTreeReader(),
         config=settings,
     )
