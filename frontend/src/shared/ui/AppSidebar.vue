@@ -141,7 +141,7 @@ const items: NavItem[] = [
   },
   {
     key: 'analyses',
-    to: { name: ROUTES.ANALYSES },
+    to: { name: ROUTES.ANALYSIS_LIBRARY },
     labelKey: 'nav.analyses',
     icon: AnalysesIcon,
     matchPrefixes: ['/analyses'],

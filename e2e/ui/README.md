@@ -65,6 +65,7 @@ e2e/ui/
     │   ├── analysis.feature     # Run analysis, verify tabs
     │   ├── batch-progress.feature  # Progress bar on multi-page
     │   ├── rechunk.feature      # Prepare mode, rechunk
+    │   ├── analysis-detail.feature   # Saved analysis page (@regression)
     │   └── pipeline-options.feature  # OCR, table mode toggles
     ├── navigation/              # @ui
     │   ├── sidebar.feature      # Sidebar navigation

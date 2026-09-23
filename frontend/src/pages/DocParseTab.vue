@@ -4,22 +4,7 @@
       :elements="allPageElements"
       :hidden-types="hiddenTypes"
       @update:hidden-types="(next) => (hiddenTypes = next)"
-    >
-      <template #action>
-        <button
-          type="button"
-          class="tab-action-cta"
-          :disabled="analysisStore.running"
-          :title="t('newAnalysis.title')"
-          data-e2e="parse-new-analysis"
-          @click="onLaunchAnalysis"
-        >
-          <span v-if="analysisStore.running" class="tab-action-spinner" />
-          <span v-else>+</span>
-          {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
-        </button>
-      </template>
-    </LayersBar>
+    />
     <div class="parse-body" :class="{ 'properties-open': propertiesOpen }">
       <aside class="parse-structure" :class="{ 'parse-drawer--closed': !structureOpen }">
         <header class="parse-structure-header">
@@ -155,7 +140,7 @@
           :page-number="selectedElementData?.pageNumber ?? currentPage"
           :linked-chunk="linkedChunk"
           :saving="chunksStore.saving"
-          :editable="!analysisId"
+          :editable="!analysis"
           @save-chunk="onSaveChunk"
         />
       </aside>
@@ -177,8 +162,6 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import type { Analysis, Chunk, DocChunk, DocTreeNode, PageElement } from '../shared/types'
-import { useAnalysisStore } from '../features/analysis/store'
-import { fetchAnalysis } from '../features/analysis/api'
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
@@ -194,12 +177,15 @@ import ConversationPanel from '../features/reasoning/ui/ConversationPanel.vue'
 import TraceTimeline from '../features/reasoning/ui/TraceTimeline.vue'
 import { useI18n } from '../shared/i18n'
 
-const props = defineProps<{ docId: string; analysisId?: string }>()
+const props = defineProps<{
+  docId: string
+  /** A saved analysis to show read-only, already loaded by the host page. */
+  analysis?: Analysis
+}>()
 
 const { t } = useI18n()
 const documentStore = useDocumentStore()
 const chunksStore = useChunksStore()
-const analysisStore = useAnalysisStore()
 const reasoningStore = useReasoningStore()
 const featureFlags = useFeatureFlagStore()
 
@@ -233,11 +219,6 @@ function analysisChunks(analysis: Analysis): DocChunk[] {
   } catch {
     return []
   }
-}
-
-async function onLaunchAnalysis(): Promise<void> {
-  if (analysisStore.running) return
-  await analysisStore.run(props.docId)
 }
 
 const currentPage = ref(1)
@@ -302,10 +283,9 @@ const linkedChunk = computed<DocChunk | null>(() => {
   )
 })
 
-const activeChunks = computed<DocChunk[]>(() => {
-  const analysis = documentStore.workspaceActiveAnalysis
-  return props.analysisId && analysis ? analysisChunks(analysis) : chunksStore.chunks
-})
+const activeChunks = computed<DocChunk[]>(() =>
+  props.analysis ? analysisChunks(props.analysis) : chunksStore.chunks,
+)
 
 const nodeCount = computed(() => countNodes(tree.value))
 
@@ -329,7 +309,7 @@ async function loadTree(): Promise<void> {
   treeLoading.value = true
   treeError.value = null
   try {
-    tree.value = await fetchDocumentTree(props.docId, props.analysisId)
+    tree.value = await fetchDocumentTree(props.docId, props.analysis?.id)
   } catch (e) {
     treeError.value = (e as Error).message || 'Failed to load tree'
   } finally {
@@ -355,14 +335,14 @@ function onClickElement(el: PageElement, _pageNumber: number): void {
 }
 
 async function onSaveChunk(chunkId: string, text: string): Promise<void> {
-  if (props.analysisId) return
+  if (props.analysis) return
   await chunksStore.updateText(props.docId, chunkId, text)
 }
 
 onMounted(async () => {
   reasoningStore.reset(props.docId)
-  if (props.analysisId) {
-    documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
+  if (props.analysis) {
+    documentStore.setWorkspaceAnalysis(props.analysis)
     await loadTree()
   } else {
     await Promise.all([
@@ -382,8 +362,8 @@ watch(
     rightTab.value = 'props'
     reasoningStore.reset(id)
     documentStore.focusElement(null)
-    if (props.analysisId) {
-      documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
+    if (props.analysis) {
+      documentStore.setWorkspaceAnalysis(props.analysis)
       await loadTree()
     } else {
       await Promise.all([documentStore.loadWorkspace(id), chunksStore.load(id), loadTree()])
@@ -416,10 +396,13 @@ watch(
 // Triggered after an in-place analysis completes or after the user
 // restores a different version from the History drawer — the tree
 // is built server-side from the active analysis's `document_json`,
-// so it has to be reloaded.
+// so it has to be reloaded. A saved analysis passed as a prop is pinned:
+// mounting it sets the active analysis and loads its tree itself, so
+// reacting here would fetch the same tree a second time.
 watch(
   () => documentStore.workspaceActiveAnalysis?.id,
   (newId, oldId) => {
+    if (props.analysis) return
     if (newId && newId !== oldId) {
       documentStore.focusElement(null)
       loadTree()
@@ -731,38 +714,6 @@ function findPageOfRef(
 .parse-state--empty {
   flex-direction: column;
   gap: 12px;
-}
-
-.tab-action-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  color: white;
-  font-size: 12px;
-  cursor: pointer;
-  transition: filter var(--transition);
-}
-
-.tab-action-cta:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
-.tab-action-cta:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.tab-action-spinner {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
 }
 
 .spinner {

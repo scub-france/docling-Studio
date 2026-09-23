@@ -136,10 +136,15 @@ async def export_document(
     doc_id: str,
     service: deps.ExportServiceDep,
     format: ExportFormat = Query(ExportFormat.PDF, description="Format to export"),
+    analysis_id: str | None = Query(
+        default=None,
+        alias="analysisId",
+        description="Analysis to export for md/json (defaults to the latest completed)",
+    ),
 ) -> Response:
     """Export the document in the specified format."""
     try:
-        export = await service.export(doc_id, format)
+        export = await service.export(doc_id, format, analysis_id)
     except ExportNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

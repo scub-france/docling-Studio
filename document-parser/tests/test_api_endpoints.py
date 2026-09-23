@@ -257,6 +257,25 @@ class TestDocumentEndpoints:
         assert resp.json() == {"ok": True}
         assert resp.headers["content-disposition"] == 'attachment; filename="report.json"'
 
+    @pytest.mark.parametrize(
+        ("query", "analysis_id"),
+        [("format=md", None), ("format=md&analysisId=a1", "a1")],
+    )
+    def test_export_document_forwards_the_analysis_id(
+        self, client, mock_export_service, query, analysis_id
+    ):
+        from services.export_service import ExportFormat
+
+        mock_export_service.export.return_value.file_path = None
+        mock_export_service.export.return_value.content = "# Title"
+        mock_export_service.export.return_value.media_type = "text/markdown"
+        mock_export_service.export.return_value.filename = "report.md"
+
+        resp = client.get(f"/api/documents/d1/export?{query}")
+
+        assert resp.status_code == 200
+        mock_export_service.export.assert_awaited_once_with("d1", ExportFormat.MD, analysis_id)
+
     def test_export_document_unsupported_format_returns_422(self, client, mock_export_service):
         resp = client.get("/api/documents/d1/export?format=docx")
         assert resp.status_code == 422
