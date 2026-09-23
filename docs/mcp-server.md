@@ -240,7 +240,7 @@ decides. `record_attempt` returns one of:
 |---------|---------|
 | `kept` | The ref held up. `kept_uri` is the anchor to cite — it differs from the one you sent when verification widened a quote across element boundaries, or found the precise element inside a section. |
 | `quote_drift` | The anchor is right and the quote is not in it. `actual_quote` says what is. |
-| `unknown_ref` | No such element in that parse. |
+| `unknown_ref` | No such element in the investigation's parse — including an anchor from another parse of the same document, which `detail` says to re-read with the pinned `version_id`. |
 | `empty_element` | It resolves and carries no text — a group, a page break. |
 | `bad_anchor` | Not a well-formed `dstudio://` anchor. You built one. |
 | `foreign_document` | It resolves, to another document than the one under investigation. |
@@ -319,6 +319,10 @@ redirect** until the record has been shown once — `show_investigation`, or
 `get_investigation` on a host without a viewer. The gate is keyed by anchor,
 so ad-hoc reading elsewhere is never caught in it, and it lives in process
 memory: a restart merely means a record may be asked to show itself again.
+It runs over stdio only, where one process serves one conversation. The HTTP
+mount answers every caller from one stateless server, where the gate would
+refuse a stranger's citation and name the investigation to them — there the
+close's `next_step` is the whole steer.
 
 Two things the card does deliberately. A **thought is set in italic and its
 verdict in a chip beside it**, because one is testimony and the other is
@@ -344,7 +348,9 @@ against it. A docling `self_ref` is meaningless across two parses, so an
 investigation that followed a re-parse would be citing text it never read. If
 the parse is superseded mid-investigation the record is flagged `stale` and
 carries on against the version it started with — the quotes are still real, a
-re-read would cite the current parse.
+re-read would cite the current parse. An attempt on an anchor from any other
+parse is `unknown_ref`: read with `version_id` set to the pinned one, which
+`open_investigation` returned.
 
 ## Seeing a citation, not just reading it
 
@@ -532,6 +538,12 @@ a proxy.
   result counts — a client argument can lower them, never raise them, and a
   single element larger than the whole budget is clipped rather than smuggled
   through. The HTTP surface is also covered by `RATE_LIMIT_RPM`.
+- **Bounded input.** A quote longer than one read (`MCP_MAX_READ_TOKENS`) is
+  refused before any matching — matching runs on the backend's event loop.
+  Every string the journal stores is capped: 2 000 characters for a question,
+  a `why` or a `thought`, 20 000 for an answer.
+- **Nothing internal leaks.** A crash reaches the client as a generic tool
+  error; its text, which can name a storage path, stays in the server log.
 
 ## Limits of this first slice
 
