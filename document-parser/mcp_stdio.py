@@ -57,7 +57,6 @@ async def _serve() -> None:
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         cache_ttl_seconds=settings.mcp_cache_ttl_seconds,
-        inline_citation_image=settings.mcp_inline_citation_image,
         investigations=settings.mcp_investigation_enabled,
     )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)

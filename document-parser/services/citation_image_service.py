@@ -1,13 +1,10 @@
-"""Rendering the page region a citation points at.
+"""Rendering the page a citation sits on, with the passage boxed.
 
 The visual counterpart of verification: instead of asserting that a quote is
-in the document, it shows where. A crop, not a page — the crop is the
-evidence, and a full page at a readable dpi is an order of magnitude more
-bytes than a tool result should carry.
-
-The rasterising itself is infrastructure and reaches this service through the
-`PageRasterizer` port. What stays here is policy: which box to ask for, and
-how far to climb down the dpi ladder before the result fits the byte budget.
+in the document, it shows where. The rasterising itself is infrastructure and
+reaches this service through the `PageRasterizer` port; what stays here is
+policy — which page, and how far down the dpi ladder to go before the raster
+fits the byte budget.
 """
 
 from __future__ import annotations
@@ -24,7 +21,7 @@ from domain.value_objects import DEFAULT_PAGE_WIDTH
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError
 
 if TYPE_CHECKING:
-    from domain.navigation import BoundingBox, ResolvedElement
+    from domain.navigation import ResolvedElement
     from domain.ports import PageRasterizer
     from services.navigation_config import NavigationConfig
     from services.parse_loader import ParseLoader
@@ -44,46 +41,12 @@ class CitationImageService:
         self._raster = rasterizer
         self._config = config
 
-    async def render(
-        self,
-        uri: str,
-        *,
-        padding: int = 8,
-        dpi: int | None = None,
-    ) -> CitationImage:
-        """Rasterise the page region the anchor at `uri` points at."""
-        anchor = DocumentAnchor.parse(uri)
-        parse = await self._parses.load(anchor.document_id, anchor.version_id)
-        element = resolve(parse.index, anchor.ref)
-        if element is None:
-            raise RefNotFoundError(
-                f"Ref {anchor.ref!r} does not exist in version {parse.version_id}."
-            )
-        if element.bbox is None or element.page is None:
-            raise InvalidArgumentError(
-                f"{anchor.ref} carries no page coordinates, so there is nothing to show. "
-                "Only elements with provenance can be rendered."
-            )
-        if not parse.document.storage_path:
-            raise InvalidArgumentError(
-                f"Document {parse.document.id} has no stored file to render."
-            )
-
-        return await asyncio.to_thread(
-            self._crop,
-            parse.document.storage_path,
-            element.bbox,
-            padding=padding,
-            dpi=min(dpi or self._config.image_dpi, self._config.image_dpi),
-        )
-
     async def render_page(
         self, uri: str, *, max_width: int = 320, page: int | None = None
     ) -> CitationImage:
         """A thumbnail of the whole page the anchor sits on — or any other.
 
-        Same pipeline as the crop, with the box being the page: rendered
-        straight at the target width rather than downscaled afterwards, which
+        Rendered straight at the target width rather than downscaled afterwards, which
         is both faster and sharper. At 320 px a page is ~22 KB of WebP against
         ~108 KB of PNG — the format matters more than the size here, because a
         scaled page is exactly the kind of image PNG encodes badly.
@@ -146,23 +109,6 @@ class CitationImageService:
             highlight=highlight,
             page_count=page_count,
         )
-
-    def _crop(
-        self,
-        storage_path: str,
-        bbox: BoundingBox,
-        *,
-        padding: int,
-        dpi: int,
-    ) -> CitationImage:
-        """Render, crop, and shrink until the result fits the byte budget."""
-
-        def render(at: int):
-            page_png = self._raster.render_page(storage_path, page=bbox.page, dpi=at)
-            return self._raster.crop(page_png, bbox.pixel_box(dpi=at, padding=padding), fmt="WEBP")
-
-        crop, at = self._shrink_to_budget(render, dpi=dpi, budget=self._config.image_max_bytes)
-        return self._image(crop, page=bbox.page, dpi=at, media_type="image/webp")
 
     def _shrink_to_budget(self, render, *, dpi: int, budget: int):
         """Render at `dpi`, halving until the result fits `budget`.

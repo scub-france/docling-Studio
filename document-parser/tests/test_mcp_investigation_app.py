@@ -27,15 +27,9 @@ PREAVIS_URI = anchor_uri(PREAVIS_REF)
 
 
 @asynccontextmanager
-async def _client(
-    tools, *, apps: bool = True, investigations: bool = True, single_client: bool = True
-):
+async def _client(tools, *, apps: bool = True, investigations: bool = True):
     server = build_mcp_server(
-        lambda: tools,
-        version="test",
-        apps=apps,
-        investigations=investigations,
-        single_client=single_client,
+        lambda: tools, version="test", apps=apps, investigations=investigations
     )
     async with Client(server) as client:
         yield client
@@ -244,65 +238,11 @@ class TestCard:
         assert [a["outcome"] for a in attempts] == ["quote_drift", "kept"]
         assert attempts[0]["actual_quote"], "the card shows what the page really says"
 
-    async def test_it_reports_the_surface_total_not_just_its_own_cost(self):
-        tools = make_document_tools()
-        async with _client(tools) as client:
-            investigation_id = await _investigated(client)
-            card = _payload(
-                await client.call_tool("show_investigation", {"investigation_id": investigation_id})
-            )
-        assert card["total_calls"] > 1
-        assert card["total_est_tokens"] > 0
-
     async def test_an_unknown_investigation_is_a_tool_error(self):
         async with _client(make_document_tools()) as client:
             result = await client.call_tool("show_investigation", {"investigation_id": "nope"})
         assert result.is_error is True
         assert "No investigation" in result.content[0].text
-
-
-class TestShowGate:
-    """The display debt. The prompt asks for show_investigation, the close's
-    next_step asks again, show_citation's description yields — and live runs
-    still ended in a card per kept anchor. So the server enforces what the
-    text advised: a kept anchor refuses show_citation, with the redirect,
-    until the record has been shown once."""
-
-    async def test_a_kept_anchor_is_refused_until_the_record_is_shown(self):
-        async with _client(make_document_tools()) as client:
-            investigation_id = await _investigated(client)
-            refused = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
-            assert refused.is_error is True
-            assert investigation_id in refused.content[0].text
-            assert "show_investigation" in refused.content[0].text
-            await client.call_tool("show_investigation", {"investigation_id": investigation_id})
-            freed = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
-            assert freed.is_error is False
-
-    async def test_reading_the_record_as_text_also_settles_it(self):
-        """On a host without a viewer, get_investigation IS the display —
-        holding the debt open there would refuse citations forever."""
-        async with _client(make_document_tools()) as client:
-            investigation_id = await _investigated(client)
-            await client.call_tool("get_investigation", {"investigation_id": investigation_id})
-            freed = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
-            assert freed.is_error is False
-
-    async def test_an_anchor_no_investigation_kept_shows_freely(self):
-        """The gate is keyed by anchor, not by time: ad-hoc reading and other
-        conversations are never caught in an investigation's redirect."""
-        async with _client(make_document_tools()) as client:
-            result = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
-        assert result.is_error is False
-
-    async def test_a_server_shared_by_every_caller_keeps_no_gate(self):
-        """Over stateless HTTP the caller that closed and the caller that asks
-        are indistinguishable: a gate there would refuse a stranger's citation
-        and name this investigation to them."""
-        async with _client(make_document_tools(), single_client=False) as client:
-            await _investigated(client)
-            result = await client.call_tool("show_citation", {"uri": PREAVIS_URI})
-        assert result.is_error is False
 
 
 class TestTemplate:
@@ -322,7 +262,7 @@ class TestTemplate:
         # The tally is interpolated unescaped, so every count goes through
         # `num()`, which coerces before it formats.
         assert "Number.isFinite(number)" in INVESTIGATION_APP_HTML
-        for field in ("view.steps_answered", "view.steps_unanswered", "view.total_calls"):
+        for field in ("view.steps_answered", "view.steps_unanswered"):
             assert f"num({field}" in INVESTIGATION_APP_HTML, field
 
     def test_every_field_it_renders_is_escaped_first(self):

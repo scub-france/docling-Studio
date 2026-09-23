@@ -1,8 +1,7 @@
 """Tests for the MCP adapter — the published tool contract.
 
 Driven through the SDK's in-memory client, so what is asserted is what a real
-agent sees: tool names, annotations, JSON payloads and tool errors. Skipped
-when the optional SDK is absent — the default install does not carry it.
+agent sees: tool names, annotations, JSON payloads and tool errors.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from tests.navigation_fixtures import (
 # The text surface. `show_citation` is added by the Apps extension and is
 # asserted in tests/test_mcp_apps.py, so this set pins that enabling a UI does
 # not quietly change what a text-only host sees.
-TOOL_NAMES = {"how_to_use", "find_documents", "get_outline", "read_element", "verify_citation"}
+TOOL_NAMES = {"find_documents", "get_outline", "read_element", "verify_citation"}
 
 
 @asynccontextmanager
@@ -76,46 +75,6 @@ class TestSurface:
             listed = await client.list_tools()
         tool = next(t for t in listed.tools if t.name == "read_element")
         assert tool.input_schema["properties"]["include"]["enum"] == ["section", "self"]
-
-
-class TestHowToUse:
-    """The recipe tool — the way out of a loop a weak model cannot argue with.
-
-    Its value is that it always succeeds, so what is pinned is the shape a
-    stuck model depends on: no argument to get wrong, and a body that names
-    the four tools in the order they are called.
-    """
-
-    async def test_takes_no_argument(self):
-        async with _client() as client:
-            listed = await client.list_tools()
-        tool = next(t for t in listed.tools if t.name == "how_to_use")
-        assert tool.input_schema.get("required", []) == []
-        assert tool.input_schema.get("properties", {}) == {}
-
-    async def test_returns_the_recipe_as_one_text_block(self):
-        async with _client() as client:
-            result = await client.call_tool("how_to_use", {})
-        assert result.is_error is False
-        # One block of prose, not a JSON envelope: nothing here is parsed.
-        assert len(result.content) == 1
-        assert result.structured_content is None
-
-    async def test_recipe_names_the_tools_in_call_order(self):
-        async with _client() as client:
-            recipe = (await client.call_tool("how_to_use", {})).content[0].text
-        positions = [
-            recipe.index(name)
-            for name in ("find_documents", "get_outline", "read_element", "verify_citation")
-        ]
-        assert positions == sorted(positions)
-
-    async def test_description_stays_cheap_enough_to_resend_every_turn(self):
-        async with _client() as client:
-            listed = await client.list_tools()
-        tool = next(t for t in listed.tools if t.name == "how_to_use")
-        # Paid on every turn by every host, so it is held to two sentences.
-        assert len(tool.description) < 250
 
 
 class TestFindDocuments:
@@ -169,7 +128,7 @@ class TestReadElement:
     async def test_delimits_document_text_and_attaches_citations(self):
         async with _client() as client:
             excerpt = _payload(
-                await client.call_tool("read_element", {"uri": anchor_uri(PREAVIS_REF)})
+                await client.call_tool("read_element", {"document_id": DOC_ID, "ref": PREAVIS_REF})
             )
         assert excerpt["content"].startswith('<document-content document_id="doc-1"')
         assert excerpt["content"].rstrip().endswith(CONTENT_CLOSE)
@@ -189,7 +148,7 @@ class TestReadElement:
             excerpt = _payload(
                 await client.call_tool(
                     "read_element",
-                    {"uri": anchor_uri("#/texts/0"), "max_tokens": 12},
+                    {"document_id": DOC_ID, "ref": "#/texts/0", "max_tokens": 12},
                 )
             )
         assert excerpt["truncated"] is True
@@ -199,21 +158,27 @@ class TestReadElement:
         async with _client() as client:
             excerpt = _payload(
                 await client.call_tool(
-                    "read_element", {"uri": anchor_uri("#/texts/3"), "include": "self"}
+                    "read_element", {"document_id": DOC_ID, "ref": "#/texts/3", "include": "self"}
                 )
             )
         assert len(excerpt["citations"]) == 1
 
     async def test_malformed_anchor_explains_the_grammar(self):
         async with _client() as client:
-            message = _error(await client.call_tool("read_element", {"uri": "#/texts/4"}))
+            message = _error(
+                await client.call_tool(
+                    "verify_citation", {"uri": "#/texts/4", "quote": "trois mois"}
+                )
+            )
         assert "dstudio://doc/" in message
         assert "never build one by hand" in message
 
     async def test_unknown_ref_points_back_at_the_outline(self):
         async with _client() as client:
             message = _error(
-                await client.call_tool("read_element", {"uri": anchor_uri("#/texts/999")})
+                await client.call_tool(
+                    "read_element", {"document_id": DOC_ID, "ref": "#/texts/999"}
+                )
             )
         assert "get_outline" in message
 
@@ -273,7 +238,7 @@ class TestUntrustedContent:
         service = make_document_tools(job=make_job(payload))
         async with _client(service) as client:
             excerpt = _payload(
-                await client.call_tool("read_element", {"uri": anchor_uri("#/texts/0")})
+                await client.call_tool("read_element", {"document_id": DOC_ID, "ref": "#/texts/0"})
             )
         assert excerpt["content"].count(CONTENT_CLOSE) == 1
 
@@ -285,7 +250,7 @@ class TestGuards:
             excerpt = _payload(
                 await client.call_tool(
                     "read_element",
-                    {"uri": anchor_uri("#/texts/0"), "max_tokens": 100_000},
+                    {"document_id": DOC_ID, "ref": "#/texts/0", "max_tokens": 100_000},
                 )
             )
         assert excerpt["truncated"] is True
@@ -452,7 +417,7 @@ class TestNextStep:
     async def test_a_complete_read_says_how_to_cite(self):
         async with _client() as client:
             excerpt = _payload(
-                await client.call_tool("read_element", {"uri": anchor_uri(PREAVIS_REF)})
+                await client.call_tool("read_element", {"document_id": DOC_ID, "ref": PREAVIS_REF})
             )
         assert "citations[].uri" in excerpt["next_step"]
         assert "verify_citation" in excerpt["next_step"]
@@ -461,7 +426,7 @@ class TestNextStep:
         async with _client() as client:
             excerpt = _payload(
                 await client.call_tool(
-                    "read_element", {"uri": anchor_uri("#/texts/0"), "max_tokens": 12}
+                    "read_element", {"document_id": DOC_ID, "ref": "#/texts/0", "max_tokens": 12}
                 )
             )
         assert excerpt["next_cursor"] in excerpt["next_step"]

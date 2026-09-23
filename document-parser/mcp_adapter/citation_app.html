@@ -370,7 +370,6 @@
   }
   /* The server tally belongs in the last column, beside the citation it is
      counting, not wherever the flow happens to put it. */
-  .meta .last-column { grid-column: -2 / -1; }
 
   /* The anchor sits beside the buttons that copy it, truncated: it is there
      to be recognised, not read. */
@@ -647,13 +646,8 @@
       : `${num(stats.chars)} caractères`;
     const cost = view.est_tokens ? ` · ≈ ${num(view.est_tokens)} tokens` : "";
 
-    // The rail's picture: the page thumbnail this view fetches for itself, or
-    // the crop the server inlined when MCP_INLINE_CITATION_IMAGE is on.
-    const sheet = view.page_image
-      ? `<button type="button" class="sheet ready" id="page-sheet" title="Agrandir la page">` +
-        `<img alt="Le passage cité, page ${esc(view.page)}" src="${esc(view.page_image)}">` +
-        `<span class="glass" aria-hidden="true">⤢</span></button>`
-      : `<button type="button" class="sheet pending" id="page-sheet" disabled></button>`;
+    // The rail's picture: the page thumbnail this view fetches for itself.
+    const sheet = `<button type="button" class="sheet pending" id="page-sheet" disabled></button>`;
 
     root.innerHTML = `
       <div class="card">
@@ -684,11 +678,6 @@
             <div><dt>Quote hash</dt><dd title="${esc(view.quote_hash)}">${esc(
               shortHash(view.quote_hash)
             )}</dd></div>
-            <div class="last-column"><dt>Total serveur</dt><dd title="Tout ce que ce serveur MCP a servi depuis son démarrage, tous outils confondus — estimé à ~4 caractères par token, images exclues. En stdio c'est cette session ; en HTTP, tous les clients de ce backend.">${
-              view.total_est_tokens
-                ? num(view.total_est_tokens) + " tok · " + esc(view.total_calls) + " appels"
-                : "—"
-            }</dd></div>
           </dl>
           <div class="row">
             <button class="primary" data-act="copy">Copier la citation</button>
@@ -699,7 +688,6 @@
           </div>
         </div>
       </div>
-      ${view.image_note ? `<div class="note">${esc(view.image_note)}</div>` : ""}
       ${view.deep_link && !isAbsolute(view.deep_link)
         ? `<div class="note">Renseigne <code>MCP_STUDIO_BASE_URL</code> côté serveur pour activer « Ouvrir dans Studio » — le lien profond est pour l'instant un chemin nu (<code>${esc(
             view.deep_link
@@ -902,7 +890,7 @@
     try {
       const result = await call("tools/call", {
         name: "get_citation_image",
-        arguments: { uri: view.uri, kind: "page" },
+        arguments: { uri: view.uri },
       });
       if (result && (result.isError || result.is_error)) {
         throw new Error(result?.content?.[0]?.text || "the server refused");
@@ -1032,7 +1020,7 @@
         "tools/call",
         {
           name: "get_citation_image",
-          arguments: { uri: current.uri, kind: "page", max_width: LENS_WIDTH },
+          arguments: { uri: current.uri, max_width: LENS_WIDTH },
         },
         20000
       );

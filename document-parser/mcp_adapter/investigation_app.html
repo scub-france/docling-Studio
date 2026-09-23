@@ -1162,12 +1162,6 @@
       `${num(view.steps_unanswered ?? 0)} unanswered`,
       `${attempts} attempt${attempts === 1 ? "" : "s"}, ${kept} kept`,
     ];
-    // The surface total, not this card's: `Ledger` is scoped to one server
-    // process, which over HTTP is every client of that backend. Said as
-    // "this server", never as "this conversation".
-    if (view.total_calls) {
-      parts.push(`${num(view.total_est_tokens)} est. tokens over ${num(view.total_calls)} calls on this server`);
-    }
     return parts;
   }
 
