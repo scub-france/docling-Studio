@@ -96,12 +96,12 @@ class TestPixelProjection:
         left, top, right, bottom = box.pixel_box(dpi=72, padding=0)
         assert left < right and top < bottom
 
-    def test_bottomleft_without_a_page_height_still_yields_a_valid_box(self):
+    def test_bottomleft_without_a_page_height_has_no_box(self):
+        # It could not be flipped: a mirrored box would mark the wrong place.
         box = BoundingBox(
             page=1, left=10, top=300, right=100, bottom=100, coord_origin="BOTTOMLEFT"
         )
-        left, top, right, bottom = box.pixel_box(dpi=72, padding=0)
-        assert left < right and top < bottom
+        assert box.pixel_box(dpi=72, padding=0) is None
 
 
 class TestRenderPage:

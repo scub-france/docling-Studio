@@ -60,19 +60,21 @@ class BoundingBox:
     page_width: float | None = None
     page_height: float | None = None
 
-    def pixel_box(self, *, dpi: int = 150, padding: int = 8) -> tuple[int, int, int, int]:
+    def pixel_box(self, *, dpi: int = 150, padding: int = 8) -> tuple[int, int, int, int] | None:
         """Project the box onto a page rendered at `dpi`, origin-normalised.
 
         Docling reports points (1/72 inch) from whichever corner the parse
-        used; a raster crop needs pixels from the top-left. The `page_height`
-        flip is what turns a BOTTOMLEFT box into one, and the final swap
-        catches a box whose corners are inverted for any other reason — a
-        crop with a negative height would raise deep inside the imaging
-        library instead of just being wrong.
+        used; a raster needs pixels from the top-left. The `page_height` flip
+        is what turns a BOTTOMLEFT box into one — without it the box would be
+        mirrored, so there is none. The final swap catches corners inverted
+        for any other reason.
         """
+        bottom_left = self.coord_origin.upper() == "BOTTOMLEFT"
+        if bottom_left and not self.page_height:
+            return None
         scale = dpi / 72.0
         left, right = self.left * scale, self.right * scale
-        if self.coord_origin.upper() == "BOTTOMLEFT" and self.page_height:
+        if bottom_left:
             top = (self.page_height - self.top) * scale
             bottom = (self.page_height - self.bottom) * scale
         else:

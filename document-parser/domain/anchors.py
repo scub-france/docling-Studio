@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass
 
 # grammar only forbids the separators themselves so opaque ids stay opaque.
@@ -41,7 +42,23 @@ URI_SCHEME = "dstudio"
 # parsing rather than be silently skipped as "not an anchor".
 _IN_TEXT_RE = re.compile(r"dstudio://doc/[^\s()\[\]{}<>\"\'`]+")
 
+# What a well-formed anchor looks like, ending on the ref's digits. A match
+# trims whatever a sentence glued on (`**`, a closing guillemet, a full
+# stop); a near-miss keeps its raw form, so it fails parsing downstream.
+_ANCHOR_PREFIX_RE = re.compile(r"dstudio://doc/[^@#]+@[^#]+#/[a-z_]+/\d+(?:\.\.#/[a-z_]+/\d+)?")
+
 _TRAILING = ".,;:!?"
+
+# Typography a model does not reproduce faithfully: apostrophes and dashes
+# fold to one form, double quotes and the soft hyphen are dropped.
+_QUOTE_FOLD = str.maketrans(
+    {
+        **dict.fromkeys("\u2019\u2018\u201a\u201b\u2032", "'"),
+        **dict.fromkeys("\u2010\u2011\u2012\u2013\u2014\u2015\u2212", "-"),
+        **dict.fromkeys('"\u201c\u201d\u201e\u201f\u00ab\u00bb\u2033\u00ad', None),
+        "|": " ",  # table cells: the pipes of the rendered row are layout
+    }
+)
 
 
 class AnchorParseError(ValueError):
@@ -94,17 +111,17 @@ def quote_hash(text: str) -> str:
 
 
 def normalise_quote(text: str) -> str:
-    """Collapse whitespace runs and strip — the comparison form for quotes.
+    """The comparison form for quotes, applied to both sides.
 
     Verification must survive the trip through a model: line wrapping, a
-    trailing newline or a non-breaking space are not textual drift. Anything
-    else (a changed word, a dropped clause) is.
+    non-breaking space, a ligature, a curly apostrophe or « guillemets » are
+    not textual drift. Anything else (a changed word, a dropped clause) is.
     """
     # The wire defuses `</document-content>` to `<\\/document-content>` before
     # handing document text to a model, so a quote coming back carries the
     # escaped form. Undo it here: an escape we applied ourselves is not drift.
     text = (text or "").replace("<\\/", "</")
-    # `\s` also matches NBSP and friends in Unicode mode, so one pass is enough.
+    text = unicodedata.normalize("NFKC", text).translate(_QUOTE_FOLD)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -118,7 +135,8 @@ def find_anchors(text: str) -> list[str]:
     """
     seen: list[str] = []
     for raw in _IN_TEXT_RE.findall(text or ""):
-        candidate = raw.rstrip(_TRAILING)
+        wellformed = _ANCHOR_PREFIX_RE.match(raw)
+        candidate = wellformed.group(0) if wellformed else raw.rstrip(_TRAILING)
         if candidate and candidate not in seen:
             seen.append(candidate)
     return seen

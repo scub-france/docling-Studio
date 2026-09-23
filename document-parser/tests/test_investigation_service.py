@@ -308,6 +308,26 @@ class TestTextCeilings:
         )
         assert verdict.attempt.ordinal == 1
 
+    async def test_a_too_short_quote_is_refused_without_spending_an_attempt(self, service):
+        investigation = await planned(service)
+        step_id = investigation.steps[0].id
+        with pytest.raises(InvalidArgumentError, match="proves nothing"):
+            await service.record_attempt(
+                investigation_id=investigation.id,
+                step_id=step_id,
+                thought="one letter is somewhere",
+                uri=anchor_uri("#/texts/0..#/texts/7"),
+                quote="e",
+            )
+        verdict = await service.record_attempt(
+            investigation_id=investigation.id,
+            step_id=step_id,
+            thought="the sentence itself",
+            uri=PREAVIS_URI,
+            quote=PREAVIS_TEXT,
+        )
+        assert verdict.attempt.ordinal == 1
+
     async def test_an_oversized_answer_is_refused(self, service):
         investigation = await service_with_one_kept(service)
         with pytest.raises(InvalidArgumentError, match="`answer`"):
@@ -422,6 +442,11 @@ class TestAbandonStep:
 
 
 class TestClose:
+    async def test_an_anchor_wrapped_in_markup_is_still_the_kept_one(self, service):
+        investigation = await service_with_one_kept(service)
+        closed = await service.close(investigation.id, f"Trois mois : **{PREAVIS_URI}**.")
+        assert closed.state is InvestigationState.CLOSED
+
     async def test_an_answer_citing_a_kept_anchor_is_published(self, service):
         investigation = await service_with_one_kept(service)
         closed = await service.close(investigation.id, f"Trois mois. {PREAVIS_URI}")

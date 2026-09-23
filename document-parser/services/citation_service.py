@@ -34,6 +34,9 @@ from services.navigation_errors import (
     RefNotFoundError,
 )
 
+# Below this, a match proves nothing: "e" or "mois" is in most sections.
+MIN_QUOTE_CHARS = 10
+
 if TYPE_CHECKING:
     from domain.navigation import ResolvedElement
     from domain.parse_index import DocumentIndex
@@ -67,11 +70,18 @@ class CitationService:
         return self.build(parse.document.id, parse.version_id, element)
 
     def check_quote(self, quote: str | None) -> None:
-        """Refuse a quote longer than one read can return.
+        """Refuse a quote too short to prove anything, or too long for one read.
 
         Matching runs on the event loop and costs more the longer the quote,
         so a quote no read could have produced is refused before any of it.
+        An empty quote passes: the caller decides what "no quote" means.
         """
+        claimed = normalise_quote(quote or "")
+        if claimed and len(claimed) < MIN_QUOTE_CHARS:
+            raise InvalidArgumentError(
+                f"A {len(claimed)}-character quote proves nothing. Quote at least "
+                f"{MIN_QUOTE_CHARS} characters: the words that carry the claim."
+            )
         ceiling = self._config.max_read_tokens
         size = estimate_tokens(quote or "")
         if size > ceiling:
@@ -202,7 +212,9 @@ class CitationService:
         drifted — and it answers with a span anchor, so the citation the agent
         publishes covers the whole passage it quoted.
         """
-        if claimed in normalise_quote(element.text):
+        # A span's own text is all of its members: answering with it would
+        # hand back the range as sent, however wide. Look inside it instead.
+        if not is_span(ref) and claimed in normalise_quote(element.text):
             return element
         covered = section_refs(index, ref)
         for candidate in covered:

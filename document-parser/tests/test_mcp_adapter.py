@@ -437,7 +437,7 @@ class TestNextStep:
             bad = _payload(
                 await client.call_tool(
                     "verify_citation",
-                    {"uri": anchor_uri(PREAVIS_REF), "quote": "six mois"},
+                    {"uri": anchor_uri(PREAVIS_REF), "quote": "le préavis est de six mois"},
                 )
             )
         assert "publish" in good["next_step"].lower()
