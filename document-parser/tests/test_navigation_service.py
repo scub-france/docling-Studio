@@ -157,7 +157,9 @@ class TestReadElement:
         assert citation.page == 1
         assert citation.bbox is not None and citation.bbox.page == 1
         assert citation.headings[-1] == "12.2 Préavis"
-        assert citation.deep_link == ("http://localhost:3000/docs/doc-1?ref=%23%2Ftexts%2F4&page=1")
+        assert citation.deep_link == (
+            f"http://localhost:3000/analyses/{JOB_ID}?ref=%23%2Ftexts%2F4&page=1"
+        )
 
     async def test_budget_truncates_at_an_element_boundary_and_resumes(self):
         service = _service()
@@ -516,6 +518,14 @@ class TestSpanCitations:
         # resolve.
         citation = await _tools().citations.get_citation(_uri("#/texts/2..#/texts/3"))
         assert citation.deep_link.endswith("ref=%23%2Ftexts%2F2&page=1")
+
+    async def test_a_virtual_page_deep_links_to_the_page_alone(self):
+        citation = await _tools(job=_job(FLAT)).citations.get_citation(_uri("#/pages/2"))
+        assert citation.deep_link == f"http://localhost:3000/analyses/{JOB_ID}?page=2"
+
+    async def test_without_a_studio_url_there_is_no_deep_link(self):
+        tools = _tools(config=NavigationConfig())
+        assert (await tools.citations.get_citation(_uri(PREAVIS_REF))).deep_link is None
 
     async def test_a_span_is_boxed_as_one_region_over_its_members(self, tmp_path):
         pdf = tmp_path / "contrat.pdf"

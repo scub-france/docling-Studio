@@ -160,7 +160,7 @@
  *   - Selecting a node in the tree → highlight its bbox on the preview
  *   - Clicking a bbox → select the matching node in the tree
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { Analysis, Chunk, DocChunk, DocTreeNode, PageElement } from '../shared/types'
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
@@ -181,6 +181,9 @@ const props = defineProps<{
   docId: string
   /** A saved analysis to show read-only, already loaded by the host page. */
   analysis?: Analysis
+  /** From a deep link: the element to focus, the page to open. */
+  focusRef?: string
+  page?: number
 }>()
 
 const { t } = useI18n()
@@ -353,7 +356,20 @@ onMounted(async () => {
   }
   const first = documentStore.workspacePages[0]?.page_number
   if (first) currentPage.value = first
+  // After a tick, so the preview and the tree are mounted and their
+  // `focusTick` watchers scroll to the element.
+  await nextTick()
+  openDeepLink()
 })
+
+function openDeepLink(): void {
+  if (props.page && documentStore.workspacePages.some((p) => p.page_number === props.page)) {
+    currentPage.value = props.page
+  }
+  if (props.focusRef) documentStore.focusElement(props.focusRef)
+}
+
+watch(() => [props.focusRef, props.page], openDeepLink)
 
 watch(
   () => props.docId,

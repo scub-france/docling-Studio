@@ -16,7 +16,7 @@ the ref covers.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from urllib.parse import quote as urlquote
+from urllib.parse import urlencode
 
 from domain.anchors import DocumentAnchor, normalise_quote, quote_hash
 from domain.element_reader import element_text, resolve, section_refs
@@ -27,6 +27,7 @@ from domain.navigation import (
     clip_to_tokens,
     estimate_tokens,
 )
+from domain.parse_index import parse_page_ref
 from domain.spans import is_span, span_ref, span_start
 from services.navigation_errors import (
     InvalidArgumentError,
@@ -182,7 +183,7 @@ class CitationService:
             page=element.page,
             bbox=element.bbox,
             headings=list(element.headings),
-            deep_link=self._deep_link(document_id, element),
+            deep_link=self._deep_link(version_id, element),
         )
 
     # ------------------------------------------------------------------
@@ -275,15 +276,20 @@ class CitationService:
             start += 1
         return start
 
-    def _deep_link(self, document_id: str, element: ResolvedElement) -> str:
-        """A Studio URL that reopens the cited element in the viewer."""
-        # The Studio viewer scrolls to one element, so a span links to the
-        # element it opens on rather than to a range it cannot resolve.
-        path = f"/docs/{document_id}?ref={urlquote(span_start(element.ref), safe='')}"
-        if element.page is not None:
-            path += f"&page={element.page}"
+    def _deep_link(self, version_id: str, element: ResolvedElement) -> str | None:
+        """The Studio URL that opens the cited parse on this element — None
+        without a configured base: a bare path is no link for a reader."""
         base = self._config.studio_base_url.rstrip("/")
-        return f"{base}{path}" if base else path
+        if not base:
+            return None
+        query: dict[str, str | int] = {}
+        # The viewer focuses one element: a span opens on its first, and a
+        # virtual page has none — its page is the whole target.
+        if parse_page_ref(element.ref) is None:
+            query["ref"] = span_start(element.ref)
+        if element.page is not None:
+            query["page"] = element.page
+        return f"{base}/analyses/{version_id}" + (f"?{urlencode(query)}" if query else "")
 
 
 def _found_detail(asked: str, found: str) -> str:

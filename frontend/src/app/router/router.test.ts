@@ -66,6 +66,20 @@ describe('router', () => {
     expect(computed.id).toBe('abc')
   })
 
+  it('hands a citation deep link to the analysis page as props', () => {
+    const router = buildRouter()
+    const cases: Array<[string, unknown]> = [
+      ['/analyses/an-1?ref=%23%2Ftexts%2F4&page=2', { id: 'an-1', focusRef: '#/texts/4', page: 2 }],
+      ['/analyses/an-1?page=3', { id: 'an-1', focusRef: undefined, page: 3 }],
+      ['/analyses/an-1?page=nope', { id: 'an-1', focusRef: undefined, page: undefined }],
+    ]
+    for (const [path, expected] of cases) {
+      const route = router.resolve(path)
+      const propsFn = route.matched[0]?.props as { default: (r: typeof route) => unknown }
+      expect(propsFn.default(route), path).toEqual(expected)
+    }
+  })
+
   it('redirects unknown paths to /', () => {
     const router = buildRouter()
     const resolved = router.resolve('/nope/this/does/not/exist')
