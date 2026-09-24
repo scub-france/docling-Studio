@@ -209,9 +209,9 @@ class CitationImage:
 class OutlineNode:
     """One entry of the document map.
 
-    `est_tokens` is what makes the outline actionable: the agent decides what
-    to read *before* paying for it. It counts the section's own text plus
-    everything under it, including deeper levels the outline itself elided.
+    `est_tokens` is what reading the node costs — text and anchors, deeper
+    levels the outline elided included — so the agent decides what to read
+    before paying for it.
     """
 
     ref: str
@@ -254,17 +254,14 @@ class ResolvedElement:
     bbox: BoundingBox | None = None
     headings: list[str] = field(default_factory=list)
 
-    @property
-    def est_tokens(self) -> int:
-        return estimate_tokens(self.text)
-
 
 @dataclass(frozen=True)
 class Excerpt:
     """What `read_element` returns: markdown + one citation per element read.
 
-    `next_cursor` is a `ref`: pass it back as `cursor` to continue exactly
-    where the budget cut the read. `None` means the section is exhausted.
+    `next_cursor` is where the budget cut the read — a ref, or `ref@offset`
+    inside an element too long for one read. Pass it back as `cursor`;
+    `None` means the section is exhausted.
 
     `span_uri` is the anchor covering *everything this read returned*, for a
     quote that runs across element boundaries. Present only when the read
@@ -312,27 +309,45 @@ def chars_for_tokens(tokens: int) -> int:
     return max(1, tokens) * _CHARS_PER_TOKEN
 
 
+# Every element a read returns carries its `citations[]` entry — a UUID-based
+# uri, the ref, an eight-word preview, the page: ~60 tokens, as much as a
+# short paragraph, so a budget that ignored it would not bound the read.
+ANCHOR_TOKENS = 60
+
+
+def read_cost(text: str) -> int:
+    """What a read spends returning `text` as one element, anchor included.
+
+    The read budget and every `est_tokens` use this one figure, so what the
+    map announces is what a read spends.
+    """
+    return estimate_tokens(text) + ANCHOR_TOKENS if text.strip() else 0
+
+
 CLIP_MARKER = " […clipped]"
+
+
+def clip_point(text: str, budget: int) -> int:
+    """Where `clip_to_tokens` cuts `text`: the start of the first word it
+    drops, or `len(text)` when all of it fits. Never 0 when it cuts, so a
+    read resuming there always moves forward."""
+    limit = chars_for_tokens(max(1, budget - estimate_tokens(CLIP_MARKER)))
+    if len(text) <= limit:
+        return len(text)
+    space = text.rfind(" ", 0, limit + 1)
+    return space + 1 if space > 0 else limit
 
 
 def clip_to_tokens(text: str, budget: int) -> str:
     """Cut `text` to `budget` tokens at a word boundary, marking the cut.
 
-    The marker is part of the returned text on purpose — anyone quoting a
-    clipped passage must be able to see they hold a prefix — and it is charged
-    to the budget, so a ceiling holds for the whole string rather than for the
-    string minus its own footnote.
-
-    Every path that hands document text to a caller goes through this. A
-    ceiling that applies to reads but not to verification is not a ceiling:
-    an agent wanting an unbudgeted read would just verify instead.
+    The marker stays in the text, so whoever quotes it sees they hold a
+    prefix, and it is charged to the budget, so the ceiling holds for the
+    whole string. Every path that hands document text out goes through
+    this: a ceiling on reads but not on verification would not be one.
     """
-    limit = chars_for_tokens(max(1, budget - estimate_tokens(CLIP_MARKER)))
-    if len(text) <= limit:
-        return text
-    head = text[:limit]
-    cut = head.rsplit(" ", 1)[0] if " " in head else head
-    return f"{cut.rstrip()}{CLIP_MARKER}"
+    cut = clip_point(text, budget)
+    return text if cut == len(text) else f"{text[:cut].rstrip()}{CLIP_MARKER}"
 
 
 def is_heading(label: str) -> bool:

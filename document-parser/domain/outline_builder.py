@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from domain.element_reader import element_text, section_refs
-from domain.navigation import OutlineNode, estimate_tokens, is_heading
+from domain.navigation import OutlineNode, is_heading, read_cost
 from domain.parse_index import (
     heading_level,
     label_of,
@@ -48,7 +48,7 @@ def build_outline(
     `mode` is `"sections"` from two headings up, `"pages"` below — a scanned
     PDF still gets a usable map.
     """
-    total = sum(estimate_tokens(element_text(index, ref)) for ref in index.order)
+    total = sum(read_cost(element_text(index, ref)) for ref in index.order)
     headings = [ref for ref in index.order if is_heading(label_of(index.by_ref[ref]))]
     # One heading makes a one-node map that says nothing; pages say more.
     if len(headings) < 2:
@@ -130,7 +130,8 @@ def _page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNo
     nodes: list[OutlineNode] = []
     for page in pages[:max_nodes]:
         refs = [ref for ref in index.order if page in index.pages_of.get(ref, frozenset())]
-        text = " ".join(element_text(index, ref) for ref in refs).strip()
+        texts = [element_text(index, ref) for ref in refs]
+        text = " ".join(texts).strip()
         nodes.append(
             OutlineNode(
                 ref=page_ref(page),
@@ -139,7 +140,7 @@ def _page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNo
                 kind="page",
                 level=1,
                 page=page,
-                est_tokens=estimate_tokens(text),
+                est_tokens=sum(read_cost(t) for t in texts),
                 child_count=len(refs),
             )
         )
@@ -147,7 +148,7 @@ def _page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNo
 
 
 def section_est_tokens(index: DocumentIndex, ref: str) -> int:
-    return sum(estimate_tokens(element_text(index, r)) for r in section_refs(index, ref))
+    return sum(read_cost(element_text(index, r)) for r in section_refs(index, ref))
 
 
 def _child_counts(index: DocumentIndex, headings: list[str]) -> dict[str, int]:

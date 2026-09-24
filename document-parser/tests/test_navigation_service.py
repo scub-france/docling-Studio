@@ -8,9 +8,11 @@ same ones the domain tests assert.
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
-from domain.navigation import CitationStatus
+from domain.navigation import CLIP_MARKER, CitationStatus, read_cost
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import (
     DocumentNotFoundError,
@@ -159,7 +161,7 @@ class TestReadElement:
 
     async def test_budget_truncates_at_an_element_boundary_and_resumes(self):
         service = _service()
-        first = await service.read_element(DOC_ID, "#/texts/0", max_tokens=12)
+        first = await service.read_element(DOC_ID, "#/texts/0", max_tokens=100)
         assert first.truncated is True
         assert first.next_cursor is not None
         # No half element: the cursor is the first ref that did not fit.
@@ -338,16 +340,45 @@ class TestBudgetEdges:
     async def test_one_element_over_the_ceiling_is_clipped_not_smuggled_through(self):
         # The config promises a ceiling a client cannot raise; an element
         # larger than the whole budget must not sail past it unannounced.
-        service = _service(config=NavigationConfig(max_read_tokens=5))
+        ceiling = read_cost(PREAVIS_TEXT) - 1
+        service = _service(config=NavigationConfig(max_read_tokens=ceiling))
         excerpt = await service.read_element(DOC_ID, PREAVIS_REF, include="self")
-        # The clip marker is charged to the budget too, so the ceiling holds
-        # for the whole string rather than for the string minus its footnote.
-        assert excerpt.est_tokens <= 5
+        # The clip marker and the anchor are charged to the budget too.
+        assert excerpt.est_tokens <= ceiling
         assert excerpt.truncated is True
-        assert excerpt.markdown.endswith("[…clipped]")
+        assert excerpt.markdown.endswith(CLIP_MARKER)
+
+    @pytest.mark.parametrize(
+        ("ref", "heading"), [(PREAVIS_REF, []), (f"#/texts/3..{PREAVIS_REF}", ["12.2", "Préavis"])]
+    )
+    async def test_following_the_cursor_reads_an_oversized_element_whole(self, ref, heading):
+        words = [f"mot{i}" for i in range(400)]
+        payload = copy.deepcopy(SECTIONED)
+        payload["texts"][4]["text"] = " ".join(words)
+        service = _service(job=_job(payload))
+
+        pieces, cursor = [], None
+        while True:
+            read = await service.read_element(
+                DOC_ID, ref, include="self", max_tokens=150, cursor=cursor
+            )
+            assert read.est_tokens <= 150
+            pieces.append(read.markdown.removesuffix(CLIP_MARKER))
+            cursor = read.next_cursor
+            if cursor is None:
+                break
+        assert len(pieces) > 2
+        assert " ".join(pieces).split() == heading + words
+
+    @pytest.mark.parametrize("offset", ["0", "58", "x", "", "²"])
+    async def test_a_cursor_offset_outside_the_element_is_refused(self, offset):
+        with pytest.raises(InvalidArgumentError, match="does not belong"):
+            await _service().read_element(
+                DOC_ID, PREAVIS_REF, include="self", cursor=f"{PREAVIS_REF}@{offset}"
+            )
 
     async def test_a_clipped_quote_still_verifies(self):
-        tools = _tools(config=NavigationConfig(max_read_tokens=8))
+        tools = _tools(config=NavigationConfig(max_read_tokens=read_cost(PREAVIS_TEXT) - 1))
         excerpt = await tools.navigation.read_element(DOC_ID, PREAVIS_REF, include="self")
         citation = excerpt.citations[0]
         check = await tools.citations.verify_citation(citation.uri, citation.quote.split(" […")[0])

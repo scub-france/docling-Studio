@@ -175,8 +175,9 @@ _VERIFICATION_NEXT_STEP = {
 def _excerpt_next_step(excerpt: Excerpt) -> str:
     if excerpt.truncated and excerpt.next_cursor:
         return (
-            f"The section continues. Call read_element again with cursor='{excerpt.next_cursor}' — "
-            f"resuming is cheaper than re-reading with a larger budget. Then: {_CITE_WITH}"
+            "Cut at the budget. Call read_element again with the same ref and "
+            f"cursor='{excerpt.next_cursor}' — resuming is cheaper than re-reading with a "
+            f"larger budget. Then: {_CITE_WITH}"
         )
     if not excerpt.citations:
         return "Nothing readable at this anchor. Pick another entry from get_outline."
