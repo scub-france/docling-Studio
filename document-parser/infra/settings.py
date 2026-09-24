@@ -258,10 +258,11 @@ class Settings:
             # MCP document server (read-only agent surface).
             mcp_enabled=os.environ.get("MCP_ENABLED", "false").lower()
             in ("1", "true", "yes", "on"),
+            # Empty counts as unset: compose passes `${MCP_ALLOWED_HOSTS:-}` through.
             mcp_allowed_hosts=[
                 h.strip()
-                for h in os.environ.get(
-                    "MCP_ALLOWED_HOSTS", "127.0.0.1:*,localhost:*,[::1]:*"
+                for h in (
+                    os.environ.get("MCP_ALLOWED_HOSTS") or "127.0.0.1:*,localhost:*,[::1]:*"
                 ).split(",")
                 if h.strip()
             ],

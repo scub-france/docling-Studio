@@ -152,6 +152,10 @@ services:
       # for the one-liner to generate a key. No default on purpose: a dev
       # who creates a sealed store must persist the key in their own .env.
       STORE_SECRET_KEY: ${STORE_SECRET_KEY:-}
+      # MCP document server at /mcp (docs/mcp-server.md): off unless MCP_ENABLED.
+      MCP_ENABLED: ${MCP_ENABLED:-false}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
+      MCP_STUDIO_BASE_URL: ${MCP_STUDIO_BASE_URL:-http://localhost:3000}
     profiles: ["default", "graph", "ingestion", "remote"]
     command:
       ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

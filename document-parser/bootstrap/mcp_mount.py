@@ -80,8 +80,9 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
     app.router.routes.extend(mcp_app.routes)
 
     logger.warning(
-        "MCP document server mounted at %s — READ-ONLY and UNAUTHENTICATED. "
-        "Keep it on localhost or behind an authenticating proxy.",
+        "MCP document server mounted at %s — UNAUTHENTICATED: it reads every document "
+        "and writes the investigation journal. Keep it on localhost or behind an "
+        "authenticating proxy.",
         MCP_PATH,
     )
     return server.session_manager.run()

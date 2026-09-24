@@ -164,6 +164,10 @@ class TestReasoningMaxIterations:
         monkeypatch.setenv("REASONING_MAX_ITERATIONS", "9")
         assert Settings.from_env().reasoning_max_iterations == 9
 
+    def test_an_empty_mcp_allowed_hosts_keeps_the_localhost_default(self, monkeypatch):
+        monkeypatch.setenv("MCP_ALLOWED_HOSTS", "")
+        assert Settings.from_env().mcp_allowed_hosts == ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+
     def test_out_of_bounds_rejected(self):
         import pytest
 
