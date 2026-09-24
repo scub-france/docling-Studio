@@ -427,6 +427,9 @@ const messages: Messages = {
     'parse.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse.",
     'parse.expandAll': 'Tout d\u00e9plier',
     'parse.collapseAll': 'Tout replier',
+    'parse.showAll': 'Tout afficher',
+    'parse.showAllHint':
+      'D\u00e9s\u00e9lectionne l\u2019\u00e9l\u00e9ment et remet toutes les bbox en surbrillance',
 
     // Chunk view (#264) \u2014 chunks aligned to the page preview
     'chunk.strategy': 'Strat\u00e9gie',
@@ -1044,6 +1047,8 @@ const messages: Messages = {
     'parse.noAnalysis': 'No analysis yet — run a parse first.',
     'parse.expandAll': 'Expand all',
     'parse.collapseAll': 'Collapse all',
+    'parse.showAll': 'Show all',
+    'parse.showAllHint': 'Clear the selection and highlight every bbox again',
 
     // Chunk view (#264) — chunks aligned to the page preview
     'chunk.strategy': 'Strategy',
