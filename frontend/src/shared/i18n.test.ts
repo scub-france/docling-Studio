@@ -64,6 +64,22 @@ describe('useI18n', () => {
     expect(t('history.emptyDocs')).toBe('No documents yet. Upload a document from the library.')
   })
 
+  it('has the Parse view show-all keys in French', () => {
+    const { t } = useI18n()
+    expect(t('parse.showAll')).toBe('Tout afficher')
+    expect(t('parse.showAllHint')).toBe(
+      'Désélectionne l’élément et remet toutes les bbox en surbrillance',
+    )
+  })
+
+  it('has the Parse view show-all keys in English', () => {
+    appLocale.value = 'en'
+
+    const { t } = useI18n()
+    expect(t('parse.showAll')).toBe('Show all')
+    expect(t('parse.showAllHint')).toBe('Clear the selection and highlight every bbox again')
+  })
+
   it('has detailed pipeline option hints in French', () => {
     const { t } = useI18n()
     expect(t('config.ocrHint').length).toBeGreaterThan(40)

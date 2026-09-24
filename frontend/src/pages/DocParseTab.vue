@@ -4,7 +4,20 @@
       :elements="allPageElements"
       :hidden-types="hiddenTypes"
       @update:hidden-types="(next) => (hiddenTypes = next)"
-    />
+    >
+      <template #action>
+        <button
+          type="button"
+          class="show-all-btn"
+          :disabled="!documentStore.focusedRef"
+          :title="t('parse.showAllHint')"
+          data-e2e="parse-show-all"
+          @click="onShowAll"
+        >
+          {{ t('parse.showAll') }}
+        </button>
+      </template>
+    </LayersBar>
     <div class="parse-body" :class="{ 'properties-open': propertiesOpen }">
       <aside class="parse-structure" :class="{ 'parse-drawer--closed': !structureOpen }">
         <header class="parse-structure-header">
@@ -334,6 +347,14 @@ function onClickElement(el: PageElement, _pageNumber: number): void {
   reasoningStore.selectStepByCitation(el.self_ref)
 }
 
+// #338 — leave focus mode so every bbox is drawn at full strength again.
+// `selectStep(null)` clears the shared focus along with the trace step, so the
+// tree, the Properties panel and the timeline all drop the selection together.
+// Hidden layers are a filter, not a selection: they stay hidden.
+function onShowAll(): void {
+  reasoningStore.selectStep(null)
+}
+
 async function onSaveChunk(chunkId: string, text: string): Promise<void> {
   if (props.analysis) return
   await chunksStore.updateText(props.docId, chunkId, text)
@@ -614,6 +635,29 @@ function findPageOfRef(
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
+}
+
+/* #338 — sits in the LAYERS bar's right-aligned action slot. */
+.show-all-btn {
+  padding: 3px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.show-all-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.show-all-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .parse-structure-filter {

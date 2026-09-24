@@ -147,6 +147,27 @@ describe('reasoning store', () => {
     expect(doc.focusTick).toBe(t0 + 2)
   })
 
+  it('selectStep(null) drops the step and the shared focus together (Show all, #338)', async () => {
+    vi.mocked(api.runReasoning).mockResolvedValue(trace())
+    const store = useReasoningStore()
+    const doc = useDocumentStore()
+    await store.run('doc-1', 'q')
+    store.selectStep('s2')
+
+    store.selectStep(null)
+    expect(store.selectedStepId).toBeNull()
+    expect(doc.focusedRef).toBeNull()
+  })
+
+  it('selectStep(null) clears a focus set outside the trace (tree / bbox click)', () => {
+    const store = useReasoningStore()
+    const doc = useDocumentStore()
+    doc.focusElement('#/tables/0')
+
+    store.selectStep(null)
+    expect(doc.focusedRef).toBeNull()
+  })
+
   it('selectTurn loads the trace and auto-selects its first step', async () => {
     vi.mocked(api.runReasoning).mockResolvedValue(trace())
     const store = useReasoningStore()

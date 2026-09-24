@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Parse view — Show all** (#338): selecting an element dims every other bbox, and nothing in the UI led back out. A **Show all** button in the LAYERS bar now clears the selection — tree row, Properties panel and Ask trace step — so every visible bbox is drawn at full strength with its label again. Hidden layers stay hidden, and the preview keeps its scroll position.
+
 ## [0.7.2] - 2026-09-22
 
 ### Fixed

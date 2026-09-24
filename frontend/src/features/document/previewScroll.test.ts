@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   centeredScrollPosition,
+  isFocusScrollRequest,
   isRectVisible,
   mostVisiblePage,
   pageFrameGeometry,
@@ -98,5 +99,19 @@ describe('pageTopScrollPosition', () => {
 
   it('clamps at the scroll origin for a card above the viewport', () => {
     expect(pageTopScrollPosition(0, 80, 20)).toBe(0)
+  })
+})
+
+describe('isFocusScrollRequest', () => {
+  it('asks to scroll when an element is focused', () => {
+    expect(isFocusScrollRequest(new Set(['#/texts/3']))).toBe(true)
+  })
+
+  it('does not scroll when the focus is cleared (Show all)', () => {
+    expect(isFocusScrollRequest(new Set())).toBe(false)
+  })
+
+  it('does not scroll when the preview has no highlight at all', () => {
+    expect(isFocusScrollRequest(undefined)).toBe(false)
   })
 })
