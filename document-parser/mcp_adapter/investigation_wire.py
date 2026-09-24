@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from domain.investigation import StepState, next_pending, step_tally
+from domain.navigation import clip_to_tokens
 
 # Runtime import, not TYPE_CHECKING: `OutlineResult` is a dataclass field
 # annotation below, and the SDK resolves those when it derives a tool's
@@ -32,6 +33,10 @@ from mcp_adapter.wire_mapping import outline_result
 if TYPE_CHECKING:
     from domain.investigation import Attempt, Investigation, Step
     from domain.investigation_map import InvestigationReport, MapNode
+
+
+# What a replayed record keeps of `actual_quote` (~400 characters).
+_TRACE_QUOTE_TOKENS = 100
 
 
 @dataclass(frozen=True)
@@ -310,7 +315,13 @@ def view_result(report: InvestigationReport) -> InvestigationView:
         reasoning=trace_steps(investigation),
         map=map_entries(report.map),
         next_step=(
-            "`reasoning` is what the agent said it was doing — thoughts are recorded, not "
+            (
+                ""
+                if report.parse_available
+                else "The parse this investigation read has been deleted: the record stands, "
+                "the map cannot be drawn. "
+            )
+            + "`reasoning` is what the agent said it was doing — thoughts are recorded, not "
             "verified. `outcome` on each attempt is the server's verdict, and `map` is those "
             "verdicts placed on the document. Resume by working the first pending step."
         ),
@@ -348,7 +359,13 @@ def _trace_attempt(attempt: Attempt) -> TraceAttempt:
         outcome=str(attempt.outcome) if attempt.outcome else None,
         quote=neutralise(attempt.quote) if attempt.quote else None,
         kept_uri=attempt.kept_uri,
-        actual_quote=neutralise(attempt.actual_quote) if attempt.actual_quote else None,
+        # The record is replayed on every read: what the element said is a
+        # hint there, not the element — re-read it for the full text.
+        actual_quote=(
+            neutralise(clip_to_tokens(attempt.actual_quote, _TRACE_QUOTE_TOKENS))
+            if attempt.actual_quote
+            else None
+        ),
     )
 
 

@@ -11,16 +11,21 @@ whoever reads the investigation later.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from mcp import Client
 
+from domain.investigation import Attempt, AttemptOutcome, Investigation, Step
 from mcp_adapter import build_mcp_server
+from mcp_adapter.investigation_wire import trace_steps
 from tests.navigation_fixtures import (
     DOC_ID,
+    JOB_ID,
     PREAVIS_REF,
     PREAVIS_TEXT,
     anchor_uri,
     make_document_tools,
+    make_job,
 )
 
 TOOL_NAMES = {
@@ -383,3 +388,42 @@ class TestGetInvestigation:
                 await client.call_tool("get_investigation", {"investigation_id": "nope"})
             )
         assert "No investigation" in message
+
+    async def test_a_deleted_parse_leaves_the_record_readable(self):
+        jobs = [make_job()]
+        async with _client(make_document_tools(jobs=jobs)) as client:
+            opened, _ = await _open_and_plan(client)
+            jobs.clear()  # the analysis is deleted in Studio
+            view = _payload(
+                await client.call_tool(
+                    "get_investigation", {"investigation_id": opened["investigation_id"]}
+                )
+            )
+        assert view["map"] == []
+        assert view["filename"] == "contrat.pdf"
+        assert view["reasoning"][0]["question"] == "Quel est le préavis ?"
+        assert "deleted" in view["next_step"]
+
+    def test_a_replayed_actual_quote_is_clipped(self):
+        at = datetime(2026, 8, 30, tzinfo=UTC)
+        drifted = Attempt(
+            id="a1",
+            step_id="s1",
+            ordinal=1,
+            thought="six mois",
+            uri=PREAVIS_URI,
+            created_at=at,
+            outcome=AttemptOutcome.QUOTE_DRIFT,
+            actual_quote="mot " * 2000,
+        )
+        record = Investigation(
+            id="i1",
+            document_id=DOC_ID,
+            version_id=JOB_ID,
+            question="Quel préavis ?",
+            created_at=at,
+            steps=[Step(id="s1", ordinal=1, question="q", attempts=[drifted])],
+        )
+        replayed = trace_steps(record)[0].attempts[0].actual_quote
+        assert len(replayed) < 500
+        assert replayed.endswith("[…clipped]")

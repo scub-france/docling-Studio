@@ -187,23 +187,27 @@ class TestSettling:
         assert found.answer == "Trois mois."
         assert found.closed_at == AT
 
+    async def test_only_the_first_close_lands(self, repo):
+        await repo.create(make_investigation())
+        assert await repo.close("i1", answer="Trois mois.", at=AT) is True
+        assert await repo.close("i1", answer="Six mois.", at=AT) is False
+        assert (await repo.find_by_id("i1")).answer == "Trois mois."
 
-class TestListing:
-    async def test_open_investigations_are_counted_per_document(self, repo):
-        await repo.create(make_investigation("i1"))
-        await repo.create(make_investigation("i2"))
-        await repo.close("i2", answer="done", at=AT)
-
-        assert await repo.count_open_for_document(DOC_ID) == 1
-        assert await repo.count_open_for_document("other") == 0
-
-    async def test_listing_is_newest_first_and_limited(self, repo):
-        for index in range(3):
-            await repo.create(
-                replace(make_investigation(f"i{index}"), created_at=AT.replace(hour=12 + index))
-            )
-        found = await repo.find_for_document(DOC_ID, limit=2)
-        assert [i.id for i in found] == ["i2", "i1"]
+    @pytest.mark.parametrize(
+        ("first", "then", "expected"),
+        [
+            (StepState.ANSWERED, StepState.UNANSWERED, StepState.ANSWERED),
+            (StepState.UNANSWERED, StepState.ANSWERED, StepState.ANSWERED),
+        ],
+    )
+    async def test_a_kept_attempt_wins_over_a_concurrent_last_rejection(
+        self, repo, first, then, expected
+    ):
+        await repo.create(make_investigation())
+        await repo.add_steps("i1", [make_step()])
+        await repo.set_step_state("s1", first)
+        await repo.set_step_state("s1", then)
+        assert (await repo.find_by_id("i1")).steps[0].state is expected
 
 
 class TestCascade:

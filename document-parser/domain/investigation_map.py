@@ -76,6 +76,8 @@ class InvestigationReport:
     investigation: Investigation
     filename: str
     map: list[MapNode]
+    # False when the pinned parse has been deleted: the map is then empty.
+    parse_available: bool = True
 
 
 def build_navigation_map(

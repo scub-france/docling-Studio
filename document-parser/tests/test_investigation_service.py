@@ -73,14 +73,6 @@ class TestOpen:
         with pytest.raises(NoParseError):
             await tools.investigations.open(document_id=DOC_ID, question="Résiliation ?")
 
-    async def test_open_investigations_are_capped_per_document(self):
-        tools = make_document_tools(
-            investigation_config=InvestigationConfig(max_open_per_document=1)
-        )
-        await tools.investigations.open(document_id=DOC_ID, question="Une")
-        with pytest.raises(InvalidArgumentError, match="already has 1 open"):
-            await tools.investigations.open(document_id=DOC_ID, question="Deux")
-
 
 class TestPlan:
     async def test_steps_are_numbered_in_the_order_given(self, service):
@@ -521,6 +513,16 @@ class TestClose:
         await service.close(investigation.id, f"Trois mois. {PREAVIS_URI}")
         with pytest.raises(InvestigationClosedError):
             await service.close(investigation.id, f"Encore. {PREAVIS_URI}")
+
+    async def test_a_close_lost_to_a_concurrent_one_is_refused(self):
+        class RacedRepository(FakeInvestigationRepository):
+            async def close(self, investigation_id, *, answer, at):
+                return False  # another call closed it between the read and the write
+
+        service = make_document_tools(investigations=RacedRepository()).investigations
+        investigation = await service_with_one_kept(service)
+        with pytest.raises(InvestigationClosedError, match="meanwhile"):
+            await service.close(investigation.id, f"Trois mois. {PREAVIS_URI}")
 
 
 class TestView:

@@ -47,6 +47,7 @@ from services.navigation_errors import (
     InvalidArgumentError,
     InvestigationClosedError,
     InvestigationNotFoundError,
+    NoParseError,
     StepNotFoundError,
     StepSettledError,
     UnbackedAnswerError,
@@ -101,7 +102,6 @@ class InvestigationService:
         if not question:
             raise InvalidArgumentError("An investigation needs a question to investigate.")
         self._bounded("question", question)
-        await self._check_open_budget(document_id)
         # Raises DocumentNotFound / NoParse for an unknown or unparsed document.
         outline = await self._navigation.get_outline(document_id)
         investigation = Investigation(
@@ -202,7 +202,10 @@ class InvestigationService:
         self._check_backing(investigation, answer)
 
         at = datetime.now(UTC)
-        await self._repo.close(investigation.id, answer=answer, at=at)
+        if not await self._repo.close(investigation.id, answer=answer, at=at):
+            raise InvestigationClosedError(
+                f"Investigation {investigation.id} was closed by another call meanwhile."
+            )
         tally = step_tally(investigation)
         logger.info(
             "Investigation %s closed (%d answered, %d unanswered)",
@@ -217,12 +220,23 @@ class InvestigationService:
         investigation = await self._repo.find_by_id(investigation_id)
         if investigation is None:
             raise InvestigationNotFoundError(f"No investigation {investigation_id!r}.")
-        parse = await self._parses.load(investigation.document_id, investigation.version_id)
-        outline = await self._navigation.get_outline(
-            investigation.document_id,
-            version_id=investigation.version_id,
-            depth=_MAP_DEPTH,
-        )
+        try:
+            parse = await self._parses.load(investigation.document_id, investigation.version_id)
+            outline = await self._navigation.get_outline(
+                investigation.document_id,
+                version_id=investigation.version_id,
+                depth=_MAP_DEPTH,
+            )
+        except NoParseError:
+            # The parse it read was deleted in Studio: the record stands, only
+            # the map — drawn on that parse — cannot be.
+            document = await self._parses.documents.find_by_id(investigation.document_id)
+            return InvestigationReport(
+                investigation=investigation,
+                filename=document.filename if document else investigation.document_id,
+                map=[],
+                parse_available=False,
+            )
         return InvestigationReport(
             investigation=investigation,
             filename=parse.document.filename,
@@ -366,14 +380,6 @@ class InvestigationService:
                 "further writes. Read it with get_investigation."
             )
         return investigation
-
-    async def _check_open_budget(self, document_id: str) -> None:
-        cap = self._config.max_open_per_document
-        if await self._repo.count_open_for_document(document_id) >= cap:
-            raise InvalidArgumentError(
-                f"This document already has {cap} open investigations. Close one before "
-                "opening another — an investigation is closed with its answer."
-            )
 
     def _pending_step(self, investigation: Investigation, step_id: str) -> Step:
         step = find_step(investigation, step_id)
