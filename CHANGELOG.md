@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **MCP document server** (#327, #329): opt-in (`MCP_ENABLED`) over HTTP at `/mcp`, and over stdio via `mcp_stdio.py`. Agents find a document, read its map (with each entry's reading cost), read one section under a token budget, and cite with `dstudio://` anchors pinned to a parse. `verify_citation` checks every quote server-side. The investigation journal records a multi-step question: the server judges each ref an agent tries, bounds the retries, refuses an answer resting on unverified anchors, and derives a navigation tree. Two MCP Apps viewers show a citation on its page and a whole investigation as a card. Citation deep links open the pinned analysis on the cited element (`/analyses/{id}?ref=…&page=N`). Docker Compose routes `/mcp` through nginx. See [docs/mcp-server.md](docs/mcp-server.md).
+
 ## [0.7.2] - 2026-09-22
 
 ### Fixed

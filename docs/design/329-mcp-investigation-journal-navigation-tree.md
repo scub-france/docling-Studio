@@ -30,7 +30,7 @@ the linked issue. Everything else is on the author.
 - **Title on issue:** [FEATURE] MCP investigation journal — recorded reasoning chain and the navigation tree it leaves behind
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-08-30
-- **Status:** Draft
+- **Status:** Accepted (amended after build)
 - **Target milestone:** 0.8.0 — Production ready
 - **Impacted layers:** backend: domain · services · persistence · infra (settings) · mcp_adapter — no api, no frontend, no e2e
 - **Audit dimensions likely touched:** Hexagonal Architecture · DDD · Clean Code · Security · Tests · Performance · Documentation
@@ -198,9 +198,9 @@ flag that would advertise it arrives with #330.
 - **`stateless_http=True`** on the HTTP transport: no MCP session to key state
   on. The `investigation_id` is what replaces it, and it must therefore be
   passed explicitly on every call.
-- **Optional dependency.** Nothing in `domain/`, `services/` or `persistence/`
-  may import the `mcp` SDK; a backend installed without `--group mcp` boots
-  with the tables present and the surface unmounted.
+- **SDK at the edge.** Nothing in `domain/`, `services/` or `persistence/`
+  imports the `mcp` SDK; with `MCP_ENABLED` off the backend boots with the
+  tables present and the surface unmounted.
 
 ## 5. Proposed design
 
@@ -587,58 +587,19 @@ consumes, frozen before its consumer exists.
 
 ## 7. API & data contract
 
-### Endpoints
+The contract as built — the tools, their arguments and results, the
+outcomes, the configuration — is documented in
+[`docs/mcp-server.md`](../mcp-server.md#investigations), which the code keeps
+current. It departs from the plan above in four ways:
 
-| Method | Path | Request | Response | Breaking? |
-|---|---|---|---|---|
-| — | — | — | — | — |
-
-No HTTP surface in this lot (§5.5). `/api/health` is unchanged.
-
-### MCP tool contract
-
-Registered only when `MCP_INVESTIGATION_ENABLED`. Read-only annotations do
-**not** apply: these tools write, so they carry `read_only_hint=False`,
-`idempotent_hint=False` — the first non-read-only tools on this surface, and
-worth stating plainly since #327's server docstring says nothing here writes.
-That sentence needs amending: nothing here writes *to a document*.
-
-| Tool | Arguments | Returns |
-|---|---|---|
-| `open_investigation` | `document`, `question` | `InvestigationOpened`: `investigation_id`, `document_id`, `version_id`, `outline` (an `OutlineResult`), `max_steps`, `max_attempts_per_step`, `next_step` |
-| `plan_steps` | `investigation_id`, `steps[] {question, why}` | `PlanAccepted`: `steps[] {step_id, ordinal, question}`, `first_step_id`, `attempts_per_step`, `next_step` |
-| `record_attempt` | `investigation_id`, `step_id`, `thought`, `uri`, `quote?` | `AttemptSettled`: `outcome`, `detail`, `kept_uri?`, `actual_quote?`, `attempts_left`, `step_state`, `next_step_id?`, `next_step` |
-| `close_investigation` | `investigation_id`, `answer` | `InvestigationClosed`: `investigation_id`, `steps_answered`, `steps_unanswered`, `citations[] (uri)`, `stale`, `next_step` |
-| `get_investigation` | `investigation_id` | `InvestigationView`: `question`, `document_id`, `version_id`, `state`, `stale`, `reasoning[]`, `map[]`, `next_step` |
-
-`reasoning[]` mirrors the aggregate — steps in ordinal order, each with its
-attempts, each attempt with `thought`, `uri`, `outcome`, `detail`.
-
-`map[]` is the navigation tree: `{ref, uri, title, kind, level, page,
-status, step_ids[]}` in document order, where `status` is
-`kept | rejected | visited | path`.
-
-Every result carries `next_step`, ledger-recorded like the existing four.
-
-### Persistence schema
-
-See §5.2 for the DDL and the reasoning behind three tables rather than one.
-
-### Env vars / config
-
-| Name | Default | Allowed | Notes |
-|---|---|---|---|
-| `MCP_INVESTIGATION_ENABLED` | `true` | bool | Registers the five tools. Off leaves #327's surface untouched and the tables unused. |
-| `MCP_MAX_ATTEMPTS_PER_STEP` | `3` | `1..10` | Server-side ceiling; a step that spends it closes `unanswered`. |
-| `MCP_MAX_STEPS_PER_INVESTIGATION` | `12` | `1..50` | Ceiling on a plan. |
-
-### Breaking changes
-
-**Additive only.** New tables, new optional env vars, new tools behind a flag.
-The four existing tools, their wire types and the two existing prompts are
-untouched. One documentation correction: `mcp_adapter/server.py`'s "Read-only
-by design. Nothing in this package writes" now means *nothing writes to a
-document* — the journal writes its own tables.
+- `open_investigation` takes a `document_id` (from `find_documents`), like
+  every other tool, not a filename.
+- `abandon_step` and the `show_investigation` viewer were added; closing is
+  refused while a planned step is neither worked nor abandoned.
+- There is no ceiling on open investigations per document: closed ones
+  accumulate anyway, so it bounded nothing.
+- No HTTP endpoint and no new frontend route; the only frontend change is the
+  citation deep link, `/analyses/{version_id}?ref=…&page=N`.
 
 ## 8. Risks & mitigations
 
@@ -702,9 +663,9 @@ Playwright.)
 
 ### Manual QA
 
-1. `cd document-parser && uv sync --group mcp`
-2. Connect Claude Desktop over stdio per `docs/mcp-server.md` (absolute
-   `DB_PATH`, the venv interpreter).
+1. `cd document-parser && uv sync`
+2. Connect Claude Desktop over stdio per `docs/mcp-server.md` (the venv
+   interpreter).
 3. Run the `investigate` prompt against a parsed contract with a question that
    genuinely needs two or three steps.
 4. Check: a deliberately wrong ref comes back as a retry rather than an
