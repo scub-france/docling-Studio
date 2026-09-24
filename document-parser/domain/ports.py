@@ -524,15 +524,6 @@ class InvestigationRepository(Protocol):
 
     async def find_by_id(self, investigation_id: str) -> Investigation | None: ...
 
-    async def find_for_document(
-        self,
-        document_id: str,
-        *,
-        limit: int = 20,
-    ) -> list[Investigation]: ...
-
-    async def count_open_for_document(self, document_id: str) -> int: ...
-
     async def add_steps(self, investigation_id: str, steps: list[Step]) -> None: ...
 
     async def record_attempt(self, attempt: Attempt, *, cap: int) -> Attempt:
@@ -555,7 +546,9 @@ class InvestigationRepository(Protocol):
         *,
         answer: str,
         at: datetime,
-    ) -> None: ...
+    ) -> bool:
+        """Close an open investigation. False when it was no longer open."""
+        ...
 
 
 class AttemptBudgetSpentError(Exception):

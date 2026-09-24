@@ -511,19 +511,6 @@ class FakeInvestigationRepository:
     async def find_by_id(self, investigation_id):
         return self.investigations.get(investigation_id)
 
-    async def find_for_document(self, document_id, *, limit: int = 20):
-        found = [i for i in self.investigations.values() if i.document_id == document_id]
-        return found[:limit]
-
-    async def count_open_for_document(self, document_id) -> int:
-        from domain.investigation import InvestigationState
-
-        return sum(
-            1
-            for i in self.investigations.values()
-            if i.document_id == document_id and i.state is InvestigationState.OPEN
-        )
-
     async def add_steps(self, investigation_id, steps) -> None:
         self._replace(investigation_id, steps=list(steps))
 
@@ -548,25 +535,31 @@ class FakeInvestigationRepository:
     async def set_step_state(self, step_id, state) -> None:
         from dataclasses import replace
 
+        from domain.investigation import StepState
+
         for investigation in self.investigations.values():
             steps = investigation.steps
             for index, step in enumerate(steps):
                 if step.id == step_id:
-                    steps[index] = replace(step, state=state)
+                    if step.state is StepState.PENDING or state is StepState.ANSWERED:
+                        steps[index] = replace(step, state=state)
                     return
 
     async def mark_stale(self, investigation_id) -> None:
         self._replace(investigation_id, stale=True)
 
-    async def close(self, investigation_id, *, answer: str, at) -> None:
+    async def close(self, investigation_id, *, answer: str, at) -> bool:
         from domain.investigation import InvestigationState
 
+        if self.investigations[investigation_id].state is not InvestigationState.OPEN:
+            return False
         self._replace(
             investigation_id,
             state=InvestigationState.CLOSED,
             answer=answer,
             closed_at=at,
         )
+        return True
 
     # -- helpers ---------------------------------------------------------
 

@@ -76,30 +76,6 @@ class SqliteInvestigationRepository:
                 return None
             return await self._hydrate(db, row)
 
-    async def find_for_document(
-        self,
-        document_id: str,
-        *,
-        limit: int = 20,
-    ) -> list[Investigation]:
-        async with get_connection() as db:
-            cursor = await db.execute(
-                """SELECT * FROM investigations WHERE document_id = ?
-                   ORDER BY created_at DESC LIMIT ?""",
-                (document_id, limit),
-            )
-            rows = await cursor.fetchall()
-            return [await self._hydrate(db, row) for row in rows]
-
-    async def count_open_for_document(self, document_id: str) -> int:
-        async with get_connection() as db:
-            cursor = await db.execute(
-                "SELECT COUNT(*) AS n FROM investigations WHERE document_id = ? AND state = 'open'",
-                (document_id,),
-            )
-            row = await cursor.fetchone()
-        return int(row["n"]) if row else 0
-
     async def add_steps(self, investigation_id: str, steps: list[Step]) -> None:
         if not steps:
             return
@@ -168,10 +144,13 @@ class SqliteInvestigationRepository:
             await db.commit()
 
     async def set_step_state(self, step_id: str, state: StepState) -> None:
+        # Only a pending step moves — except to `answered`: a kept, quoted
+        # attempt wins over a concurrent last rejection, never the reverse.
         async with get_connection() as db:
             await db.execute(
-                "UPDATE investigation_steps SET state = ? WHERE id = ?",
-                (str(state), step_id),
+                """UPDATE investigation_steps SET state = ?
+                    WHERE id = ? AND (state = 'pending' OR ? = 'answered')""",
+                (str(state), step_id, str(state)),
             )
             await db.commit()
 
@@ -182,15 +161,16 @@ class SqliteInvestigationRepository:
             )
             await db.commit()
 
-    async def close(self, investigation_id: str, *, answer: str, at: datetime) -> None:
+    async def close(self, investigation_id: str, *, answer: str, at: datetime) -> bool:
         async with get_connection() as db:
-            await db.execute(
+            cursor = await db.execute(
                 """UPDATE investigations
                       SET state = 'closed', answer = ?, closed_at = ?
-                    WHERE id = ?""",
+                    WHERE id = ? AND state = 'open'""",
                 (answer, at.isoformat(), investigation_id),
             )
             await db.commit()
+            return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
     # Row assembly

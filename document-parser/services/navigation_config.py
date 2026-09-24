@@ -54,9 +54,6 @@ class InvestigationConfig:
 
     max_attempts_per_step: int = 3
     max_steps_per_investigation: int = 12
-    # A per-document ceiling on *open* investigations. Nothing else bounds
-    # how many an agent may start, and an unbounded table is a slow leak.
-    max_open_per_document: int = 20
     # Every string the journal stores verbatim. A question, a why or a
     # thought is a sentence or two; an answer is a few paragraphs of prose
     # with its anchors.
