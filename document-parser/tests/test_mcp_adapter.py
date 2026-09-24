@@ -7,10 +7,12 @@ agent sees: tool names, annotations, JSON payloads and tool errors.
 from __future__ import annotations
 
 import json
+import uuid
 from contextlib import asynccontextmanager
 
 from mcp import Client
 
+from domain.navigation import estimate_tokens
 from mcp_adapter import build_mcp_server
 from mcp_adapter.wire import CONTENT_CLOSE
 from services.navigation_config import NavigationConfig
@@ -20,6 +22,7 @@ from tests.navigation_fixtures import (
     PREAVIS_REF,
     PREAVIS_TEXT,
     anchor_uri,
+    make_document,
     make_document_tools,
     make_job,
 )
@@ -152,6 +155,21 @@ class TestReadElement:
             )
         assert excerpt["truncated"] is True
         assert excerpt["next_cursor"]
+
+    async def test_est_tokens_is_what_the_read_costs_on_the_wire(self):
+        # Real ids are UUIDs, and the anchors they make are most of a read.
+        doc_id, job_id = str(uuid.uuid4()), str(uuid.uuid4())
+        tools = make_document_tools(
+            documents=[make_document(doc_id)], job=make_job(job_id=job_id, doc_id=doc_id)
+        )
+        async with _client(tools) as client:
+            read = _payload(
+                await client.call_tool("read_element", {"document_id": doc_id, "ref": "#/texts/0"})
+            )
+        wire = estimate_tokens(read["content"]) + estimate_tokens(
+            json.dumps(read["citations"], indent=4, ensure_ascii=False)
+        )
+        assert 0.8 <= read["est_tokens"] / wire <= 1.2
 
     async def test_self_mode_reads_a_single_element(self):
         async with _client() as client:

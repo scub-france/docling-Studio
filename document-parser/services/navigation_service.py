@@ -19,13 +19,16 @@ from typing import TYPE_CHECKING
 from domain.anchors import DocumentAnchor
 from domain.element_reader import render_markdown, resolve, section_refs
 from domain.navigation import (
+    ANCHOR_TOKENS,
     DocumentOutline,
     DocumentSearch,
     DocumentSummary,
     Excerpt,
     OutlineNode,
+    clip_point,
     clip_to_tokens,
     is_heading,
+    read_cost,
 )
 from domain.outline_builder import build_outline
 from domain.parse_index import parse_page_ref
@@ -140,8 +143,10 @@ class NavigationService:
                 f"{document_id}. Call get_outline to obtain valid refs."
             )
 
-        refs = self._refs_to_read(parse, ref, include=include, cursor=cursor)
-        picked, spent, truncated, next_cursor = self._pick(parse, refs, self._budget(max_tokens))
+        refs, start = self._refs_to_read(parse, ref, include=include, cursor=cursor)
+        picked, spent, truncated, next_cursor = self._pick(
+            parse, refs, self._budget(max_tokens), start
+        )
 
         pages = [element.page for element in picked if element.page is not None]
         return Excerpt(
@@ -200,7 +205,9 @@ class NavigationService:
         *,
         include: str,
         cursor: str | None,
-    ) -> list[str]:
+    ) -> tuple[list[str], int]:
+        """The refs this read covers from the cursor on, and the character of
+        the first to start at — past 0 when the cursor is `ref@offset`."""
         # A page ref carries no text of its own, so `self` would read nothing
         # at all — for it, both modes mean "everything on this page".
         read_whole = include == "section" or parse_page_ref(ref) is not None
@@ -210,21 +217,26 @@ class NavigationService:
         # default mode must not answer "this element is empty" for them.
         refs = (section_refs(parse.index, ref) or [ref]) if read_whole else [ref]
         if not cursor:
-            return refs
-        if cursor not in refs:
+            return refs, 0
+        resume, at, offset = cursor.partition("@")
+        start = int(offset) if offset.isdecimal() else 0
+        element = resolve(parse.index, resume) if resume in refs else None
+        if element is None or (at and not 0 < start < len(element.text)):
             raise InvalidArgumentError(
                 f"Cursor {cursor!r} does not belong to this section — pass back the "
                 "`next_cursor` returned by the previous read, unchanged."
             )
-        return refs[refs.index(cursor) :]
+        return refs[refs.index(resume) :], start
 
     def _pick(
         self,
         parse: LoadedParse,
         refs: list[str],
         budget: int,
+        start: int = 0,
     ) -> tuple[list[ResolvedElement], int, bool, str | None]:
-        """Take elements in reading order until the budget is spent."""
+        """Take elements in reading order until the budget is spent — the
+        first from character `start`, where a previous read cut it."""
         picked: list[ResolvedElement] = []
         spent = 0
 
@@ -232,19 +244,20 @@ class NavigationService:
             element = resolve(parse.index, candidate)
             if element is None or not element.text.strip():
                 continue
-            cost = element.est_tokens
+            offset = start if position == 0 else 0
+            if offset:
+                element = replace(element, text=element.text[offset:])
+            cost = read_cost(element.text)
             if picked and spent + cost > budget:
                 return picked, spent, True, candidate
             if not picked and cost > budget:
-                # One element larger than the whole budget. Returning it
-                # whole would break the ceiling the config promises, and
-                # skipping it would return nothing, so it is clipped at a
-                # word boundary and flagged. The citation quotes the clipped
-                # text, which still verifies (verification is a substring
-                # match), and the operator's lever is MCP_MAX_READ_TOKENS.
-                clipped = replace(element, text=clip_to_tokens(element.text, budget))
-                following = refs[position + 1] if position + 1 < len(refs) else None
-                return [clipped], clipped.est_tokens, True, following
+                # Larger than the whole budget: cut at a word boundary, and
+                # the cursor resumes inside the element where the cut fell.
+                room = budget - ANCHOR_TOKENS
+                cut = clip_point(element.text, room)
+                if cut < len(element.text):
+                    clipped = replace(element, text=clip_to_tokens(element.text, room))
+                    return [clipped], read_cost(clipped.text), True, f"{candidate}@{offset + cut}"
             picked.append(element)
             spent += cost
 
