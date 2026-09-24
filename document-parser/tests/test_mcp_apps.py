@@ -22,7 +22,7 @@ from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from domain.navigation import BoundingBox
 from mcp_adapter import build_mcp_server
-from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI
+from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI, INVESTIGATION_APP_HTML
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError
 from tests.navigation_fixtures import (
@@ -464,7 +464,6 @@ class TestTemplate:
         # expanded view depends on the answer.
         assert "ui/request-display-mode" in CITATION_APP_HTML
         assert ".catch(() => {})" in CITATION_APP_HTML
-        assert 'availableDisplayModes: ["inline", "fullscreen"]' in CITATION_APP_HTML
 
     def test_the_expanded_page_can_be_dismissed_every_ordinary_way(self):
         assert "closeLens" in CITATION_APP_HTML
@@ -507,3 +506,24 @@ class TestTemplate:
         ):
             assert f'{label}: "{color}"' in CITATION_APP_HTML, label
         assert "#94A3B8" in CITATION_APP_HTML  # the unknown-type fallback
+
+
+@pytest.mark.parametrize(
+    "html", [CITATION_APP_HTML, INVESTIGATION_APP_HTML], ids=["citation", "investigation"]
+)
+class TestHostContract:
+    """What SEP-1865 asks of both views — a strict host enforces each."""
+
+    def test_the_handshake_names_the_app(self, html):
+        assert "appInfo: {" in html
+        assert "clientInfo" not in html
+
+    def test_every_display_mode_it_requests_is_declared(self, html):
+        declared = re.search(r"availableDisplayModes: \[([^\]]*)\]", html).group(1)
+        requested = set(re.findall(r'"ui/request-display-mode", \{ mode: "(\w+)" \}', html))
+        assert requested == {"inline", "fullscreen"}
+        assert all(f'"{mode}"' in declared for mode in requested)
+
+    def test_a_failed_or_cancelled_call_does_not_leave_it_waiting(self, html):
+        assert 'data?.method === "ui/notifications/tool-result" && data.params?.isError' in html
+        assert "ui/notifications/tool-cancelled" in html

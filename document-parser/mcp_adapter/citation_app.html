@@ -796,7 +796,7 @@
       {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "docling-studio-citation", version: "1" },
+        appInfo: { name: "docling-studio-citation", version: "1" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
       },
       HANDSHAKE_MS
@@ -1202,12 +1202,29 @@
       return;
     }
 
+    // A refused or cancelled call has nothing to show: say so rather than
+    // leave the card waiting.
+    if (data?.method === "ui/notifications/tool-cancelled") {
+      showState("L'appel a été annulé.");
+      return;
+    }
+    if (data?.method === "ui/notifications/tool-result" && data.params?.isError) {
+      showState(`L'appel a échoué : ${data.params.content?.[0]?.text || "sans détail"}`);
+      return;
+    }
     const view = extract(data);
     if (view) {
       render(view);
       hydrateLocator(view);
+    } else if (data?.method === "ui/notifications/tool-result") {
+      showState("Le résultat ne contient aucune citation à afficher.");
     }
   });
+
+  function showState(message) {
+    root.innerHTML = `<p class="status">${esc(message)}</p>`;
+    reportSize();
+  }
 
   handshake();
 </script>
