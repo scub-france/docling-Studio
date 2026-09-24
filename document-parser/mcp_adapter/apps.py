@@ -168,12 +168,17 @@ class InvestigationCard:
 
 # What to do when the card does not appear. Phrased to hold whether or not a
 # viewer mounted: the server has no way to know.
-_NO_CARD = (
-    "The page image is not in this payload — the citation viewer fetches it itself. If no "
-    "card appeared for the reader, this host does not render one: give them `deep_link`, "
-    "which opens this passage in Docling Studio at the right page. Do not call "
-    "get_citation_image — it answers with binary you cannot read."
-)
+def _no_card(deep_link: str | None) -> str:
+    fallback = (
+        "give them `deep_link`, which opens this passage in Docling Studio"
+        if deep_link
+        else "quote the passage with its anchor"
+    )
+    return (
+        "The page image is not in this payload — the citation viewer fetches it itself. If no "
+        f"card appeared for the reader, this host does not render one: {fallback}. Do not call "
+        "get_citation_image — it answers with binary you cannot read."
+    )
 
 
 def build_apps_extension(
@@ -245,7 +250,7 @@ def build_apps_extension(
             page=citation.page,
             headings=[neutralise(h) for h in citation.headings],
             deep_link=citation.deep_link,
-            next_step=_NO_CARD,
+            next_step=_no_card(citation.deep_link),
         )
 
     @apps.tool(

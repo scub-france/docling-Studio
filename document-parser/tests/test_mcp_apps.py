@@ -253,6 +253,14 @@ class TestGracefulDegradation:
         assert "deep_link" in view["next_step"]
         assert "get_citation_image" in view["next_step"]
 
+    async def test_without_a_studio_url_no_link_is_offered(self, tmp_path):
+        tools = _service_with_file(tmp_path, config=NavigationConfig())
+        async with _client(tools, negotiates=False) as client:
+            result = await client.call_tool("show_citation", {"uri": anchor_uri(PREAVIS_REF)})
+        view = result.structured_content
+        assert view["deep_link"] is None
+        assert "deep_link" not in view["next_step"]
+
     async def test_a_malformed_anchor_is_still_a_tool_error(self, tmp_path):
         async with _client(_service_with_file(tmp_path)) as client:
             result = await client.call_tool("show_citation", {"uri": "nope"})
@@ -307,10 +315,7 @@ class TestTemplate:
         assert "Clipboard blocked" in CITATION_APP_HTML
 
     def test_open_in_studio_is_offered_only_for_a_link_a_host_can_resolve(self):
-        # `deep_link` is a bare path unless MCP_STUDIO_BASE_URL is set, and
-        # `ui/open-link` on a bare path does nothing.
         assert "isAbsolute(view.deep_link)" in CITATION_APP_HTML
-        assert "MCP_STUDIO_BASE_URL" in CITATION_APP_HTML
         # And only a web link: the host opens what it is handed, so a
         # `javascript:` or custom-scheme link never gets the button.
         assert r"const isAbsolute = (url) => /^https?:\/\//i" in CITATION_APP_HTML

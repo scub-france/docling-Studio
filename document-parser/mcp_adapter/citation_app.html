@@ -441,14 +441,6 @@
   .lens-status { font-size: 13px; color: var(--text-muted); text-align: center; }
 
   .status { font-size: 13px; color: var(--text-muted); padding: 28px 20px; text-align: center; }
-  .note {
-    font-size: 12px;
-    color: var(--text-secondary);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
-  }
 </style>
 </head>
 <body>
@@ -587,11 +579,8 @@
   const short = (id) => (id && id.length > 12 ? id.slice(0, 8) + "…" : id || "—");
   const kb = (bytes) => (bytes ? Math.round(bytes / 1024) + " KB" : null);
 
-  // `deep_link` is a bare path (`/docs/…`) unless the server was started with
-  // MCP_STUDIO_BASE_URL. A host has no base to resolve that against, so
-  // `ui/open-link` would do nothing: offer the button only when the link can
-  // actually be opened, and say why when it cannot. http(s) only: the host
-  // opens whatever it is handed.
+  // `deep_link` is absent unless the server knows Studio's URL
+  // (MCP_STUDIO_BASE_URL). http(s) only: the host opens whatever it is handed.
   const isAbsolute = (url) => /^https?:\/\//i.test(String(url || ""));
   // Grouped the way the rest of the product writes numbers. A narrow
   // no-break space, so a five-figure tally never wraps mid-number. Coerced
@@ -687,12 +676,7 @@
             <span class="said" id="said"></span>
           </div>
         </div>
-      </div>
-      ${view.deep_link && !isAbsolute(view.deep_link)
-        ? `<div class="note">Renseigne <code>MCP_STUDIO_BASE_URL</code> côté serveur pour activer « Ouvrir dans Studio » — le lien profond est pour l'instant un chemin nu (<code>${esc(
-            view.deep_link
-          )}</code>), que l'hôte ne sait pas résoudre.</div>`
-        : ""}`;
+      </div>`;
 
     for (const button of root.querySelectorAll("button[data-act]")) {
       button.addEventListener("click", () => act(button.dataset.act, view));
