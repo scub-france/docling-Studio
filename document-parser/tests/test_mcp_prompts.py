@@ -30,8 +30,8 @@ async def _client(*, apps: bool = False, investigations: bool = True):
         yield client
 
 
-async def _render(name: str, args: dict[str, str]) -> str:
-    async with _client() as client:
+async def _render(name: str, args: dict[str, str], *, apps: bool = True) -> str:
+    async with _client(apps=apps) as client:
         result = await client.get_prompt(name, args)
     return result.messages[0].content.text
 
@@ -108,6 +108,10 @@ class TestCiteAnswer:
         )
         assert "show_citation(uri)" in text
         assert text.index("show_citation") > text.index("verify_citation")
+
+    async def test_image_evidence_names_no_viewer_the_server_did_not_publish(self):
+        args = {"document": "d", "question": "q", "evidence": "images"}
+        assert "show_citation" not in await _render("cite_answer", args, apps=False)
 
     @pytest.mark.parametrize("value", ["text", "TEXT", "", "prose", "  images  "])
     async def test_evidence_is_read_leniently(self, value: str):

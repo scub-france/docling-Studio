@@ -10,10 +10,9 @@ Mapping only, like every other tool module here. The sequencing lives in
 shapes in `investigation_wire`. A tool that starts deciding something is a
 service that has not been written yet.
 
-Registered behind `MCP_INVESTIGATION_ENABLED`: five extra tool descriptions
+Registered behind `MCP_INVESTIGATION_ENABLED`: six extra tool descriptions
 are read on every call, including in the conversations that never
-investigate, and this surface has already paid once for sending text nobody
-asked for twice.
+investigate.
 """
 
 from __future__ import annotations
@@ -38,7 +37,6 @@ from mcp_adapter.investigation_wire import (
     view_result,
 )
 from mcp_adapter.tool_errors import ToolErrors
-from mcp_adapter.wire import UNTRUSTED_NOTE
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -52,12 +50,7 @@ if TYPE_CHECKING:
 _WRITES = ToolAnnotations(read_only_hint=False, idempotent_hint=False, open_world_hint=False)
 _READS = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
-INSTRUCTIONS = """\
-
-For a question that needs more than one passage, run the `investigate` prompt rather than \
-reading ad hoc: the server then keeps the plan, checks every ref you try, bounds the \
-retries, and leaves a navigation tree behind.
-"""
+INSTRUCTIONS = "For a question needing several passages, run the `investigate` prompt.\n"
 
 
 def register_investigation_tools(
@@ -66,7 +59,7 @@ def register_investigation_tools(
     *,
     viewer: bool = False,
 ) -> None:
-    """Publish the journal's five tools on `server`.
+    """Publish the journal's six tools on `server`.
 
     `viewer` says whether `show_investigation` exists on this surface, so the
     close result can steer to it — pointing a model at a tool this server did
@@ -76,12 +69,8 @@ def register_investigation_tools(
     @server.tool(
         annotations=_WRITES,
         description=(
-            "Start a recorded investigation of one document and return its map. Use it "
-            "when a question needs several passages: the server then remembers what you "
-            "tried, checks each ref, and bounds how many times a step may be retried. "
-            "Takes the `document_id` from find_documents. The parse is pinned for the whole "
-            "investigation, so every ref stays comparable. Returns the outline too: plan "
-            "against it rather than paying a second call to see it."
+            "Start a recorded investigation of one document (`document_id`) for a question "
+            "that needs several passages. Pins the parse and returns its outline to plan from."
         ),
     )
     async def open_investigation(document_id: str, question: str) -> InvestigationOpened:
@@ -98,12 +87,8 @@ def register_investigation_tools(
     @server.tool(
         annotations=_WRITES,
         description=(
-            "Record the decomposition of the question into steps. `steps` is a list of "
-            '{"question": "...", "why": "..."} — the sub-question, and why answering it '
-            "moves the main question forward; a bare string is taken as the question. "
-            "Callable once per investigation: a plan "
-            "that grows while it is being executed is not a plan, and it would make the "
-            "attempt budget meaningless. Returns the step ids to use with record_attempt."
+            "Record the plan, once: `steps` is a list of {question, why}, sub-questions the "
+            "document can each answer. Returns the step ids."
         ),
     )
     async def plan_steps(
@@ -121,16 +106,9 @@ def register_investigation_tools(
     @server.tool(
         annotations=_WRITES,
         description=(
-            "Try one ref against one step, and be told whether it held up. `thought` is "
-            "what you were thinking when you chose it — recorded as written, never "
-            "checked. `uri` is an anchor you were given, never one you built. `quote` is "
-            "the passage you would publish: pass it and the server verifies it and the "
-            "step is settled; omit it and the ref is kept as citable but nothing is "
-            "verified and the step stays open. The outcome is the SERVER's: "
-            "kept / quote_drift / unknown_ref / empty_element / bad_anchor / "
-            "foreign_document. `attempts_left` says whether to try again; at zero the "
-            "step closes as unanswered, and that is a finding to state in the answer, not "
-            "an error to work around."
+            "Try an anchor (`uri`) for a step. `thought`: why you chose it. `quote`: what you "
+            "would publish; the server verifies it. When `outcome` is kept, cite `kept_uri`. "
+            "At `attempts_left` 0 the step is unanswered: a finding to state."
         ),
     )
     async def record_attempt(
@@ -153,13 +131,8 @@ def register_investigation_tools(
     @server.tool(
         annotations=_WRITES,
         description=(
-            "Drop a planned step without working it, and say why. Use it when the map "
-            "turns out not to cover the step, when an earlier step already settled it, "
-            "or when it stopped being relevant — the reason goes on the record beside "
-            "the steps that were worked. It leaves no attempt behind, which is what "
-            "tells a later reader the step was dropped rather than exhausted. The "
-            "investigation cannot be closed while a planned step is neither worked nor "
-            "abandoned."
+            "Drop a planned step you will not work; `thought` says why. Closing needs every "
+            "step worked or abandoned."
         ),
     )
     async def abandon_step(
@@ -176,13 +149,8 @@ def register_investigation_tools(
     @server.tool(
         annotations=_WRITES,
         description=(
-            "Publish the answer and close the investigation. Every dstudio:// anchor in "
-            "`answer` must be one this investigation kept — the server refuses an answer "
-            "resting on a ref nobody verified, which is verify_citation applied to the "
-            "whole claim rather than to one quote. An answer citing nothing is accepted "
-            "only when no step was answered: that is the honest 'the document does not "
-            "say' case. It also refuses while any planned step is still pending — work "
-            "it or abandon_step it first."
+            "Publish `answer` and close. Every dstudio:// anchor in it must be one this "
+            "investigation kept; citing none is allowed only when no step was answered."
         ),
     )
     async def close_investigation(investigation_id: str, answer: str) -> InvestigationClosed:
@@ -193,12 +161,8 @@ def register_investigation_tools(
     @server.tool(
         annotations=_READS,
         description=(
-            "Read an investigation back: `reasoning` is the plan and every attempt with "
-            "its verdict, `map` is those verdicts placed on the document outline in "
-            "document order — the navigation tree. Use it to resume after losing context, "
-            "or to show where an answer came from. Thoughts in `reasoning` are what the "
-            "agent said it was doing and are not verified; each attempt's `outcome` is. "
-            f"{UNTRUSTED_NOTE}"
+            "Read an investigation back, to resume it: `reasoning` has its steps and attempts "
+            "with the server's verdicts, `map` where they landed in the document."
         ),
     )
     async def get_investigation(investigation_id: str) -> InvestigationView:

@@ -8,9 +8,8 @@ several extra calls, which is worth it when someone asks for a sourced answer
 and wasteful when they ask a passing question.
 
 Nothing here is a second implementation of the tools. A prompt returns text
-that the model then executes with the same four tools; keeping the procedure
-declarative is what stops it from drifting away from what the server actually
-does.
+that the model then executes with the same tools; keeping the procedure
+declarative is what stops it from drifting away from what the server does.
 """
 
 from __future__ import annotations
@@ -56,38 +55,30 @@ def register_prompts(
             Field(description="'text' for quoted citations, 'images' to also show each passage."),
         ] = "text",
     ) -> str:
-        show = evidence.strip().lower() == "images"
-        step_six = (
-            "\n6. `show_citation(uri)` on each verified citation, so the reader sees the "
-            "passage on the page it came from."
+        # Only when the viewer is published: naming a tool this server did not
+        # publish spends a turn on a failure.
+        show = apps and evidence.strip().lower() == "images"
+        step_five = (
+            "\n5. `show_citation(uri)` on each verified citation, to show the reader its page."
             if show
             else ""
         )
         return f"""\
-Answer this question about "{document}", using only what that document says:
+Answer this from "{document}" only:
 
 {question}
 
-Follow this protocol:
+1. `find_documents(query="{document}")`: its document_id. If several match, ask which. A \
+null version_id means it was never parsed: say so and stop.
+2. `get_outline(document_id)`: pick the entries likely to answer, by title and `est_tokens`.
+3. `read_element(document_id, ref)` on those only. When `truncated`, continue with \
+`cursor=next_cursor` rather than re-reading with a bigger budget.
+4. Back every claim with a quote and the `citations[].uri` of the element quoted, and \
+`verify_citation(uri, quote)` each one. On `quote_drift`, fix the quote or drop the \
+claim.{step_five}
 
-1. `find_documents(query="{document}")` — resolve it to one document_id. If several match, \
-ask which before reading anything. A null version_id means the document has never been \
-parsed and cannot be read.
-2. `get_outline(document_id)` — the map before any text. Every entry carries `est_tokens`, \
-so choose what to read instead of paying to find out. Reading a whole document is \
-typically one to two orders of magnitude more expensive than reading the section that \
-answers the question.
-3. `read_element(uri)` on those entries only. When `truncated` is true, continue with \
-`cursor=next_cursor` — do not re-read the same section with a bigger budget.
-4. Every claim you make carries a citation, and the citation is `citations[].uri`: the uri \
-of the element you are quoting, not the uri you passed to `read_element`.
-5. `verify_citation(uri, quote)` on each quote before you write it down. `quote_drift` \
-means the quote is not there — fix it or drop the claim, never publish it. \
-`stale_version` means it is real but pins a superseded parse.{step_six}
-
-If the document does not answer the question, say so plainly and stop. Do not complete \
-the answer from what you already know: one unsourced sentence inside a sourced answer is \
-the failure this whole protocol exists to prevent."""
+If the document does not answer, say so. Do not complete the answer from what you already \
+know."""
 
 
 def _register_investigate(server: MCPServer, *, apps: bool = True) -> None:
@@ -110,50 +101,29 @@ def _register_investigate(server: MCPServer, *, apps: bool = True) -> None:
         document: Annotated[str, Field(description="Filename, or a fragment of one.")],
         question: Annotated[str, Field(description="What to answer from that document.")],
     ) -> str:
-        # Only when the viewer is registered. Telling a model to call a tool
-        # this server did not publish spends a turn on a failure.
-        # Named, and told apart from `show_citation` — whose description asks
-        # to be preferred "whenever someone asks to see a passage", which is
-        # most of the time. A card per citation shows what was kept; it cannot
-        # show what was tried and rejected, which is the thing this whole
-        # protocol produced.
-        step_six = (
-            "\n7. **Finish with `show_investigation(investigation_id)`.** Not "
-            "`show_citation` — a citation card shows one passage, and the reader has just "
-            "been handed an investigation: the steps, the refs that did not hold up, and "
-            "where in the document the answer came from. Show that. Add `show_citation` "
-            "afterwards only if one particular passage is itself in dispute."
+        step_seven = (
+            "\n7. Finish with `show_investigation(investigation_id)`: one card for the whole "
+            "record. Not a `show_citation` per passage; keep that for a passage in dispute."
             if apps
             else ""
         )
         return f"""\
-Investigate "{document}" to answer this, and record the investigation as you go:
+Investigate "{document}" to answer this, recording as you go:
 
 {question}
 
-1. `find_documents(query="{document}")`, then `open_investigation(document_id, question="…")` \
-for the one document it names — ask which first if several match. It pins the parse and \
-returns the outline.
-2. Decompose the question into steps the document can each answer, and call `plan_steps`. \
-Use the outline: a step you cannot point at a section for is a step to fold into another. \
-Give each one a `why` — it is what makes the record readable afterwards.
-3. For each step: read what the outline says is likely to answer it (`read_element`), then \
-`record_attempt(investigation_id, step_id, thought, uri, quote)`. `thought` is why you chose \
-that ref, in your own words. `quote` is the passage you would publish.
-4. Read the verdict, do not argue with it. `kept` means cite `kept_uri`. `quote_drift` means \
-the quote is not there — `actual_quote` says what is. `unknown_ref` means take a ref from the \
-outline or a read instead of building one. When `attempts_left` reaches 0 the step closes as \
-`unanswered`: that is a finding about the document, not a problem to route around.
-5. Settle every step before closing. A step you decide not to work — the map does not cover \
-it, an earlier step already answered it — is `abandon_step(investigation_id, step_id, thought)`, \
-with the reason. Do not leave it pending and answer around it: the server refuses to close \
-over a step nobody worked, because an answer that speaks to something you never looked at is \
-exactly what this protocol exists to prevent.
-6. `close_investigation(investigation_id, answer)` — every anchor in the answer must be one \
-this investigation kept, and the server will refuse it otherwise. Say plainly which steps the \
-document did not answer.{step_six}
+1. `find_documents(query="{document}")`, then `open_investigation(document_id, question)`. \
+If several documents match, ask which first.
+2. `plan_steps`: split the question into steps a section of the outline can each answer, \
+each with its `why`.
+3. For each step, `read_element` the likely entry, then `record_attempt(investigation_id, \
+step_id, thought, uri, quote)`: `thought` is why you chose it, `quote` what you would publish.
+4. The verdict is the server's. `kept`: cite `kept_uri`. `quote_drift`: `actual_quote` is \
+the real text. `unknown_ref`: use a uri a read returned. At 0 `attempts_left` the step is \
+`unanswered`: a finding, not a failure.
+5. A step you will not work: `abandon_step` with the reason. Closing is refused while a \
+step is pending.
+6. `close_investigation(investigation_id, answer)`: cite only kept anchors, and say which \
+steps the document did not answer.{step_seven}
 
-Two things worth knowing. The server, not you, decides whether a ref held up — propose, and \
-read the verdict. And your thoughts are recorded verbatim and never checked, so write what \
-you actually reasoned rather than what would look right in a transcript: the record is only \
-worth keeping if it is true."""
+`thought` is recorded verbatim and never checked: write what you actually reasoned."""
