@@ -28,6 +28,7 @@ To build from source with Docker Compose, or to turn on Ask with a local model, 
 - Shows the text or the table of the element you click. Element types can be hidden.
 - Answers questions about a document with a local model (Ollama), and shows the steps it took.
 - Exports the result as Markdown or Docling JSON.
+- Lets AI agents read and cite your documents over MCP (off by default).
 
 ## Documentation
 
@@ -36,6 +37,7 @@ To build from source with Docker Compose, or to turn on Ask with a local model, 
 | [Get started](docs/getting-started.md) | Docker image, Docker Compose, turning on Ask |
 | [User guide](docs/user-guide.md) | The screens, step by step |
 | [Configuration](docs/configuration.md) | Settings and optional services |
+| [MCP server](docs/mcp-server.md) | Letting agents read and cite your documents |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems |
 | [Architecture](docs/architecture.md) | How the code is organized |
 | [Contributing](CONTRIBUTING.md) | Dev setup, tests, branches, pull requests |
