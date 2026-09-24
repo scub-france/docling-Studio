@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from services.app_config_service import AppConfigService
     from services.chunk_service import ChunkService
     from services.document_service import DocumentService
+    from services.document_tools import DocumentTools
     from services.export_service import ExportService
     from services.graph_service import GraphService
     from services.ingestion_service import IngestionService
@@ -68,6 +69,9 @@ class AppState:
     graph_service: GraphService | None = None
     version_service: VersionService | None = None
     ingestion_service: IngestionService | None = None
+    # Document navigation (map / read / cite / show) — consumed by the MCP
+    # adapter, and by the HTTP layer the day it grows an outline route.
+    document_tools: DocumentTools | None = None
     reasoning_service: ReasoningService | None = None
     app_config_service: AppConfigService | None = None
 

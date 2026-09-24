@@ -1,0 +1,286 @@
+"""Navigating a parsed document: find it, map it, read part of it.
+
+The reading half of the document-agent surface. Resolution and caching belong
+to `ParseLoader`, citations to `CitationService`, rasters to
+`CitationImageService`; what is left here is the three questions an agent asks
+in order — which document, what is in it, and what does this part say — and
+the budget that keeps the third one affordable.
+
+Transport-agnostic on purpose: `mcp_adapter` is its first consumer, and an
+HTTP route would be the same call.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import replace
+from typing import TYPE_CHECKING
+
+from domain.anchors import DocumentAnchor
+from domain.element_reader import render_markdown, resolve, section_refs
+from domain.navigation import (
+    ANCHOR_TOKENS,
+    DocumentOutline,
+    DocumentSearch,
+    DocumentSummary,
+    Excerpt,
+    OutlineNode,
+    clip_point,
+    clip_to_tokens,
+    is_heading,
+    read_cost,
+)
+from domain.outline_builder import build_outline
+from domain.parse_index import parse_page_ref
+from domain.spans import span_members, span_ref
+from services.navigation_config import NavigationConfig
+from services.navigation_errors import InvalidArgumentError, RefNotFoundError
+
+if TYPE_CHECKING:
+    from domain.models import Document
+    from domain.navigation import ResolvedElement
+    from services.citation_service import CitationService
+    from services.parse_loader import LoadedParse, ParseLoader
+
+logger = logging.getLogger(__name__)
+
+READ_MODES = ("self", "section")
+
+
+class NavigationService:
+    def __init__(
+        self,
+        *,
+        parses: ParseLoader,
+        citations: CitationService,
+        config: NavigationConfig | None = None,
+    ) -> None:
+        self._parses = parses
+        self._citations = citations
+        self._config = config or NavigationConfig()
+
+    @property
+    def config(self) -> NavigationConfig:
+        return self._config
+
+    # ------------------------------------------------------------------
+    # Use cases
+    # ------------------------------------------------------------------
+
+    async def find_documents(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 20,
+    ) -> DocumentSearch:
+        """List documents, newest first, optionally filtered by a filename substring.
+
+        Two queries whatever the count: the documents, then the latest parse
+        id of each — never a whole analysis row.
+        """
+        limit = max(1, min(limit, self._config.max_documents))
+        docs = await self._parses.documents.find_all(
+            limit=limit + 1, filename_like=(query or "").strip() or None
+        )
+        truncated = len(docs) > limit
+        docs = docs[:limit]
+        latest = await self._parses.analyses.latest_parsed_ids([doc.id for doc in docs])
+        summaries = [
+            DocumentSummary(
+                document_id=doc.id,
+                filename=doc.filename,
+                lifecycle_state=str(doc.lifecycle_state),
+                page_count=doc.page_count,
+                version_id=latest.get(doc.id),
+                created_at=doc.created_at.isoformat() if doc.created_at else None,
+            )
+            for doc in docs
+        ]
+        return DocumentSearch(documents=summaries, truncated=truncated)
+
+    async def get_outline(
+        self,
+        document_id: str,
+        *,
+        version_id: str | None = None,
+        depth: int = 2,
+    ) -> DocumentOutline:
+        """Return the document map — sections when there are headings, pages otherwise."""
+        depth = max(1, min(depth, 6))
+        parse = await self._parses.load(document_id, version_id)
+        draft = build_outline(parse.index, depth=depth, max_nodes=self._config.max_outline_nodes)
+        return DocumentOutline(
+            document_id=parse.document.id,
+            version_id=parse.version_id,
+            filename=parse.document.filename,
+            page_count=parse.document.page_count or parse.index.page_count or None,
+            total_est_tokens=draft.total_est_tokens,
+            mode=draft.mode,
+            nodes=[self._stamp(node, parse.document.id, parse.version_id) for node in draft.nodes],
+            depth_limited=draft.depth_limited,
+            node_limited=draft.node_limited,
+        )
+
+    async def read_element(
+        self,
+        document_id: str,
+        ref: str,
+        *,
+        version_id: str | None = None,
+        include: str = "section",
+        max_tokens: int | None = None,
+        cursor: str | None = None,
+    ) -> Excerpt:
+        """Read one element — or the whole section it opens — under a budget."""
+        if include not in READ_MODES:
+            raise InvalidArgumentError(f"include must be one of {READ_MODES}, got {include!r}")
+
+        parse = await self._parses.load(document_id, version_id)
+        target = resolve(parse.index, ref)
+        if target is None:
+            raise RefNotFoundError(
+                f"Ref {ref!r} does not exist in version {parse.version_id} of document "
+                f"{document_id}. Call get_outline to obtain valid refs."
+            )
+
+        refs, start = self._refs_to_read(parse, ref, include=include, cursor=cursor)
+        picked, spent, truncated, next_cursor = self._pick(
+            parse, refs, self._budget(max_tokens), start
+        )
+
+        pages = [element.page for element in picked if element.page is not None]
+        return Excerpt(
+            document_id=parse.document.id,
+            version_id=parse.version_id,
+            ref=ref,
+            uri=DocumentAnchor(parse.document.id, parse.version_id, ref).uri,
+            title=self._excerpt_title(target, parse.document),
+            markdown=render_markdown(picked),
+            citations=[
+                self._citations.build(parse.document.id, parse.version_id, element)
+                for element in picked
+            ],
+            est_tokens=spent,
+            truncated=truncated,
+            next_cursor=next_cursor,
+            page_range=(min(pages), max(pages)) if pages else None,
+            span_uri=self._span_uri(parse, refs, picked),
+        )
+
+    # ------------------------------------------------------------------
+    # Reading internals
+    # ------------------------------------------------------------------
+
+    def _span_uri(
+        self,
+        parse: LoadedParse,
+        refs: list[str],
+        picked: list[ResolvedElement],
+    ) -> str | None:
+        """The anchor covering exactly this read — nothing more.
+
+        A quote that runs from one paragraph into the next has no single ref
+        to hang on, and truncating it to whichever half fits one is how a
+        citation becomes an approximation. This hands the range back so the
+        agent never has to assemble one.
+
+        The span is withheld unless every ref between its endpoints was part
+        of this read: a page read can pick up elements that are not contiguous
+        in reading order, and a span over them would silently cover text the
+        caller never saw.
+        """
+        if len(picked) < 2:
+            return None
+        read = set(refs)
+        members = span_members(parse.index, picked[0].ref, picked[-1].ref)
+        if not members or any(member not in read for member in members):
+            return None
+        ref = span_ref(picked[0].ref, picked[-1].ref)
+        return DocumentAnchor(parse.document.id, parse.version_id, ref).uri
+
+    def _refs_to_read(
+        self,
+        parse: LoadedParse,
+        ref: str,
+        *,
+        include: str,
+        cursor: str | None,
+    ) -> tuple[list[str], int]:
+        """The refs this read covers from the cursor on, and the character of
+        the first to start at — past 0 when the cursor is `ref@offset`."""
+        # A page ref carries no text of its own, so `self` would read nothing
+        # at all — for it, both modes mean "everything on this page".
+        read_whole = include == "section" or parse_page_ref(ref) is not None
+        # `section_refs` is empty for a ref that resolves but sits outside
+        # reading order — a caption, or text pruned from inside a picture.
+        # Those refs carry text and `include="self"` returns it, so the
+        # default mode must not answer "this element is empty" for them.
+        refs = (section_refs(parse.index, ref) or [ref]) if read_whole else [ref]
+        if not cursor:
+            return refs, 0
+        resume, at, offset = cursor.partition("@")
+        start = int(offset) if offset.isdecimal() else 0
+        element = resolve(parse.index, resume) if resume in refs else None
+        if element is None or (at and not 0 < start < len(element.text)):
+            raise InvalidArgumentError(
+                f"Cursor {cursor!r} does not belong to this section — pass back the "
+                "`next_cursor` returned by the previous read, unchanged."
+            )
+        return refs[refs.index(resume) :], start
+
+    def _pick(
+        self,
+        parse: LoadedParse,
+        refs: list[str],
+        budget: int,
+        start: int = 0,
+    ) -> tuple[list[ResolvedElement], int, bool, str | None]:
+        """Take elements in reading order until the budget is spent — the
+        first from character `start`, where a previous read cut it."""
+        picked: list[ResolvedElement] = []
+        spent = 0
+
+        for position, candidate in enumerate(refs):
+            element = resolve(parse.index, candidate)
+            if element is None or not element.text.strip():
+                continue
+            offset = start if position == 0 else 0
+            if offset:
+                element = replace(element, text=element.text[offset:])
+            cost = read_cost(element.text)
+            if picked and spent + cost > budget:
+                return picked, spent, True, candidate
+            if not picked and cost > budget:
+                # Larger than the whole budget: cut at a word boundary, and
+                # the cursor resumes inside the element where the cut fell.
+                room = budget - ANCHOR_TOKENS
+                cut = clip_point(element.text, room)
+                if cut < len(element.text):
+                    clipped = replace(element, text=clip_to_tokens(element.text, room))
+                    return [clipped], read_cost(clipped.text), True, f"{candidate}@{offset + cut}"
+            picked.append(element)
+            spent += cost
+
+        return picked, spent, False, None
+
+    def _budget(self, max_tokens: int | None) -> int:
+        requested = max_tokens or self._config.default_read_tokens
+        return max(1, min(requested, self._config.max_read_tokens))
+
+    def _stamp(self, node: OutlineNode, document_id: str, version_id: str) -> OutlineNode:
+        """Attach the anchor URI to an outline node and its subtree."""
+        return replace(
+            node,
+            uri=DocumentAnchor(document_id, version_id, node.ref).uri,
+            children=[self._stamp(child, document_id, version_id) for child in node.children],
+        )
+
+    @staticmethod
+    def _excerpt_title(target: ResolvedElement, doc: Document) -> str:
+        if is_heading(target.label) and target.text.strip():
+            return " ".join(target.text.split())[:96]
+        if target.label == "page" and target.page is not None:
+            return f"Page {target.page}"
+        if target.headings:
+            return target.headings[-1]
+        return doc.filename or target.ref

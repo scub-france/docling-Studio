@@ -115,6 +115,44 @@ class SqliteAnalysisRepository:
             row = await cursor.fetchone()
             return _row_to_job(row) if row else None
 
+    async def latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]:
+        """For each document, the id of its latest completed analysis with a parse."""
+        if not document_ids:
+            return {}
+        placeholders = ",".join("?" for _ in document_ids)
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"""SELECT document_id, id FROM (
+                        SELECT document_id, id, ROW_NUMBER() OVER (
+                            PARTITION BY document_id ORDER BY completed_at DESC
+                        ) AS rank
+                        FROM analysis_jobs
+                        WHERE document_id IN ({placeholders})
+                          AND status = 'COMPLETED' AND document_json IS NOT NULL
+                    ) WHERE rank = 1""",
+                tuple(document_ids),
+            )
+            return {row["document_id"]: row["id"] for row in await cursor.fetchall()}
+
+    async def parsed_document_id(self, job_id: str) -> str | None:
+        """The document an analysis with a parse belongs to, or None."""
+        async with get_connection() as db:
+            cursor = await db.execute(
+                "SELECT document_id FROM analysis_jobs WHERE id = ? AND document_json IS NOT NULL",
+                (job_id,),
+            )
+            row = await cursor.fetchone()
+            return row["document_id"] if row else None
+
+    async def parse_json(self, job_id: str) -> str | None:
+        """The stored docling JSON of an analysis — the one heavy column, alone."""
+        async with get_connection() as db:
+            cursor = await db.execute(
+                "SELECT document_json FROM analysis_jobs WHERE id = ?", (job_id,)
+            )
+            row = await cursor.fetchone()
+            return row["document_json"] if row else None
+
     async def update_status(self, job: AnalysisJob) -> None:
         """Persist all mutable fields of an analysis job (status, results, timestamps)."""
         async with get_connection() as db:

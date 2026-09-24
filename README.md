@@ -37,6 +37,7 @@ Upload a PDF, configure the extraction pipeline, and visualize the results — t
 - **Markdown & HTML export** of extracted content
 - **Document management** — upload, list, delete, search, filter by indexing status
 - **Analysis history** — re-visit and open past analyses
+- **MCP document server** (opt-in) — agents map, read and cite parsed documents with server-verified anchors, and record multi-step investigations ([docs/mcp-server.md](docs/mcp-server.md))
 - **Upload limits** — configurable max file size and max page count per document
 - **Rate limiting** — configurable requests per minute per IP
 - **Dark / Light theme** and **FR / EN** localization

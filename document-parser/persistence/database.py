@@ -218,6 +218,71 @@ CREATE INDEX IF NOT EXISTS idx_document_versions_doc_created
     ON document_versions(document_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_document_versions_doc_kind_created
     ON document_versions(document_id, kind, created_at DESC);
+
+-- Investigations (#329) — one agent's recorded exploration of one parse of
+-- one document, produced over the MCP surface. `version_id` is an analysis
+-- id, pinned when the investigation opens: a docling self_ref is meaningless
+-- across two parses, so an investigation that followed a re-parse would be
+-- citing text it never read. `stale` records that the pinned parse has been
+-- superseded — the investigation continues on it rather than being cut off.
+-- State CHECK mirrors `domain.investigation.InvestigationState`.
+CREATE TABLE IF NOT EXISTS investigations (
+    id           TEXT PRIMARY KEY,
+    document_id  TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    version_id   TEXT NOT NULL,
+    question     TEXT NOT NULL,
+    state        TEXT NOT NULL DEFAULT 'open'
+                 CHECK (state IN ('open','closed','abandoned')),
+    stale        INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0,1)),
+    answer       TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    closed_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_investigations_doc_created
+    ON investigations(document_id, created_at DESC);
+
+-- One sub-question of the decomposition. `ordinal` is the plan order, which
+-- is also the order the timeline renders. State CHECK mirrors
+-- `domain.investigation.StepState`; `unanswered` means the step spent its
+-- attempt budget, which is a result rather than an error.
+CREATE TABLE IF NOT EXISTS investigation_steps (
+    id               TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
+    ordinal          INTEGER NOT NULL,
+    question         TEXT NOT NULL,
+    why              TEXT NOT NULL DEFAULT '',
+    state            TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (state IN ('pending','answered','unanswered')),
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (investigation_id, ordinal)
+);
+CREATE INDEX IF NOT EXISTS idx_investigation_steps_inv
+    ON investigation_steps(investigation_id, ordinal);
+
+-- One ref tried against one step, with the verdict the SERVER reached.
+-- `thought` is what the model said it was thinking: recorded, never checked
+-- — what is checked is the anchor and the quote. A NULL `outcome` means the
+-- row was written before adjudication finished; the thought is persisted
+-- first on purpose, so a crash mid-verdict loses the verdict and not the
+-- reasoning. Outcome CHECK mirrors `domain.investigation.AttemptOutcome`.
+CREATE TABLE IF NOT EXISTS investigation_attempts (
+    id           TEXT PRIMARY KEY,
+    step_id      TEXT NOT NULL REFERENCES investigation_steps(id) ON DELETE CASCADE,
+    ordinal      INTEGER NOT NULL,
+    thought      TEXT NOT NULL DEFAULT '',
+    uri          TEXT NOT NULL,
+    quote        TEXT,
+    outcome      TEXT CHECK (outcome IN
+                 ('kept','bad_anchor','foreign_document','unknown_ref',
+                  'empty_element','quote_drift')),
+    detail       TEXT NOT NULL DEFAULT '',
+    kept_uri     TEXT,
+    actual_quote TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (step_id, ordinal)
+);
+CREATE INDEX IF NOT EXISTS idx_investigation_attempts_step
+    ON investigation_attempts(step_id, ordinal);
 """
 
 
