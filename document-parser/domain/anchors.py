@@ -9,9 +9,10 @@
   *inside* one parse and meaningless across two: re-parsing the same PDF
   renumbers `#/texts/91`. Pinning the version is what keeps a citation true
   after a re-parse instead of silently pointing at another paragraph.
-- `ref` — the docling `self_ref`, verbatim (`#/texts/91`, `#/tables/3`), or
-  one of the virtual page refs (`#/pages/7`) the navigator synthesises for
-  documents without section headings.
+- `ref` — the docling `self_ref`, verbatim (`#/texts/91`, `#/tables/3`), a
+  span over a run of elements (`#/texts/91..#/texts/94`), or one of the
+  virtual page refs (`#/pages/7`) the navigator synthesises for documents
+  without section headings.
 
 An agent never builds an anchor by hand: every read returns the anchors of
 what it just read, and `CitationService.verify_citation` re-resolves one

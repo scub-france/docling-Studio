@@ -16,10 +16,8 @@ citation view exists.
 
 Degradation is a spec requirement (SEP-2133) and it is the reason this costs
 nothing to ship: a host that never advertises the extension never fetches the
-template, and both tools return the same text-only payload they would have
-returned anyway. Claude Code sees exactly what it sees today —
-`show_investigation` degrades to precisely what `get_investigation` returns,
-which is why it carries no extra field a reader could only see rendered.
+template, and both tools return their record as text: `show_investigation`
+returns what `get_investigation` does, plus its tallies.
 """
 
 from __future__ import annotations
@@ -170,14 +168,13 @@ class InvestigationCard:
 # viewer mounted: the server has no way to know.
 def _no_card(deep_link: str | None) -> str:
     fallback = (
-        "give them `deep_link`, which opens this passage in Docling Studio"
+        "give the reader `deep_link`, which opens it in Docling Studio"
         if deep_link
         else "quote the passage with its anchor"
     )
     return (
-        "The page image is not in this payload — the citation viewer fetches it itself. If no "
-        f"card appeared for the reader, this host does not render one: {fallback}. Do not call "
-        "get_citation_image — it answers with binary you cannot read."
+        f"If no card appeared, this host cannot show one: {fallback}. Do not call "
+        "get_citation_image: it returns an image you cannot read."
     )
 
 
@@ -193,31 +190,12 @@ def build_apps_extension(
     """
     apps = Apps()
 
-    # One sentence more when the journal is on: `show_citation`'s "prefer it
-    # whenever someone asks to see a passage" is right for ad-hoc reading and
-    # wrong at the end of an investigation, where it produced a card per kept
-    # anchor instead of the one card that shows the record. The carve-out is
-    # conditional because it names `show_investigation`, and a description
-    # pointing at a tool this server did not publish would be a trap.
+    # Names show_investigation only when the journal publishes it.
     citation_description = (
-        "Show a citation where it lives: the region of the page it was lifted "
-        "from, rendered as an image, next to its verbatim text. verify_citation "
-        "answers whether a quote is real; this one lets the reader see that it "
-        "is. Prefer it whenever the citation itself is the point — a figure, a "
-        "table, a number, a date, a clause, a contested wording — and whenever "
-        "someone asks to see, check or point at a passage. It carries a raster "
-        "of the page, so it costs more than a text citation: for ordinary "
-        "explanatory prose, quote the text instead. Takes the uri of a citation "
-        "returned by read_element — `citations[].uri` for one element, or "
-        "`span_uri` for a passage running across several. On a host that cannot "
-        "display it, it returns the same citation as text."
-    ) + (
-        " To display an investigation's findings, end with show_investigation "
-        "instead — one card carries the whole record — and keep this for the "
-        "single passage that is itself in dispute."
-        if investigations
-        else ""
-    )
+        "Show a citation on its page, highlighted, beside its text: for when the passage "
+        "itself is the point (a figure, a number, a clause) or the reader asks to see it. "
+        "`uri`: an anchor a read returned."
+    ) + (" To show an investigation, use show_investigation." if investigations else "")
 
     @apps.tool(
         resource_uri=CITATION_APP_URI,
@@ -260,9 +238,7 @@ def build_apps_extension(
         visibility=["app"],
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         description=(
-            "Internal — the citation viewer's own page fetch: a raster of the page a "
-            "cited passage sits on, sized by `max_width`, with the passage's box in "
-            "the image's own pixels, as a data URI. Not for reading."
+            "Internal to the citation viewer: a page image as a data URI. Not for reading."
         ),
     )
     async def get_citation_image(uri: str, max_width: int = 320) -> CitationImageOut:
@@ -336,15 +312,9 @@ def _register_investigation_view(apps: Apps, tools: Callable[[], DocumentTools])
         visibility=["model"],
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         description=(
-            "Show a recorded investigation: the steps, every ref tried with the "
-            "server's verdict on it, and the navigation tree those verdicts draw on "
-            "the document. This is the view to end an investigation with — prefer it "
-            "over show_citation there, and decisively: a citation card shows one "
-            "passage that held up, and cannot show the steps, the refs that did not, "
-            "or the parts the document did not answer. Reach for show_citation "
-            "afterwards, for the one passage that is itself in dispute. It returns the "
-            "same record as get_investigation, so call one or the other, not both. On a "
-            "host that cannot render it, that record is the answer."
+            "Show an investigation as one card: its steps, every verdict, and where in the "
+            "document they landed. The way to end an investigation; it returns the same "
+            "record as get_investigation."
         ),
     )
     async def show_investigation(investigation_id: str) -> InvestigationCard:
@@ -387,13 +357,7 @@ def _register_investigation_view(apps: Apps, tools: Callable[[], DocumentTools])
         visibility=["app"],
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         description=(
-            "Internal — the investigation viewer's own page fetch. Returns a "
-            "raster of a page of the document a kept ref pins, sized by "
-            "`max_width` — the path tab's thumbnail, its enlarged reading view, "
-            "and (via `page`) any other page when the reader leafs through — "
-            "with the passage's box, on its own page only, in the image's own "
-            "pixels, as a data URI. Not for reading: it answers with binary, and "
-            "show_investigation already carries everything a reader needs."
+            "Internal to the investigation viewer: a page image as a data URI. Not for reading."
         ),
     )
     async def get_investigation_page(

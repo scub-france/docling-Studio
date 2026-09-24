@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from domain.investigation import StepState, next_pending, step_tally
+from domain.investigation import InvestigationState, StepState, next_pending, step_tally
 from domain.navigation import clip_to_tokens
 
 # Runtime import, not TYPE_CHECKING: `OutlineResult` is a dataclass field
@@ -78,11 +78,10 @@ class PlanAccepted:
 class AttemptSettled:
     """The server's verdict on one ref, and where it leaves the step.
 
-    `outcome` is `kept` or one of the rejections. `kept_uri` is the anchor to
-    cite when it differs from the one sent — verification widens a quote that
-    ran across element boundaries, and hands back the precise element inside
-    a section. `attempts_left` is the number to act on: it is the difference
-    between "try a sibling section" and "this step is over".
+    `outcome` is `kept` or one of the rejections. On a kept attempt,
+    `kept_uri` is the anchor to cite: the precise element inside a section, or
+    the span a quote across elements needs. `attempts_left` is the number to
+    act on: "try a sibling section" or "this step is over".
     """
 
     investigation_id: str
@@ -203,9 +202,7 @@ def opened_result(investigation, outline, *, max_steps: int, max_attempts: int):
         max_steps=max_steps,
         max_attempts_per_step=max_attempts,
         next_step=(
-            f"Decompose the question into at most {max_steps} steps the document can each "
-            "answer, then call plan_steps. Use the outline above to choose them: a step "
-            "nobody can point at a section for is a step to fold into another."
+            f"plan_steps: at most {max_steps} steps, each one a section of this outline can answer."
         ),
     )
 
@@ -221,10 +218,8 @@ def plan_result(investigation: Investigation, *, attempts_per_step: int) -> Plan
         attempts_per_step=attempts_per_step,
         first_step_id=first.id if first else None,
         next_step=(
-            f"Work step {first.ordinal} ({first.id}): read what the outline says is likely to "
-            f"answer it, then record_attempt with the uri and the quote you would publish. "
-            f"You have {attempts_per_step} attempts on it; the server decides whether each "
-            "one held up."
+            f"Work step {first.ordinal} ({first.id}): read_element the entry likely to answer "
+            "it, then record_attempt with its uri and the quote you would publish."
             if first
             else "The plan is empty."
         ),
@@ -259,8 +254,7 @@ def abandoned_result(investigation: Investigation, step_id: str) -> StepAbandone
         next_step=(
             f"Recorded as dropped. Next: step {pending.id}."
             if pending
-            else "Every step is settled. close_investigation with an answer that cites only "
-            "anchors this investigation kept, and says which steps went unanswered."
+            else "Every step is settled: close_investigation."
         ),
     )
 
@@ -269,10 +263,8 @@ def closed_result(
     investigation: Investigation, citations: list[str], *, viewer: bool = False
 ) -> InvestigationClosed:
     tally = step_tally(investigation)
-    # `viewer` says whether `show_investigation` is on this surface. The prompt
-    # already asks for it, but the prompt is thirty turns behind by now; this
-    # line is what the model reads at the moment it chooses how to display —
-    # steering it here is what stopped a show_citation per kept anchor.
+    # `viewer` says whether `show_investigation` is on this surface: this line
+    # is what the model reads at the moment it chooses how to display.
     return InvestigationClosed(
         investigation_id=investigation.id,
         steps_answered=tally[StepState.ANSWERED],
@@ -281,19 +273,14 @@ def closed_result(
         stale=investigation.stale,
         next_step=(
             (
-                "Published. Now call `show_investigation`, before any other display: it "
-                "renders the whole record — the steps, every verdict, the navigation "
-                "tree. Not a show_citation per kept anchor: a citation card shows one "
-                "passage, and the reader has just been handed an investigation. A "
-                "show_citation belongs after the card, and only for a passage itself "
-                "in dispute."
+                "Published. Show it with show_investigation: one card for the whole record, "
+                "not a show_citation per anchor."
                 if viewer
-                else "Published. get_investigation returns the record and the navigation "
-                "tree — the sections this answer came from, in document order."
+                else "Published. get_investigation returns the record."
             )
             + (
-                " This investigation ran on a parse that has since been superseded: the "
-                "quotes are real, a re-read would cite the current parse."
+                " Its parse has since been superseded: the quotes hold, a re-read would cite "
+                "the current one."
                 if investigation.stale
                 else ""
             )
@@ -314,18 +301,19 @@ def view_result(report: InvestigationReport) -> InvestigationView:
         answer=neutralise(investigation.answer) if investigation.answer else None,
         reasoning=trace_steps(investigation),
         map=map_entries(report.map),
-        next_step=(
-            (
-                ""
-                if report.parse_available
-                else "The parse this investigation read has been deleted: the record stands, "
-                "the map cannot be drawn. "
-            )
-            + "`reasoning` is what the agent said it was doing — thoughts are recorded, not "
-            "verified. `outcome` on each attempt is the server's verdict, and `map` is those "
-            "verdicts placed on the document. Resume by working the first pending step."
-        ),
+        next_step=_view_next_step(report),
     )
+
+
+def _view_next_step(report: InvestigationReport) -> str:
+    investigation = report.investigation
+    note = "" if report.parse_available else "Its parse was deleted in Studio: no map. "
+    if investigation.state is InvestigationState.CLOSED:
+        return note + "Closed: `answer` is final."
+    pending = next_pending(investigation)
+    if pending is None:
+        return note + "Every step is settled: close_investigation."
+    return note + f"Resume with step {pending.id}."
 
 
 def trace_steps(investigation: Investigation) -> list[TraceStep]:
@@ -387,36 +375,29 @@ def _attempt_next_step(verdict) -> str:
     attempt = verdict.attempt
     outcome = str(attempt.outcome or "")
     if outcome == "kept" and not (attempt.quote or "").strip():
-        # It resolves, so it is citable; nothing about the passage was checked,
-        # so the step is not answered by it. Saying only "kept" here is what
-        # let a step close on a ref nobody verified.
+        # Citable, but the passage was not checked: the step stays open.
         return (
-            f"The ref resolves and is citable as {attempt.citation_uri}, but no quote was "
-            f"given, so nothing was verified and the step is still open "
-            f"({verdict.attempts_left} attempts left). "
-            "Send the passage you intend to publish to settle it."
+            f"Citable as {attempt.citation_uri}, but nothing was verified without a quote, so "
+            f"the step stays open ({verdict.attempts_left} attempts left). Send the passage "
+            "you will publish."
         )
     if outcome == "kept":
-        if verdict.next_step_id:
-            return f"Kept and verified. Cite it as {attempt.citation_uri}. Next: step {verdict.next_step_id}."
-        return (
-            f"Kept and verified. Cite it as {attempt.citation_uri}. Every step is settled — "
-            "close_investigation with an answer that cites only anchors this investigation "
-            "kept, then show_investigation so the reader can see where it came from."
+        follow = (
+            f"Next: step {verdict.next_step_id}."
+            if verdict.next_step_id
+            else "Every step is settled: close_investigation."
         )
+        return f"Kept; cite it as {attempt.citation_uri}. {follow}"
     if str(verdict.step_state) == "unanswered":
         return (
-            "That was the last attempt, so this step is closed as unanswered. That is a "
-            "finding: the answer has to say the document does not settle it. "
+            "No attempts left: the step is unanswered, a finding your answer must state. "
             + (f"Next: step {verdict.next_step_id}." if verdict.next_step_id else "")
         ).strip()
     hint = {
-        "quote_drift": "The anchor is right and the quote is not in it — `actual_quote` says "
-        "what is there. Quote that, or try the neighbouring element.",
-        "unknown_ref": "No such element in this parse. Take a ref from the outline or from a "
-        "read; never build one.",
-        "empty_element": "That ref carries no text. Try the element that holds the passage.",
-        "bad_anchor": "That was not a well-formed anchor. Pass back a uri you were given.",
+        "quote_drift": "The quote is not at this anchor; `actual_quote` is what is.",
+        "unknown_ref": "No such element in this parse: use a uri a read returned.",
+        "empty_element": "That element has no text: try the one holding the passage.",
+        "bad_anchor": "Not a well-formed anchor: pass back a uri you were given.",
         "foreign_document": "That anchor belongs to another document.",
     }.get(outcome, "Try another ref for this step.")
     return f"Attempt {attempt.ordinal} of {attempt.ordinal + verdict.attempts_left}. {hint}"

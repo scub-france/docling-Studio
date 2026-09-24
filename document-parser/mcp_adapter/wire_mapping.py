@@ -56,11 +56,11 @@ def document_row(summary: DocumentSummary) -> DocumentRow:
 
 def search_result(search: DocumentSearch) -> DocumentSearchResult:
     unparsed = [row for row in search.documents if row.version_id is None]
-    hint = "Call get_outline(document_id=…) on the document you need."
+    hint = "get_outline(document_id) on the document you need."
     if search.truncated:
-        hint += " More documents matched: narrow the query."
+        hint += " More matched: narrow the query."
     if unparsed:
-        hint += " Documents with a null version_id have not been parsed and cannot be read."
+        hint += " Rows with a null version_id cannot be read yet."
     return DocumentSearchResult(
         documents=[document_row(summary) for summary in search.documents],
         truncated=search.truncated,
@@ -93,9 +93,8 @@ def outline_result(outline: DocumentOutline) -> OutlineResult:
         entries=[outline_entry(node) for node in outline.nodes],
         pages=outline.page_count,
         next_step=(
-            "Read an entry with read_element(document_id=…, ref=…) — the ref from the entry, "
-            f"the document_id from this result. Reading the whole document would cost about "
-            f"{outline.total_est_tokens} tokens."
+            "read_element(document_id, ref) on the entries that answer; the whole document "
+            f"is ~{outline.total_est_tokens} tokens."
         ),
     )
 
@@ -136,38 +135,26 @@ def citation_out(citation: Citation) -> CitationOut:
     )
 
 
-# What to do next, delivered with the result rather than in the server's
-# instructions. A rule read at connection time is competing with everything
-# said since; a rule attached to the payload arrives at the moment it applies.
+# What to do next, delivered with the result: a rule attached to the payload
+# arrives at the moment it applies.
 _CITE_WITH = (
-    "Cite with citations[].uri — the uri of the element you are quoting, not the uri you "
-    "read with — and verify_citation before publishing. show_citation(uri) puts a citation "
-    "on the page it came from."
+    "Quote with the `citations[].uri` of the element you quote, and verify_citation "
+    "before publishing."
 )
-
-# Said only when there is a span to say it about, and said *after* the
-# per-element rule: one anchor per quote stays the common case, and a span
-# offered on every read would be read as the thing to reach for.
-_CITE_SPAN = (
-    " A quote running across several of them — a sentence finishing in the next paragraph — "
-    "is cited with `span_uri`, which covers everything this read returned."
-)
+_CITE_SPAN = " A quote across several elements cites `span_uri`."
 
 _VERIFICATION_NEXT_STEP = {
     CitationStatus.VERIFIED: "Safe to publish, citing citation.uri.",
     CitationStatus.STALE_VERSION: (
-        "Publishable, but the anchor pins a superseded parse — re-read the document if the "
-        "answer should quote the current one."
+        "Publishable, but the anchor pins a superseded parse: re-read to cite the current one."
     ),
     CitationStatus.QUOTE_DRIFT: (
-        "Do not publish this quote. Use `actual_quote` verbatim, or re-read the element and "
-        "quote what it actually says."
+        "Do not publish this quote: use `actual_quote` verbatim, or re-read and quote what "
+        "is there."
     ),
-    CitationStatus.UNKNOWN_REF: (
-        "That ref does not exist in this parse. Take a fresh anchor from get_outline."
-    ),
+    CitationStatus.UNKNOWN_REF: "No such ref in this parse: cite a uri a read returned.",
     CitationStatus.UNKNOWN_VERSION: (
-        "That parse does not exist. Take the current version_id from find_documents."
+        "That parse no longer exists: read the document again and cite the new uri."
     ),
 }
 
@@ -175,9 +162,8 @@ _VERIFICATION_NEXT_STEP = {
 def _excerpt_next_step(excerpt: Excerpt) -> str:
     if excerpt.truncated and excerpt.next_cursor:
         return (
-            "Cut at the budget. Call read_element again with the same ref and "
-            f"cursor='{excerpt.next_cursor}' — resuming is cheaper than re-reading with a "
-            f"larger budget. Then: {_CITE_WITH}"
+            "Cut at the budget: call read_element again with the same ref and "
+            f"cursor='{excerpt.next_cursor}'. {_CITE_WITH}"
         )
     if not excerpt.citations:
         return "Nothing readable at this anchor. Pick another entry from get_outline."
