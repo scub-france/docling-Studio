@@ -1300,8 +1300,8 @@
       {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "docling-studio-investigation", version: "1" },
-        appCapabilities: { availableDisplayModes: ["inline"] },
+        appInfo: { name: "docling-studio-investigation", version: "1" },
+        appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
       },
       HANDSHAKE_MS
     )
@@ -1421,12 +1421,33 @@
     if (data?.method === "ui/notifications/host-context-changed") {
       host = { ...host, context: { ...host.context, ...(data.params || {}) } };
       applyHostContext(host.context);
+      // Put back inline by the host: the overlay follows.
+      if (data.params?.displayMode === "inline") closeLens();
       return;
     }
 
+    // A refused or cancelled call has nothing to show: say so rather than
+    // leave the card waiting.
+    if (data?.method === "ui/notifications/tool-cancelled") {
+      showState("The call was cancelled.");
+      return;
+    }
+    if (data?.method === "ui/notifications/tool-result" && data.params?.isError) {
+      showState(`The call failed: ${data.params.content?.[0]?.text || "no detail"}`);
+      return;
+    }
     const view = extract(data);
     if (view) render(view);
+    else if (data?.method === "ui/notifications/tool-result") {
+      showState("The result carries no investigation to show.");
+    }
   });
+
+  function showState(message) {
+    root.className = "fallback";
+    root.textContent = message;
+    reportSize();
+  }
 
   handshake();
 </script>
