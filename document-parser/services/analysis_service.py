@@ -25,12 +25,12 @@ from domain.value_objects import (
     ConversionOptions,
     ConversionResult,
     DocumentLifecycleState,
-    PageDetail,
 )
 
 if TYPE_CHECKING:
     from domain.ports import (
         AnalysisRepository,
+        DoclingDocumentImporter,
         DocumentChunker,
         DocumentConverter,
         DocumentRepository,
@@ -90,6 +90,7 @@ class AnalysisService:
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
         config: AnalysisConfig | None = None,
         graph_writer: GraphWriter | None = None,
+        docling_importer: DoclingDocumentImporter | None = None,
     ):
         self._converter = converter
         self._chunker = chunker
@@ -103,6 +104,7 @@ class AnalysisService:
         # `GraphWriter` port (#audit-01) — was a raw `Neo4jDriver` until
         # the hex-arch fix. None when no graph store is wired in.
         self._graph_writer = graph_writer
+        self._docling_importer = docling_importer
         # Duck-typed callable injected at startup. Wired in main.py to
         # `ChunkService.promote_from_analysis_if_empty` so the canonical
         # chunkset (#205) is populated on the first successful analysis,
@@ -170,29 +172,9 @@ class AnalysisService:
         if not doc:
             raise ValueError(f"Document not found: {document_id}")
 
-        try:
-            from docling_core.types.doc import DoclingDocument
-
-            docling_document = DoclingDocument.model_validate(document)
-            pages = [
-                PageDetail(
-                    page_number=int(page_number),
-                    width=page.size.width,
-                    height=page.size.height,
-                )
-                for page_number, page in sorted(
-                    docling_document.pages.items(), key=lambda item: int(item[0])
-                )
-            ]
-            result = ConversionResult(
-                page_count=len(docling_document.pages),
-                content_markdown=docling_document.export_to_markdown(),
-                content_html=docling_document.export_to_html(),
-                pages=pages,
-                document_json=json.dumps(docling_document.export_to_dict()),
-            )
-        except Exception as e:
-            raise ValueError(f"Invalid Docling document: {e}") from e
+        if not self._docling_importer:
+            raise RuntimeError("Docling document importer is not configured")
+        result = self._docling_importer.deserialize(document)
 
         job = AnalysisJob(document_id=document_id)
         job.document_filename = doc.filename

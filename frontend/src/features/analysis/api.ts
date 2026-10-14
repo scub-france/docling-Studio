@@ -7,7 +7,13 @@ import type {
 } from '../../shared/types'
 import { apiFetch } from '@/shared/api/http'
 
-export { importAnalysis } from '@/shared/api/analysis'
+/** Import a completed analysis represented by a serialized DoclingDocument. */
+export function importAnalysis(documentId: string, document: Record<string, unknown>): Promise<Analysis> {
+  return apiFetch<Analysis>('/api/analyses/import', {
+    method: 'POST',
+    body: JSON.stringify({ documentId, document }),
+  })
+}
 
 export function createAnalysis(
   documentId: string,

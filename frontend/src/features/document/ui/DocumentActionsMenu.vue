@@ -38,7 +38,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { importAnalysis } from '@/shared/api/analysis'
+import { importAnalysis } from '@/features/analysis'
 import { useI18n } from '@/shared/i18n'
 
 const props = defineProps<{ documentId: string; startDisabled?: boolean }>()

@@ -46,7 +46,7 @@ import { computed, ref } from 'vue'
 import { useDocumentStore } from '../store'
 import { useI18n } from '../../../shared/i18n'
 import { appMaxFileSizeMb, appMaxPageCount } from '../../../shared/appConfig'
-import { importAnalysis } from '@/shared/api/analysis'
+import { importAnalysis } from '@/features/analysis'
 
 const emit = defineEmits<{ uploaded: [docId: string] }>()
 

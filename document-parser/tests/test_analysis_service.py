@@ -177,7 +177,19 @@ class TestDoclingDocumentImport:
         document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
         document_repo.update_page_count = AsyncMock()
         document_repo.update_lifecycle = AsyncMock()
-        service = _make_service(analysis_repo=analysis_repo, document_repo=document_repo)
+        importer = MagicMock()
+        importer.deserialize.return_value = ConversionResult(
+            page_count=0,
+            content_markdown="",
+            content_html="",
+            pages=[],
+            document_json="{}",
+        )
+        service = _make_service(
+            analysis_repo=analysis_repo,
+            document_repo=document_repo,
+            docling_importer=importer,
+        )
 
         job = await service.import_docling_document(
             "d1", DoclingDocument(name="source").export_to_dict()
@@ -188,6 +200,7 @@ class TestDoclingDocumentImport:
         assert job.content_html is not None
         assert job.document_json is not None
         document_repo.update_lifecycle.assert_awaited_once()
+        importer.deserialize.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_import_rejects_invalid_docling_document(self):
@@ -195,7 +208,13 @@ class TestDoclingDocumentImport:
         analysis_repo.insert = AsyncMock()
         document_repo = MagicMock()
         document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
-        service = _make_service(analysis_repo=analysis_repo, document_repo=document_repo)
+        importer = MagicMock()
+        importer.deserialize.side_effect = ValueError("Invalid Docling document: invalid payload")
+        service = _make_service(
+            analysis_repo=analysis_repo,
+            document_repo=document_repo,
+            docling_importer=importer,
+        )
 
         with pytest.raises(ValueError, match="Invalid Docling document"):
             await service.import_docling_document("d1", {})
