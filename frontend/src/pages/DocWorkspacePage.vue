@@ -25,14 +25,13 @@
           >
             {{ launchError }}
           </p>
-          <button
-            class="analyze-btn"
-            :disabled="analysisStore.running"
-            data-e2e="workspace-new-analysis"
-            @click="onLaunchAnalysis"
-          >
-            {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
-          </button>
+          <DocumentActionsMenu
+            :document-id="id"
+            :start-disabled="analysisStore.running"
+            @start="onLaunchAnalysis"
+            @imported="onAnalysisImported"
+            @delete="onDeleteDocument"
+          />
         </template>
       </DocWorkspaceHeader>
       <AnalysisProgressBar v-if="runningAnalysis" :analysis="runningAnalysis" />
@@ -60,8 +59,9 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import type { Document, Page } from '../shared/types'
-import { fetchDocument, fetchDocumentPages } from '../features/document/api'
+import { deleteDocument, fetchDocument, fetchDocumentPages } from '../features/document/api'
 import { useAnalysisStore } from '../features/analysis/store'
+import { DocumentActionsMenu } from '../features/document'
 import { useCrumbs } from '../shared/breadcrumb/store'
 import { truncate } from '../shared/breadcrumb/text'
 import type { Crumb } from '../shared/breadcrumb/types'
@@ -97,6 +97,16 @@ async function onLaunchAnalysis(): Promise<void> {
   } catch {
     // Reported through `analysisStore.lastOutcome`, like every other failure.
   }
+}
+
+function onAnalysisImported(analysisId: string): void {
+  router.push({ name: ROUTES.ANALYSIS_DETAIL, params: { id: analysisId } })
+}
+
+async function onDeleteDocument(): Promise<void> {
+  if (!window.confirm(`${t('docs.delete')} "${doc.value?.filename ?? props.id}"?`)) return
+  await deleteDocument(props.id)
+  router.push({ name: ROUTES.DOCS_LIBRARY })
 }
 
 // #342 — when the analysis run ends, open the analysis it produced, or say

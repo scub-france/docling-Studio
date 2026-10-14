@@ -13,6 +13,7 @@ from api.schemas import (
     ChunkBboxResponse,
     ChunkResponse,
     CreateAnalysisRequest,
+    ImportAnalysisRequest,
     RechunkRequest,
     UpdateChunkTextRequest,
 )
@@ -65,6 +66,23 @@ async def create_analysis(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+    return _to_response(job)
+
+
+@router.post("/import", response_model=AnalysisResponse)
+async def import_analysis(
+    body: ImportAnalysisRequest, service: deps.AnalysisServiceDep
+) -> AnalysisResponse:
+    """Import a completed analysis from a serialized DoclingDocument."""
+    if not body.documentId or not body.documentId.strip():
+        raise HTTPException(status_code=400, detail="documentId is required")
+
+    try:
+        job = await service.import_docling_document(body.documentId, body.document)
+    except ValueError as e:
+        status_code = 404 if str(e).startswith("Document not found:") else 400
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
 
     return _to_response(job)
 

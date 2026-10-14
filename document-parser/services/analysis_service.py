@@ -25,6 +25,7 @@ from domain.value_objects import (
     ConversionOptions,
     ConversionResult,
     DocumentLifecycleState,
+    PageDetail,
 )
 
 if TYPE_CHECKING:
@@ -158,6 +159,52 @@ class AnalysisService:
         task.add_done_callback(functools.partial(self._on_task_done, job_id=job.id))
 
         return job
+
+    async def import_docling_document(self, document_id: str, document: dict) -> AnalysisJob:
+        """Persist a supplied Docling document as a completed analysis.
+
+        Importing skips conversion but otherwise follows the normal completion
+        path, keeping exports, history, lifecycle, and graph data consistent.
+        """
+        doc = await self._document_repo.find_by_id(document_id)
+        if not doc:
+            raise ValueError(f"Document not found: {document_id}")
+
+        try:
+            from docling_core.types.doc import DoclingDocument
+
+            docling_document = DoclingDocument.model_validate(document)
+            pages = [
+                PageDetail(
+                    page_number=int(page_number),
+                    width=page.size.width,
+                    height=page.size.height,
+                )
+                for page_number, page in sorted(
+                    docling_document.pages.items(), key=lambda item: int(item[0])
+                )
+            ]
+            result = ConversionResult(
+                page_count=len(docling_document.pages),
+                content_markdown=docling_document.export_to_markdown(),
+                content_html=docling_document.export_to_html(),
+                pages=pages,
+                document_json=json.dumps(docling_document.export_to_dict()),
+            )
+        except Exception as e:
+            raise ValueError(f"Invalid Docling document: {e}") from e
+
+        job = AnalysisJob(document_id=document_id)
+        job.document_filename = doc.filename
+        await self._analysis_repo.insert(job)
+        job.mark_running()
+        await self._analysis_repo.update_status(job)
+        await self._finalize_analysis(job.id, result, chunking_options=None)
+
+        completed_job = await self._analysis_repo.find_by_id(job.id)
+        if not completed_job:
+            raise ValueError(f"Analysis not found: {job.id}")
+        return completed_job
 
     async def find_all(self) -> list[AnalysisJob]:
         """Return all analysis jobs, newest first."""

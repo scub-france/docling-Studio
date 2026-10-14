@@ -9,6 +9,14 @@
     @click="openFilePicker"
   >
     <input ref="fileInput" type="file" accept=".pdf" hidden @change="onFileSelect" />
+    <input
+      ref="combinedInput"
+      type="file"
+      accept=".pdf,.json,application/pdf,application/json"
+      multiple
+      hidden
+      @change="onCombinedSelect"
+    />
     <div v-if="store.uploading" class="upload-state">
       <div class="spinner" />
       <span>{{ t('upload.uploading') }}</span>
@@ -27,6 +35,9 @@
       <span class="upload-hint" data-e2e="upload-hint">{{ uploadHint }}</span>
       <span v-if="store.error" class="upload-error" data-e2e="upload-error">{{ store.error }}</span>
     </div>
+    <button class="combined-upload" type="button" @click.stop="combinedInput?.click()">
+      {{ t('analysisImport.uploadTogether') }}
+    </button>
   </div>
 </template>
 
@@ -35,12 +46,14 @@ import { computed, ref } from 'vue'
 import { useDocumentStore } from '../store'
 import { useI18n } from '../../../shared/i18n'
 import { appMaxFileSizeMb, appMaxPageCount } from '../../../shared/appConfig'
+import { importAnalysis } from '@/shared/api/analysis'
 
 const emit = defineEmits<{ uploaded: [docId: string] }>()
 
 const store = useDocumentStore()
 const { t } = useI18n()
 const fileInput = ref<HTMLInputElement | null>(null)
+const combinedInput = ref<HTMLInputElement | null>(null)
 const dragging = ref(false)
 
 const uploadHint = computed(() => {
@@ -87,6 +100,27 @@ async function onDrop(e: DragEvent) {
   dragging.value = false
   const file = e.dataTransfer?.files?.[0]
   if (file) await handleFile(file)
+}
+
+async function onCombinedSelect(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  const pdf = files.find(isPdf)
+  const analysis = files.find((file) => file !== pdf && file.name.toLowerCase().endsWith('.json'))
+  if (!pdf || !analysis) {
+    store.error = t('analysisImport.combinedFilesRequired')
+    return
+  }
+
+  try {
+    const document = JSON.parse(await analysis.text()) as Record<string, unknown>
+    const doc = await store.upload(pdf)
+    await importAnalysis(doc.id, document)
+    emit('uploaded', doc.id)
+  } catch (e) {
+    store.error = (e as Error).message || t('analysisImport.failed')
+  }
 }
 </script>
 
@@ -139,6 +173,16 @@ async function onDrop(e: DragEvent) {
   font-size: 13px;
   color: var(--error, #e53e3e);
   font-weight: 500;
+}
+
+.combined-upload {
+  margin-top: 12px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
 }
 
 .spinner {

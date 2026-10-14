@@ -135,6 +135,24 @@
                     <button
                       class="icon-button"
                       type="button"
+                      :disabled="analysisStore.running"
+                      :title="t('newAnalysis.title')"
+                      :aria-label="t('newAnalysis.title')"
+                      @click="startAnalysis(doc.id)"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="11" cy="11" r="6" />
+                        <path d="m16 16 5 5" />
+                      </svg>
+                    </button>
+                    <AnalysisImportButton
+                      icon-only
+                      :document-id="doc.id"
+                      @imported="onAnalysisImported"
+                    />
+                    <button
+                      class="icon-button"
+                      type="button"
                       :title="t('docs.delete')"
                       :aria-label="t('docs.delete')"
                       @click="deleteDoc(doc.id, doc.filename)"
@@ -190,6 +208,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { useDocumentStore } from '../features/document/store'
 import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
+import { AnalysisImportButton } from '../features/analysis'
 import { fetchDocumentAnalyses } from '../features/analysis/api'
 import { useAnalysisStore } from '../features/analysis/store'
 import type { BatchLaunch } from '../features/analysis/store'
@@ -309,6 +328,15 @@ function formatUpdated(doc: Document): string {
 
 function openDoc(id: string): void {
   router.push({ name: ROUTES.DOC_WORKSPACE, params: { id } })
+}
+
+async function startAnalysis(documentId: string): Promise<void> {
+  const analysis = await analysisStore.run(documentId)
+  router.push({ name: ROUTES.ANALYSIS_DETAIL, params: { id: analysis.id } })
+}
+
+function onAnalysisImported(analysisId: string): void {
+  router.push({ name: ROUTES.ANALYSIS_DETAIL, params: { id: analysisId } })
 }
 
 async function deleteDoc(id: string, filename: string): Promise<void> {

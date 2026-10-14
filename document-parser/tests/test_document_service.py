@@ -110,6 +110,13 @@ def pdf_with_pages(*sizes: tuple[float, float]) -> bytes:
 
 
 class TestPageSizes:
+    def test_resolves_docker_upload_path_from_local_worktree(self, tmp_path):
+        service = _make_service(upload_dir=str(tmp_path))
+        local_file = tmp_path / "stored.pdf"
+        local_file.write_bytes(b"%PDF-1.4")
+
+        assert service.resolve_storage_path("/app/uploads/stored.pdf") == local_file
+
     def test_reads_the_size_of_every_page(self):
         pages = DocumentService.page_sizes(pdf_with_pages((612, 792), (842, 595)))
 

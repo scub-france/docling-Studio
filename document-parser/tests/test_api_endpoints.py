@@ -1,5 +1,6 @@
 """Tests for FastAPI API endpoints using TestClient."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -29,6 +30,7 @@ def mock_document_service(client):
     mock_svc = MagicMock()
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
+    mock_svc.resolve_storage_path.side_effect = lambda storage_path: Path(storage_path)
     with state_override(app, document_service=mock_svc):
         yield mock_svc
 
@@ -519,6 +521,37 @@ class TestAnalysisEndpoints:
     def test_create_analysis_whitespace_document_id(self, client, mock_analysis_service):
         resp = client.post("/api/analyses", json={"documentId": "   "})
         assert resp.status_code == 400
+
+    def test_import_analysis(self, client, mock_analysis_service):
+        job = AnalysisJob(id="j-import", document_id="d1", document_filename="test.pdf")
+        job.mark_running()
+        job.mark_completed("# Imported", "<p>Imported</p>", "[]", "{}")
+        mock_analysis_service.import_docling_document = AsyncMock(return_value=job)
+        payload = {"documentId": "d1", "document": {"schema_name": "DoclingDocument"}}
+
+        resp = client.post("/api/analyses/import", json=payload)
+
+        assert resp.status_code == 200
+        assert resp.json()["id"] == "j-import"
+        assert resp.json()["status"] == "COMPLETED"
+        mock_analysis_service.import_docling_document.assert_awaited_once_with(
+            "d1", payload["document"]
+        )
+
+    def test_import_analysis_requires_document_id(self, client, mock_analysis_service):
+        resp = client.post("/api/analyses/import", json={"documentId": " ", "document": {}})
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "documentId is required"}
+
+    def test_import_analysis_rejects_missing_document(self, client, mock_analysis_service):
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=ValueError("Document not found: missing")
+        )
+
+        resp = client.post("/api/analyses/import", json={"documentId": "missing", "document": {}})
+
+        assert resp.status_code == 404
 
     def test_delete_analysis(self, client, mock_analysis_service):
         mock_analysis_service.delete = AsyncMock(return_value=True)

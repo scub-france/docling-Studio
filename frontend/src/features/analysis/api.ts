@@ -7,6 +7,8 @@ import type {
 } from '../../shared/types'
 import { apiFetch } from '@/shared/api/http'
 
+export { importAnalysis } from '@/shared/api/analysis'
+
 export function createAnalysis(
   documentId: string,
   pipelineOptions: PipelineOptions | null = null,
