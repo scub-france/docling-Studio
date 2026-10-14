@@ -1,0 +1,69 @@
+minimum_pre_commit_version: "3.7.0"
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: document-parser-ruff-check
+        name: document-parser ruff check --fix
+        entry: uv run --directory document-parser ruff check --fix .
+        language: system
+        files: ^document-parser/.*\.py$
+        exclude: ^document-parser/local-experiments/
+        pass_filenames: false
+      - id: document-parser-ruff-format
+        name: document-parser ruff format
+        entry: uv run --directory document-parser ruff format .
+        language: system
+        files: ^document-parser/.*\.py$
+        exclude: ^document-parser/local-experiments/
+        pass_filenames: false
+      - id: document-parser-architecture-tests
+        name: document-parser architecture tests
+        entry: uv run --directory document-parser pytest tests/test_architecture.py -q
+        language: system
+        files: ^document-parser/(api|domain|infra|persistence|services|tests/test_architecture\.py).*
+        exclude: ^document-parser/local-experiments/
+        pass_filenames: false
+      - id: embedding-service-ruff-check
+        name: embedding-service ruff check --fix
+        entry: uv run --directory embedding-service ruff check --fix .
+        language: system
+        files: ^embedding-service/.*\.py$
+        pass_filenames: false
+      - id: embedding-service-ruff-format
+        name: embedding-service ruff format
+        entry: uv run --directory embedding-service ruff format .
+        language: system
+        files: ^embedding-service/.*\.py$
+        pass_filenames: false
+      - id: frontend-eslint-fix
+        name: frontend eslint --fix
+        entry: npm --prefix frontend run lint:fix
+        language: system
+        files: ^frontend/src/.*\.(js|ts|vue)$
+        pass_filenames: false
+      - id: frontend-prettier-write
+        name: frontend prettier --write
+        entry: npm --prefix frontend run format
+        language: system
+        files: ^frontend/src/.*\.(css|js|json|md|scss|ts|vue)$
+        pass_filenames: false
+      - id: frontend-type-check
+        name: frontend type-check
+        entry: npm --prefix frontend run type-check
+        language: system
+        stages:
+          - pre-push
+        files: ^frontend/src/.*\.(ts|vue)$
+        pass_filenames: false
