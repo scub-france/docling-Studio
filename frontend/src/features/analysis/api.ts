@@ -8,7 +8,10 @@ import type {
 import { apiFetch } from '@/shared/api/http'
 
 /** Import a completed analysis represented by a serialized DoclingDocument. */
-export function importAnalysis(documentId: string, document: Record<string, unknown>): Promise<Analysis> {
+export function importAnalysis(
+  documentId: string,
+  document: Record<string, unknown>,
+): Promise<Analysis> {
   return apiFetch<Analysis>('/api/analyses/import', {
     method: 'POST',
     body: JSON.stringify({ documentId, document }),
