@@ -10,7 +10,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-CommandType = Literal["replaceText", "mergeText", "setHeadingLevel", "moveElement", "deleteElement", "deleteElements"]
+CommandType = Literal[
+    "replaceText", "mergeText", "setHeadingLevel", "moveElement", "deleteElement", "deleteElements"
+]
 
 
 @dataclass(frozen=True)

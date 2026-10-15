@@ -62,7 +62,9 @@
           :aria-pressed="Boolean(draggedId)"
           @click="toggleMoveDestination"
         >
-          {{ draggedId ? t('analysisEditor.cancelMove') : t('analysisEditor.chooseMoveDestination') }}
+          {{
+            draggedId ? t('analysisEditor.cancelMove') : t('analysisEditor.chooseMoveDestination')
+          }}
         </button>
         <button
           type="button"
@@ -71,11 +73,7 @@
         >
           {{ store.previewing ? t('analysisEditor.previewing') : t('analysisEditor.preview') }}
         </button>
-        <button
-          type="button"
-          :disabled="!store.hasUnsavedChanges"
-          @click="discard"
-        >
+        <button type="button" :disabled="!store.hasUnsavedChanges" @click="discard">
           {{ t('analysisEditor.discard') }}
         </button>
         <button
@@ -91,17 +89,29 @@
     <div v-if="store.loading" class="state">{{ t('analysisEditor.loading') }}</div>
     <div v-else-if="store.error" class="state error">{{ store.error }}</div>
     <template v-else>
-      <div v-if="store.previewError" class="editor-error" role="alert">{{ store.previewError }}</div>
+      <div v-if="store.previewError" class="editor-error" role="alert">
+        {{ store.previewError }}
+      </div>
       <div v-if="store.conflict" class="editor-conflict" role="alert">
         <span>{{ t('analysisEditor.conflict') }}</span>
-        <button type="button" @click="store.reloadAfterConflict()">{{ t('analysisEditor.conflictReload') }}</button>
-        <button type="button" @click="copyConflictDetails">{{ t('analysisEditor.conflictCopy') }}</button>
-        <button type="button" @click="store.discardConflict()">{{ t('analysisEditor.conflictDiscard') }}</button>
+        <button type="button" @click="store.reloadAfterConflict()">
+          {{ t('analysisEditor.conflictReload') }}
+        </button>
+        <button type="button" @click="copyConflictDetails">
+          {{ t('analysisEditor.conflictCopy') }}
+        </button>
+        <button type="button" @click="store.discardConflict()">
+          {{ t('analysisEditor.conflictDiscard') }}
+        </button>
       </div>
       <div v-if="store.recoveredPendingCount" class="editor-recovery" role="status">
         <span>{{ t('analysisEditor.recoveredDraft', { n: store.recoveredPendingCount }) }}</span>
-        <button type="button" @click="store.restoreRecoveredPending()">{{ t('analysisEditor.restoreDraft') }}</button>
-        <button type="button" @click="store.discardRecoveredPending()">{{ t('analysisEditor.discardDraft') }}</button>
+        <button type="button" @click="store.restoreRecoveredPending()">
+          {{ t('analysisEditor.restoreDraft') }}
+        </button>
+        <button type="button" @click="store.discardRecoveredPending()">
+          {{ t('analysisEditor.discardDraft') }}
+        </button>
       </div>
       <div v-if="saveNotice" class="editor-success" role="status">{{ saveNotice }}</div>
       <div v-if="store.effective?.chunksStale" class="editor-warning">
@@ -154,10 +164,7 @@
         </aside>
         <main class="preview-column">
           <div class="preview-tabs">
-            <button
-              :class="{ active: previewMode === 'page' }"
-              @click="previewMode = 'page'"
-            >
+            <button :class="{ active: previewMode === 'page' }" @click="previewMode = 'page'">
               {{ t('analysisEditor.pdfLayout') }}
             </button>
             <button
@@ -181,9 +188,7 @@
             />
             <div v-else class="state">{{ t('analysisEditor.noPages') }}</div>
           </div>
-          <pre v-else class="markdown-preview">{{
-            store.effective?.result.contentMarkdown
-          }}</pre>
+          <pre v-else class="markdown-preview">{{ store.effective?.result.contentMarkdown }}</pre>
         </main>
         <aside class="properties-column">
           <ElementEditPanel
@@ -206,7 +211,7 @@ import { useAnalysisEditorStore } from '../store'
 import { useI18n } from '../../../shared/i18n'
 import EditableStructureNode from './EditableStructureNode.vue'
 import ElementEditPanel from './ElementEditPanel.vue'
-import PagePreviewWithOverlay from '../../document/ui/PagePreviewWithOverlay.vue'
+import { PagePreviewWithOverlay } from '../../document'
 
 const props = defineProps<{ documentId: string; analysisId?: string }>()
 const emit = defineEmits<{ discard: []; saved: [] }>()

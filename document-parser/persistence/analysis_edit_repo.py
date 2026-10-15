@@ -141,7 +141,11 @@ class SqliteAnalysisEditRepository:
                     sequence = actual_sequence + offset
                     payload = json.dumps(command.payload, sort_keys=True, separators=(",", ":"))
                     command_hash = _hash_command(
-                        previous_hash, sequence, command.command_type, command.command_version, payload
+                        previous_hash,
+                        sequence,
+                        command.command_type,
+                        command.command_version,
+                        payload,
                     )
                     record_id = uuid.uuid4().hex
                     created = datetime.now(UTC)
@@ -162,7 +166,11 @@ class SqliteAnalysisEditRepository:
                             str(created),
                         ),
                     )
-                    saved.append(StoredEditCommand(record_id, stream.id, sequence, command, command_hash, created))
+                    saved.append(
+                        StoredEditCommand(
+                            record_id, stream.id, sequence, command, command_hash, created
+                        )
+                    )
                     previous_hash = command_hash
 
                 await db.execute(

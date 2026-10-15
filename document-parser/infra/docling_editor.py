@@ -74,7 +74,9 @@ class DoclingDocumentEditor:
 
     @staticmethod
     def _all_items(document: DoclingDocument) -> list[Any]:
-        return [item for item, _ in document.iterate_items(with_groups=True, traverse_pictures=True)]
+        return [
+            item for item, _ in document.iterate_items(with_groups=True, traverse_pictures=True)
+        ]
 
     def _logical_refs(self, document: DoclingDocument, base_id: str) -> dict[str, Any]:
         return {
@@ -144,7 +146,9 @@ class DoclingDocumentEditor:
         roots = [
             item
             for item in items
-            if not any(other is not item and self._is_descendant(item, other, document) for other in items)
+            if not any(
+                other is not item and self._is_descendant(item, other, document) for other in items
+            )
         ]
         document.delete_items(node_items=roots)
 
@@ -224,9 +228,7 @@ class DoclingDocumentEditor:
             continuation = item.text.lstrip()
             original_continuation = (item.orig or item.text).lstrip()
             is_word_continuation = target_text.endswith("\u00ad") or (
-                target_text.endswith("-")
-                and continuation
-                and continuation[0].islower()
+                target_text.endswith("-") and continuation and continuation[0].islower()
             )
             joiner = "" if is_word_continuation else separator
             if is_word_continuation:
@@ -270,7 +272,9 @@ class DoclingDocumentEditor:
                 if placement == "after":
                     target_index += 1
             source_parent = item.parent.resolve(doc=document) if item.parent is not None else None
-            if parent is source_parent and target_index > list(parent.children).index(item.get_ref()):
+            if parent is source_parent and target_index > list(parent.children).index(
+                item.get_ref()
+            ):
                 target_index -= 1
             self._move_subtree(document, item, parent, target_index)
             return

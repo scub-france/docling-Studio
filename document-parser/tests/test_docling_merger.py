@@ -19,9 +19,7 @@ def _batch(name: str, text: str) -> ConversionResult:
 
 
 def test_merger_uses_docling_reference_remapping():
-    result = DoclingDocumentMerger().merge(
-        [_batch("first", "First"), _batch("second", "Second")]
-    )
+    result = DoclingDocumentMerger().merge([_batch("first", "First"), _batch("second", "Second")])
     document = DoclingDocument.model_validate_json(result.document_json)
     items = [item for item, _ in document.iterate_items()]
     assert [item.text for item in items] == ["First", "Second"]

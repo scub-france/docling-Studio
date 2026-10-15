@@ -16,7 +16,16 @@ from domain.analysis_editing import (
 from domain.value_objects import PageDetail, PageElement
 from infra.bbox import to_topleft_list
 
-_TEXT_LABELS = {"text", "paragraph", "title", "section_header", "caption", "list_item", "code", "formula"}
+_TEXT_LABELS = {
+    "text",
+    "paragraph",
+    "title",
+    "section_header",
+    "caption",
+    "list_item",
+    "code",
+    "formula",
+}
 
 
 class DoclingAnalysisProjector:
@@ -33,9 +42,7 @@ class DoclingAnalysisProjector:
     ) -> ProjectedAnalysis:
         items_with_levels = list(document.iterate_items(with_groups=True, traverse_pictures=True))
         by_ref = {
-            item.self_ref: item
-            for item, _ in items_with_levels
-            if getattr(item, "self_ref", None)
+            item.self_ref: item for item, _ in items_with_levels if getattr(item, "self_ref", None)
         }
         ref_to_id = {ref: logical for logical, ref in logical_ids.items()}
         object_to_id = {
@@ -76,9 +83,7 @@ class DoclingAnalysisProjector:
         """Project a validated working copy without replaying its commands."""
         document = DoclingDocument.model_validate_json(document_json)
         model = json.loads(editor_model_json)
-        logical_ids = {
-            element["id"]: element["selfRef"] for element in model.get("elements", [])
-        }
+        logical_ids = {element["id"]: element["selfRef"] for element in model.get("elements", [])}
         return self.project(
             document,
             base_analysis_id=base_analysis_id,
@@ -129,8 +134,18 @@ class DoclingAnalysisProjector:
         if isinstance(item, SectionHeaderItem):
             operations = ("replaceText", "setHeadingLevel", "deleteElement")
         if label in {"text", "paragraph"} and editable:
-            operations = ("replaceText", "mergeText", "moveElement", "deleteElement", "deleteElements")
-        reason = None if editable else f"{label.replace('_', ' ').capitalize()} elements are not editable yet."
+            operations = (
+                "replaceText",
+                "mergeText",
+                "moveElement",
+                "deleteElement",
+                "deleteElements",
+            )
+        reason = (
+            None
+            if editable
+            else f"{label.replace('_', ' ').capitalize()} elements are not editable yet."
+        )
         return EditorElement(
             id=object_to_id[id(item)],
             self_ref=item.self_ref,
@@ -154,7 +169,9 @@ class DoclingAnalysisProjector:
         pages: dict[int, PageDetail] = {}
         for page_no, page in document.pages.items():
             pages[int(page_no)] = PageDetail(
-                page_number=int(page_no), width=float(page.size.width), height=float(page.size.height)
+                page_number=int(page_no),
+                width=float(page.size.width),
+                height=float(page.size.height),
             )
         for item, level in items_with_levels:
             if not isinstance(item, DocItem):
@@ -240,9 +257,7 @@ class DoclingAnalysisProjector:
             "text": element.text,
             "headingLevel": element.heading_level,
             "children": list(element.children),
-            "provenance": [
-                {"page": p.page, "bbox": list(p.bbox)} for p in element.provenance
-            ],
+            "provenance": [{"page": p.page, "bbox": list(p.bbox)} for p in element.provenance],
             "editable": element.editable,
             "supportedOperations": list(element.supported_operations),
             "nonEditableReason": element.non_editable_reason,

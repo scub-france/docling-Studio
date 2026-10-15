@@ -5,7 +5,9 @@
       class="tree-node-row"
       data-e2e="tree-node-row"
       :class="{
-        'tree-node-row--selected': Array.isArray(selected) ? selected.includes(node.ref) : selected === node.ref,
+        'tree-node-row--selected': Array.isArray(selected)
+          ? selected.includes(node.ref)
+          : selected === node.ref,
         'tree-node-row--highlight': highlight === node.ref,
       }"
       @click="onRowClick"

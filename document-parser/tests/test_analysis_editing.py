@@ -57,7 +57,12 @@ def _realistic_document() -> str:
     doc.add_picture(parent=section, prov=prov)
     doc.add_text(label=DocItemLabel.PAGE_FOOTER, text="[footer]", prov=prov)
     # Deliberately retain a realistic but incorrect sibling order for repair tests.
-    section.children = [section.children[-1], section.children[0], section.children[1], section.children[2]]
+    section.children = [
+        section.children[-1],
+        section.children[0],
+        section.children[1],
+        section.children[2],
+    ]
     assert title and paragraph
     return doc.model_dump_json()
 
@@ -144,7 +149,9 @@ def test_merge_removes_word_break_hyphen_and_preserves_links():
             )
         ],
     )
-    merged = next(item for item, _ in result.document.iterate_items() if item.self_ref == first.self_ref)
+    merged = next(
+        item for item, _ in result.document.iterate_items() if item.self_ref == first.self_ref
+    )
     assert merged.text == "international"
 
 
@@ -172,7 +179,9 @@ def test_delete_element_uses_docling_tree_deletion():
         commands=[EditCommand("deleteElement", {"elementId": f"base:{first_ref}"})],
     )
     assert f"base:{first_ref}" not in result.logical_ids
-    assert all(item.text != "First" for item, _ in result.document.iterate_items() if hasattr(item, "text"))
+    assert all(
+        item.text != "First" for item, _ in result.document.iterate_items() if hasattr(item, "text")
+    )
 
 
 def test_delete_elements_prunes_selected_descendants():
@@ -203,7 +212,9 @@ def test_delete_elements_prunes_selected_descendants():
 def test_realistic_structure_reorders_without_moving_provenance():
     raw = _realistic_document()
     document = DoclingDocument.model_validate_json(raw)
-    section = next(item for item, _ in document.iterate_items() if item.label == DocItemLabel.SECTION_HEADER)
+    section = next(
+        item for item, _ in document.iterate_items() if item.label == DocItemLabel.SECTION_HEADER
+    )
     children = list(section.children)
     original = children[0].resolve(document)
     result = DoclingDocumentEditor().apply(
@@ -219,7 +230,9 @@ def test_realistic_structure_reorders_without_moving_provenance():
             )
         ],
     )
-    moved = next(item for item, _ in result.document.iterate_items() if item.self_ref == children[0].cref)
+    moved = next(
+        item for item, _ in result.document.iterate_items() if item.self_ref == children[0].cref
+    )
     assert moved.prov[0].bbox == original.prov[0].bbox
     assert result.document.validate_tree(result.document.body)
 
@@ -242,8 +255,13 @@ def test_move_moves_subtree_to_the_drop_target_parent():
             )
         ],
     )
-    moved_section = next(item for item, _ in result.document.iterate_items() if item.self_ref == section.self_ref)
-    assert [child.resolve(result.document).text for child in moved_section.children] == ["[first]", "[nested]"]
+    moved_section = next(
+        item for item, _ in result.document.iterate_items() if item.self_ref == section.self_ref
+    )
+    assert [child.resolve(result.document).text for child in moved_section.children] == [
+        "[first]",
+        "[nested]",
+    ]
     result.document.validate_tree(result.document.body, raise_on_error=True)
 
 
@@ -274,7 +292,9 @@ def test_move_supports_explicit_after_and_inside_destinations():
             ),
         ],
     )
-    moved_section = next(item for item, _ in result.document.iterate_items() if item.self_ref == section.self_ref)
+    moved_section = next(
+        item for item, _ in result.document.iterate_items() if item.self_ref == section.self_ref
+    )
     assert [child.resolve(result.document).text for child in moved_section.children] == ["[second]"]
     assert result.document.export_to_markdown().startswith("[first]\n\n## [section]\n\n[second]")
     result.document.validate_tree(result.document.body, raise_on_error=True)
@@ -342,7 +362,9 @@ def test_projection_round_trips_every_supported_command(command_type, payload):
         "nested": f"base:{nested.self_ref}",
     }
     resolved_payload = {
-        key: [logical_ids[value] for value in values] if isinstance(values, list) else logical_ids.get(values, values)
+        key: [logical_ids[value] for value in values]
+        if isinstance(values, list)
+        else logical_ids.get(values, values)
         for key, values in payload.items()
     }
     mutation = DoclingDocumentEditor().apply(
@@ -607,7 +629,9 @@ async def test_each_base_analysis_has_an_independent_working_copy(edit_service):
     await analyses.insert(second)
     await analyses.update_status(second)
     second_loaded = await service.load_editor("doc-1", "analysis-2")
-    text_id = next(element.id for element in second_loaded.projection.elements if element.type == "text")
+    text_id = next(
+        element.id for element in second_loaded.projection.elements if element.type == "text"
+    )
     await service.save(
         "doc-1",
         [EditCommand("replaceText", {"elementId": text_id, "text": "Second edit"})],

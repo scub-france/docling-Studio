@@ -48,16 +48,40 @@
         class="section-selector"
         type="checkbox"
         :checked="descendantIds.every((id) => checkedIds.includes(id))"
-        :indeterminate="Boolean(descendantIds.some((id) => checkedIds.includes(id)) && !descendantIds.every((id) => checkedIds.includes(id)))"
+        :indeterminate="
+          Boolean(
+            descendantIds.some((id) => checkedIds.includes(id)) &&
+            !descendantIds.every((id) => checkedIds.includes(id)),
+          )
+        "
         aria-label="Select section children"
         @click.stop
         @change="$emit('toggle-subtree', descendantIds)"
       />
     </div>
     <div v-if="dragging" class="drop-targets">
-      <button type="button" @dragover.prevent @drop.prevent="$emit('drop', node.elementId, 'before')">{{ t('analysisEditor.dropBefore') }}</button>
-      <button type="button" @dragover.prevent @drop.prevent="$emit('drop', node.elementId, 'after')">{{ t('analysisEditor.dropAfter') }}</button>
-      <button v-if="isHeading" type="button" @dragover.prevent @drop.prevent="$emit('drop', node.elementId, 'inside')">{{ t('analysisEditor.dropInside') }}</button>
+      <button
+        type="button"
+        @dragover.prevent
+        @drop.prevent="$emit('drop', node.elementId, 'before')"
+      >
+        {{ t('analysisEditor.dropBefore') }}
+      </button>
+      <button
+        type="button"
+        @dragover.prevent
+        @drop.prevent="$emit('drop', node.elementId, 'after')"
+      >
+        {{ t('analysisEditor.dropAfter') }}
+      </button>
+      <button
+        v-if="isHeading"
+        type="button"
+        @dragover.prevent
+        @drop.prevent="$emit('drop', node.elementId, 'inside')"
+      >
+        {{ t('analysisEditor.dropInside') }}
+      </button>
     </div>
     <div v-if="node.children.length && open" class="editor-node-children">
       <EditableStructureNode
@@ -100,7 +124,9 @@ const props = defineProps<{
 const open = ref(props.defaultOpen ?? true)
 const { t } = useI18n()
 const depth = computed(() => props.depth ?? 0)
-const isHeading = computed(() => props.node.type === 'title' || props.node.type === 'section_header')
+const isHeading = computed(
+  () => props.node.type === 'title' || props.node.type === 'section_header',
+)
 const descendantIds = computed(() => {
   const ids: string[] = []
   const visit = (node: EditorTreeNode): void => {
@@ -134,19 +160,46 @@ defineEmits<{
   font-size: 12px;
   position: relative;
 }
-.section-selector { margin-left: auto; }
+.section-selector {
+  margin-left: auto;
+}
 .editor-node-row:hover,
 .editor-node-row.selected {
   background: var(--bg-elevated);
   border-color: var(--border);
 }
-.editor-node-row.selected { color: var(--accent); }
-.editor-node-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.editor-node-row.heading .node-label { font-weight: 600; color: var(--text); }
-.editor-node-row.checked { border-left: 2px solid var(--accent); }
-.editor-node-children { margin-left: 16px; border-left: 1px solid var(--border); padding-left: 5px; }
-.drop-targets { display: flex; gap: 4px; padding: 2px 7px 5px 29px; }
-.drop-targets button { border: 1px dashed var(--accent); border-radius: var(--radius-sm); background: transparent; color: var(--accent); padding: 2px 5px; font-size: 10px; }
+.editor-node-row.selected {
+  color: var(--accent);
+}
+.editor-node-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.editor-node-row.heading .node-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.editor-node-row.checked {
+  border-left: 2px solid var(--accent);
+}
+.editor-node-children {
+  margin-left: 16px;
+  border-left: 1px solid var(--border);
+  padding-left: 5px;
+}
+.drop-targets {
+  display: flex;
+  gap: 4px;
+  padding: 2px 7px 5px 29px;
+}
+.drop-targets button {
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  padding: 2px 5px;
+  font-size: 10px;
+}
 .disclosure {
   display: grid;
   width: 16px;
@@ -161,10 +214,29 @@ defineEmits<{
   font-size: 17px;
   line-height: 1;
 }
-.disclosure span { transform: rotate(0deg); transition: transform 120ms ease; }
-.disclosure span.rotated { transform: rotate(90deg); }
-.disclosure--empty { cursor: default; }
-.drag-handle { color: var(--text-muted); letter-spacing: -2px; }
-.node-type { color: var(--accent); font: 10px 'IBM Plex Mono', monospace; }
-.node-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disclosure span {
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+.disclosure span.rotated {
+  transform: rotate(90deg);
+}
+.disclosure--empty {
+  cursor: default;
+}
+.drag-handle {
+  color: var(--text-muted);
+  letter-spacing: -2px;
+}
+.node-type {
+  color: var(--accent);
+  font:
+    10px 'IBM Plex Mono',
+    monospace;
+}
+.node-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 </style>
