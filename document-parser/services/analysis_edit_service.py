@@ -57,9 +57,7 @@ class AnalysisEditService:
         self._projector = projector
         self._graph_writer = graph_writer
 
-    async def load_editor(
-        self, document_id: str, analysis_id: str | None = None
-    ) -> EditorSnapshot:
+    async def load_editor(self, document_id: str, analysis_id: str | None = None) -> EditorSnapshot:
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
         stream = await self._edits.find_stream(document_id, base.id)
@@ -87,9 +85,7 @@ class AnalysisEditService:
         """Resolve the result used by document-scoped downstream features."""
         return await self.load_editor(document_id)
 
-    async def history(
-        self, document_id: str, analysis_id: str | None = None
-    ) -> list:
+    async def history(self, document_id: str, analysis_id: str | None = None) -> list:
         """Return the durable command stream for one base analysis."""
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
@@ -184,9 +180,7 @@ class AnalysisEditService:
                 logger.exception("Graph refresh failed after analysis edit for %s", document_id)
         return self._snapshot(document, base, projection, sequence)
 
-    async def rebuild(
-        self, document_id: str, analysis_id: str | None = None
-    ) -> EditorSnapshot:
+    async def rebuild(self, document_id: str, analysis_id: str | None = None) -> EditorSnapshot:
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
         stream = await self._edits.find_stream(document_id, base.id)
@@ -238,9 +232,7 @@ class AnalysisEditService:
     def _replay(self, base, stored) -> ProjectedAnalysis:
         return self._project(base, [record.command for record in stored], operation="replay")
 
-    def _project(
-        self, base, commands: list[EditCommand], *, operation: str
-    ) -> ProjectedAnalysis:
+    def _project(self, base, commands: list[EditCommand], *, operation: str) -> ProjectedAnalysis:
         try:
             mutation = self._editor.apply(
                 base.document_json,
@@ -299,11 +291,15 @@ def _stream_hash(stored, pending: list[EditCommand]) -> str:
         digest.update(record.command_hash.encode())
     for offset, command in enumerate(pending, start=1):
         payload = json.dumps(command.payload, sort_keys=True, separators=(",", ":"))
-        previous = _command_hash(previous, (stored[-1].sequence if stored else 0) + offset, command, payload)
+        previous = _command_hash(
+            previous, (stored[-1].sequence if stored else 0) + offset, command, payload
+        )
         digest.update(previous.encode())
     return digest.hexdigest()
 
 
 def _command_hash(previous: str, sequence: int, command: EditCommand, payload: str) -> str:
-    raw = f"{previous}|{sequence}|{command.command_type}|{command.command_version}|{payload}".encode()
+    raw = (
+        f"{previous}|{sequence}|{command.command_type}|{command.command_version}|{payload}".encode()
+    )
     return hashlib.sha256(raw).hexdigest()

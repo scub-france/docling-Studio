@@ -1,4 +1,4 @@
-import { apiFetch } from '../../shared/api/http'
+import { apiFetch } from '@/shared/api/http'
 import type {
   AnalysisEditRequest,
   AnalysisEditSaveResponse,
@@ -12,10 +12,9 @@ export function fetchAnalysisEditor(
   analysisId?: string,
 ): Promise<AnalysisEditorResponse> {
   const query = analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : ''
-  return apiFetch<AnalysisEditorResponse>(
-    `/api/documents/${documentId}/analysis-editor${query}`,
-    { signal },
-  )
+  return apiFetch<AnalysisEditorResponse>(`/api/documents/${documentId}/analysis-editor${query}`, {
+    signal,
+  })
 }
 
 export function previewAnalysisEdits(
@@ -58,7 +57,10 @@ export function rebuildAnalysisEdits(
   analysisId?: string,
 ): Promise<AnalysisEditorResponse> {
   const query = analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : ''
-  return apiFetch<AnalysisEditorResponse>(`/api/documents/${documentId}/analysis-edits/rebuild${query}`, {
-    method: 'POST',
-  })
+  return apiFetch<AnalysisEditorResponse>(
+    `/api/documents/${documentId}/analysis-edits/rebuild${query}`,
+    {
+      method: 'POST',
+    },
+  )
 }

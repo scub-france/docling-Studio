@@ -26,7 +26,7 @@ describe('analysis editor commands', () => {
       ]),
     ).toEqual([
       { type: 'replaceText', elementId: 'a', text: 'two' },
-        { type: 'moveElement', elementId: 'a', targetElementId: 'b', placement: 'after' },
+      { type: 'moveElement', elementId: 'a', targetElementId: 'b', placement: 'after' },
     ])
   })
 
@@ -37,8 +37,11 @@ describe('analysis editor commands', () => {
   })
 
   it('explains invalid merge selections', () => {
-    expect(mergeValidationMessage([text('a')], ['a'])).toBe('Select at least two elements to merge.')
-    expect(mergeValidationMessage([{ ...text('a'), type: 'table' }, text('b')], ['a', 'b']))
-      .toBe('Only text and paragraph elements can be merged.')
+    expect(mergeValidationMessage([text('a')], ['a'])).toBe(
+      'Select at least two elements to merge.',
+    )
+    expect(mergeValidationMessage([{ ...text('a'), type: 'table' }, text('b')], ['a', 'b'])).toBe(
+      'Only text and paragraph elements can be merged.',
+    )
   })
 })

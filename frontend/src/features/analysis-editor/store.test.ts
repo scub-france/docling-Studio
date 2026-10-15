@@ -55,7 +55,9 @@ describe('analysis editor selection state', () => {
 
     expect(JSON.parse(values.get('analysis-editor-pending:doc-1:analysis-1') ?? '')).toEqual({
       expectedAppliedThroughSequence: 3,
-      commands: [{ type: 'moveElement', elementId: 'moved', targetElementId: 'target', placement: 'after' }],
+      commands: [
+        { type: 'moveElement', elementId: 'moved', targetElementId: 'target', placement: 'after' },
+      ],
     })
     store.discard()
     expect(values.has('analysis-editor-pending:doc-1:analysis-1')).toBe(false)

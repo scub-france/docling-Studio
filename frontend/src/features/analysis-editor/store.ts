@@ -44,7 +44,9 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const canUndo = computed(() => pendingCommands.value.length > 0)
   const canRedo = computed(() => redoCommands.value.length > 0)
   const mergeAllowed = computed(() => canMerge(elements.value, mergeSelection.value))
-  const mergeValidationError = computed(() => mergeValidationMessage(elements.value, mergeSelection.value))
+  const mergeValidationError = computed(() =>
+    mergeValidationMessage(elements.value, mergeSelection.value),
+  )
 
   async function load(id: string, analysisId?: string): Promise<void> {
     documentId.value = id
@@ -61,7 +63,8 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
       mergeSelection.value = []
       recoveredPendingCommands.value = readRecoveredPendingCommands()
       conflict.value = null
-      selectedElementId.value = saved.value.model.elements.find((element) => element.editable)?.id ?? null
+      selectedElementId.value =
+        saved.value.model.elements.find((element) => element.editable)?.id ?? null
     } catch (e) {
       error.value = (e as Error).message || 'Failed to load analysis editor'
     } finally {
@@ -120,7 +123,8 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   function queueDeleteElements(elementIds: string[]): void {
     if (!elementIds.length) return
     queue({ type: 'deleteElements', elementIds })
-    if (selectedElementId.value && elementIds.includes(selectedElementId.value)) selectedElementId.value = null
+    if (selectedElementId.value && elementIds.includes(selectedElementId.value))
+      selectedElementId.value = null
     mergeSelection.value = []
   }
 
@@ -190,10 +194,14 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     error.value = null
     conflict.value = null
     try {
-      await api.saveAnalysisEdits(documentId.value, {
-        commands: pendingCommands.value,
-        expectedAppliedThroughSequence: saved.value.appliedThroughSequence,
-      }, baseAnalysisId.value ?? undefined)
+      await api.saveAnalysisEdits(
+        documentId.value,
+        {
+          commands: pendingCommands.value,
+          expectedAppliedThroughSequence: saved.value.appliedThroughSequence,
+        },
+        baseAnalysisId.value ?? undefined,
+      )
       const next = await api.fetchAnalysisEditor(
         documentId.value,
         undefined,

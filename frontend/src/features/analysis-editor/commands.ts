@@ -5,8 +5,7 @@ export function coalesceCommands(commands: AnalysisEditCommand[]): AnalysisEditC
   for (const command of commands) {
     if (command.type === 'replaceText' || command.type === 'setHeadingLevel') {
       const index = result.findIndex(
-        (candidate) =>
-          candidate.type === command.type && candidate.elementId === command.elementId,
+        (candidate) => candidate.type === command.type && candidate.elementId === command.elementId,
       )
       if (index >= 0) result[index] = command
       else result.push(command)
@@ -26,7 +25,8 @@ export function mergeValidationMessage(elements: EditorElement[], ids: string[])
   const selected = ids
     .map((id) => elements.find((element) => element.id === id))
     .filter((element): element is EditorElement => !!element)
-  if (selected.length !== ids.length) return 'One or more selected elements are no longer available.'
+  if (selected.length !== ids.length)
+    return 'One or more selected elements are no longer available.'
   if (selected.some((element) => element.type !== 'text' && element.type !== 'paragraph')) {
     return 'Only text and paragraph elements can be merged.'
   }
