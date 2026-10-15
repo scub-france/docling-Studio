@@ -81,6 +81,12 @@ class DocumentConverter(Protocol):
         ...
 
 
+class DoclingDocumentImporter(Protocol):
+    """Port for normalizing a serialized Docling document into domain data."""
+
+    def deserialize(self, document: dict[str, Any]) -> ConversionResult: ...
+
+
 class DocumentChunker(Protocol):
     """Port for document chunking.
 

@@ -10,7 +10,7 @@ Rules enforced:
 - infra    -> no import from api, services
 - persistence -> no import from api, services, infra
 - domain   -> no import of fastapi, sqlalchemy, httpx, opensearchpy
-- services -> no import of fastapi
+- services -> no import of API or infrastructure adapter packages
 """
 
 from __future__ import annotations
@@ -194,7 +194,23 @@ class TestPersistenceLayerIsolation:
 # ---------------------------------------------------------------------------
 
 _DOMAIN_FORBIDDEN_EXTERNALS = {"fastapi", "sqlalchemy", "httpx", "opensearchpy"}
-_SERVICES_FORBIDDEN_EXTERNALS = {"fastapi"}
+# Packages whose application imports belong exclusively in `infra/`. Adding
+# one here prevents services from bypassing the corresponding domain port.
+_SERVICES_FORBIDDEN_EXTERNALS = {
+    "cryptography",
+    "docling",
+    "docling_core",
+    "fastapi",
+    "httpx",
+    "neo4j",
+    "opensearchpy",
+    "starlette",
+}
+
+# Service imports that should move behind ports before joining the denylist.
+# Keep this list explicit: deleting a candidate means its migration must also
+# add the package to `_SERVICES_FORBIDDEN_EXTERNALS`.
+_SERVICES_EXTERNAL_MIGRATION_CANDIDATES = {"pdf2image", "pypdfium2"}
 
 
 class TestDomainExternalDependencies:
@@ -207,12 +223,20 @@ class TestDomainExternalDependencies:
 
 
 class TestServicesExternalDependencies:
-    """services must not import web-framework libraries."""
+    """services must not import API or adapter implementation packages."""
 
     @pytest.mark.parametrize("lib", sorted(_SERVICES_FORBIDDEN_EXTERNALS))
     def test_services_does_not_import_external(self, lib: str):
         imports = _collect_imports("services")
         assert lib not in imports, f"services imports forbidden external library '{lib}'"
+
+    def test_service_adapter_candidates_remain_explicit(self):
+        """Migration candidates cannot silently disappear from the inventory."""
+        imports = _collect_imports("services")
+        assert imports >= _SERVICES_EXTERNAL_MIGRATION_CANDIDATES, (
+            "A service adapter candidate was removed; add it to "
+            "_SERVICES_FORBIDDEN_EXTERNALS or update the inventory."
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -190,6 +190,8 @@ def build_backend_resolver(store_repo) -> StoreBackendResolver:
 
 
 def build_analysis_service(document_repo, analysis_repo, graph_writer) -> AnalysisService:
+    from infra.docling_importer import DoclingDocumentImporter
+
     return AnalysisService(
         converter=build_converter(),
         analysis_repo=analysis_repo,
@@ -202,6 +204,7 @@ def build_analysis_service(document_repo, analysis_repo, graph_writer) -> Analys
             batch_page_size=settings.batch_page_size,
         ),
         graph_writer=graph_writer,
+        docling_importer=DoclingDocumentImporter(),
     )
 
 

@@ -1,6 +1,8 @@
 export { useAnalysisStore } from './store'
 export type { AnalysisOutcome, BatchLaunch } from './store'
 export { fetchAnalysis } from './api'
+export { importAnalysis } from './api'
+export { default as AnalysisImportButton } from './ui/AnalysisImportButton.vue'
 export { default as AnalysisPanel } from './ui/AnalysisPanel.vue'
 export { default as ResultTabs } from './ui/ResultTabs.vue'
 export { default as StructureViewer } from './ui/StructureViewer.vue'

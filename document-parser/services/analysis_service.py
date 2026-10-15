@@ -30,6 +30,7 @@ from domain.value_objects import (
 if TYPE_CHECKING:
     from domain.ports import (
         AnalysisRepository,
+        DoclingDocumentImporter,
         DocumentChunker,
         DocumentConverter,
         DocumentRepository,
@@ -89,6 +90,7 @@ class AnalysisService:
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
         config: AnalysisConfig | None = None,
         graph_writer: GraphWriter | None = None,
+        docling_importer: DoclingDocumentImporter | None = None,
     ):
         self._converter = converter
         self._chunker = chunker
@@ -102,6 +104,7 @@ class AnalysisService:
         # `GraphWriter` port (#audit-01) — was a raw `Neo4jDriver` until
         # the hex-arch fix. None when no graph store is wired in.
         self._graph_writer = graph_writer
+        self._docling_importer = docling_importer
         # Duck-typed callable injected at startup. Wired in main.py to
         # `ChunkService.promote_from_analysis_if_empty` so the canonical
         # chunkset (#205) is populated on the first successful analysis,
@@ -158,6 +161,32 @@ class AnalysisService:
         task.add_done_callback(functools.partial(self._on_task_done, job_id=job.id))
 
         return job
+
+    async def import_docling_document(self, document_id: str, document: dict) -> AnalysisJob:
+        """Persist a supplied Docling document as a completed analysis.
+
+        Importing skips conversion but otherwise follows the normal completion
+        path, keeping exports, history, lifecycle, and graph data consistent.
+        """
+        doc = await self._document_repo.find_by_id(document_id)
+        if not doc:
+            raise ValueError(f"Document not found: {document_id}")
+
+        if not self._docling_importer:
+            raise RuntimeError("Docling document importer is not configured")
+        result = self._docling_importer.deserialize(document)
+
+        job = AnalysisJob(document_id=document_id)
+        job.document_filename = doc.filename
+        await self._analysis_repo.insert(job)
+        job.mark_running()
+        await self._analysis_repo.update_status(job)
+        await self._finalize_analysis(job.id, result, chunking_options=None)
+
+        completed_job = await self._analysis_repo.find_by_id(job.id)
+        if not completed_job:
+            raise ValueError(f"Analysis not found: {job.id}")
+        return completed_job
 
     async def find_all(self) -> list[AnalysisJob]:
         """Return all analysis jobs, newest first."""

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from domain.models import AnalysisStatus
+from domain.models import AnalysisJob, AnalysisStatus, Document
 from domain.services import extract_html_body, merge_results
 from domain.value_objects import ConversionResult, PageDetail
 from services.analysis_service import AnalysisConfig, AnalysisService, _count_pdf_pages
@@ -157,6 +157,69 @@ class TestAnalysisServiceCancellation:
         await asyncio.gather(task)
 
         assert "j1" not in service._running_tasks
+
+
+class TestDoclingDocumentImport:
+    @pytest.mark.asyncio
+    async def test_import_persists_completed_analysis(self):
+        from docling_core.types.doc import DoclingDocument
+
+        stored: dict[str, AnalysisJob] = {}
+        analysis_repo = MagicMock()
+
+        async def insert(job: AnalysisJob) -> None:
+            stored[job.id] = job
+
+        analysis_repo.insert = AsyncMock(side_effect=insert)
+        analysis_repo.find_by_id = AsyncMock(side_effect=lambda job_id: stored.get(job_id))
+        analysis_repo.update_status = AsyncMock()
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
+        document_repo.update_page_count = AsyncMock()
+        document_repo.update_lifecycle = AsyncMock()
+        importer = MagicMock()
+        importer.deserialize.return_value = ConversionResult(
+            page_count=0,
+            content_markdown="",
+            content_html="",
+            pages=[],
+            document_json="{}",
+        )
+        service = _make_service(
+            analysis_repo=analysis_repo,
+            document_repo=document_repo,
+            docling_importer=importer,
+        )
+
+        job = await service.import_docling_document(
+            "d1", DoclingDocument(name="source").export_to_dict()
+        )
+
+        assert job.status is AnalysisStatus.COMPLETED
+        assert job.content_markdown == ""
+        assert job.content_html is not None
+        assert job.document_json is not None
+        document_repo.update_lifecycle.assert_awaited_once()
+        importer.deserialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_import_rejects_invalid_docling_document(self):
+        analysis_repo = MagicMock()
+        analysis_repo.insert = AsyncMock()
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
+        importer = MagicMock()
+        importer.deserialize.side_effect = ValueError("Invalid Docling document: invalid payload")
+        service = _make_service(
+            analysis_repo=analysis_repo,
+            document_repo=document_repo,
+            docling_importer=importer,
+        )
+
+        with pytest.raises(ValueError, match="Invalid Docling document"):
+            await service.import_docling_document("d1", {})
+
+        analysis_repo.insert.assert_not_awaited()
 
 
 class TestAnalysisServiceConcurrency:

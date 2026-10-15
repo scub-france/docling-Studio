@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
@@ -183,7 +182,9 @@ async def preview(
     try:
         # File read + PDF rasterisation are both blocking; offload to a
         # worker thread so the event loop stays free for other requests.
-        file_content = await asyncio.to_thread(Path(doc.storage_path).read_bytes)
+        file_content = await asyncio.to_thread(
+            service.resolve_storage_path(doc.storage_path).read_bytes
+        )
         png_bytes = await asyncio.to_thread(
             DocumentService.generate_preview, file_content, page=page, dpi=dpi
         )
@@ -209,7 +210,9 @@ async def page_sizes(doc_id: str, service: deps.DocumentServiceDep) -> list[Page
         raise HTTPException(status_code=404, detail="Document not found")
 
     try:
-        file_content = await asyncio.to_thread(Path(doc.storage_path).read_bytes)
+        file_content = await asyncio.to_thread(
+            service.resolve_storage_path(doc.storage_path).read_bytes
+        )
         pages = await asyncio.to_thread(DocumentService.page_sizes, file_content)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc

@@ -260,6 +260,13 @@ class CreateAnalysisRequest(BaseModel):
     )
 
 
+class ImportAnalysisRequest(BaseModel):
+    """A completed analysis supplied as a serialized DoclingDocument."""
+
+    documentId: str = Field(validation_alias=AliasChoices("documentId", "document_id"))
+    document: dict
+
+
 class RechunkRequest(BaseModel):
     chunkingOptions: ChunkingOptionsRequest = Field(
         validation_alias=AliasChoices("chunkingOptions", "chunking_options")

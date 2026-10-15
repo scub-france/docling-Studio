@@ -342,7 +342,7 @@ def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
     Carries `self_ref` ("#/texts/0", "#/tables/3", ...) through so the
     Linked-view canvas can correlate chunks (whose `docItems[].selfRef`
     is the same ref) with the element bboxes drawn on the page preview.
-    Local-mode parity: `LocalConverter._process_content_item` already
+    Local-mode parity: `docling_pages.extract_pages_detail` already
     populates `self_ref`; the remote path was silently dropping it,
     leaving the overlay empty on every doc converted through Docling Serve.
     """

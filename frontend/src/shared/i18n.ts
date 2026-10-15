@@ -250,6 +250,12 @@ const messages: Messages = {
     'upload.invalidFormat': 'Format invalide — seuls les fichiers PDF sont acceptés.',
     'upload.tooLarge': 'Fichier trop volumineux (max {n} Mo).',
     'upload.maxPages': 'Max {n} pages',
+    'analysisImport.button': 'Importer une analyse',
+    'analysisImport.importing': 'Import en cours...',
+    'analysisImport.failed': "Impossible d'importer l'analyse.",
+    'analysisImport.uploadTogether': 'Importer un PDF et une analyse Docling',
+    'analysisImport.combinedFilesRequired': 'Choisissez un PDF et un fichier JSON Docling.',
+    'documentActions.title': 'Actions du document',
 
     // History
     'history.title': 'Historique',
@@ -895,6 +901,12 @@ const messages: Messages = {
     'upload.invalidFormat': 'Invalid format — only PDF files are accepted.',
     'upload.tooLarge': 'File too large (max {n} MB).',
     'upload.maxPages': 'Max {n} pages',
+    'analysisImport.button': 'Import analysis',
+    'analysisImport.importing': 'Importing...',
+    'analysisImport.failed': 'Unable to import the analysis.',
+    'analysisImport.uploadTogether': 'Upload PDF and Docling analysis',
+    'analysisImport.combinedFilesRequired': 'Choose one PDF and one Docling JSON file.',
+    'documentActions.title': 'Document actions',
 
     'history.title': 'History',
     'analyses.title': 'Analyses',

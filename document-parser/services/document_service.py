@@ -8,6 +8,7 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pypdfium2 as pdfium
@@ -114,6 +115,20 @@ class DocumentService:
     async def find_by_id(self, doc_id: str) -> Document | None:
         """Find a document by its ID, or return None."""
         return await self._document_repo.find_by_id(doc_id)
+
+    def resolve_storage_path(self, storage_path: str) -> Path:
+        """Resolve a persisted upload path in either Docker or host development.
+
+        Docker records `/app/uploads/...`, while a worktree started directly
+        on the host stores the copied files under its configured upload dir.
+        Keep the original path when it exists; otherwise only fall back to its
+        basename inside that directory.
+        """
+        path = Path(storage_path)
+        if path.is_file():
+            return path
+        fallback = Path(self._upload_dir).resolve() / path.name
+        return fallback if fallback.is_file() else path
 
     async def delete(self, doc_id: str) -> bool:
         """Delete document file, associated analyses, and database record."""

@@ -79,6 +79,19 @@
               </svg>
             </button>
             <button
+              class="action-btn"
+              :disabled="analysisStore.running"
+              :title="t('newAnalysis.title')"
+              :aria-label="t('newAnalysis.title')"
+              @click="startAnalysis(doc.id)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="11" cy="11" r="6" />
+                <path d="m16 16 5 5" />
+              </svg>
+            </button>
+            <AnalysisImportButton icon-only :document-id="doc.id" @imported="onAnalysisImported" />
+            <button
               v-if="ingestionEnabled && ingestionStore.ingestedDocs[doc.id]"
               class="action-btn unindex"
               :title="t('ingestion.deleteIndex')"
@@ -114,6 +127,7 @@ import { useRouter } from 'vue-router'
 import { useDocumentStore } from '../features/document/store'
 import { useFeatureFlagStore } from '../features/feature-flags/store'
 import { useIngestionStore } from '../features/ingestion/store'
+import { AnalysisImportButton, useAnalysisStore } from '../features/analysis'
 import { useI18n } from '../shared/i18n'
 import { formatSize } from '../shared/format'
 import type { Document } from '../shared/types'
@@ -121,6 +135,7 @@ import type { Document } from '../shared/types'
 const docStore = useDocumentStore()
 const featureStore = useFeatureFlagStore()
 const ingestionStore = useIngestionStore()
+const analysisStore = useAnalysisStore()
 const ingestionEnabled = computed(() => featureStore.isEnabled('ingestion'))
 const router = useRouter()
 const { t } = useI18n()
@@ -169,6 +184,15 @@ function formatDate(iso: string) {
 function openInStudio(doc: Document) {
   docStore.select(doc.id)
   router.push('/studio')
+}
+
+async function startAnalysis(documentId: string) {
+  const analysis = await analysisStore.run(documentId)
+  router.push({ name: 'analysis-detail', params: { id: analysis.id } })
+}
+
+function onAnalysisImported(analysisId: string) {
+  router.push({ name: 'analysis-detail', params: { id: analysisId } })
 }
 
 function confirmRemoveFromIndex(docId: string) {
