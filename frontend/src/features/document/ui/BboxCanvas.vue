@@ -40,7 +40,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   hoverElement: [el: PageElement | null]
-  clickElement: [el: PageElement, pageNumber: number]
+  clickElement: [el: PageElement, pageNumber: number, event: MouseEvent]
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -157,7 +157,7 @@ function onMouseLeave(): void {
 }
 function onClick(e: MouseEvent): void {
   const el = elementAt(e)
-  if (el) emit('clickElement', el, props.pageNumber)
+  if (el) emit('clickElement', el, props.pageNumber, e)
 }
 
 watch(
