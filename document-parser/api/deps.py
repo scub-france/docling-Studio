@@ -13,6 +13,7 @@ from fastapi import Depends
 
 from api.state import AppState, get_app_state, require
 from domain.ports import DocumentStoreLinkRepository, StoreRepository
+from services.analysis_edit_service import AnalysisEditService
 from services.analysis_service import AnalysisService
 from services.app_config_service import AppConfigService
 from services.chunk_service import ChunkService
@@ -39,6 +40,13 @@ def get_analysis_service(state: AppStateDep) -> AnalysisService:
 
 
 AnalysisServiceDep = Annotated[AnalysisService, Depends(get_analysis_service)]
+
+
+def get_analysis_edit_service(state: AppStateDep) -> AnalysisEditService:
+    return require(state.analysis_edit_service, detail="Analysis editor not available")
+
+
+AnalysisEditServiceDep = Annotated[AnalysisEditService, Depends(get_analysis_edit_service)]
 
 
 def get_store_service(state: AppStateDep) -> StoreService:
