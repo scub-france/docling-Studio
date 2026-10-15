@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.analyses import router as analyses_router
+from api.analysis_edits import router as analysis_edits_router
 from api.config import router as config_router
 from api.document_chunks import router as document_chunks_router
 from api.document_versions import router as document_versions_router
@@ -91,6 +92,7 @@ if settings.rate_limit_rpm > 0:
 app.include_router(documents_router)
 app.include_router(document_chunks_router)
 app.include_router(analyses_router)
+app.include_router(analysis_edits_router)
 app.include_router(stores_router)
 # Document versions (#267) — workspace History timeline.
 app.include_router(document_versions_router)
