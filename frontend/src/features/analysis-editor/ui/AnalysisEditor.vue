@@ -307,14 +307,11 @@ function drop(targetId: string, placement: 'before' | 'after' | 'inside'): void 
 function toggleMoveDestination(): void {
   draggedId.value = draggedId.value ? null : store.selectedElementId
 }
-function onPageElement(element: PageElement, _pageNumber: number, event: MouseEvent): void {
+function onPageElement(element: PageElement, _pageNumber: number): void {
   const match = store.elements.find((candidate) => candidate.selfRef === element.self_ref)
   if (!match) return
-  if (event.shiftKey || event.metaKey || event.ctrlKey) toggleMerge(match.id)
-  else {
-    select(match.id)
-    if (isMergeable(match.id)) store.selectMergeSelection(match.id)
-  }
+  select(match.id)
+  if (isMergeable(match.id)) store.selectMergeSelection(match.id)
 }
 
 function onKeydown(event: KeyboardEvent): void {

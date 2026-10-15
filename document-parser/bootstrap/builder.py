@@ -21,8 +21,6 @@ import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from infra.docling_merger import DoclingDocumentMerger
-
 from api.state import AppState
 from bootstrap.factories import (
     build_analysis_service,
@@ -42,6 +40,7 @@ from bootstrap.mcp_mount import describe_mcp_server
 from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import deps_present, deps_provenance
 from infra.docling_editor import DoclingDocumentEditor
+from infra.docling_merger import DoclingDocumentMerger
 from infra.docling_projector import DoclingAnalysisProjector
 from infra.llm.ollama_probe import OllamaProbe
 from infra.settings import settings
