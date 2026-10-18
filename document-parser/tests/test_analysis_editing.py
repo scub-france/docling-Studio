@@ -354,7 +354,9 @@ def test_projector_renders_edited_text_without_overwriting_original_ocr_text():
     assert "Edited user text" in projected.content_markdown
     assert "Edited user text" in projected.content_html
     serialized = DoclingDocument.model_validate_json(projected.document_json)
-    serialized_item = next(candidate for candidate in serialized.texts if candidate.self_ref == item.self_ref)
+    serialized_item = next(
+        candidate for candidate in serialized.texts if candidate.self_ref == item.self_ref
+    )
     assert serialized_item.text == "Edited user text"
     assert serialized_item.orig == "Original OCR text"
 
