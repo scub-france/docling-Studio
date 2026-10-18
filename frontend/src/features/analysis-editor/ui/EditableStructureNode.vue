@@ -137,7 +137,12 @@ const props = defineProps<{
 const open = ref(props.defaultOpen ?? true)
 const { t } = useI18n()
 function itemToken(label: string): string {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'node'
+  return (
+    label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'node'
+  )
 }
 const depth = computed(() => props.depth ?? 0)
 const isHeading = computed(
