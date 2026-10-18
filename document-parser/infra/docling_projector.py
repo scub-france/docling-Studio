@@ -61,10 +61,17 @@ class DoclingAnalysisProjector:
             "baseAnalysisId": base_analysis_id,
             "elements": [self._element_dict(element) for element in editor_elements],
         }
+        export_document = document.model_copy(deep=True)
+        for item in export_document.texts:
+            if isinstance(item, TextItem) and item.orig != item.text:
+                # Docling's exporters prefer `orig` as OCR evidence. Keep that
+                # immutable in document_json, but render the user's edited text
+                # in Markdown and HTML projections.
+                item.orig = item.text
         return ProjectedAnalysis(
             document_json=document.model_dump_json(),
-            content_markdown=document.export_to_markdown(),
-            content_html=document.export_to_html(),
+            content_markdown=export_document.export_to_markdown(),
+            content_html=export_document.export_to_html(),
             pages_json=json.dumps([self._page_dict(page) for page in pages]),
             editor_model_json=json.dumps(model),
             tree=tree,

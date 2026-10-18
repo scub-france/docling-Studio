@@ -3,16 +3,21 @@
     <header class="editor-toolbar">
       <div class="toolbar-title">
         <span class="eyebrow">{{ t('analysisEditor.title') }}</span>
-        <span v-if="store.hasUnsavedChanges" class="unsaved">{{
+        <span v-if="store.hasUnsavedChanges" class="unsaved" data-e2e="analysis-editor-unsaved">{{
           t('analysisEditor.unsaved')
         }}</span>
-        <span class="selection-status" aria-live="polite">
+        <span
+          class="selection-status"
+          data-e2e="analysis-editor-selection-count"
+          aria-live="polite"
+        >
           {{ t('analysisEditor.selectedCount', { n: selectionCount }) }}
         </span>
       </div>
       <div class="toolbar-actions">
         <button
           type="button"
+          data-e2e="analysis-editor-undo"
           :disabled="!store.canUndo"
           title="Undo (Cmd/Ctrl+Z)"
           @click="store.undo()"
@@ -21,6 +26,7 @@
         </button>
         <button
           type="button"
+          data-e2e="analysis-editor-redo"
           :disabled="!store.canRedo"
           title="Redo (Cmd/Ctrl+Shift+Z)"
           @click="store.redo()"
@@ -30,6 +36,7 @@
         <button
           type="button"
           class="history-button"
+          data-e2e="analysis-editor-history"
           :class="{ active: historyOpen }"
           @click="historyOpen = !historyOpen"
         >
@@ -37,6 +44,7 @@
         </button>
         <button
           v-if="store.mergeSelection.length"
+          data-e2e="analysis-editor-merge"
           type="button"
           class="merge-toolbar-button"
           :disabled="!store.mergeAllowed"
@@ -50,6 +58,7 @@
         }}</span>
         <button
           v-if="store.mergeSelection.length > 1"
+          data-e2e="analysis-editor-delete-range"
           type="button"
           class="delete-range-button"
           @click="store.queueDeleteElements(store.mergeSelection)"
@@ -59,6 +68,7 @@
         <button
           v-if="store.selectedElement && isMovable(store.selectedElement.id)"
           type="button"
+          data-e2e="analysis-editor-choose-move"
           :aria-pressed="Boolean(draggedId)"
           @click="toggleMoveDestination"
         >
@@ -69,16 +79,23 @@
         <button
           type="button"
           :disabled="!store.hasUnsavedChanges || store.previewing"
+          data-e2e="analysis-editor-preview"
           @click="store.previewNow()"
         >
           {{ store.previewing ? t('analysisEditor.previewing') : t('analysisEditor.preview') }}
         </button>
-        <button type="button" :disabled="!store.hasUnsavedChanges" @click="discard">
+        <button
+          data-e2e="analysis-editor-discard"
+          type="button"
+          :disabled="!store.hasUnsavedChanges"
+          @click="discard"
+        >
           {{ t('analysisEditor.discard') }}
         </button>
         <button
           type="button"
           class="primary"
+          data-e2e="analysis-editor-save"
           :disabled="!store.hasUnsavedChanges || store.saving"
           @click="save"
         >
@@ -104,16 +121,31 @@
           {{ t('analysisEditor.conflictDiscard') }}
         </button>
       </div>
-      <div v-if="store.recoveredPendingCount" class="editor-recovery" role="status">
+      <div
+        v-if="store.recoveredPendingCount"
+        class="editor-recovery"
+        data-e2e="analysis-editor-recovered"
+        role="status"
+      >
         <span>{{ t('analysisEditor.recoveredDraft', { n: store.recoveredPendingCount }) }}</span>
-        <button type="button" @click="store.restoreRecoveredPending()">
+        <button
+          type="button"
+          data-e2e="analysis-editor-restore-draft"
+          @click="store.restoreRecoveredPending()"
+        >
           {{ t('analysisEditor.restoreDraft') }}
         </button>
-        <button type="button" @click="store.discardRecoveredPending()">
+        <button
+          type="button"
+          data-e2e="analysis-editor-discard-draft"
+          @click="store.discardRecoveredPending()"
+        >
           {{ t('analysisEditor.discardDraft') }}
         </button>
       </div>
-      <div v-if="saveNotice" class="editor-success" role="status">{{ saveNotice }}</div>
+      <div v-if="saveNotice" class="editor-success" data-e2e="analysis-editor-saved" role="status">
+        {{ saveNotice }}
+      </div>
       <div v-if="store.effective?.chunksStale" class="editor-warning">
         {{ t('analysisEditor.chunksStale') }}
       </div>
@@ -169,6 +201,7 @@
             </button>
             <button
               :class="{ active: previewMode === 'markdown' }"
+              data-e2e="analysis-editor-markdown-tab"
               @click="previewMode = 'markdown'"
             >
               {{ t('analysisEditor.markdown') }}
@@ -188,7 +221,9 @@
             />
             <div v-else class="state">{{ t('analysisEditor.noPages') }}</div>
           </div>
-          <pre v-else class="markdown-preview">{{ store.effective?.result.contentMarkdown }}</pre>
+          <pre v-else class="markdown-preview" data-e2e="analysis-editor-markdown">{{
+            store.effective?.result.contentMarkdown
+          }}</pre>
         </main>
         <aside class="properties-column">
           <ElementEditPanel

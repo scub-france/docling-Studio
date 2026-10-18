@@ -36,7 +36,6 @@ from bootstrap.factories import (
 from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import deps_present, deps_provenance
 from infra.docling_editor import DoclingDocumentEditor
-from infra.docling_merger import DoclingDocumentMerger
 from infra.docling_projector import DoclingAnalysisProjector
 from infra.llm.ollama_probe import OllamaProbe
 from infra.settings import settings
@@ -106,7 +105,6 @@ class AppStateBuilder:
             document_repo,
             analysis_repo,
             graph_writer,
-            merger=DoclingDocumentMerger(),
         )
         analysis_edit_service = AnalysisEditService(
             analysis_repo=analysis_repo,

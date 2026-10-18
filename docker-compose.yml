@@ -161,6 +161,7 @@ services:
       - uploads_data:/app/uploads
       - db_data:/app/data
     environment:
+      DB_PATH: ${DB_PATH:-/app/data/docling_studio.db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
       # Defaults point at the `docling-serve` service so that
       # `docker compose --profile remote up` works without extra env. In
