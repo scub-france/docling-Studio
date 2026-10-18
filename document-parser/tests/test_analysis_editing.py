@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from docling_core.types.doc import (
@@ -644,6 +645,7 @@ async def test_save_sequence_conflict_does_not_append(edit_service):
 @pytest.mark.asyncio
 async def test_each_base_analysis_has_an_independent_working_copy(edit_service):
     service, _edits, analyses = edit_service
+    service._graph_writer = AsyncMock()
     raw, _, _ = _document()
     second = AnalysisJob(
         id="analysis-2",
@@ -670,3 +672,4 @@ async def test_each_base_analysis_has_an_independent_working_copy(edit_service):
     second_after = await service.load_editor("doc-1", "analysis-2")
     assert "Second edit" not in first.job.content_markdown
     assert "Second edit" in second_after.job.content_markdown
+    service._graph_writer.write_document_tree.assert_not_awaited()
