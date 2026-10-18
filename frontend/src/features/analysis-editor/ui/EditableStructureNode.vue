@@ -1,8 +1,14 @@
 <template>
-  <div class="editor-node" :class="{ 'editor-node--root': depth === 0 }">
+  <div
+    class="editor-node"
+    :class="{ 'editor-node--root': depth === 0 }"
+    :data-e2e="`analysis-editor-item-${itemToken(node.label)}`"
+  >
     <div
       class="editor-node-row"
       role="treeitem"
+      :data-e2e="`analysis-editor-tree-item-${itemToken(node.label)}`"
+      :aria-label="node.label"
       tabindex="0"
       :aria-selected="selectedId === node.elementId"
       :aria-expanded="node.children.length ? open : undefined"
@@ -35,6 +41,7 @@
       <input
         v-if="isText(node.elementId)"
         type="checkbox"
+        data-e2e="analysis-editor-merge-select"
         :checked="checkedIds.includes(node.elementId)"
         :aria-label="t('analysisEditor.selectForMerge', { label: node.label })"
         @click.stop
@@ -62,23 +69,29 @@
     <div v-if="dragging" class="drop-targets">
       <button
         type="button"
+        data-e2e="analysis-editor-move-before"
         @dragover.prevent
         @drop.prevent="$emit('drop', node.elementId, 'before')"
+        @click="$emit('drop', node.elementId, 'before')"
       >
         {{ t('analysisEditor.dropBefore') }}
       </button>
       <button
         type="button"
+        data-e2e="analysis-editor-move-after"
         @dragover.prevent
         @drop.prevent="$emit('drop', node.elementId, 'after')"
+        @click="$emit('drop', node.elementId, 'after')"
       >
         {{ t('analysisEditor.dropAfter') }}
       </button>
       <button
         v-if="isHeading"
         type="button"
+        data-e2e="analysis-editor-move-inside"
         @dragover.prevent
         @drop.prevent="$emit('drop', node.elementId, 'inside')"
+        @click="$emit('drop', node.elementId, 'inside')"
       >
         {{ t('analysisEditor.dropInside') }}
       </button>
@@ -123,6 +136,9 @@ const props = defineProps<{
 
 const open = ref(props.defaultOpen ?? true)
 const { t } = useI18n()
+function itemToken(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'node'
+}
 const depth = computed(() => props.depth ?? 0)
 const isHeading = computed(
   () => props.node.type === 'title' || props.node.type === 'section_header',

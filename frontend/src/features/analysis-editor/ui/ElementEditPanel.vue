@@ -8,19 +8,24 @@
       </div>
       <label v-if="element.editable" class="field">
         <span>{{ t('analysisEditor.text') }}</span>
-        <textarea v-model="draft" rows="8" @blur="commitText" />
+        <textarea v-model="draft" data-e2e="analysis-editor-text" rows="8" @input="commitText" />
       </label>
       <button
         v-if="element.supportedOperations.includes('deleteElement')"
         type="button"
         class="delete-button"
+        data-e2e="analysis-editor-delete"
         @click="emit('deleteElement')"
       >
         {{ t('analysisEditor.deleteElement') }}
       </button>
       <label v-if="element.supportedOperations.includes('setHeadingLevel')" class="field">
         <span>{{ t('analysisEditor.headingLevel') }}</span>
-        <select :value="element.headingLevel ?? 1" @change="changeLevel">
+        <select
+          data-e2e="analysis-editor-heading-level"
+          :value="element.headingLevel ?? 1"
+          @change="changeLevel"
+        >
           <option value="-1">{{ t('analysisEditor.bodyText') }}</option>
           <option value="0">{{ t('analysisEditor.titleText') }}</option>
           <option v-for="level in 6" :key="level" :value="level">{{ level }}</option>
@@ -56,9 +61,9 @@ watch(
   },
   { immediate: true },
 )
-function commitText(): void {
-  if (props.element?.editable && draft.value !== (props.element.text ?? ''))
-    emit('replaceText', draft.value)
+function commitText(event: Event): void {
+  const text = (event.target as HTMLTextAreaElement).value
+  if (props.element?.editable && text !== (props.element.text ?? '')) emit('replaceText', text)
 }
 function changeLevel(event: Event): void {
   emit('headingLevel', Number((event.target as HTMLSelectElement).value))

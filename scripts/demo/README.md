@@ -1,5 +1,21 @@
 # Ask demo — automated capture
 
+## Record the analysis editor
+
+With the local Docker E2E stack running, record the visible Karate UI suite as a
+standalone MP4 (no narration or post-processing):
+
+```bash
+SCREEN=2 scripts/demo/record-analysis-editor.sh
+```
+
+The video is written to `out/demo/analysis-editor.mp4`. Override `SCREEN`, `FPS`,
+`CROP`, `BASE_URL`, or `VIDEO_OUT` as needed. Grant Screen Recording permission to
+the terminal app running the shell (for example, Ghostty) in macOS System Settings;
+then list avfoundation devices and set `SCREEN` to the displayed capture-screen
+index. The wrapper uses the `@demo=true` visible Chrome geometry and runs only
+`AnalysisEditorRunner`.
+
 Records the "Ask" walkthrough (`docs/demo/303-ask-demo-script.md`) with zero manual
 editing: Karate drives Chrome, ffmpeg captures the screen, and the voiceover is placed
 from timestamps the run itself emitted.

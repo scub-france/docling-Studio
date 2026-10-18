@@ -15,11 +15,16 @@ Completed:
 - Selection feedback, save feedback, explicit move destinations, pending-edit
   recovery, conflict recovery, and keyboard-accessible tree/move controls.
 - Safe structured logs for editor projection failures without document text.
+- Axe accessibility audit for the mounted editor, plus keyboard selection and
+  move controls.
+- Karate UI workflows for replace, merge, move, range delete, discard,
+  save/reload, refresh/restore, and stale-draft rejection using generated
+  fixtures.
 
 Deferred or external validation:
 
-- Browser E2E coverage is deferred.
-- Automated accessibility auditing is not yet configured.
+- Expand browser tests to cover undo/redo, save conflicts, PDF provenance
+  selection, and read-only element feedback.
 - Final alpha validation still requires representative production-like documents.
 
 ## Alpha Scope

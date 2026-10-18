@@ -338,6 +338,27 @@ def test_projector_normalizes_bottom_left_bboxes_for_the_frontend():
     assert page["elements"][0]["bbox"] == [10.0, 20.0, 40.0, 40.0]
 
 
+def test_projector_renders_edited_text_without_overwriting_original_ocr_text():
+    document = DoclingDocument(name="edited-export")
+    item = document.add_text(label=DocItemLabel.TEXT, text="Original OCR text")
+    item.text = "Edited user text"
+    projected = DoclingAnalysisProjector().project(
+        document,
+        base_analysis_id="base",
+        logical_ids={
+            f"base:{document.body.self_ref}": document.body.self_ref,
+            f"base:{item.self_ref}": item.self_ref,
+        },
+    )
+
+    assert "Edited user text" in projected.content_markdown
+    assert "Edited user text" in projected.content_html
+    serialized = DoclingDocument.model_validate_json(projected.document_json)
+    serialized_item = next(candidate for candidate in serialized.texts if candidate.self_ref == item.self_ref)
+    assert serialized_item.text == "Edited user text"
+    assert serialized_item.orig == "Original OCR text"
+
+
 @pytest.mark.parametrize(
     "command_type,payload",
     [
