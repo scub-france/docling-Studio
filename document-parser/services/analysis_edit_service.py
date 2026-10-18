@@ -132,7 +132,11 @@ class AnalysisEditService:
                 created_at=datetime.now(UTC),
             )
             await self._edits.create_stream(stream)
-        elif stream.base_document_hash != base_hash:
+            # Another writer may have created this stream first.
+            stream = await self._edits.find_stream(document_id, base.id)
+            if stream is None:
+                raise AnalysisEditConflictError("The editor stream could not be created")
+        if stream.base_document_hash != base_hash:
             raise AnalysisEditConflictError("The immutable base analysis changed")
 
         stored = await self._edits.list_commands(stream.id)

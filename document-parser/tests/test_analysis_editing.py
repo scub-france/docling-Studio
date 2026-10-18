@@ -17,7 +17,7 @@ from docling_core.types.doc import (
     TableData,
 )
 
-from domain.analysis_editing import AnalysisEditError, EditCommand
+from domain.analysis_editing import AnalysisEditConflictError, AnalysisEditError, EditCommand
 from domain.models import AnalysisJob, AnalysisStatus, Document
 from infra.docling_editor import DoclingDocumentEditor
 from infra.docling_projector import DoclingAnalysisProjector
@@ -620,7 +620,7 @@ async def test_preview_failure_logs_safe_editor_context(edit_service, caplog):
 
 @pytest.mark.asyncio
 async def test_save_sequence_conflict_does_not_append(edit_service):
-    service, _edits, _ = edit_service
+    service, edits, _ = edit_service
     initial = await service.load_editor("doc-1")
     text_id = next(element.id for element in initial.projection.elements if element.type == "text")
     await service.save(
@@ -628,12 +628,17 @@ async def test_save_sequence_conflict_does_not_append(edit_service):
         [EditCommand("replaceText", {"elementId": text_id, "text": "One"})],
         expected_sequence=0,
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(AnalysisEditConflictError):
         await service.save(
             "doc-1",
             [EditCommand("replaceText", {"elementId": text_id, "text": "Two"})],
             expected_sequence=0,
         )
+    stream = await edits.find_stream("doc-1", "analysis-1")
+    assert stream is not None
+    # A second first-save request may have observed no stream before this save.
+    await edits.create_stream(stream)
+    assert len(await edits.list_commands(stream.id)) == 1
 
 
 @pytest.mark.asyncio
