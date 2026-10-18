@@ -6,7 +6,13 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-from domain.analysis_editing import EditCommand, EditStream, StoredEditCommand, WorkingCopy
+from domain.analysis_editing import (
+    AnalysisEditConflictError,
+    EditCommand,
+    EditStream,
+    StoredEditCommand,
+    WorkingCopy,
+)
 from persistence.database import get_connection
 
 
@@ -74,7 +80,7 @@ class SqliteAnalysisEditRepository:
     async def create_stream(self, stream: EditStream) -> None:
         async with get_connection() as db:
             await db.execute(
-                """INSERT INTO analysis_edit_streams
+                """INSERT OR IGNORE INTO analysis_edit_streams
                    (id, document_id, base_analysis_id, base_document_hash,
                     engine_version, created_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
@@ -131,7 +137,7 @@ class SqliteAnalysisEditRepository:
                 last = await cursor.fetchone()
                 actual_sequence = int(last["sequence"]) if last else 0
                 if actual_sequence != expected_sequence:
-                    raise ValueError(
+                    raise AnalysisEditConflictError(
                         f"Edit stream changed: expected sequence {expected_sequence}, "
                         f"actual sequence {actual_sequence}"
                     )
