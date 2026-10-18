@@ -164,14 +164,15 @@ class AnalysisEditService:
             result_hash=result_hash,
             updated_at=datetime.now(UTC),
         )
+        activate = analysis_id is None or document.active_analysis_id == base.id
         await self._edits.save_commands_and_working_copy(
             stream=stream,
             commands=pending_commands,
             expected_sequence=actual_sequence,
             working_copy=working,
-            activate=analysis_id is None or document.active_analysis_id == base.id,
+            activate=activate,
         )
-        if self._graph_writer is not None:
+        if activate and self._graph_writer is not None:
             try:
                 await self._graph_writer.write_document_tree(
                     doc_id=document_id,
