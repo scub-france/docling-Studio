@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAnalysisEditorStore } from './store'
-import { fetchAnalysisEditHistory, fetchAnalysisEditor, saveAnalysisEdits } from './api'
+import {
+  fetchAnalysisEditHistory,
+  fetchAnalysisEditor,
+  previewAnalysisEdits,
+  saveAnalysisEdits,
+} from './api'
 
 vi.mock('./api', () => ({
   fetchAnalysisEditor: vi.fn(),
@@ -144,5 +149,26 @@ describe('analysis editor selection state', () => {
     expect(store.hasUnsavedChanges).toBe(true)
     expect(store.conflictDetails).toContain('moveElement')
     store.discard()
+  })
+
+  it('ignores an in-flight preview after discarding edits', async () => {
+    let resolvePreview!: (value: never) => void
+    vi.mocked(previewAnalysisEdits).mockImplementation(
+      () => new Promise((resolve) => (resolvePreview = resolve)),
+    )
+    const store = useAnalysisEditorStore()
+    store.documentId = 'doc-1'
+    store.baseAnalysisId = 'analysis-1'
+    store.saved = { appliedThroughSequence: 0 } as never
+    store.queueReplaceText('element-1', 'Pending')
+    const request = store.previewNow()
+
+    store.discard()
+    resolvePreview({ result: { contentMarkdown: 'Pending' } } as never)
+    await request
+
+    expect(store.preview).toBeNull()
+    expect(store.effective).toBe(store.saved)
+    expect(store.previewing).toBe(false)
   })
 })

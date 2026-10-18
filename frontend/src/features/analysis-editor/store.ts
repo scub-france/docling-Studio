@@ -171,7 +171,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     previewing.value = true
     previewError.value = null
     try {
-      preview.value = await api.previewAnalysisEdits(
+      const result = await api.previewAnalysisEdits(
         documentId.value,
         {
           commands: pendingCommands.value,
@@ -180,8 +180,10 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
         controller.signal,
         baseAnalysisId.value ?? undefined,
       )
+      if (abortController.value === controller && !controller.signal.aborted) preview.value = result
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') previewError.value = (e as Error).message
+      if (abortController.value === controller && (e as Error).name !== 'AbortError')
+        previewError.value = (e as Error).message
     } finally {
       if (abortController.value === controller) previewing.value = false
     }
@@ -228,6 +230,10 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
 
   function discard(): void {
     if (previewTimer) clearTimeout(previewTimer)
+    abortController.value?.abort()
+    abortController.value = null
+    previewing.value = false
+    previewError.value = null
     pendingCommands.value = []
     redoCommands.value = []
     preview.value = null
