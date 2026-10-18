@@ -89,6 +89,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
+
       - uses: actions/setup-java@v4
         with:
           java-version: "17"
@@ -164,6 +169,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
 
       - uses: actions/setup-java@v4
         with:
