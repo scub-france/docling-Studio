@@ -101,7 +101,7 @@ services:
   # --profile remote up` plus `CONVERSION_MODE=remote`.
   docling-serve:
     profiles: ["remote"]
-    image: quay.io/docling-project/docling-serve-cpu:v1.21.0
+    image: quay.io/docling-project/docling-serve-cpu:v1.37.0
     ports:
       - "5001:5001"
     # Same race-safe healthcheck as docker-compose.yml — actually invoke

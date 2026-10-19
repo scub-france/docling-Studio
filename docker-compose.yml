@@ -109,7 +109,7 @@ services:
   # when they front Docling with their own Serve cluster.
   docling-serve:
     profiles: ["remote"]
-    image: quay.io/docling-project/docling-serve-cpu:v1.21.0
+    image: quay.io/docling-project/docling-serve-cpu:v1.37.0
     expose:
       - "5001"
     # docling-serve registers `/v1/convert/*` decorators at import time
