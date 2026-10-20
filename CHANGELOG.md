@@ -20,6 +20,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Long PDFs keep their structure when analysed in batches** (#344): with `BATCH_PAGE_SIZE` set (10 in Docker Compose), a PDF longer than one batch lost its Docling document, and with it the tree, the chunks, Ask and the JSON export. The local converter now concatenates the batch documents and rebuilds the page details from the merged one, so a batched analysis matches a single-pass one. The document workspace also shows the progress of a running analysis: percentage and pages done when it runs in batches, time elapsed otherwise. `docling-core` 2.65.2 or later is required.
 - **Docling Serve upgraded to v1.37.0** (#361): the `remote` compose profile ran `docling-serve-cpu:v1.21.0`. Both compose files now pin `v1.37.0`, the latest release. The routes, form fields and response fields Studio uses are unchanged, and the `DoclingDocument` schema it returns is still 1.10.0. One default moved: Docling Serve's `image_export_mode` went from `embedded` to `placeholder`. With picture images on, the Markdown and HTML of a remote analysis now hold a placeholder instead of a base64 image, as a local analysis already did. The Docling JSON is unchanged.
 
+### Fixed
+
+- **Analyses no longer lose pages silently** (#348): when Docling hit its document timeout (`DOCUMENT_TIMEOUT`, 120 s by default before #349), or could not read some pages, it returned a partial document, and the analysis showed as complete with those pages empty. On a laptop, a 28-page paper stopped after page 19. The analysis now fails with a message that names the missing pages, and says what to change when the timeout is the cause. This covers the local engine and Docling Serve, and batched analyses too.
+
 ### Deprecated
 
 - **Ingestion** (OpenSearch, Neo4j): deprecated, removed in 0.8.0. This covers sending chunks to OpenSearch or Neo4j, the embedding service, the stores, the chunk search, the Neo4j graph view, the `ingestion` and `graph` compose profiles and `docker-compose.ingestion.yml`. The documentation flags each of them.
