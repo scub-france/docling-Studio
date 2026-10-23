@@ -263,14 +263,13 @@ let saveNoticeTimer: ReturnType<typeof setTimeout> | null = null
 const selectionCount = computed(
   () => store.mergeSelection.length || (store.selectedElementId ? 1 : 0),
 )
+const elementsById = computed(() => new Map(store.elements.map((element) => [element.id, element])))
 const isMergeable = (id: string) => {
-  const type = store.elements.find((element) => element.id === id)?.type
+  const type = elementsById.value.get(id)?.type
   return type === 'text' || type === 'paragraph'
 }
 const isMovable = (id: string) =>
-  store.elements
-    .find((element) => element.id === id)
-    ?.supportedOperations.includes('moveElement') ?? false
+  elementsById.value.get(id)?.supportedOperations.includes('moveElement') ?? false
 const highlightedRefs = computed(() => {
   const ids = new Set(
     store.mergeSelection.length
@@ -387,6 +386,17 @@ onBeforeUnmount(() => {
   if (saveNoticeTimer) clearTimeout(saveNoticeTimer)
 })
 onBeforeRouteLeave(() => confirmLeave())
+watch(
+  () => store.elements.length,
+  (count, previous) => {
+    if (count > 1000 && previous <= 1000) {
+      // Avoid mounting thousands of nested tree rows before the editor is usable.
+      treeDefaultOpen.value = false
+      treeRemountKey.value += 1
+    }
+  },
+  { flush: 'sync' },
+)
 watch(
   () => [props.documentId, props.analysisId] as const,
   ([id, analysisId], [oldId, oldAnalysisId]) => {

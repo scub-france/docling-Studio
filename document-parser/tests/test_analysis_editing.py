@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from docling_core.types.doc import (
@@ -505,6 +505,25 @@ async def test_save_persists_commands_and_rebuilds_working_copy(edit_service):
     assert commands[0].command.payload["text"] == "Edited"
     rebuilt = await service.rebuild("doc-1")
     assert rebuilt.job.document_json == saved.job.document_json
+
+
+@pytest.mark.asyncio
+async def test_repeated_unedited_load_reuses_projection_until_save(edit_service):
+    service, _edits, _analyses = edit_service
+    original = service._replay
+    service._replay = Mock(wraps=original)
+
+    initial = await service.load_editor("doc-1")
+    again = await service.load_editor("doc-1")
+    assert initial.projection is again.projection
+    service._replay.assert_called_once()
+
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Updated"})], 0
+    )
+    saved = await service.load_editor("doc-1")
+    assert "Updated" in saved.job.content_markdown
 
 
 @pytest.mark.parametrize(

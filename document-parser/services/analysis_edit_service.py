@@ -56,6 +56,7 @@ class AnalysisEditService:
         self._editor = editor
         self._projector = projector
         self._graph_writer = graph_writer
+        self._unedited_projection: tuple[str, str, ProjectedAnalysis] | None = None
 
     async def load_editor(self, document_id: str, analysis_id: str | None = None) -> EditorSnapshot:
         document = await self._require_document(document_id)
@@ -63,6 +64,11 @@ class AnalysisEditService:
         stream = await self._edits.find_stream(document_id, base.id)
         stored = await self._edits.list_commands(stream.id) if stream else []
         sequence = stored[-1].sequence if stored else 0
+        if not stored:
+            base_hash = _sha256(base.document_json)
+            cached = self._unedited_projection
+            if cached is not None and cached[0] == base.id and cached[1] == base_hash:
+                return self._snapshot(document, base, cached[2], sequence)
         working = await self._edits.find_working_copy(document_id, base.id)
         if (
             stream is not None
@@ -79,6 +85,8 @@ class AnalysisEditService:
             )
         else:
             projection = self._replay(base, stored)
+        if not stored:
+            self._unedited_projection = (base.id, base_hash, projection)
         return self._snapshot(document, base, projection, sequence)
 
     async def active_result(self, document_id: str) -> EditorSnapshot:
