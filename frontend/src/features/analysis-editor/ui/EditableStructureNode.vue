@@ -18,9 +18,9 @@
         heading: isHeading,
       }"
       :draggable="isMovable(node.elementId)"
-      @click="$emit('select', node.elementId)"
-      @keydown.enter.prevent="$emit('select', node.elementId)"
-      @keydown.space.prevent="$emit('select', node.elementId)"
+      @click="$emit('select', node.elementId, $event.metaKey || $event.ctrlKey)"
+      @keydown.enter.prevent="$emit('select', node.elementId, $event.metaKey || $event.ctrlKey)"
+      @keydown.space.prevent="$emit('select', node.elementId, $event.metaKey || $event.ctrlKey)"
       @keydown.right.prevent="open = true"
       @keydown.left.prevent="open = false"
       @dragstart="$emit('drag-start', node.elementId)"
@@ -108,7 +108,7 @@
         :dragging="dragging"
         :default-open="defaultOpen"
         :depth="depth + 1"
-        @select="$emit('select', $event)"
+        @select="(id, additive) => $emit('select', id, additive)"
         @toggle-merge="$emit('toggle-merge', $event)"
         @toggle-subtree="$emit('toggle-subtree', $event)"
         @drag-start="$emit('drag-start', $event)"
@@ -159,7 +159,7 @@ const descendantIds = computed(() => {
 })
 
 defineEmits<{
-  select: [id: string]
+  select: [id: string, additive: boolean]
   'toggle-merge': [id: string]
   'toggle-subtree': [ids: string[]]
   'drag-start': [id: string]

@@ -288,9 +288,16 @@ function focusPage(id: string): void {
   const page = element?.provenance[0]?.page
   if (page) currentPage.value = page
 }
-function select(id: string): void {
+function select(id: string, additive = false): void {
+  if (additive && isMergeable(id)) {
+    if (!store.mergeSelection.length && store.selectedElementId && store.selectedElementId !== id) {
+      if (isMergeable(store.selectedElementId)) store.selectMergeSelection(store.selectedElementId)
+    }
+    store.toggleMergeSelection(id)
+  } else {
+    store.mergeSelection = []
+  }
   store.selectedElementId = id
-  store.mergeSelection = []
   focusPage(id)
 }
 function formatHistoryDate(value: string): string {
@@ -346,11 +353,12 @@ function drop(targetId: string, placement: 'before' | 'after' | 'inside'): void 
 function toggleMoveDestination(): void {
   draggedId.value = draggedId.value ? null : store.selectedElementId
 }
-function onPageElement(element: PageElement, _pageNumber: number): void {
+function onPageElement(element: PageElement, _pageNumber: number, event?: MouseEvent): void {
   const match = store.elements.find((candidate) => candidate.selfRef === element.self_ref)
   if (!match) return
-  select(match.id)
-  if (isMergeable(match.id)) store.selectMergeSelection(match.id)
+  const additive = Boolean(event?.metaKey || event?.ctrlKey)
+  select(match.id, additive)
+  if (!additive && isMergeable(match.id)) store.selectMergeSelection(match.id)
 }
 
 function onKeydown(event: KeyboardEvent): void {
