@@ -60,10 +60,11 @@ class DoclingDocumentEditor:
         except Exception as exc:
             raise AnalysisEditError(f"Edited Docling document failed validation: {exc}") from exc
 
+        live_object_ids = {id(item) for item in self._all_items(document)}
         current_refs = {
             logical: obj.self_ref
             for logical, obj in logical_objects.items()
-            if self._is_live(document, obj)
+            if id(obj) in live_object_ids
         }
         changes = {
             old_ref: new_ref
@@ -322,10 +323,3 @@ class DoclingDocumentEditor:
             if current is ancestor:
                 return True
         return False
-
-    @staticmethod
-    def _is_live(document: DoclingDocument, item: Any) -> bool:
-        return any(
-            candidate is item
-            for candidate, _ in document.iterate_items(with_groups=True, traverse_pictures=True)
-        )
