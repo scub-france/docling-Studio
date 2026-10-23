@@ -166,7 +166,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:currentPage': [page: number]
   hoverElement: [el: PageElement | null]
-  clickElement: [el: PageElement, pageNumber: number]
+  clickElement: [el: PageElement, pageNumber: number, event?: MouseEvent]
 }>()
 
 const stageRef = ref<HTMLDivElement | null>(null)
@@ -259,10 +259,10 @@ function onImageLoad(pageNumber: number): void {
   if (highlightTarget()?.page.page_number === pageNumber) requestScroll('focus')
 }
 
-function onClickElement(el: PageElement, pageNumber: number): void {
+function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent): void {
   // No re-scroll guard needed: a bbox the user just clicked is on screen, and
   // `centerHighlighted` leaves an already-visible target alone.
-  emit('clickElement', el, pageNumber)
+  emit('clickElement', el, pageNumber, event)
 }
 
 function shouldRenderPage(pageNumber: number): boolean {

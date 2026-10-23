@@ -27,6 +27,9 @@ dev = [
   "pytestarch>=2.0.0,<3.0.0",
   "ruff>=0.11.0,<1.0.0",
 ]
+ci = [
+  "fpdf2>=2.8.0,<3.0.0",
+]
 local = [
   "docling>=2.80.0,<3.0.0",
   # `torch` + `torchvision` are pulled transitively by docling; we declare
