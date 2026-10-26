@@ -1,8 +1,9 @@
 """MCP Apps extension — the two viewers (`io.modelcontextprotocol/ui`).
 
-`show_citation` shows one passage on its page; `show_sources` (#363) shows
-where a whole answer came from — the sections read, in order, on their pages,
-and the passages cited (see `sources_view`). Each is
+`show_sources` (#363) ends an answer: it shows where the whole answer came
+from — the sections read, in order, on their pages,
+and the passages cited (see `sources_view`). `show_citation` shows one passage
+on its page, on request. Each is
 bound to one predeclared `ui://` template. That shape is the spec's, not a
 preference: SEP-1865 models UI as a *static* resource the host fetches once
 and caches, with the tool result pushed into the sandboxed iframe afterwards.
@@ -124,9 +125,8 @@ def build_apps_extension(tools: Callable[[], DocumentTools]) -> Apps:
     apps = Apps()
 
     citation_description = (
-        "Show a citation on its page, highlighted, beside its text: for the passage that "
-        "carries the answer (a figure, a number, a clause) or one the reader asks to see. "
-        "`uri`: an anchor a read returned."
+        "Show one passage on its page, highlighted, beside its text, when the reader asks "
+        "to see it. Not to end an answer: show_sources does. `uri`: an anchor a read returned."
     )
 
     @apps.tool(

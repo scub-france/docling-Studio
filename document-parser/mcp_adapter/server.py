@@ -63,10 +63,11 @@ per round, with a reason; {MAX_ROUNDS} rounds at most.
 """
 
 # Only when the cards are published: naming a tool this server did not publish
-# spends a turn on a failure.
+# spends a turn on a failure. One card ends an answer: show_sources already
+# shows each round's page with the passage boxed, so show_citation is left to
+# its own description — for a passage the reader asks to see.
 _CARDS = """\
-5. show_citation(uri) on the passage that carries the answer.
-6. show_sources(question, read, cited) to end the answer.
+5. show_sources(question, read, cited) to end the answer.
 """
 
 _RULES = f"""\

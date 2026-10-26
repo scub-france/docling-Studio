@@ -75,7 +75,7 @@ Claude Desktop, in `claude_desktop_config.json`:
 | `get_outline` | `document_id`, `version_id?`, `depth?` | The map: sections, or pages when the document has no headings. Each entry has a `ref` and `est_tokens`. |
 | `read_element` | `document_id`, `ref`, `version_id?`, `include?`, `max_tokens?`, `cursor?` | The text in `content`, one anchor per element in `citations[]`, and `span_uri` covering them all. |
 | `verify_citation` | `uri`, `quote` | Whether the quote is at the anchor, server-side. |
-| `show_citation` | `uri` | The passage highlighted on its page (MCP Apps). |
+| `show_citation` | `uri` | One passage highlighted on its page, when the reader asks to see it (MCP Apps). Not part of the loop. |
 | `show_sources` | `question`, `read`, `cited` | Where the answer came from, as one card. See [Sources](#sources). |
 
 Every result also carries a `next_step`: what to do with it, when it applies.
@@ -87,9 +87,9 @@ One prompt, which the user invokes as a slash command:
 - **`chunkless_rag`** (`document`, `question`): read the map, then run at most
   **5 rounds**. Each round picks one section, says why, reads it, and says what
   it found; the loop stops as soon as the answer is there. A `cursor`
-  continuation is the same round. Then it verifies every quote, shows the
-  passage that carries the answer, and ends with `show_sources`. It says what
-  is missing when 5 rounds did not answer.
+  continuation is the same round. Then it verifies every quote and ends with
+  `show_sources`, the one card of the answer. It says what is missing when 5
+  rounds did not answer.
 
 The rounds are docling-agent's loop, run by the client model, with the same
 cap as Studio's own Ask (`REASONING_MAX_ITERATIONS`, 5). The server cannot
@@ -179,8 +179,9 @@ Studio link per section.
 
 ## MCP Apps
 
-On hosts that support MCP Apps (SEP-1865), `show_citation` and
-`show_sources` render inline cards:
+On hosts that support MCP Apps (SEP-1865), `show_sources` and
+`show_citation` render inline cards. An answer ends on one card, the sources
+card; the citation card is for a passage the reader asks to see.
 
 - the **citation card** says one thing: *texte exact du document*. It shows
   the passage boxed on its page, then the passage itself, large; a long one

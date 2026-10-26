@@ -34,11 +34,10 @@ if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
 # Only when the cards are published: naming a tool this server did not publish
-# spends a turn on a failure.
+# spends a turn on a failure. One card ends the answer — show_sources shows
+# each round's page with the passage boxed; show_citation stays on request.
 _CARD_STEPS = """
-5. `show_citation(uri)` on the one verified quote that carries the answer: the reader \
-sees it on its page.
-6. `show_sources(question, read, cited)` to end. `read`: your rounds in order, each \
+5. `show_sources(question, read, cited)` to end. `read`: your rounds in order, each \
 `{uri, why, found}` with the `uri` its read_element returned. `cited`: the anchors you \
 verified."""
 

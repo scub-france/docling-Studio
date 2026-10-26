@@ -60,18 +60,15 @@ class TestLoop:
         assert "contrat.pdf" in text
         assert "Quel est le préavis ?" in text
 
-    async def test_walks_the_loop_then_the_two_cards_in_order(self):
+    async def test_walks_the_loop_then_ends_on_the_sources_card(self):
         text = await _render(ARGS)
-        steps = (
-            "find_documents",
-            "get_outline",
-            "read_element",
-            "verify_citation",
-            "show_citation",
-            "show_sources",
-        )
+        steps = ("find_documents", "get_outline", "read_element", "verify_citation", "show_sources")
         positions = [text.index(tool) for tool in steps]
         assert positions == sorted(positions)
+
+    async def test_leaves_show_citation_out_of_the_loop(self):
+        """One card ends the answer; show_citation is for a passage on request."""
+        assert "show_citation" not in await _render(ARGS)
 
     async def test_pins_the_two_rules_agents_get_wrong(self):
         text = await _render(ARGS)

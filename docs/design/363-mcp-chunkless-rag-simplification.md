@@ -476,6 +476,11 @@ filmstrip kept as a second tab.
   The badge does not say "vérifiée": `show_citation` shows the server's text
   at the anchor, it does not check a quote.
 - **Both cards** are light only and in French.
+- **One card ends an answer** (decided after the live run). The sources card
+  now shows each round's page with the passage boxed, so the citation card
+  repeated it. `show_citation` left the loop: the prompt, the server
+  instructions and the demo project instructions end on `show_sources`. The
+  tool stays, described for a passage the reader asks to see.
 
 ### 5.8 Where the removed work goes
 
