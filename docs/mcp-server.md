@@ -1,15 +1,15 @@
 # MCP document server
 
 Docling Studio exposes its parsed documents to AI agents (Claude Code, Claude
-Desktop, any [MCP](https://modelcontextprotocol.io) client). An agent can:
+Desktop, any [MCP](https://modelcontextprotocol.io) client) for **Chunkless
+RAG**: no chunks, no embeddings, no vector store. An agent can:
 
 - find a document and read its map before any text;
-- read one section under a token budget;
-- cite what it read with anchors the server can verify.
+- read only the sections the question needs, under a token budget;
+- cite what it read with anchors the server verifies.
 
-For a question that needs several passages, a recorded **investigation** does
-two things. The server keeps the plan and judges every ref the agent tries.
-Afterwards, a navigation tree shows where the answer came from.
+Two cards then show the result: the passage on its page, and where the whole
+answer came from, with the share of the document that was read.
 
 It is off by default and has **no authentication**. Enable it for local
 agent work, and put it behind an authenticating proxy anywhere else.
@@ -32,11 +32,7 @@ itself, and that spawn is the authorisation.
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host allow-list (DNS-rebinding protection). Empty means the default; `*` delegates the check to a fronting proxy. |
 | `MCP_STUDIO_BASE_URL` | empty (`http://localhost:3000` in compose) | Where citation deep links point. Empty: no deep links. |
 | `MCP_MAX_READ_TOKENS` | `4000` | Ceiling on one read. A client may ask for less, never more. |
-| `MCP_APPS_ENABLED` | `true` | Publishes the two MCP Apps viewers. They degrade to text on hosts without UI support. |
-| `MCP_INVESTIGATION_ENABLED` | `true` | Publishes the investigation tools, the `investigate` prompt and its viewer. |
-| `MCP_MAX_ATTEMPTS_PER_STEP` | `3` | Refs one step may try before it closes as `unanswered` (`1..10`). |
-| `MCP_MAX_STEPS_PER_INVESTIGATION` | `12` | Ceiling on a plan (`1..50`). |
-| `MCP_CACHE_TTL_SECONDS` | `600` | Freshness hint (SEP-2549) for the tool list, prompt list and viewers. `0` disables it. |
+| `MCP_APPS_ENABLED` | `true` | Publishes the two MCP Apps cards, `show_citation` and `show_sources`. They degrade to text on hosts without UI support. |
 
 ## Connect a client
 
@@ -80,17 +76,18 @@ Claude Desktop, in `claude_desktop_config.json`:
 | `read_element` | `document_id`, `ref`, `version_id?`, `include?`, `max_tokens?`, `cursor?` | The text in `content`, one anchor per element in `citations[]`, and `span_uri` covering them all. |
 | `verify_citation` | `uri`, `quote` | Whether the quote is at the anchor, server-side. |
 | `show_citation` | `uri` | The passage highlighted on its page (MCP Apps). |
-| `open_investigation` … `get_investigation` | see [Investigations](#investigations) | |
-| `show_investigation` | `investigation_id` | The investigation as a card (MCP Apps). |
+| `show_sources` | `question`, `read`, `cited` | Where the answer came from, as one card. See [Sources](#sources). |
 
 Every result also carries a `next_step`: what to do with it, when it applies.
+The text copy of each result is compact JSON, the same as its structured
+content.
 
-Two prompts, which the user invokes as slash commands:
+One prompt, which the user invokes as a slash command:
 
-- **`cite_answer`** (`document`, `question`, `evidence`): read only what the
-  question needs, verify every quote, and say so when the document does not
-  answer. `evidence=images` adds a `show_citation` for each quote.
-- **`investigate`** (`document`, `question`): the investigation protocol.
+- **`chunkless_rag`** (`document`, `question`): read the map, then only what
+  the question needs, verify every quote, show the passage that carries the
+  answer and end with `show_sources`. It says so when the document does not
+  answer.
 
 **Reading under a budget.** `est_tokens` is what a read will cost: the text
 plus about 60 tokens per element for its anchor. The map and the read count
@@ -128,7 +125,7 @@ says what the document says. Its `status` is one of:
 
 | Status | Meaning |
 |--------|---------|
-| `verified` | The quote is there. `citation` carries the precise anchor to cite (an element inside a section, or a span). |
+| `verified` | The quote is there. `citation` carries the precise anchor to cite (an element inside a section, or a span), its page and its `deep_link`. |
 | `stale_version` | The quote is there, but a newer parse exists. |
 | `quote_drift` | The quote is not at the anchor. `actual_quote` holds what is. |
 | `unknown_ref` / `unknown_version` | No such element, or no such parse. |
@@ -142,74 +139,54 @@ Matching ignores the formatting a model changes when it copies text:
 - table pipes;
 - whitespace.
 
-`bbox` comes with `coord_origin`. With `BOTTOMLEFT`, which docling emits for
-PDF-native parses, `top` is the larger number.
+## Sources
 
-## Investigations
+`show_sources(question, read, cited)` ends an answer by showing where it came
+from. It is stateless: the agent passes back the anchors it already holds.
 
-1. `open_investigation(document_id, question)` pins the parse and returns the
-   outline.
-2. `plan_steps` records the steps (`{question, why}`), once.
-3. `record_attempt(investigation_id, step_id, thought, uri, quote?)` tries an
-   anchor for a step. The server decides the outcome:
+- `read`: the `uri` of each `read_element` result, in reading order, each with
+  a one-line `why`.
+- `cited`: the anchors it verified.
 
-   | Outcome | Meaning |
-   |---------|---------|
-   | `kept` | The ref held up. Cite `kept_uri`. |
-   | `quote_drift` | The quote is not at the anchor. `actual_quote` holds what is. |
-   | `unknown_ref` | No such element in the pinned parse. This includes an anchor from another parse of the same document. |
-   | `empty_element` | The element resolves but has no text. |
-   | `bad_anchor` | Not a well-formed anchor. |
-   | `foreign_document` | The anchor points into another document. |
+The server resolves them against the one parse they all pin, then returns:
 
-4. `abandon_step` drops a step that will not be worked, with the reason.
-5. `close_investigation(investigation_id, answer)` publishes the answer.
-6. `get_investigation` reads the record back, to resume or to review.
-   `show_investigation` shows it as a card.
+- **the reading order**: one hop per section read, with its `why`, its page,
+  its cost and the passages cited from it;
+- **the map**: the same reads placed on the outline, in document order. Each
+  section is marked `cited`, `read`, or `path` (an ancestor);
+- **the ratio**: "Read 3 of 24 sections — ~2,140 of 16,480 tokens (13 %)". A
+  section counts whole, once, even when a read stopped at its budget, so the
+  figure errs against the agent.
 
-**Verdicts.** A kept ref settles a step only with a quote: without one, it is
-citable but unverified. Each rejection spends one attempt. When the attempts
-run out, the step closes as **`unanswered`**. That is a finding the answer
-must state, not an error.
+An anchor that does not parse, or names an element the parse does not hold,
+is listed in `unknown` rather than dropped. Anchors into more than one
+document or parse are refused.
 
-**Closing** is refused in three cases:
-
-- a planned step is still pending;
-- the answer cites an anchor the investigation did not keep;
-- the answer cites nothing although a step was answered.
-
-Concurrent writes resolve safely: a kept attempt wins over a last rejection,
-and only one close lands.
-
-**What the record holds:**
-
-- `reasoning[]`: the steps and attempts in order. `thought` is what the
-  model said and is never checked; `outcome` is the server's verdict.
-- `map[]`: the same record placed on the outline, in document order. Each
-  section is marked `kept`, `rejected`, `visited` or `path`. This is the
-  navigation tree.
-
-**One parse, pinned.** Every ref is read against the `version_id` fixed at
-open. A newer parse flags the investigation `stale`, and it carries on. A
-deleted parse leaves the record readable, without a map.
+On a host without MCP Apps, the result reads as a short text tree with a
+Studio link per section.
 
 ## MCP Apps
 
 On hosts that support MCP Apps (SEP-1865), `show_citation` and
-`show_investigation` render inline cards:
+`show_sources` render inline cards:
 
 - the citation card shows the passage highlighted on its page, and can open
   the page full screen;
-- the investigation card shows the tree, the timeline, and a page thumbnail
-  per kept ref.
+- the sources card shows the map and the reading order, then the path: a page
+  thumbnail per section read, the cited passages boxed, a lens to zoom and
+  leaf through pages, and the ratio.
 
 Page images travel only between the card and the server, through two
-app-only tools (`get_citation_image`, `get_investigation_page`). They never
-enter the model's context.
+app-only tools (`get_citation_image`, `get_source_page`). They never enter the
+model's context.
 
 - **Rendered by** Claude Desktop, claude.ai, VS Code Copilot, Goose, Cursor,
   ChatGPT and others.
 - **Not rendered by** Claude Code, which gets the same record as text.
+- **Rehearse on the host you demo on.** A host fetches a card's template once
+  and caches it; the template uri carries a hash of its content, so a
+  redeployed card is a new resource, but a host update can still change how a
+  card is framed.
 - **Deep links.** With `MCP_STUDIO_BASE_URL` set, each citation carries a
   `deep_link` to `/analyses/{version_id}?ref=…&page=N`. It opens Studio on
   the pinned parse, at the page, with the element highlighted.
@@ -218,26 +195,23 @@ enter the model's context.
 
 - **Document text is data.** Every excerpt is wrapped in `<document-content>`
   delimiters, and a closing delimiter inside the text is neutralised. The
-  same applies to titles, quotes, and every string the journal replays. The
-  server instructions tell the agent never to follow instructions found
-  inside them.
-- **No authentication.** Anyone who can reach `/mcp` can read every document
-  and every investigation. An `investigation_id` is a uuid4: it cannot be
-  guessed, but nothing checks who holds it. Keep the server on localhost. On
-  a Hugging Face Space, leave `MCP_ENABLED=false`.
-- **Writes stop at the journal.** No tool uploads, edits or re-analyses.
+  same applies to titles, quotes, and every string a card replays. The server
+  instructions tell the agent never to follow instructions found inside them.
+- **No authentication.** Anyone who can reach `/mcp` can read every document.
+  Keep the server on localhost. On a Hugging Face Space, leave
+  `MCP_ENABLED=false`.
+- **Read-only.** No tool uploads, edits, re-analyses or stores anything.
 - **Identifiers only.** Tools take identifiers, never file paths or free-form
   queries against OpenSearch or Neo4j.
 - **Bounded output.** Server-side ceilings apply to reads, outline size and
   result counts, and a client can only lower them.
 - **Bounded input.** A quote longer than one read is refused before any
-  matching. Questions, `why` and `thought` are capped at 2 000 characters,
-  answers at 20 000.
+  matching. `show_sources` takes at most 50 anchors, and its question and
+  each `why` are capped at 2 000 characters.
 - **Nothing internal leaks.** A crash reaches the client as a generic error;
   the details stay in the server log.
 
 ## Limits
 
-- No search tools, no `docling://` resources, no authentication.
-- Investigations have no retention policy. Deleting a document deletes its
-  investigations; nothing else expires them.
+- No search inside a document, no multi-document questions, no `docling://`
+  resources, no authentication.

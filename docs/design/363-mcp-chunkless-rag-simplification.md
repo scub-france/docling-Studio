@@ -289,7 +289,7 @@ sequenceDiagram
 | Tool | `verify_citation` | stops returning viewer geometry (§5.5, item 1) |
 | App tool | `show_citation` | **unchanged**, the citation card |
 | App tool | `show_sources` | **new**, stateless; renders in the path card, the investigation card re-fed (§5.6) |
-| App-only | `get_citation_image`, `get_investigation_page` | unchanged; both are already stateless (anchor + page) |
+| App-only | `get_citation_image`, `get_source_page` (was `get_investigation_page`) | unchanged behaviour; both are already stateless (anchor + page) |
 | Prompt | `chunkless_rag` | replaces `cite_answer` and `investigate` (§5.7) |
 
 The rest is removed from the PR: the 6 journal tools, `show_investigation`
@@ -386,6 +386,9 @@ rest comes after the demo.
    for whatever renders them.
 2. Results are sent once. The text block becomes compact JSON or a one-line
    summary instead of a pretty-printed duplicate of `structuredContent`.
+   *Done as compact JSON for the read tools and `show_citation`, and as a text
+   tree for `show_sources`. The page tools keep the default: their payload is
+   the image.*
 3. Output schemas lose generated `title` keys and developer docstrings in
    `$defs`.
 4. `read_element` stops repeating itself:
@@ -411,11 +414,11 @@ no change.
 | Header tally (`tally`) | steps answered / unanswered / pending, attempts kept | **"Read 3 of 24 sections — 2,140 of 16,480 tokens (13 %)"** | yes: one line |
 | Answer, `stale` banner | the journal's close | none | hidden when absent |
 
-- The card's title becomes *Sources*, or *Reading path*.
+- The card's title becomes *Sources*; its first tab, *Reading*.
 - Its `ui://` uri changes with its content (it is versioned), so no host shows
   the old card.
-- `get_investigation_page` keeps its name for Thursday: it is app-only and
-  the model never sees it. It is renamed afterwards.
+- `get_investigation_page` becomes `get_source_page`. It is app-only and the
+  model never sees it; renaming it cost one string in the card.
 
 **Frontend:** nothing for Thursday. Single-ref deep links already work
 (`frontend/src/pages/DocParseTab.vue`, `routes.ts`). A `?refs=a,b,c` variant
@@ -506,7 +509,7 @@ that highlights every cited element belongs to #330.
 | `verify_citation` | `uri`, `quote` | `citation` without `bbox`, `coord_origin`, `page_width`, `page_height`, `quote_hash`, `headings` | yes, unreleased |
 | `show_citation` | `uri` | unchanged (citation card) | no |
 | `show_sources` | `question`, `read: list[{uri, why}]`, `cited: list[uri]` | `map[]` (`ref`, `title`, `status`, `est_tokens`, `page`, `deep_link`), `hops[]` (`uri`, `title`, `why`, `cited[]`), `totals`, `unknown[]`; rendered by the path card | new |
-| `get_citation_image`, `get_investigation_page` (app-only) | unchanged | unchanged | no |
+| `get_citation_image`, `get_source_page` (app-only; was `get_investigation_page`) | unchanged | unchanged | no, unreleased |
 | 6 journal tools, `show_investigation` | — | removed | yes, unreleased |
 
 ### Persistence schema
@@ -646,9 +649,8 @@ and the ratio. It is useful in rehearsal and costs nothing.
     with real headings.
   - The question needs 2–3 sections, and ideally a table that Docling
     extracted well.
-- **Path card title:** *Sources*, or *Reading path*? And should the record
-  tab show each hop's `why`, like docling-agent's reasons, or stay to titles
-  and cited quotes?
+- **Card language:** the citation card speaks French ("Ouvrir dans Studio"),
+  the sources card English. Align both on the talk's language?
 - **#329 and #331–#335:** park them (open, labelled) or close them as
   superseded by `show_sources`?
 - **PR target:** stay on `release/0.7.3`, or move to the 0.8.0 line its issues
