@@ -80,10 +80,20 @@ class TestLoop:
         assert "citations[].uri" in text
         assert "cursor=next_cursor" in text
 
+    async def test_runs_the_loop_in_bounded_rounds(self):
+        """docling-agent's loop: one section per round, a reason, an outcome,
+        and the same cap as Studio's own Ask loop."""
+        text = await _render(ARGS)
+        assert "at most 5 rounds" in text
+        assert "pick ONE entry, say in one line why" in text
+        assert "say in one line what it gave" in text
+        assert "same round, not a new one" in text
+        assert "Stop as soon as you can answer" in text
+
     async def test_tells_the_agent_what_to_hand_show_sources(self):
         text = await _render(ARGS)
-        assert "in the order you read them" in text
-        assert "`why`" in text
+        assert "your rounds in order" in text
+        assert "`{uri, why, found}`" in text
 
     async def test_refuses_to_fill_a_gap_from_memory(self):
         text = await _render(ARGS)

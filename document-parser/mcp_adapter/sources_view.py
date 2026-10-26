@@ -47,6 +47,7 @@ class SourceHopOut:
     title: str
     why: str
     est_tokens: int
+    found: str = ""
     node_ref: str | None = None
     page: int | None = None
     cited: list[str] = field(default_factory=list)
@@ -70,6 +71,9 @@ class SourceNodeOut:
 @dataclass(frozen=True)
 class SourceTotalsOut:
     mode: str
+    rounds: int
+    max_rounds: int
+    over_cap: bool
     sections_read: int
     sections_total: int
     tokens_read: int
@@ -81,7 +85,8 @@ class SourceTotalsOut:
 class SourcesCard:
     """Where an answer came from, for the card and for a host without one.
 
-    `hops` is the reading order, `map` the same reads placed on the outline
+    `hops` is the reading order — one per round of the loop, each with its
+    `why` and what it `found` — `map` the same reads placed on the outline
     (status `cited`, `read`, or `path` for an ancestor), `summary` the one
     line a reader quotes. `unknown` lists every anchor that resolved to
     nothing — shown, never silently dropped.
@@ -102,9 +107,9 @@ class SourcesCard:
 _CARD = TypeAdapter(SourcesCard)
 
 _DESCRIPTION = (
-    "End the answer with where it came from: the sections read, in order, on their "
-    "pages, and the share of the document read. `read`: each read_element `uri`, in "
-    "order, with a one-line `why`. `cited`: the verified anchors."
+    "End the answer with where it came from, as one card. `read`: one entry per round, "
+    "in order: the read_element `uri`, a one-line `why`, what it `found`. `cited`: the "
+    "verified anchors."
 )
 
 
@@ -122,7 +127,10 @@ def register_sources_view(apps: Apps, tools: Callable[[], DocumentTools], uri: s
         read: list[dict[str, str]],
         cited: list[str] | None = None,
     ) -> Annotated[CallToolResult, SourcesCard]:
-        reads = [(str(entry.get("uri") or ""), str(entry.get("why") or "")) for entry in read]
+        reads = [
+            (str(e.get("uri") or ""), str(e.get("why") or ""), str(e.get("found") or ""))
+            for e in read
+        ]
         try:
             report = await tools().sources.show(question, reads, cited or [])
         except NavigationServiceError as exc:
@@ -156,10 +164,15 @@ def register_sources_view(apps: Apps, tools: Callable[[], DocumentTools], uri: s
 
 def sources_card(report: SourceReport) -> SourcesCard:
     sources, links = report.sources, report.deep_links
-    totals = sources.totals
+    totals, cap = sources.totals, report.max_rounds
     unit = "pages" if totals.mode == "pages" else "sections"
+    rounds = (
+        f"{totals.rounds} rounds, over the {cap}-round cap"
+        if totals.rounds > cap
+        else f"{totals.rounds} of {cap} rounds"
+    )
     summary = (
-        f"Read {totals.sections_read} of {totals.sections_total} {unit} — "
+        f"{rounds} · read {totals.sections_read} of {totals.sections_total} {unit} — "
         f"~{totals.tokens_read:,} of {totals.tokens_total:,} tokens ({totals.percent:g} %)."
     )
     return SourcesCard(
@@ -170,6 +183,9 @@ def sources_card(report: SourceReport) -> SourcesCard:
         summary=summary,
         totals=SourceTotalsOut(
             mode=totals.mode,
+            rounds=totals.rounds,
+            max_rounds=cap,
+            over_cap=totals.rounds > cap,
             sections_read=totals.sections_read,
             sections_total=totals.sections_total,
             tokens_read=totals.tokens_read,
@@ -196,6 +212,7 @@ def _hop(hop: SourceHop, links: dict[str, str]) -> SourceHopOut:
         title=neutralise(hop.title),
         why=neutralise(hop.why),
         est_tokens=hop.est_tokens,
+        found=neutralise(hop.found),
         node_ref=hop.node_ref,
         page=hop.page,
         cited=list(hop.cited),
@@ -221,11 +238,14 @@ def _node(node: SourceNode, links: dict[str, str]) -> SourceNodeOut:
 def sources_text(card: SourcesCard) -> str:
     """The card as a tree a text-only host can relay as is."""
     lines = [f"Sources — {card.question}", f"{card.filename}: {card.summary}", ""]
-    lines.append("Reading order:")
+    lines.append("Rounds:")
+    cap = card.totals.max_rounds
     for hop in card.hops:
         page = f", p.{hop.page}" if hop.page else ""
         why = f" — {hop.why}" if hop.why else ""
-        lines.append(f"{hop.ordinal}. {hop.title}{page} (~{hop.est_tokens:,} t){why}")
+        lines.append(f"{hop.ordinal}/{cap}. {hop.title}{page} (~{hop.est_tokens:,} t){why}")
+        if hop.found:
+            lines.append(f"   found: {hop.found}")
         for uri in hop.cited:
             lines.append(f"   cited {DocumentAnchor.parse(uri).ref}")
         if hop.deep_link:

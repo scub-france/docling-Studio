@@ -43,6 +43,8 @@ class SourceReport:
     # ref -> Studio URL opening the parse on it; empty without a base URL.
     deep_links: dict[str, str]
     unknown: list[str]
+    # The loop's cap, so a reader sees the rounds against it (#363).
+    max_rounds: int
 
 
 class SourceService:
@@ -62,25 +64,29 @@ class SourceService:
     async def show(
         self,
         question: str,
-        reads: list[tuple[str, str]],
+        reads: list[tuple[str, str, str]],
         cited: list[str],
     ) -> SourceReport:
-        """Project `(uri, why)` reads and cited uris onto the parse they pin."""
+        """Project `(uri, why, found)` rounds and cited uris onto the parse they pin."""
         self._bound(question, reads, cited)
         unknown: list[str] = []
-        read_anchors = [(a, why) for uri, why in reads if (a := _anchor(uri, unknown))]
+        read_anchors = [(a, w, f) for uri, w, f in reads if (a := _anchor(uri, unknown))]
         cited_anchors = [a for uri in cited if (a := _anchor(uri, unknown))]
-        document_id, version_id = _single_pin([a for a, _ in read_anchors] + cited_anchors)
+        document_id, version_id = _single_pin([a for a, *_ in read_anchors] + cited_anchors)
 
         parse = await self._parses.load(document_id, version_id)
         outline = await self._navigation.get_outline(
             document_id, version_id=version_id, depth=_MAP_DEPTH
         )
-        known = _resolvable(parse, [a for a, _ in read_anchors] + cited_anchors, unknown)
+        known = _resolvable(parse, [a for a, *_ in read_anchors] + cited_anchors, unknown)
         sources = build_source_map(
             outline,
             parse.index,
-            [SourceRead(a.ref, a.uri, why.strip()) for a, why in read_anchors if a.uri in known],
+            [
+                SourceRead(a.ref, a.uri, why.strip(), found.strip())
+                for a, why, found in read_anchors
+                if a.uri in known
+            ],
             [SourceCited(a.ref, a.uri) for a in cited_anchors if a.uri in known],
         )
         return SourceReport(
@@ -91,9 +97,10 @@ class SourceService:
             sources=sources,
             deep_links=self._deep_links(parse, sources),
             unknown=unknown,
+            max_rounds=self._config.max_rounds,
         )
 
-    def _bound(self, question: str, reads: list[tuple[str, str]], cited: list[str]) -> None:
+    def _bound(self, question: str, reads: list[tuple[str, str, str]], cited: list[str]) -> None:
         """Refuse an input past its ceiling before any work is done."""
         cap = self._config.max_source_anchors
         if len(reads) + len(cited) > cap:
@@ -101,7 +108,13 @@ class SourceService:
                 f"{len(reads) + len(cited)} anchors; one answer shows at most {cap}."
             )
         limit = self._config.max_source_text_chars
-        for label, text in [("question", question), *(("why", why) for _, why in reads)]:
+        texts = [("question", question)]
+        texts += [
+            (label, text)
+            for _, why, found in reads
+            for label, text in (("why", why), ("found", found))
+        ]
+        for label, text in texts:
             if len(text or "") > limit:
                 raise InvalidArgumentError(f"`{label}` is over {limit} characters. Shorten it.")
 

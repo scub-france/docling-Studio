@@ -444,6 +444,14 @@
     margin-top: 1px;
     overflow-wrap: anywhere;
   }
+  /* What the round gave — the agent's own account, like the why above it. */
+  .step-found {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+  }
+  .step-found b { font-weight: 600; color: var(--text-muted); }
 
   .state {
     font-size: 10.5px;
@@ -507,6 +515,8 @@
   /* The one line a reader quotes: how little of the document the answer
      needed. Larger than the rest of the footer on purpose. */
   .ratio { font-size: 13.5px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+  /* Past the round cap: said in the line itself, coloured so it is seen. */
+  .ratio.over { color: var(--bad); }
   .tally {
     margin-top: 6px;
     display: flex;
@@ -560,6 +570,9 @@
   // A hop the answer quotes from is a source; one read without a quote is
   // context. Two states, both earned by the server resolving the anchors.
   const hopState = (hop) => ((hop.cited || []).length ? "cited" : "read");
+  // "2/5": the round against the loop's cap, set from each result rendered.
+  let maxRounds = 0;
+  const roundOf = (hop) => `${num(hop.ordinal)}${maxRounds ? "/" + num(maxRounds) : ""}`;
   const isLink = (url) => /^https?:\/\//i.test(String(url || ""));
 
   const root = document.getElementById("root");
@@ -573,6 +586,8 @@
     const hops = Array.isArray(view.hops) ? view.hops : [];
     const nodes = Array.isArray(view.map) ? view.map : [];
     const unknown = Array.isArray(view.unknown) ? view.unknown : [];
+    maxRounds = Number(view.totals?.max_rounds) || 0;
+    const overCap = view.totals?.over_cap === true;
 
     root.className = "card";
     root.dataset.view = activeTab;
@@ -603,7 +618,7 @@
           </div>
         </section>
         <section class="timeline">
-          <h2>What it read</h2>
+          <h2>Round by round</h2>
           ${hops.length ? hops.map(hopBlock).join("") : '<p class="empty">No section read.</p>'}
         </section>
       </div>
@@ -612,11 +627,11 @@
         ${hops.length ? `<div class="flow">${flowStrip(hops, nodes)}</div>` : '<p class="empty">No section read.</p>'}
       </section>
       <div class="foot">
-        <div class="ratio">${esc(view.summary || "")}</div>
+        <div class="ratio${overCap ? " over" : ""}">${esc(view.summary || "")}</div>
         ${unknown.length ? `<div class="tally">${unknown.length} anchor${unknown.length === 1 ? "" : "s"} resolved to nothing and ${unknown.length === 1 ? "is" : "are"} not shown.</div>` : ""}
         <p class="caveat">Each “why” is what the agent said it was looking for, recorded as
-        written. The sections, pages and quotes are the server's, resolved from the anchors
-        the agent read and cited.</p>
+        written, like what it says a round found. The sections, pages and quotes are the
+        server's, resolved from the anchors the agent read and cited.</p>
       </div>`;
 
     wire();
@@ -662,12 +677,12 @@
     return `<div class="hop" data-state="${esc(state)}" data-hop="${esc(hop.hop_id)}"
       ${uri ? `data-uri="${esc(uri)}"` : ""}>
       <span class="hop-top">
-        <span class="ord">${esc(hop.ordinal)}</span>
+        <span class="ord">${roundOf(hop)}</span>
         <span class="hop-state ${esc(state)}">${esc(state)}</span>
       </span>
       <button class="shot ${uri ? "pending" : "none"}" data-shot
         aria-label="${uri ? "Enlarge the page" : "Open this read in the timeline"}"></button>
-      <button class="hop-meta" data-jump title="${esc(hop.why || hop.title)}">
+      <button class="hop-meta" data-jump title="${esc([hop.why, hop.found].filter(Boolean).join(" — ") || hop.title)}">
         <span class="hop-where">${esc(where || "—")}${
           page ? `<span class="page"> · p.${esc(page)}</span>` : ""
         }</span>
@@ -1027,10 +1042,11 @@
     return `<div class="step" data-step="${esc(hop.hop_id)}">
       <button class="step-head" data-step-toggle="${esc(hop.hop_id)}">
         <span>
-          <span class="step-q"><span class="ord">${esc(hop.ordinal)}.</span>${esc(hop.title)}${
+          <span class="step-q"><span class="ord">${roundOf(hop)}</span> ${esc(hop.title)}${
             hop.page ? `<span class="page"> · p.${esc(hop.page)}</span>` : ""
           }</span>
           ${hop.why ? `<div class="step-why">${esc(hop.why)}</div>` : ""}
+          ${hop.found ? `<div class="step-found"><b>Found:</b> ${esc(hop.found)}</div>` : ""}
         </span>
         <span>
           <span class="tokens">~${num(hop.est_tokens)} t</span>

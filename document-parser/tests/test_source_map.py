@@ -34,8 +34,8 @@ PREAVIS_SECTION = "#/texts/3"
 ARTICLE_13 = "#/texts/6"
 
 
-def read(ref, why=""):
-    return SourceRead(ref=ref, uri=anchor_uri(ref), why=why)
+def read(ref, why="", found=""):
+    return SourceRead(ref=ref, uri=anchor_uri(ref), why=why, found=found)
 
 
 def cite(ref):
@@ -141,12 +141,26 @@ class TestReadingOrder:
             (2, PREAVIS_SECTION, "the notice"),
         ]
 
-    async def test_a_ref_read_twice_is_one_hop_with_its_first_why(self):
-        """A cursor resuming a long section is one place on the path."""
+    async def test_a_ref_read_twice_is_one_round_with_its_first_why(self):
+        """A cursor resuming a long section is one round, one place on the path."""
         sources, _ = await project(
             reads=[read(PREAVIS_SECTION, "first"), read(PREAVIS_SECTION, "again")]
         )
         assert [(h.ref, h.why) for h in sources.hops] == [(PREAVIS_SECTION, "first")]
+        assert sources.totals.rounds == 1
+
+    async def test_a_round_keeps_what_it_found_and_a_resumed_read_updates_it(self):
+        sources, _ = await project(
+            reads=[
+                read(ARTICLE_13, "the end", "nothing on notice"),
+                read(PREAVIS_SECTION, "the notice", "partial"),
+                read(PREAVIS_SECTION, "", "three months"),
+            ]
+        )
+        assert [(h.ordinal, h.found) for h in sources.hops] == [
+            (1, "nothing on notice"),
+            (2, "three months"),
+        ]
 
     async def test_a_quote_is_attributed_to_the_hop_that_read_it(self):
         sources, _ = await project(
@@ -177,6 +191,7 @@ class TestTotals:
 
     async def test_sections_read_and_total(self):
         sources, outline = await project(reads=[read(ARTICLE_13), read(PREAVIS_SECTION)])
+        assert sources.totals.rounds == 2
         assert sources.totals.sections_read == 2
         assert sources.totals.sections_total == _count(outline.nodes)
 

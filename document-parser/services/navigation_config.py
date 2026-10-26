@@ -11,6 +11,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# The Chunkless RAG loop's round cap: one section read per round, at most this
+# many before answering with what was found. The same default as Studio's own
+# loop (`REASONING_MAX_ITERATIONS`, docling-agent's `max_iterations`), so the
+# two runners of one idea stop at the same point. The prompt states it and the
+# sources card counts against it; nothing enforces it server-side — the server
+# is stateless and the client model drives the loop.
+MAX_ROUNDS = 5
+
 
 @dataclass(frozen=True)
 class NavigationConfig:
@@ -46,3 +54,4 @@ class NavigationConfig:
     # question and each `why` are a sentence or two, stored nowhere.
     max_source_anchors: int = 50
     max_source_text_chars: int = 2_000
+    max_rounds: int = MAX_ROUNDS

@@ -84,10 +84,17 @@ content.
 
 One prompt, which the user invokes as a slash command:
 
-- **`chunkless_rag`** (`document`, `question`): read the map, then only what
-  the question needs, verify every quote, show the passage that carries the
-  answer and end with `show_sources`. It says so when the document does not
-  answer.
+- **`chunkless_rag`** (`document`, `question`): read the map, then run at most
+  **5 rounds**. Each round picks one section, says why, reads it, and says what
+  it found; the loop stops as soon as the answer is there. A `cursor`
+  continuation is the same round. Then it verifies every quote, shows the
+  passage that carries the answer, and ends with `show_sources`. It says what
+  is missing when 5 rounds did not answer.
+
+The rounds are docling-agent's loop, run by the client model, with the same
+cap as Studio's own Ask (`REASONING_MAX_ITERATIONS`, 5). The server cannot
+enforce the cap, since it is stateless and the client drives the loop; the
+sources card counts the rounds against it and says so when it was passed.
 
 **Reading under a budget.** `est_tokens` is what a read will cost: the text
 plus about 60 tokens per element for its anchor. The map and the read count
@@ -144,19 +151,21 @@ Matching ignores the formatting a model changes when it copies text:
 `show_sources(question, read, cited)` ends an answer by showing where it came
 from. It is stateless: the agent passes back the anchors it already holds.
 
-- `read`: the `uri` of each `read_element` result, in reading order, each with
-  a one-line `why`.
+- `read`: one entry per round, in order: the `uri` its `read_element`
+  returned, a one-line `why`, and what it `found`.
 - `cited`: the anchors it verified.
 
 The server resolves them against the one parse they all pin, then returns:
 
-- **the reading order**: one hop per section read, with its `why`, its page,
-  its cost and the passages cited from it;
+- **the rounds**: one per section read, numbered against the cap (`2/5`),
+  with its `why`, what it `found`, its page, its cost and the passages cited
+  from it;
 - **the map**: the same reads placed on the outline, in document order. Each
   section is marked `cited`, `read`, or `path` (an ancestor);
-- **the ratio**: "Read 3 of 24 sections — ~2,140 of 16,480 tokens (13 %)". A
-  section counts whole, once, even when a read stopped at its budget, so the
-  figure errs against the agent.
+- **the ratio**: "2 of 5 rounds · read 2 of 25 sections — ~531 of 29,745
+  tokens (1.8 %)". A section counts whole, once, even when a read stopped at
+  its budget, so the figure errs against the agent. Past the cap it reads "6
+  rounds, over the 5-round cap".
 
 An anchor that does not parse, or names an element the parse does not hold,
 is listed in `unknown` rather than dropped. Anchors into more than one
@@ -206,8 +215,8 @@ model's context.
 - **Bounded output.** Server-side ceilings apply to reads, outline size and
   result counts, and a client can only lower them.
 - **Bounded input.** A quote longer than one read is refused before any
-  matching. `show_sources` takes at most 50 anchors, and its question and
-  each `why` are capped at 2 000 characters.
+  matching. `show_sources` takes at most 50 anchors, and its question, each
+  `why` and each `found` are capped at 2 000 characters.
 - **Nothing internal leaks.** A crash reaches the client as a generic error;
   the details stay in the server log.
 

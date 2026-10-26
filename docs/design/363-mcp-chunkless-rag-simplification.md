@@ -442,6 +442,20 @@ that highlights every cited element belongs to #330.
 - **Docs:** `docs/mcp-server.md` shrinks to the loop, the anchors, the two
   cards, the five env vars and security. The journal section goes.
 
+### 5.7b Rounds — a bounded, explained loop (added 2026-10-26)
+
+The trail keeps a reasoning without bringing a protocol back: the prompt runs
+docling-agent's loop. Each round picks one section, says why, reads it and
+says what it found; at most `MAX_ROUNDS` rounds (5, the same cap as Studio's
+own Ask); a `cursor` continuation is the same round.
+
+- `show_sources` takes `read[]` as rounds: `{uri, why, found}`.
+- The card numbers each round against the cap (`2/5`) and states it in its
+  summary ("2 of 5 rounds · …"). Past the cap, it says so in red.
+- The cap lives in `services/navigation_config.py` (`MAX_ROUNDS`), not in an
+  env var. It is not enforced: the server is stateless and the client model
+  drives the loop. The prompt states it; the card makes a breach visible.
+
 ### 5.8 Where the removed work goes
 
 | Work | Goes to |

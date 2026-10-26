@@ -18,6 +18,7 @@ from mcp import Client
 from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import SOURCES_APP_URI
 from mcp_adapter.sources_view import SOURCES_APP_HTML
+from services.navigation_config import NavigationConfig
 from tests.navigation_fixtures import (
     JOB_ID,
     PREAVIS_REF,
@@ -46,8 +47,12 @@ async def _show(client, **overrides):
     arguments = {
         "question": "Quel est le préavis ?",
         "read": [
-            {"uri": anchor_uri("#/texts/6"), "why": "la fin du contrat"},
-            {"uri": PREAVIS_SECTION_URI, "why": "le préavis y est"},
+            {
+                "uri": anchor_uri("#/texts/6"),
+                "why": "la fin du contrat",
+                "found": "rien sur le préavis",
+            },
+            {"uri": PREAVIS_SECTION_URI, "why": "le préavis y est", "found": "trois mois"},
         ],
         "cited": [PREAVIS_URI],
     }
@@ -106,7 +111,10 @@ class TestCard:
         statuses = {node["ref"]: node["status"] for node in card["map"]}
         assert statuses["#/texts/3"] == "cited"
         assert statuses["#/texts/6"] == "read"
-        assert card["summary"].startswith("Read 2 of ")
+        assert card["summary"].startswith("2 of 5 rounds · read 2 of ")
+        assert [hop["found"] for hop in card["hops"]] == ["rien sur le préavis", "trois mois"]
+        assert (card["totals"]["rounds"], card["totals"]["max_rounds"]) == (2, 5)
+        assert card["totals"]["over_cap"] is False
         assert card["totals"]["tokens_read"] < card["totals"]["tokens_total"]
 
     async def test_the_text_a_ui_less_host_reads_is_a_tree_not_json(self):
@@ -118,6 +126,8 @@ class TestCard:
         assert text.startswith("Sources — Quel est le préavis ?")
         assert result.structured_content["summary"] in text
         assert "cited #/texts/4" in text
+        assert "1/5. " in text and "2/5. " in text
+        assert "found: trois mois" in text
         assert "open in Studio: http://localhost:3000/analyses/" in text
 
     async def test_a_cited_hop_links_to_the_passage(self):
@@ -126,6 +136,14 @@ class TestCard:
         assert card["hops"][1]["deep_link"].startswith(
             f"http://localhost:3000/analyses/{JOB_ID}?ref=%23%2Ftexts%2F4"
         )
+
+    async def test_rounds_past_the_cap_are_said_not_hidden(self):
+        """The server cannot stop a client's loop; it can make a breach visible."""
+        config = NavigationConfig(studio_base_url="http://localhost:3000", max_rounds=1)
+        async with _client(make_document_tools(config=config)) as client:
+            card = _payload(await _show(client))
+        assert card["totals"]["over_cap"] is True
+        assert card["summary"].startswith("2 rounds, over the 1-round cap · ")
 
     async def test_unknown_anchors_are_shown_not_dropped(self):
         async with _client(make_document_tools()) as client:
@@ -161,6 +179,12 @@ class TestTemplate:
         # coerces before it formats.
         assert "Number.isFinite(number)" in SOURCES_APP_HTML
         assert "num(hop.est_tokens)" in SOURCES_APP_HTML
+        assert "num(hop.ordinal)" in SOURCES_APP_HTML and "num(maxRounds)" in SOURCES_APP_HTML
+
+    def test_a_round_shows_against_the_cap_and_a_breach_is_coloured(self):
+        assert "roundOf(hop)" in SOURCES_APP_HTML
+        assert "view.totals?.over_cap === true" in SOURCES_APP_HTML
+        assert ".ratio.over" in SOURCES_APP_HTML
 
     def test_every_field_it_renders_is_escaped_first(self):
         """The card renders strings a model wrote after reading a document.
@@ -172,6 +196,7 @@ class TestTemplate:
             "node.title",
             "hop.title",
             "hop.why",
+            "hop.found",
             "hop.deep_link",
             "refOf(uri)",
             "image.data_uri",

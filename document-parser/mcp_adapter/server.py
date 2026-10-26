@@ -41,6 +41,7 @@ from mcp_adapter.wire_mapping import (
     search_result,
     verification_result,
 )
+from services.navigation_config import MAX_ROUNDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -51,12 +52,13 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "docling-studio"
 
-_LOOP = """\
+_LOOP = f"""\
 Docling Studio serves parsed documents: structure, text, page positions.
 1. find_documents: the document_id.
 2. get_outline(document_id): the map. Each entry has a ref and est_tokens, its reading \
 cost: choose there before reading any text.
-3. read_element(document_id, ref): the text, with one citation per element.
+3. read_element(document_id, ref): the text, with one citation per element. One section \
+per round, with a reason; {MAX_ROUNDS} rounds at most.
 4. verify_citation(uri, quote) before publishing a quote.
 """
 

@@ -22,7 +22,7 @@ visible ancestor rather than vanishing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from domain.element_reader import element_text, section_refs
@@ -47,11 +47,14 @@ _RANK = {STATUS_PATH: 0, STATUS_READ: 1, STATUS_CITED: 2}
 
 @dataclass(frozen=True)
 class SourceRead:
-    """One read, as the agent reports it: the anchor a read returned, and why."""
+    """One round, as the agent reports it: the anchor its read returned, why
+    it went there, and what it found — the reason and the outcome of one turn
+    of the Chunkless RAG loop."""
 
     ref: str
     uri: str
     why: str = ""
+    found: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,7 +67,7 @@ class SourceCited:
 
 @dataclass(frozen=True)
 class SourceHop:
-    """One section read, in reading order — the unit of the path.
+    """One round: one section read, in reading order — the unit of the path.
 
     `node_ref` is the published outline node the read landed in (None when
     the outline does not reach it); `cited` holds the anchors quoted from what
@@ -78,6 +81,7 @@ class SourceHop:
     title: str
     why: str
     est_tokens: int
+    found: str = ""
     node_ref: str | None = None
     page: int | None = None
     cited: list[str] = field(default_factory=list)
@@ -112,6 +116,7 @@ class SourceTotals:
     """
 
     mode: str
+    rounds: int
     sections_read: int
     sections_total: int
     tokens_read: int
@@ -175,6 +180,7 @@ def _totals(
     every = set().union(*covered.values()) if covered else set()
     return SourceTotals(
         mode=outline.mode,
+        rounds=len(hops),
         sections_read=len({hop.node_ref for hop in hops if hop.node_ref}),
         sections_total=sections_total,
         tokens_read=_cost(index, every),
@@ -228,16 +234,19 @@ def _hops(
 ) -> tuple[list[SourceHop], dict[str, set[str]]]:
     """One hop per distinct ref read, in the order the agent read them.
 
-    A ref read twice — a cursor resuming a long section — is one place on the
-    path; its first `why` is the one that explains going there.
+    A ref read twice — a cursor resuming a long section — is one round: its
+    first `why` explains going there, its last `found` says what it gave.
     """
     hops: list[SourceHop] = []
     covered: dict[str, set[str]] = {}
-    seen: set[str] = set()
+    seen: dict[str, int] = {}
     for read in reads:
         if read.ref in seen:
+            if read.found:
+                at = seen[read.ref]
+                hops[at] = replace(hops[at], found=read.found)
             continue
-        seen.add(read.ref)
+        seen[read.ref] = len(hops)
         hop_id = f"h{len(hops) + 1}"
         refs = set(section_refs(index, read.ref) or [read.ref])
         covered[hop_id] = refs
@@ -251,6 +260,7 @@ def _hops(
                 uri=read.uri,
                 title=node.title if node else read.ref,
                 why=read.why,
+                found=read.found,
                 est_tokens=_cost(index, refs),
                 node_ref=node_ref,
                 page=index.page_of.get(span_start(read.ref)) or (node.page if node else None),
