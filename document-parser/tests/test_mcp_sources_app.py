@@ -137,6 +137,15 @@ class TestCard:
             f"http://localhost:3000/analyses/{JOB_ID}?ref=%23%2Ftexts%2F4"
         )
 
+    async def test_it_carries_the_whole_document_as_segments(self):
+        async with _client(make_document_tools()) as client:
+            card = _payload(await _show(client))
+        segments = card["segments"]
+        assert sum(seg["tokens"] for seg in segments) == card["totals"]["tokens_total"]
+        status = {seg["ref"]: seg["status"] for seg in segments}
+        assert status["#/texts/3"] == "cited" and status["#/texts/6"] == "read"
+        assert status["#/texts/0"] == "unread"
+
     async def test_rounds_past_the_cap_are_said_not_hidden(self):
         """The server cannot stop a client's loop; it can make a breach visible."""
         config = NavigationConfig(studio_base_url="http://localhost:3000", max_rounds=1)
@@ -178,13 +187,31 @@ class TestTemplate:
         # Interpolated unescaped, so every count goes through `num()`, which
         # coerces before it formats.
         assert "Number.isFinite(number)" in SOURCES_APP_HTML
-        assert "num(hop.est_tokens)" in SOURCES_APP_HTML
+        assert "num(totals.tokens_read)" in SOURCES_APP_HTML
+        assert "fr(totals.percent, 1)" in SOURCES_APP_HTML
         assert "num(hop.ordinal)" in SOURCES_APP_HTML and "num(maxRounds)" in SOURCES_APP_HTML
 
     def test_a_round_shows_against_the_cap_and_a_breach_is_coloured(self):
-        assert "roundOf(hop)" in SOURCES_APP_HTML
-        assert "view.totals?.over_cap === true" in SOURCES_APP_HTML
-        assert ".ratio.over" in SOURCES_APP_HTML
+        assert "${num(hop.ordinal)}<small>/${num(maxRounds)}</small>" in SOURCES_APP_HTML
+        assert "totals.over_cap === true" in SOURCES_APP_HTML
+        assert ".gauge-label.over" in SOURCES_APP_HTML and ".pip.over" in SOURCES_APP_HTML
+        assert "Pas nécessaire" in SOURCES_APP_HTML
+
+    def test_the_overview_leads_with_the_share_of_the_document_read(self):
+        """The figure the talk is about, then the whole document as a bar."""
+        for marker in (
+            'class="pct"',
+            "du document lu",
+            'class="bar"',
+            'class="funnel"',
+            'class="zoom"',
+        ):
+            assert marker in SOURCES_APP_HTML, marker
+        assert 'data-status="${esc(s.status)}"' in SOURCES_APP_HTML
+
+    def test_it_is_light_only(self):
+        assert "color-scheme: light;" in SOURCES_APP_HTML
+        assert "prefers-color-scheme" not in SOURCES_APP_HTML
 
     def test_every_field_it_renders_is_escaped_first(self):
         """The card renders strings a model wrote after reading a document.
@@ -192,13 +219,14 @@ class TestTemplate:
         assert "&amp;" in SOURCES_APP_HTML and "&lt;" in SOURCES_APP_HTML
         for field in (
             "view.question",
-            "view.summary",
-            "node.title",
+            "view.filename",
+            "s.title",
+            "s.status",
+            "shortLabel(hop.title)",
             "hop.title",
             "hop.why",
             "hop.found",
-            "hop.deep_link",
-            "refOf(uri)",
+            "link",
             "image.data_uri",
             "image.page",
             "cached.error",
@@ -206,12 +234,12 @@ class TestTemplate:
             assert f"esc({field}" in SOURCES_APP_HTML, field
 
     def test_it_says_on_the_card_that_a_why_is_the_agents_word(self):
-        assert "recorded as" in SOURCES_APP_HTML and "written" in SOURCES_APP_HTML
-        assert "resolved from the anchors" in SOURCES_APP_HTML
+        assert "sont les mots de l\u2019agent" in SOURCES_APP_HTML
+        assert "viennent du serveur" in SOURCES_APP_HTML
 
     def test_a_studio_link_goes_through_the_host_and_only_if_absolute(self):
         assert '"ui/open-link"' in SOURCES_APP_HTML
-        assert "isLink(hop.deep_link)" in SOURCES_APP_HTML
+        assert "isLink(link)" in SOURCES_APP_HTML
 
     def test_the_only_tool_it_calls_is_its_own_page_fetch(self):
         assert '"ui/initialize"' in SOURCES_APP_HTML
@@ -219,8 +247,8 @@ class TestTemplate:
         assert 'name: "get_source_page"' in SOURCES_APP_HTML
         assert SOURCES_APP_HTML.count('"tools/call"') == 1
 
-    def test_it_offers_the_two_readings_and_the_fold(self):
-        for marker in ('data-tab="record"', 'data-tab="path"', "data-fold", "How it moved"):
+    def test_it_offers_the_two_readings(self):
+        for marker in ('data-tab="record"', 'data-tab="path"', "Vue d\u2019ensemble", "Parcours"):
             assert marker in SOURCES_APP_HTML, marker
 
     def test_a_thumbnail_enlarges_like_the_citation_cards_page(self):
@@ -234,7 +262,6 @@ class TestTemplate:
             "provisional",
             '"Escape"',
             "data-shot",
-            "data-jump",
             "data-lens-out",
             "data-lens-in",
             "data-lens-fit",

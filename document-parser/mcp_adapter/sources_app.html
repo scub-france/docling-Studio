@@ -4,72 +4,37 @@
 <meta charset="utf-8">
 <title>Sources</title>
 <style>
-  /* Design tokens lifted from the Studio shell (frontend/src/app/App.vue) and
-     shared with citation_app.html — same names, same values, so the two
-     viewers and the product do not drift into three palettes. The product
-     picks its theme with a class on <html>; an app in a sandboxed iframe
-     cannot read the host's, so the media query decides and the handshake
-     overrides it. */
+  /* Light only, on purpose (#363): the cards are read off a projector, and a
+     host in dark mode still gets the same high-contrast card. Tokens follow
+     the Studio palette; the accent is the deep orange a cited source wears. */
   :root {
-    color-scheme: light dark;
+    color-scheme: light;
     --bg: #fafafa;
     --bg-surface: #ffffff;
     --bg-elevated: #f4f4f5;
     --bg-hover: #e4e4e7;
-    --accent: #f97316;
-    --accent-muted: rgba(249, 115, 22, 0.1);
-    --text: #18181b;
-    --text-secondary: #52525b;
-    --text-muted: #a1a1aa;
+    --accent: #c2410c;
+    --accent-muted: rgba(194, 65, 12, 0.16);
+    --read: #fdba74;
+    --read-bg: #fff7ed;
+    --read-border: #fb923c;
+    --read-ink: #7c2d12;
+    --unread: #e4e4e7;
+    --funnel: #ffedd5;
+    --text: #111113;
+    --text-secondary: #3f3f46;
+    --text-muted: #52525b;
+    --text-faint: #71717a;
     --border: #e4e4e7;
     --border-light: #d4d4d8;
-    /* Source colours. Green is what the answer cites; `read` is grey-filled;
-       `path` is a route rather than a source, so it stays hollow on purpose:
-       colouring it would claim something was read there. */
-    --kept: #15803d;
-    --kept-bg: rgba(22, 163, 74, 0.12);
+    --ok: #15803d;
     --bad: #b91c1c;
-    --bad-bg: rgba(220, 38, 38, 0.1);
-    --radius: 8px;
+    --radius: 10px;
     --radius-sm: 6px;
-    --radius-lg: 12px;
-    --sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --radius-lg: 16px;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --display: 'Inter Tight', 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0a0a0b;
-      --bg-surface: #111113;
-      --bg-elevated: #1a1a1d;
-      --bg-hover: #222226;
-      --accent-muted: rgba(249, 115, 22, 0.15);
-      --text: #ececef;
-      --text-secondary: #a1a1aa;
-      --text-muted: #63636e;
-      --border: #27272a;
-      --border-light: #3f3f46;
-      --kept: #4ade80;
-      --kept-bg: rgba(74, 222, 128, 0.14);
-      --bad: #f87171;
-      --bad-bg: rgba(248, 113, 113, 0.13);
-    }
-  }
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --bg: #0a0a0b;
-    --bg-surface: #111113;
-    --bg-elevated: #1a1a1d;
-    --bg-hover: #222226;
-    --accent-muted: rgba(249, 115, 22, 0.15);
-    --text: #ececef;
-    --text-secondary: #a1a1aa;
-    --text-muted: #63636e;
-    --border: #27272a;
-    --border-light: #3f3f46;
-    --kept: #4ade80;
-    --kept-bg: rgba(74, 222, 128, 0.14);
-    --bad: #f87171;
-    --bad-bg: rgba(248, 113, 113, 0.13);
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -77,20 +42,20 @@
 
   body {
     font-family: var(--sans);
-    background: var(--bg);
+    background: transparent;
     color: var(--text);
-    font-size: 14px;
-    line-height: 1.55;
+    font-size: 15px;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
   }
 
   /* The card measures itself against `main`, never against the window: the
-     host owns the frame width, and a viewport media query asked inside a
-     400 px iframe answers a question about the frame, not about the card. */
+     host owns the frame width, and a viewport media query asked inside an
+     iframe answers a question about the frame, not about the card. */
   main {
     max-width: 940px;
     margin: 0 auto;
-    padding: clamp(10px, 4vw, 20px);
+    padding: clamp(6px, 2.5vw, 14px);
     container-type: inline-size;
   }
 
@@ -104,201 +69,258 @@
 
   /* ---- header ------------------------------------------------------- */
 
-  .head { padding: 16px 18px 14px; border-bottom: 1px solid var(--border); }
-  .question {
-    font-size: 16px;
+  .head { padding: 22px 26px 14px; }
+  .eyebrow-row { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; }
+  .eyebrow {
+    flex: none;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .doc {
+    min-width: 0;
+    font-size: 12.5px;
     font-weight: 600;
-    line-height: 1.4;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .question {
+    margin-top: 8px;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.25;
     letter-spacing: -0.01em;
     overflow-wrap: anywhere;
   }
-  .origin {
-    margin-top: 7px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    font-size: 11.5px;
-    color: var(--text-muted);
-  }
-  .origin .doc { color: var(--text-secondary); overflow-wrap: anywhere; }
-  .dot-sep { opacity: 0.5; }
-
-  /* ---- the two halves ------------------------------------------------ */
-  /* A rail that answers "where in the document did this go", and a timeline
-     that answers "what was tried, and what did the server make of it". */
-
-  .body { display: grid; grid-template-columns: minmax(0, 1fr); }
-  @container (min-width: 620px) {
-    .body { grid-template-columns: minmax(190px, 34cqi) minmax(0, 1fr); }
-    .tree { border-right: 1px solid var(--border); border-bottom: none; }
-    /* Folded, the rail gives its whole column back: the tree becomes a slim
-       strip above the timeline — one header line holding the button that
-       reopens it — and the timeline takes the full width. */
-    .body:has(.tree.collapsed) { grid-template-columns: minmax(0, 1fr); }
-    .tree.collapsed { border-right: 0; border-bottom: 1px solid var(--border); }
-  }
-
-  .tree, .timeline { min-width: 0; padding: 14px 16px 16px; }
-  .tree { background: var(--bg-elevated); border-bottom: 1px solid var(--border); }
-
-  h2 {
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 9px;
-  }
 
   /* ---- tabs ----------------------------------------------------------- */
-  /* Two readings of one answer. Reading is the ledger — the map and the
-     reading order side by side. The path is the same reads laid out as the
-     journey through the document, one page thumbnail per section read. */
+  /* Two readings of one answer: the overview — how much of the document,
+     and where — and the path, one real page per round. */
 
-  .tabs {
-    display: flex;
-    gap: 2px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--border);
-  }
+  .tabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid var(--border); }
   .tab {
     appearance: none;
     background: none;
     border: 0;
-    border-bottom: 2px solid transparent;
+    border-bottom: 3px solid transparent;
     margin-bottom: -1px;
-    padding: 8px 10px 7px;
+    padding: 10px 10px 9px;
     font: inherit;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--text-faint);
     cursor: pointer;
   }
   .tab:hover { color: var(--text-secondary); }
   .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   [data-view="record"] .pane-path { display: none; }
   [data-view="path"] .pane-record { display: none; }
 
-  /* ---- the fold ------------------------------------------------------- */
-  /* Folding the tree reclaims its whole pane, not just its list: on a wide
-     card the rail's column collapses too (see the container query above),
-     which is the room the fold exists to give back. */
+  /* ---- overview ------------------------------------------------------- */
 
-  h2 .fold {
-    appearance: none;
-    background: none;
-    border: 0;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    color: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    cursor: pointer;
+  .pane-record { padding: 22px 26px 6px; display: grid; gap: 22px; }
+
+  .hero { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 24px; }
+  .hero-main { display: flex; align-items: flex-end; gap: 16px; min-width: 0; }
+  /* The figure the talk is about: how little of the document the answer
+     needed. As large as the card allows. */
+  .pct {
+    font-family: var(--display);
+    font-size: clamp(60px, 15cqi, 112px);
+    font-weight: 800;
+    line-height: 0.85;
+    letter-spacing: -0.04em;
+    color: var(--accent);
+    white-space: nowrap;
   }
-  .chev {
-    display: inline-block;
-    font-size: 8px;
-    transition: transform 0.15s ease;
+  .hero-label { display: grid; gap: 5px; padding-bottom: 5px; }
+  .hero-label b { font-size: 22px; font-weight: 700; }
+  .hero-label span { font-size: 15px; color: var(--text-muted); }
+
+  .gauge { display: grid; justify-items: end; gap: 8px; padding-bottom: 5px; margin-left: auto; }
+  .pips { display: flex; gap: 6px; }
+  .pip { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--text-faint); }
+  .pip.on { background: var(--accent); border-color: var(--accent); }
+  .pip.over { background: var(--bad); border-color: var(--bad); }
+  .gauge-label { font-size: 15px; font-weight: 600; }
+  /* Past the round cap: said in the line itself, coloured so it is seen. */
+  .gauge-label.over { color: var(--bad); }
+
+  .bar-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+  /* The whole document, one segment per section, each as wide as its own
+     text: the lit ones are all the answer needed. */
+  .bar { display: flex; height: 44px; border-radius: var(--radius-sm); overflow: hidden; }
+  .seg { flex-basis: 0; min-width: 0; background: var(--unread); box-shadow: inset -1px 0 0 var(--bg-surface); }
+  .seg[data-status="read"] { background: var(--read); }
+  .seg[data-status="cited"] { background: var(--accent); }
+  .funnel { display: block; width: 100%; height: 30px; }
+  .funnel polygon { fill: var(--funnel); }
+  .zoom { display: flex; gap: 6px; }
+  .zoom-item {
+    flex-basis: 0;
+    min-width: 64px;
+    height: 64px;
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    border: 2px solid var(--read-border);
+    background: var(--read-bg);
+    color: var(--read-ink);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
   }
-  .tree.collapsed .chev { transform: rotate(-90deg); }
-  .tree.collapsed .nodes { display: none; }
-  .tree.collapsed h2 { margin-bottom: 0; }
+  .zoom-item.cited { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .zoom-n { font-family: var(--display); font-size: 24px; font-weight: 800; line-height: 1; }
+  .zoom-label { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .rounds { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 22px; padding-bottom: 16px; }
+  @container (min-width: 560px) {
+    .rounds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  .round { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+  .badge {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    font-weight: 800;
+    background: var(--read-bg);
+    color: var(--read-ink);
+    border: 2px solid var(--read-border);
+  }
+  .badge.cited { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .round-body { display: grid; gap: 2px; min-width: 0; }
+  .round-title { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+  .round-title .page { font-weight: 500; color: var(--text-muted); }
+  .cited-tag {
+    margin-left: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .round-why { font-size: 13px; color: var(--text-faint); overflow-wrap: anywhere; }
+  .round-found { font-size: 15px; color: var(--text-secondary); line-height: 1.35; overflow-wrap: anywhere; }
 
   /* ---- the path ------------------------------------------------------- */
-  /* One tile per section read, in reading order, joined left to right. The
-     tile shows the page a cited passage sits on, boxed — or, for a section
-     read but not quoted, the page where it starts. */
+  /* One real page per round, in reading order; the empty slots that follow
+     are the rounds the answer did not need. */
 
-  .pane-path { padding: 14px 16px 16px; }
-  .flow {
-    display: flex;
-    align-items: flex-start;
-    overflow-x: auto;
-    padding: 4px 2px 10px;
-  }
-  .hop {
-    flex: 0 0 138px;
-    display: grid;
-    gap: 5px;
-  }
-  .hop button {
-    background: none;
-    border: 0;
-    padding: 0;
-    font: inherit;
-    text-align: left;
-    color: inherit;
-    cursor: pointer;
-  }
-  .hop-meta { display: grid; gap: 5px; }
-  .hop-meta:hover .hop-where { color: var(--accent); }
-  .hop-top {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 6px;
-  }
-  .hop-top .ord { font-size: 11px; font-weight: 600; color: var(--text-muted); }
-  .hop-state {
-    font-size: 9.5px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-  .hop-state.cited { color: var(--kept); }
+  .pane-path { padding: 20px 26px 18px; display: grid; gap: 18px; }
+  .flow { display: flex; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
+  .hop { flex: 1 1 0; min-width: 104px; max-width: 150px; display: grid; gap: 7px; }
+  .hop button { background: none; border: 0; padding: 0; font: inherit; text-align: left; color: inherit; cursor: pointer; }
+  .hop-top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+  .hop-top .ord { font-family: var(--display); font-size: 22px; font-weight: 800; }
+  .hop-top .ord small { font-size: 14px; color: var(--text-faint); }
+  .hop-state { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+  .hop-state.cited { color: var(--accent); }
   .hop .shot {
     position: relative;
     display: block;
     width: 100%;
-    border: 1px solid var(--border-light);
+    border: 2px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--bg-elevated);
     overflow: hidden;
   }
-  .shot.pending, .shot.none, .shot.failed { height: 150px; }
-  .shot .glass {
-    position: absolute;
-    right: 5px;
-    bottom: 5px;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    font-size: 12px;
-    color: #fff;
-    background: color-mix(in srgb, var(--text) 72%, transparent);
-    opacity: 0;
-    transition: opacity 0.12s ease;
-  }
-  .hop .shot:hover .glass,
-  .hop .shot:focus-visible .glass { opacity: 1; }
-  .hop[data-state="cited"] .shot { border-color: var(--kept); }
+  .shot.pending, .shot.none, .shot.failed { height: 160px; }
+  .hop[data-state="cited"] .shot { border: 3px solid var(--accent); }
   .shot img { display: block; width: 100%; height: auto; }
-  .shot .mark {
-    position: absolute;
-    border: 1.5px solid var(--accent);
-    background: var(--accent-muted);
-    border-radius: 2px;
-  }
+  .shot .mark { position: absolute; border: 2px solid var(--accent); background: var(--accent-muted); border-radius: 2px; }
+  .hop[data-state="read"] .shot .mark { border-color: var(--read-border); background: rgba(251, 146, 60, 0.22); }
   .shot .ph {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
     padding: 8px;
-    font-size: 10.5px;
+    font-size: 11px;
     text-align: center;
-    color: var(--text-muted);
+    color: var(--text-faint);
   }
-  .hop .shot:hover,
-  .hop .shot:focus-visible { border-color: var(--accent); }
+  .shot .glass {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: #fff;
+    background: rgba(17, 17, 19, 0.72);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .hop .shot:hover .glass,
+  .hop .shot:focus-visible .glass { opacity: 1; }
+  .hop .shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hop-where {
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .hop-where .page { color: var(--text-muted); font-weight: 500; }
+  .hop-q {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .shot-empty {
+    height: 160px;
+    border: 2px dashed var(--border-light);
+    border-radius: var(--radius-sm);
+    display: grid;
+    place-items: center;
+    padding: 10px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-faint);
+  }
+  .hop.empty .ord { color: var(--text-faint); }
+  .flow .link {
+    flex: 0 0 18px;
+    align-self: center;
+    margin-top: -40px;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 14px;
+    user-select: none;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .stats div { display: grid; gap: 2px; min-width: 0; }
+  .stats b { font-family: var(--display); font-size: clamp(22px, 5cqi, 32px); font-weight: 800; white-space: nowrap; }
+  .stats b small { font-size: 0.68em; color: var(--text-faint); }
+  .stats span { font-size: 14px; color: var(--text-muted); }
 
   /* ---- the enlarged page ---------------------------------------------- */
   /* Same shape as the citation view's lens: on <body>, not inside <main>,
@@ -351,191 +373,40 @@
     background: var(--accent-muted);
     border-radius: 2px;
   }
-  .hop-where {
-    font-size: 11px;
-    font-weight: 550;
-    color: var(--text-secondary);
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .hop-where .page { color: var(--text-muted); font-weight: 400; }
-  .hop-q {
-    font-size: 10.5px;
-    color: var(--text-muted);
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .flow .link {
-    flex: 0 0 auto;
-    align-self: center;
-    padding: 0 6px;
-    color: var(--text-muted);
-    font-size: 13px;
-    user-select: none;
-  }
 
-  /* ---- navigation tree ----------------------------------------------- */
+  /* ---- footer -------------------------------------------------------- */
 
-  .node {
-    display: grid;
-    grid-template-columns: 12px minmax(0, 1fr);
-    gap: 7px;
-    align-items: baseline;
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: 0;
-    border-radius: var(--radius-sm);
-    padding: 3px 5px;
-    font: inherit;
-    font-size: 12.5px;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .node:hover { background: var(--bg-hover); }
-  .node.lit { background: var(--accent-muted); color: var(--text); }
-  .node .pin {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--border-light);
-    justify-self: center;
-    transform: translateY(-1px);
-  }
-  .node[data-status="cited"] { color: var(--text); font-weight: 550; }
-  .node[data-status="cited"] .pin { background: var(--kept); }
-  .node[data-status="read"] .pin { background: var(--text-muted); }
-  .node[data-status="path"] .pin { background: transparent; border: 1px solid var(--border-light); }
-  .node .label { overflow-wrap: anywhere; }
-  .node .page { color: var(--text-muted); font-size: 11px; }
-
-  .empty { font-size: 12.5px; color: var(--text-muted); font-style: italic; }
-
-  /* ---- timeline ------------------------------------------------------ */
-
-  .step { border-top: 1px solid var(--border); padding: 11px 0 3px; }
-  .step:first-of-type { border-top: 0; padding-top: 2px; }
-  .step.lit .step-q { color: var(--accent); }
-
-  .step-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
-    align-items: baseline;
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: 0;
-    padding: 0;
-    font: inherit;
-    cursor: pointer;
-    color: inherit;
-  }
-  .step-q { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
-  .step-q .ord { color: var(--text-muted); font-weight: 500; margin-right: 5px; }
-  .step-why {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 1px;
-    overflow-wrap: anywhere;
-  }
-  /* What the round gave — the agent's own account, like the why above it. */
-  .step-found {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-top: 2px;
-    overflow-wrap: anywhere;
-  }
-  .step-found b { font-weight: 600; color: var(--text-muted); }
-
-  .state {
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-left: 7px;
-  }
-  .state.cited { color: var(--kept); }
-  .tokens { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-  .open {
-    margin-left: 7px;
-    padding: 1px 7px;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--accent);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  .open:hover { background: var(--accent-muted); }
-
-  .attempts { margin: 8px 0 4px; display: grid; gap: 7px; }
-  .attempt {
-    border-left: 2px solid var(--border-light);
-    padding: 1px 0 1px 10px;
-  }
-  .attempt[data-outcome="cited"] { border-left-color: var(--kept); }
-
-  .verdict {
-    margin-top: 3px;
+  .foot {
+    border-top: 1px solid var(--border);
+    padding: 16px 26px 18px;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    font-size: 11.5px;
-    color: var(--text-muted);
+    justify-content: space-between;
+    gap: 12px;
   }
-  .chip {
-    padding: 0 6px;
-    border-radius: var(--radius-sm);
-    font-family: var(--mono);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    background: var(--bg-hover);
-    color: var(--text-secondary);
+  .cited-note { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+  .cited-note svg { flex: none; }
+  .open-btn {
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--text);
+    border: 0;
+    border-radius: var(--radius);
+    padding: 12px 18px;
+    min-height: 44px;
+    cursor: pointer;
   }
-  .chip.cited { background: var(--kept-bg); color: var(--kept); }
-  .ref {
-    font-family: var(--mono);
-    font-size: 10.5px;
-    color: var(--text-muted);
-    overflow-wrap: anywhere;
-  }
-  /* ---- footer -------------------------------------------------------- */
+  .open-btn:hover { background: #27272a; }
+  .open-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tally { flex-basis: 100%; font-size: 12.5px; color: var(--bad); }
+  /* Said once, plainly, on the artefact itself: the `why` and `found` lines
+     are the agent's words; everything else is the server's. */
+  .caveat { flex-basis: 100%; font-size: 12px; line-height: 1.5; color: var(--text-faint); }
 
-  .foot { border-top: 1px solid var(--border); padding: 13px 18px 15px; }
-  /* The one line a reader quotes: how little of the document the answer
-     needed. Larger than the rest of the footer on purpose. */
-  .ratio { font-size: 13.5px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
-  /* Past the round cap: said in the line itself, coloured so it is seen. */
-  .ratio.over { color: var(--bad); }
-  .tally {
-    margin-top: 6px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px 10px;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-  /* Said once, plainly, on the artefact itself: the `why` lines are the
-     agent's words; everything else is the server's. */
-  .caveat {
-    margin-top: 8px;
-    font-size: 11px;
-    line-height: 1.5;
-    color: var(--text-muted);
-    border-left: 2px solid var(--border-light);
-    padding-left: 8px;
-  }
-
+  .empty { font-size: 13px; color: var(--text-faint); font-style: italic; }
   .fallback { padding: 18px; font-size: 13px; color: var(--text-secondary); }
 </style>
 </head>
@@ -567,127 +438,212 @@
   };
   const short = (id) => (id && id.length > 12 ? id.slice(0, 8) + "…" : id || "—");
 
-  // A hop the answer quotes from is a source; one read without a quote is
+  // A round the answer quotes from is a source; one read without a quote is
   // context. Two states, both earned by the server resolving the anchors.
   const hopState = (hop) => ((hop.cited || []).length ? "cited" : "read");
-  // "2/5": the round against the loop's cap, set from each result rendered.
-  let maxRounds = 0;
-  const roundOf = (hop) => `${num(hop.ordinal)}${maxRounds ? "/" + num(maxRounds) : ""}`;
   const isLink = (url) => /^https?:\/\//i.test(String(url || ""));
+  // French figures for a French stage: 9,4 — coerced first, because the
+  // result lands in markup unescaped.
+  const fr = (value, digits = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? number.toLocaleString("fr-FR", { maximumFractionDigits: digits })
+      : "—";
+  };
+  // "§2.1" for a numbered section; its own title otherwise.
+  const shortLabel = (title) => {
+    const match = String(title || "").match(/^([A-Z]?\d+(?:\.\d+)*)\s/);
+    return match ? `§${match[1]}` : String(title || "");
+  };
+  const CHECK =
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#15803d" ' +
+    'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M20 6 9 17l-5-5"></path></svg>';
 
   const root = document.getElementById("root");
 
-  // Presentation state, kept outside `render` so a re-push of the result —
-  // or a hop into the record — lands on the reading the person had chosen.
+  // Presentation state, kept outside `render` so a re-push of the result
+  // lands on the tab the person had chosen.
   let activeTab = "record";
-  let treeCollapsed = false;
+  // The loop's cap, set from each result rendered.
+  let maxRounds = 0;
 
   function render(view) {
     const hops = Array.isArray(view.hops) ? view.hops : [];
-    const nodes = Array.isArray(view.map) ? view.map : [];
+    const segments = Array.isArray(view.segments) ? view.segments : [];
     const unknown = Array.isArray(view.unknown) ? view.unknown : [];
-    maxRounds = Number(view.totals?.max_rounds) || 0;
-    const overCap = view.totals?.over_cap === true;
+    const totals = view.totals || {};
+    maxRounds = Number(totals.max_rounds) || 0;
+    const cited = hops.reduce((count, hop) => count + (hop.cited || []).length, 0);
+    const linked =
+      hops.find((hop) => (hop.cited || []).length && isLink(hop.deep_link)) ||
+      hops.find((hop) => isLink(hop.deep_link));
+    const link = linked ? linked.deep_link : "";
 
     root.className = "card";
     root.dataset.view = activeTab;
     root.innerHTML = `
       <div class="head">
-        <div class="question">${esc(view.question)}</div>
-        <div class="origin">
+        <div class="eyebrow-row">
+          <span class="eyebrow">Sources de la réponse</span>
           <span class="doc">${esc(view.filename || view.document_id)}</span>
-          <span class="dot-sep">·</span>
-          <span>parse ${esc(short(view.version_id))}</span>
         </div>
+        <div class="question">${esc(view.question)}</div>
       </div>
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" id="tab-record" data-tab="record"
           aria-controls="pane-record" aria-selected="${activeTab === "record"}"
-          tabindex="${activeTab === "record" ? 0 : -1}">Reading</button>
+          tabindex="${activeTab === "record" ? 0 : -1}">Vue d’ensemble</button>
         <button class="tab" role="tab" id="tab-path" data-tab="path"
           aria-controls="pane-path" aria-selected="${activeTab === "path"}"
-          tabindex="${activeTab === "path" ? 0 : -1}">Path</button>
+          tabindex="${activeTab === "path" ? 0 : -1}">Parcours</button>
       </div>
-      <div class="body pane-record" role="tabpanel" id="pane-record" aria-labelledby="tab-record">
-        <section class="tree${treeCollapsed ? " collapsed" : ""}">
-          <h2><button class="fold" data-fold aria-controls="tree-nodes"
-            aria-expanded="${!treeCollapsed}"><span
-            class="chev" aria-hidden="true">▾</span>Where it read</button></h2>
-          <div class="nodes" id="tree-nodes">
-          ${nodes.length ? nodes.map(nodeRow).join("") : '<p class="empty">Nothing located in the document.</p>'}
-          </div>
-        </section>
-        <section class="timeline">
-          <h2>Round by round</h2>
-          ${hops.length ? hops.map(hopBlock).join("") : '<p class="empty">No section read.</p>'}
-        </section>
-      </div>
+      <section class="pane-record" role="tabpanel" id="pane-record" aria-labelledby="tab-record">
+        ${hero(totals)}
+        ${segments.length ? bar(segments, hops) : ""}
+        ${hops.length ? `<div class="rounds">${hops.map(roundRow).join("")}</div>` : '<p class="empty">Aucune section lue.</p>'}
+      </section>
       <section class="pane-path" role="tabpanel" id="pane-path" aria-labelledby="tab-path">
-        <h2>How it moved</h2>
-        ${hops.length ? `<div class="flow">${flowStrip(hops, nodes)}</div>` : '<p class="empty">No section read.</p>'}
+        <h2 class="bar-label">Comment il a avancé</h2>
+        <div class="flow">${filmstrip(hops)}</div>
+        ${stats(totals)}
       </section>
       <div class="foot">
-        <div class="ratio${overCap ? " over" : ""}">${esc(view.summary || "")}</div>
-        ${unknown.length ? `<div class="tally">${unknown.length} anchor${unknown.length === 1 ? "" : "s"} resolved to nothing and ${unknown.length === 1 ? "is" : "are"} not shown.</div>` : ""}
-        <p class="caveat">Each “why” is what the agent said it was looking for, recorded as
-        written, like what it says a round found. The sections, pages and quotes are the
-        server's, resolved from the anchors the agent read and cited.</p>
+        <span class="cited-note">${CHECK}${num(cited)} passage${cited === 1 ? "" : "s"} cité${cited === 1 ? "" : "s"} dans la réponse</span>
+        ${isLink(link) ? `<button type="button" class="open-btn" data-open="${esc(link)}">Ouvrir dans Docling Studio</button>` : ""}
+        ${unknown.length ? `<p class="tally">${num(unknown.length)} ancre${unknown.length === 1 ? "" : "s"} introuvable${unknown.length === 1 ? "" : "s"}, non affichée${unknown.length === 1 ? "" : "s"}.</p>` : ""}
+        <p class="caveat">Les « pourquoi » et « trouvé » sont les mots de l’agent. Les sections, les pages et la part du document lue viennent du serveur, qui résout les ancres lues et citées.</p>
       </div>`;
 
     wire();
-    // The rebuilt DOM carries no .lit classes, so the tracker must not
-    // claim otherwise — a stale key would turn the next click into a clear.
-    lit = "";
     if (activeTab === "path") hydratePath();
   }
 
+  // ---- the overview ----------------------------------------------------
+
+  function hero(totals) {
+    const rounds = Number(totals.rounds) || 0;
+    const over = totals.over_cap === true;
+    const slots = Math.max(maxRounds, rounds);
+    const pips = Array.from({ length: slots }, (_, i) => {
+      const state = i >= rounds ? "off" : i < maxRounds ? "on" : "over";
+      return `<span class="pip ${state}"></span>`;
+    }).join("");
+    const unit = totals.mode === "pages" ? "pages" : "sections";
+    const label = over
+      ? `${num(rounds)} tours, plafond de ${num(maxRounds)} dépassé`
+      : `${num(rounds)} tour${rounds === 1 ? "" : "s"} sur ${num(maxRounds)}`;
+    return `<div class="hero">
+      <div class="hero-main">
+        <span class="pct">${fr(totals.percent, 1)} %</span>
+        <div class="hero-label">
+          <b>du document lu</b>
+          <span>${num(totals.sections_read)} ${unit} sur ${num(totals.sections_total)} · ${num(totals.tokens_read)} tokens sur ${num(totals.tokens_total)}</span>
+        </div>
+      </div>
+      <div class="gauge">
+        <span class="pips" aria-hidden="true">${pips}</span>
+        <span class="gauge-label${over ? " over" : ""}">${label}</span>
+      </div>
+    </div>`;
+  }
+
+  // The whole document as a bar, the lit part fanned out into the rounds
+  // that read it, in document order.
+  function bar(segments, hops) {
+    const total = segments.reduce((sum, s) => sum + (Number(s.tokens) || 0), 0) || 1;
+    let cursor = 0;
+    let first = null;
+    let last = null;
+    const segs = segments
+      .map((s) => {
+        const tokens = Number(s.tokens) || 0;
+        if (s.status === "read" || s.status === "cited") {
+          if (first === null) first = cursor;
+          last = cursor + tokens;
+        }
+        cursor += tokens;
+        return `<span class="seg" data-status="${esc(s.status)}" style="flex-grow: ${tokens}" title="${esc(s.title)}"></span>`;
+      })
+      .join("");
+    const order = new Map(segments.map((s, i) => [s.ref, i]));
+    const at = (hop) => order.get(hop.node_ref || hop.ref) ?? Number.MAX_SAFE_INTEGER;
+    const zoom = hops
+      .slice()
+      .sort((a, b) => at(a) - at(b))
+      .map((hop) => {
+        const state = hopState(hop);
+        const grow = Math.max(1, Number(hop.est_tokens) || 1);
+        return `<div class="zoom-item ${state}" style="flex-grow: ${grow}">
+          <span class="zoom-n">${num(hop.ordinal)}${state === "cited" ? " ✓" : ""}</span>
+          <span class="zoom-label">${esc(shortLabel(hop.title))}${state === "cited" ? " cité" : ""}</span>
+        </div>`;
+      })
+      .join("");
+    const lit = first !== null && hops.length;
+    const left = lit ? ((first / total) * 100).toFixed(2) : 0;
+    const right = lit ? ((last / total) * 100).toFixed(2) : 0;
+    return `<div>
+      <span class="bar-label">Tout le document, section par section</span>
+      <div class="bar">${segs}</div>
+      ${lit ? `<svg class="funnel" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polygon points="${left},0 ${right},0 100,30 0,30"></polygon></svg>
+      <div class="zoom">${zoom}</div>` : ""}
+    </div>`;
+  }
+
+  function roundRow(hop) {
+    const state = hopState(hop);
+    return `<div class="round">
+      <span class="badge ${state}">${num(hop.ordinal)}</span>
+      <div class="round-body">
+        <span class="round-title">${esc(hop.title)}${hop.page ? `<span class="page"> · p.${num(hop.page)}</span>` : ""}${state === "cited" ? '<span class="cited-tag">cité</span>' : ""}</span>
+        ${hop.why ? `<span class="round-why">Pourquoi : ${esc(hop.why)}</span>` : ""}
+        ${hop.found ? `<span class="round-found">Trouvé : ${esc(hop.found)}</span>` : ""}
+      </div>
+    </div>`;
+  }
+
   // ---- the path ------------------------------------------------------
-  // The same reads the timeline lists, laid end to end in reading order.
-  // Every section read has a page: a cited one shows the quoted passage
-  // boxed, the others the page where the section starts.
+  // The rounds laid end to end, each on its real page; then the rounds the
+  // answer did not need, as empty slots up to the cap.
 
-  function flowStrip(hops, nodes) {
-    const where = nodesByHop(nodes);
-    return hops
-      .map((hop) => hopTile(hop, where.get(hop.hop_id)))
-      .join('<span class="link" aria-hidden="true">→</span>');
+  function filmstrip(hops) {
+    const tiles = hops.map(hopTile);
+    for (let n = hops.length + 1; n <= maxRounds; n += 1) tiles.push(emptyTile(n));
+    return tiles.join('<span class="link" aria-hidden="true">→</span>');
   }
 
-  // The map already knows which outline section each read reached; prefer
-  // the node a quote was cited at over one that was only read.
-  function nodesByHop(nodes) {
-    const byHop = new Map();
-    for (const node of nodes) {
-      for (const id of node.hop_ids || []) {
-        const seen = byHop.get(id);
-        if (!seen || (node.status === "cited" && seen.status !== "cited")) byHop.set(id, node);
-      }
-    }
-    return byHop;
-  }
-
-  // Two buttons, not one: the page enlarges, the words jump to the read in
-  // the timeline. One button doing both would have to guess which the click
-  // meant.
-  function hopTile(hop, node) {
+  // A cited round shows the quoted passage, boxed; a round read without a
+  // quote shows the page its section starts on.
+  function hopTile(hop) {
     const uri = (hop.cited || [])[0] || hop.uri || "";
     const state = hopState(hop);
-    const where = node ? node.title : hop.title;
-    const page = hop.page || (node && node.page);
     return `<div class="hop" data-state="${esc(state)}" data-hop="${esc(hop.hop_id)}"
       ${uri ? `data-uri="${esc(uri)}"` : ""}>
       <span class="hop-top">
-        <span class="ord">${roundOf(hop)}</span>
-        <span class="hop-state ${esc(state)}">${esc(state)}</span>
+        <span class="ord">${num(hop.ordinal)}<small>/${num(maxRounds)}</small></span>
+        <span class="hop-state ${esc(state)}">${state === "cited" ? "Cité ✓" : "Lu"}</span>
       </span>
-      <button class="shot ${uri ? "pending" : "none"}" data-shot
-        aria-label="${uri ? "Enlarge the page" : "Open this read in the timeline"}"></button>
-      <button class="hop-meta" data-jump title="${esc([hop.why, hop.found].filter(Boolean).join(" — ") || hop.title)}">
-        <span class="hop-where">${esc(where || "—")}${
-          page ? `<span class="page"> · p.${esc(page)}</span>` : ""
-        }</span>
-        <span class="hop-q">${esc(hop.why || "")}</span>
-      </button>
+      <button type="button" class="shot ${uri ? "pending" : "none"}" data-shot
+        aria-label="Agrandir la page"></button>
+      <span class="hop-where" title="${esc(hop.why || hop.title)}">${esc(hop.title)}${hop.page ? `<span class="page"> · p.${num(hop.page)}</span>` : ""}</span>
+      ${hop.found ? `<span class="hop-q">${esc(hop.found)}</span>` : ""}
+    </div>`;
+  }
+
+  function emptyTile(n) {
+    return `<div class="hop empty">
+      <span class="hop-top"><span class="ord">${num(n)}<small>/${num(maxRounds)}</small></span></span>
+      <span class="shot-empty">Pas nécessaire</span>
+    </div>`;
+  }
+
+  function stats(totals) {
+    const unit = totals.mode === "pages" ? "pages ouvertes" : "sections ouvertes";
+    return `<div class="stats">
+      <div><b>${num(totals.rounds)}<small> / ${num(maxRounds)}</small></b><span>tours</span></div>
+      <div><b>${num(totals.sections_read)}<small> / ${num(totals.sections_total)}</small></b><span>${unit}</span></div>
+      <div><b>${num(totals.tokens_read)}<small> / ${num(totals.tokens_total)}</small></b><span>tokens lus</span></div>
     </div>`;
   }
 
@@ -1021,76 +977,9 @@
     reportSize();
   }
 
-  function nodeRow(node) {
-    // `level` is the document's own heading depth; the first level sits flush
-    // so a single-chapter map does not open on a wasted indent.
-    const indent = Math.max(0, (Number(node.level) || 0) - 1) * 11;
-    const hops = (node.hop_ids || []).join(" ");
-    return `<button class="node" data-status="${esc(node.status)}" data-steps="${esc(hops)}"
-      title="${esc(node.ref)}">
-      <span class="pin"></span>
-      <span>
-        <span class="label" style="padding-left:${indent}px">${esc(node.title)}</span>
-        ${node.page ? `<span class="page"> p.${esc(node.page)}</span>` : ""}
-      </span>
-    </button>`;
-  }
-
-  function hopBlock(hop) {
-    const cited = Array.isArray(hop.cited) ? hop.cited : [];
-    const state = hopState(hop);
-    return `<div class="step" data-step="${esc(hop.hop_id)}">
-      <button class="step-head" data-step-toggle="${esc(hop.hop_id)}">
-        <span>
-          <span class="step-q"><span class="ord">${roundOf(hop)}</span> ${esc(hop.title)}${
-            hop.page ? `<span class="page"> · p.${esc(hop.page)}</span>` : ""
-          }</span>
-          ${hop.why ? `<div class="step-why">${esc(hop.why)}</div>` : ""}
-          ${hop.found ? `<div class="step-found"><b>Found:</b> ${esc(hop.found)}</div>` : ""}
-        </span>
-        <span>
-          <span class="tokens">~${num(hop.est_tokens)} t</span>
-          <span class="state ${esc(state)}">${esc(state)}</span>
-        </span>
-      </button>
-      ${cited.length ? `<div class="attempts">${cited.map(citedRow).join("")}</div>` : ""}
-      ${isLink(hop.deep_link) ? `<button class="open" data-open="${esc(hop.deep_link)}">Open in Studio</button>` : ""}
-    </div>`;
-  }
-
-  function citedRow(uri) {
-    return `<div class="attempt" data-outcome="cited">
-      <div class="verdict">
-        <span class="chip cited">cited</span>
-        <span class="ref">${esc(refOf(uri))}</span>
-      </div>
-    </div>`;
-  }
-
-  // The fragment is the readable half of an anchor; the document and version
-  // are already stated once in the header and repeating them on every row
-  // would push the verdict off the side of a narrow card.
-  function refOf(uri) {
-    const text = String(uri || "");
-    const hash = text.indexOf("#");
-    return hash === -1 ? text : text.slice(hash);
-  }
-
-  // ---- the two-way link ------------------------------------------------
-  // Clicking a step lights the sections it reached; clicking a section lights
-  // the steps that reached it. It is the same relation read from either end,
-  // and it is the whole reason the map and the timeline sit on one card.
+  // ---- wiring ----------------------------------------------------------
 
   function wire() {
-    root.querySelectorAll("[data-step-toggle]").forEach((button) => {
-      button.addEventListener("click", () => highlight([button.dataset.stepToggle]));
-    });
-    root.querySelectorAll(".node").forEach((button) => {
-      button.addEventListener("click", () => {
-        const ids = (button.dataset.steps || "").split(" ").filter(Boolean);
-        highlight(ids);
-      });
-    });
     root.querySelectorAll(".tab").forEach((button) => {
       button.addEventListener("click", () => selectTab(button.dataset.tab));
     });
@@ -1102,29 +991,6 @@
       selectTab(activeTab === "record" ? "path" : "record");
       root.querySelector(`.tab[data-tab="${activeTab}"]`)?.focus();
     });
-    const fold = root.querySelector("[data-fold]");
-    if (fold) {
-      fold.addEventListener("click", () => {
-        treeCollapsed = !treeCollapsed;
-        fold.setAttribute("aria-expanded", String(!treeCollapsed));
-        root.querySelector(".tree")?.classList.toggle("collapsed", treeCollapsed);
-        reportSize();
-      });
-    }
-    // A hop is the same read the timeline lists: its words land on that read
-    // in the timeline, lit — the two readings stay one record. `lit` is
-    // cleared first because highlight() is a toggle, and landing on a step
-    // that happened to be lit already must not arrive with the light off.
-    // Its page enlarges instead — and a shot with nothing to enlarge jumps
-    // like the words do, so no part of a tile is dead.
-    const jump = (hop) => {
-      selectTab("record");
-      lit = "";
-      highlight([hop.dataset.hop]);
-      root
-        .querySelector(`.step[data-step="${cssEscape(hop.dataset.hop)}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-    };
     // `ui/open-link` is the host's job: an app cannot navigate the user by
     // itself, and hosts gate this behind their own confirmation.
     root.querySelectorAll("[data-open]").forEach((button) => {
@@ -1132,32 +998,13 @@
         post({ jsonrpc: "2.0", id: Date.now(), method: "ui/open-link", params: { url: button.dataset.open } });
       });
     });
-    root.querySelectorAll(".hop [data-jump]").forEach((button) => {
-      button.addEventListener("click", () => jump(button.closest(".hop")));
-    });
+    // A page enlarges once its thumbnail has landed.
     root.querySelectorAll(".hop [data-shot]").forEach((button) => {
       button.addEventListener("click", () => {
         const hop = button.closest(".hop");
         const cached = thumbs.get(hop.dataset.uri);
         if (cached && cached.image) openLens(hop.dataset.uri);
-        else jump(hop);
       });
-    });
-  }
-
-  let lit = "";
-  function highlight(stepIds) {
-    const key = stepIds.slice().sort().join(" ");
-    const clearing = key === lit || !stepIds.length;
-    lit = clearing ? "" : key;
-    const wanted = new Set(clearing ? [] : stepIds);
-
-    root.querySelectorAll(".step").forEach((element) => {
-      element.classList.toggle("lit", wanted.has(element.dataset.step));
-    });
-    root.querySelectorAll(".node").forEach((element) => {
-      const reached = (element.dataset.steps || "").split(" ").filter(Boolean);
-      element.classList.toggle("lit", reached.some((id) => wanted.has(id)));
     });
   }
 

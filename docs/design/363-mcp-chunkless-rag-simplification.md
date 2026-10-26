@@ -456,6 +456,27 @@ own Ask); a `cursor` continuation is the same round.
   env var. It is not enforced: the server is stateless and the client model
   drives the loop. The prompt states it; the card makes a breach visible.
 
+### 5.7c The cards, redesigned for the stage (added 2026-10-26)
+
+Mockups were made on a design canvas and option A was chosen, with B's
+filmstrip kept as a second tab.
+
+- **Sources card.** It opens on one large figure, the share of the document
+  read, with a gauge of rounds against the cap. Below it come the whole
+  document as a bar (one segment per section, sized by its own text, the
+  sections read lit), then a fan-out of the rounds that read them, then each
+  round with *pourquoi* and *trouvé*. The *Parcours* tab is the filmstrip:
+  real pages, cited passages boxed, empty slots up to the cap.
+- **`show_sources`** now also returns `segments`: every outline section with
+  its own tokens and status (`domain/source_bar.py`). The subsections of a
+  section read whole are lit with it.
+- **Citation card.** It makes one claim, *texte exact du document*, and
+  shows the page with the passage boxed, then the passage large; a long one
+  folds to seven lines. Element id, parse version and quote hash are gone.
+  The badge does not say "vérifiée": `show_citation` shows the server's text
+  at the anchor, it does not check a quote.
+- **Both cards** are light only and in French.
+
 ### 5.8 Where the removed work goes
 
 | Work | Goes to |

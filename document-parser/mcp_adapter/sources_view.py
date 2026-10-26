@@ -69,6 +69,17 @@ class SourceNodeOut:
 
 
 @dataclass(frozen=True)
+class SourceSegmentOut:
+    ref: str
+    title: str
+    level: int
+    tokens: int
+    status: str
+    page: int | None = None
+    hop_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class SourceTotalsOut:
     mode: str
     rounds: int
@@ -100,6 +111,7 @@ class SourcesCard:
     totals: SourceTotalsOut
     hops: list[SourceHopOut]
     map: list[SourceNodeOut]
+    segments: list[SourceSegmentOut] = field(default_factory=list)
     unknown: list[str] = field(default_factory=list)
     next_step: str = ""
 
@@ -194,6 +206,18 @@ def sources_card(report: SourceReport) -> SourcesCard:
         ),
         hops=[_hop(hop, links) for hop in sources.hops],
         map=[_node(node, links) for node in sources.nodes],
+        segments=[
+            SourceSegmentOut(
+                ref=s.ref,
+                title=neutralise(s.title),
+                level=s.level,
+                tokens=s.tokens,
+                status=s.status,
+                page=s.page,
+                hop_ids=list(s.hop_ids),
+            )
+            for s in sources.segments
+        ],
         unknown=list(report.unknown),
         next_step=(
             "If no card appeared, relay this tree and each `deep_link`, which opens the "

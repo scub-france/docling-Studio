@@ -295,8 +295,28 @@ class TestTemplate:
     def test_escapes_document_text_before_it_becomes_markup(self):
         assert "&amp;" in CITATION_APP_HTML and "&lt;" in CITATION_APP_HTML
         # Every interpolation of document-derived text goes through esc().
-        for field in ("view.uri", "view.ref", "view.quote_hash"):
+        for field in ("color", "kind", 'view.page ?? "—"', "h"):
             assert f"esc({field})" in CITATION_APP_HTML, field
+
+    def test_it_states_one_claim_and_shows_no_ids(self):
+        """The proof (#363): the document's own text, at the place cited — and
+        no element id, parse version or hash for a room to squint at."""
+        assert "Texte exact du document" in CITATION_APP_HTML
+        for gone in ("Quote hash", "Parse version", "Copier l'ancre", "shortHash"):
+            assert gone not in CITATION_APP_HTML, gone
+
+    def test_a_long_passage_folds_and_a_table_never_does(self):
+        assert "LONG_CHARS" in CITATION_APP_HTML
+        assert "!asTitle && !stats.rows && stats.chars > LONG_CHARS" in CITATION_APP_HTML
+        assert "Lire la suite" in CITATION_APP_HTML
+
+    def test_the_element_kind_is_said_in_french(self):
+        assert 'text: "paragraphe"' in CITATION_APP_HTML
+        assert 'table: "tableau"' in CITATION_APP_HTML
+
+    def test_it_is_light_only(self):
+        assert "color-scheme: light;" in CITATION_APP_HTML
+        assert "prefers-color-scheme" not in CITATION_APP_HTML
 
     def test_the_quote_is_escaped_before_markdown_becomes_markup(self):
         # The quote is the one field that does *not* reach `esc` at the

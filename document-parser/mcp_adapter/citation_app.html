@@ -8,9 +8,10 @@
      Same names, same values, so the viewer and the product do not drift into
      two palettes. The product picks its theme with a class on <html>; an app
      in a sandboxed iframe cannot read the host's, so the media query decides.
-     Light is the default because most hosts render on paper. */
+     Light only (#363): the card is read off a projector, and a host in
+     dark mode still gets the same high-contrast card. */
   :root {
-    color-scheme: light dark;
+    color-scheme: light;
     --bg: #fafafa;
     --bg-surface: #ffffff;
     --bg-elevated: #f4f4f5;
@@ -30,40 +31,6 @@
     --sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  /* Two ways to be dark. The host states its theme in the `ui/initialize`
-     response and this view stamps it on <html>; when it says nothing, the
-     media query decides — a sandboxed iframe cannot read the host's class,
-     which is why the preference is asked for rather than inferred. */
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0a0a0b;
-      --bg-surface: #111113;
-      --bg-elevated: #1a1a1d;
-      --bg-hover: #222226;
-      --accent-hover: #fb923c;
-      --accent-muted: rgba(249, 115, 22, 0.15);
-      --text: #ececef;
-      --text-secondary: #a1a1aa;
-      --text-muted: #63636e;
-      --border: #27272a;
-      --border-light: #3f3f46;
-    }
-  }
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --bg: #0a0a0b;
-    --bg-surface: #111113;
-    --bg-elevated: #1a1a1d;
-    --bg-hover: #222226;
-    --accent-hover: #fb923c;
-    --accent-muted: rgba(249, 115, 22, 0.15);
-    --text: #ececef;
-    --text-secondary: #a1a1aa;
-    --text-muted: #63636e;
-    --border: #27272a;
-    --border-light: #3f3f46;
-  }
-
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
@@ -102,7 +69,7 @@
        item — so without `min-width` the card can size the page rather than
        the page sizing the card. */
     min-width: 0;
-    grid-template-columns: clamp(128px, 26cqi, 188px) minmax(0, 1fr);
+    grid-template-columns: clamp(150px, 34cqi, 260px) minmax(0, 1fr);
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -241,33 +208,6 @@
   .crumbs .sep { color: var(--border-light); }
   .crumbs b { color: var(--text-secondary); font-weight: 500; }
 
-  .headline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-
-  /* Element type. The pill is the same for every kind so the row stays calm;
-     the dot carries the colour, from the Studio palette
-     (frontend/src/shared/elementColors.ts). */
-  .kind {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-family: var(--mono);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: var(--text);
-    color: var(--bg-surface);
-  }
-  .kind .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
-  .shape { font-size: 12px; color: var(--text-muted); }
-  /* Which server, which tool: a card outlives the conversation that produced
-     it, and should still say where it came from. */
-  .origin { margin-left: auto; font-size: 12px; color: var(--text-muted); }
-
-  .rule { height: 1px; background: var(--border); }
-
   /* ---- the quote ---------------------------------------------------- */
 
   .quote { overflow-wrap: anywhere; min-width: 0; }
@@ -346,44 +286,6 @@
   .md-table tbody tr:hover { background: var(--bg-hover); }
   .md-table tbody tr:last-child td { border-bottom: none; }
 
-  /* ---- provenance --------------------------------------------------- */
-
-  .meta {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
-    gap: 14px 20px;
-  }
-  .meta div { min-width: 0; }
-  .meta dt {
-    font-size: 10px;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    font-weight: 600;
-    margin-bottom: 4px;
-  }
-  .meta dd {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--text-secondary);
-    overflow-wrap: anywhere;
-  }
-  /* The server tally belongs in the last column, beside the citation it is
-     counting, not wherever the flow happens to put it. */
-
-  /* The anchor sits beside the buttons that copy it, truncated: it is there
-     to be recognised, not read. */
-  .anchor {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-muted);
-    flex: 1 1 200px;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   /* ---- actions ------------------------------------------------------ */
 
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -404,6 +306,52 @@
   button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-muted); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .said { font-size: 12px; color: var(--accent); }
+
+  /* ---- the proof (#363) --------------------------------------------- */
+  /* One claim the back of the room can read: this is the document's own
+     text, at the place cited. Then the passage, large. */
+  .proof { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .badge-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    background: #15803d;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .pageno { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .pageno .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .crumbs { font-size: 12.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .crumbs b { color: var(--text-secondary); font-weight: 700; }
+  .quote { font-size: 20px; line-height: 1.45; font-weight: 500; color: var(--text); }
+  .quote.as-title { font-size: 28px; line-height: 1.25; }
+  /* A long passage stays a passage, not a wall: seven lines, faded, and the
+     rest one click away. */
+  .quote.clamped {
+    max-height: calc(1.45em * 7);
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent);
+    mask-image: linear-gradient(to bottom, #000 72%, transparent);
+  }
+  .more {
+    justify-self: start;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent-hover);
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .note { font-size: 14px; color: var(--text-secondary); }
+  .row button { font-size: 15px; font-weight: 700; padding: 11px 18px; min-height: 44px; border-radius: 10px; }
+  .row button.primary { background: #111113; border-color: #111113; color: #fff; }
 
   /* ---- the expanded page -------------------------------------------- */
   /* Lives on <body>, not inside <main>: `main` carries the fit zoom, and an
@@ -475,7 +423,20 @@
   // What the pill says. Only where docling's own word would mislead a reader:
   // "span" is the server's name for a range of elements, "passage" is the
   // reader's.
-  const KIND_LABELS = { span: "passage", section_header: "titre de section" };
+  const KIND_LABELS = {
+    span: "passage",
+    section_header: "titre de section",
+    title: "titre",
+    text: "paragraphe",
+    paragraph: "paragraphe",
+    list_item: "élément de liste",
+    table: "tableau",
+    picture: "figure",
+    caption: "légende",
+    footnote: "note",
+    formula: "formule",
+    code: "code",
+  };
   const colorFor = (label) => {
     const key = LABEL_ALIASES[label] || label;
     return ELEMENT_COLORS[key] || UNKNOWN_ELEMENT_COLOR;
@@ -576,8 +537,6 @@
 
   // ---- view -----------------------------------------------------------
 
-  const short = (id) => (id && id.length > 12 ? id.slice(0, 8) + "…" : id || "—");
-  const kb = (bytes) => (bytes ? Math.round(bytes / 1024) + " KB" : null);
 
   // `deep_link` is absent unless the server knows Studio's URL
   // (MCP_STUDIO_BASE_URL). http(s) only: the host opens whatever it is handed.
@@ -591,15 +550,12 @@
       ? String(number).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f")
       : "—";
   };
-  const shortHash = (h) => {
-    const hex = String(h || "").replace(/^sha256:/, "");
-    return hex ? "sha256:" + hex.slice(0, 12) + "…" : "—";
-  };
 
   // A heading is the card's title. So is anything short enough to read as
   // one — a date, a figure caption, a clause number — because setting four
   // words as body text under a rule looks like an accident.
   const TITLE_CHARS = 90;
+  const LONG_CHARS = 420;
   const HEADING_LABELS = new Set(["title", "section_header", "page_header", "caption"]);
 
   let current = null;
@@ -623,6 +579,8 @@
     // short it reads — never the card's title.
     const asTitle =
       label !== "span" && (HEADING_LABELS.has(label) || stats.chars <= TITLE_CHARS);
+    // Prose past a few lines folds; a table never does — cut rows lie.
+    const longText = !asTitle && !stats.rows && stats.chars > LONG_CHARS;
 
     const crumbs = (view.headings || []).length
       ? `<nav class="crumbs">${(view.headings || [])
@@ -630,10 +588,6 @@
           .join('<span class="sep">›</span>')}</nav>`
       : "";
 
-    const shape = stats.rows
-      ? `${num(stats.rows)} lignes × ${stats.columns} colonnes`
-      : `${num(stats.chars)} caractères`;
-    const cost = view.est_tokens ? ` · ≈ ${num(view.est_tokens)} tokens` : "";
 
     // The rail's picture: the page thumbnail this view fetches for itself.
     const sheet = `<button type="button" class="sheet pending" id="page-sheet" disabled></button>`;
@@ -646,33 +600,19 @@
           <div class="track" id="track" hidden><span style="width:0"></span></div>
         </aside>
         <div class="body">
-          ${crumbs}
-          <div class="headline">
-            <span class="kind"><span class="dot" style="background:${esc(
-              color
-            )}"></span>${esc(kind)}</span>
-            <span class="shape">${esc(shape)}${cost}</span>
-            <span class="origin">docling-studio · show_citation</span>
+          <div class="proof">
+            <span class="badge-ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+              aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Texte exact du document</span>
+            <span class="pageno"><span class="dot" style="background:${esc(color)}"></span>${esc(kind)} · page ${esc(view.page ?? "—")}</span>
           </div>
-          <div class="quote${asTitle ? " as-title" : ""}">${html}</div>
-          <div class="rule"></div>
-          <dl class="meta">
-            <div><dt>Element</dt><dd>${esc(view.ref)}</dd></div>
-            <div><dt>Document</dt><dd title="${esc(view.document_id)}">${esc(
-              short(view.document_id)
-            )}</dd></div>
-            <div><dt>Parse version</dt><dd title="${esc(view.version_id)}">${esc(
-              short(view.version_id)
-            )}</dd></div>
-            <div><dt>Quote hash</dt><dd title="${esc(view.quote_hash)}">${esc(
-              shortHash(view.quote_hash)
-            )}</dd></div>
-          </dl>
+          ${crumbs}
+          <div class="quote${asTitle ? " as-title" : ""}${longText ? " clamped" : ""}" id="quote">${html}</div>
+          ${longText ? '<button type="button" class="more" data-act="more">Lire la suite</button>' : ""}
+          <p class="note">Texte et page fournis par le serveur, depuis l’analyse Docling, à l’endroit cité.</p>
           <div class="row">
-            <button class="primary" data-act="copy">Copier la citation</button>
-            <button data-act="anchor">Copier l'ancre</button>
-            ${isAbsolute(view.deep_link) ? '<button data-act="open">Ouvrir dans Studio</button>' : ""}
-            <span class="anchor" title="${esc(view.uri)}">${esc(view.uri)}</span>
+            <button data-act="copy">Copier la citation</button>
+            ${isAbsolute(view.deep_link) ? '<button class="primary" data-act="open">Ouvrir dans Docling Studio</button>' : ""}
             <span class="said" id="said"></span>
           </div>
         </div>
@@ -697,12 +637,17 @@
   }
 
   function act(kind, view) {
-    if (kind === "copy") {
-      copy(`"${view.quote}" — ${view.uri}`, "Citation copiée");
+    if (kind === "more") {
+      const quote = document.getElementById("quote");
+      const folded = quote?.classList.toggle("clamped");
+      const button = root.querySelector('[data-act="more"]');
+      if (button) button.textContent = folded ? "Lire la suite" : "Réduire";
+      fitToFrame(true);
+      reportSize();
       return;
     }
-    if (kind === "anchor") {
-      copy(view.uri, "Ancre copiée");
+    if (kind === "copy") {
+      copy(`"${view.quote}" — ${view.uri}`, "Citation copiée");
       return;
     }
     if (kind === "open") {

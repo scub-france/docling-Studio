@@ -213,3 +213,32 @@ class TestHeadlessDocument:
     async def test_a_virtual_page_read_maps_to_itself(self):
         sources, _ = await project(reads=[read("#/pages/2")], payload=FLAT)
         assert status_of(sources) == {"#/pages/2": STATUS_READ}
+
+
+class TestSegments:
+    """The bar the card draws: the whole document, section by section."""
+
+    async def test_the_segments_add_up_to_the_document(self):
+        sources, outline = await project(reads=[read(PREAVIS_SECTION)])
+        assert sum(segment.tokens for segment in sources.segments) == outline.total_est_tokens
+        assert [s.ref for s in sources.segments][:4] == [
+            TITLE,
+            ARTICLE_12,
+            PREAVIS_SECTION,
+            ARTICLE_13,
+        ]
+
+    async def test_each_segment_says_what_happened_to_it(self):
+        sources, _ = await project(reads=[read(ARTICLE_13)], cited=[cite(PREAVIS_REF)])
+        status = {segment.ref: segment.status for segment in sources.segments}
+        assert status[ARTICLE_13] == STATUS_READ
+        assert status[PREAVIS_SECTION] == STATUS_CITED
+        assert status[TITLE] == "unread"
+
+    async def test_a_section_read_whole_lights_its_subsections(self):
+        """Reading Article 12 reads 12.2 with it."""
+        sources, _ = await project(reads=[read(ARTICLE_12)])
+        status = {segment.ref: segment.status for segment in sources.segments}
+        assert status[ARTICLE_12] == STATUS_READ
+        assert status[PREAVIS_SECTION] == STATUS_READ
+        assert status[ARTICLE_13] == "unread"

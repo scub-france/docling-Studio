@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 from domain.element_reader import element_text, section_refs
 from domain.navigation import read_cost
 from domain.outline_locate import containing_chain, flatten, heading_ranges
+from domain.source_bar import SourceSegment, build_segments
 from domain.spans import span_start
 
 if TYPE_CHECKING:
@@ -134,6 +135,8 @@ class SourceMap:
     nodes: list[SourceNode]
     hops: list[SourceHop]
     totals: SourceTotals
+    # The whole document, section by section — the bar the card draws.
+    segments: list[SourceSegment] = field(default_factory=list)
 
 
 def build_source_map(
@@ -167,6 +170,7 @@ def build_source_map(
         nodes=trail.nodes(flat),
         hops=hops,
         totals=_totals(outline, len(flat), hops, covered, index),
+        segments=build_segments(flat, trail.status, trail.reached),
     )
 
 

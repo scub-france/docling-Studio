@@ -162,6 +162,9 @@ The server resolves them against the one parse they all pin, then returns:
   from it;
 - **the map**: the same reads placed on the outline, in document order. Each
   section is marked `cited`, `read`, or `path` (an ancestor);
+- **the segments**: every section of the document, each with the tokens of
+  its own text and whether it was read, so the card can draw the whole
+  document as a bar;
 - **the ratio**: "2 of 5 rounds · read 2 of 25 sections — ~531 of 29,745
   tokens (1.8 %)". A section counts whole, once, even when a read stopped at
   its budget, so the figure errs against the agent. Past the cap it reads "6
@@ -179,11 +182,22 @@ Studio link per section.
 On hosts that support MCP Apps (SEP-1865), `show_citation` and
 `show_sources` render inline cards:
 
-- the citation card shows the passage highlighted on its page, and can open
-  the page full screen;
-- the sources card shows the map and the reading order, then the path: a page
-  thumbnail per section read, the cited passages boxed, a lens to zoom and
-  leaf through pages, and the ratio.
+- the **citation card** says one thing: *texte exact du document*. It shows
+  the passage boxed on its page, then the passage itself, large; a long one
+  folds to seven lines. No ids or hashes;
+- the **sources card** opens on the share of the document read, as one large
+  figure ("9,4 % du document lu"). Below it:
+  - the whole document as a bar, one segment per section, each as wide as its
+    own text, with the sections read lit;
+  - the rounds that read them, fanned out under the bar;
+  - each round with its *pourquoi* and its *trouvé*.
+
+  A second tab, *Parcours*, shows one real page per round, the cited
+  passages boxed, empty slots for the rounds not needed, and a lens to zoom
+  and leaf through pages.
+
+Both cards are light only, so they read the same off a projector whatever
+the host's theme. Their labels are in French.
 
 Page images travel only between the card and the server, through two
 app-only tools (`get_citation_image`, `get_source_page`). They never enter the
