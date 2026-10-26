@@ -45,9 +45,7 @@ class ToolErrors:
             return False
         if isinstance(exc, NavigationServiceError | AnchorParseError):
             # Includes NavigationUnavailableError — "still booting" is a
-            # service state, not a crash, and the agent can act on it. And
-            # the whole investigation family (#329), whose rejections are
-            # part of the protocol rather than failures of it.
+            # service state, not a crash, and the agent can act on it.
             raise ToolError(str(exc)) from exc
         # Anything else is a crash, and its text belongs to the server log:
         # an OSError names the storage path, a driver error the SQL.

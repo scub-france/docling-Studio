@@ -59,8 +59,6 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
         lambda: _tools_from(app),
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
-        cache_ttl_seconds=settings.mcp_cache_ttl_seconds,
-        investigations=settings.mcp_investigation_enabled,
     )
     mcp_app = server.streamable_http_app(
         streamable_http_path=MCP_PATH,
@@ -80,9 +78,8 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
     app.router.routes.extend(mcp_app.routes)
 
     logger.warning(
-        "MCP document server mounted at %s — UNAUTHENTICATED: it reads every document "
-        "and writes the investigation journal. Keep it on localhost or behind an "
-        "authenticating proxy.",
+        "MCP document server mounted at %s — UNAUTHENTICATED: it reads every document. "
+        "Keep it on localhost or behind an authenticating proxy.",
         MCP_PATH,
     )
     return server.session_manager.run()

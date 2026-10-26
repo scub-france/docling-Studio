@@ -118,19 +118,11 @@ def citation_ref(citation: Citation) -> CitationRef:
 
 
 def citation_out(citation: Citation) -> CitationOut:
-    bbox = citation.bbox
     return CitationOut(
         uri=citation.uri,
         ref=citation.ref,
         label=citation.label,
-        quote=neutralise(citation.quote),
-        quote_hash=citation.quote_hash,
-        headings=_neutralise_all(list(citation.headings)),
         page=citation.page,
-        bbox=[bbox.left, bbox.top, bbox.right, bbox.bottom] if bbox else None,
-        coord_origin=bbox.coord_origin if bbox else None,
-        page_width=bbox.page_width if bbox else None,
-        page_height=bbox.page_height if bbox else None,
         deep_link=citation.deep_link,
     )
 

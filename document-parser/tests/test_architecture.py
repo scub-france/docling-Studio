@@ -8,7 +8,7 @@ Rules enforced:
 - services -> no import from api, infra, persistence
 - api      -> no import from infra, persistence
 - infra    -> no import from api, services
-- mcp_adapter -> no import from api, infra, persistence (incl. the #329 journal)
+- mcp_adapter -> no import from api, infra, persistence
 - persistence -> no import from api, services, infra
 - domain   -> no import of fastapi, sqlalchemy, httpx, opensearchpy
 - services -> no import of API or infrastructure adapter packages
@@ -219,15 +219,14 @@ class TestDocumentAgentServicesAreFrameworkFree:
         "citation_service",
         "citation_image_service",
         "parse_loader",
-        "investigation_service",
-        "investigation_adjudicator",
+        "source_service",
     )
 
-    # Per-module, not one shared set. #329's journal legitimately composes the
-    # reading and citing services (the composition root injects them, exactly
-    # as `NavigationService` already takes a `CitationService`), and widening
-    # a single allow-list to let it would have stopped the rule biting for the
-    # four modules that came first.
+    # Per-module, not one shared set. `show_sources` (#363) legitimately
+    # composes the reading and citing services (the composition root injects
+    # them, exactly as `NavigationService` already takes a `CitationService`),
+    # and widening a single allow-list to let it would have stopped the rule
+    # biting for the four modules that came first.
     PEERS: ClassVar[dict[str, set[str]]] = {
         "navigation_service": {
             "citation_service",
@@ -238,18 +237,12 @@ class TestDocumentAgentServicesAreFrameworkFree:
         "citation_service": {"navigation_config", "navigation_errors", "parse_loader"},
         "citation_image_service": {"navigation_config", "navigation_errors", "parse_loader"},
         "parse_loader": {"navigation_config", "navigation_errors"},
-        "investigation_service": {
+        "source_service": {
             "citation_service",
-            "investigation_adjudicator",
             "navigation_config",
             "navigation_errors",
             "navigation_service",
             "parse_loader",
-        },
-        "investigation_adjudicator": {
-            "citation_service",
-            "navigation_errors",
-            "navigation_service",
         },
     }
 

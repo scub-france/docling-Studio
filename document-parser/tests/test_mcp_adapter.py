@@ -36,13 +36,10 @@ TOOL_NAMES = {"find_documents", "get_outline", "read_element", "verify_citation"
 @asynccontextmanager
 async def _client(service=None, *, provider=None):
     navigation = provider or (lambda: service or make_document_tools())
-    # apps=False, investigations=False: this module owns the *read* contract.
-    # The Apps extension has tests/test_mcp_apps.py and the journal (#329) has
-    # tests/test_mcp_investigation.py; pinning them out here is what makes the
-    # "exactly these tools" assertion below mean something.
-    async with Client(
-        build_mcp_server(navigation, version="test", apps=False, investigations=False)
-    ) as client:
+    # apps=False: this module owns the *read* contract. The two cards have
+    # tests/test_mcp_apps.py and tests/test_mcp_sources_app.py; pinning them out
+    # here is what makes the "exactly these tools" assertion below mean something.
+    async with Client(build_mcp_server(navigation, version="test", apps=False)) as client:
         yield client
 
 
@@ -342,20 +339,7 @@ NESTED_FIELDS = {
         "page",
         "children",
     },
-    "CitationOut": {
-        "uri",
-        "ref",
-        "label",
-        "quote",
-        "quote_hash",
-        "headings",
-        "page",
-        "bbox",
-        "coord_origin",
-        "page_width",
-        "page_height",
-        "deep_link",
-    },
+    "CitationOut": {"uri", "ref", "label", "page", "deep_link"},
 }
 
 
@@ -394,9 +378,19 @@ class TestPublishedContract:
             "stale_version",
         }
 
-    async def test_the_geometry_travels_with_verification_not_with_every_read(self):
-        # Only something that draws or checks needs a box; a read that carried
-        # one per element paid ~130 tokens a citation for nothing.
+    async def test_the_text_copy_is_the_same_json_compact(self):
+        # The text block a host may hand the model is the structured result
+        # again — compact, so no call pays for indentation (#363).
+        async with _client() as client:
+            result = await client.call_tool("get_outline", {"document_id": DOC_ID})
+        text = result.content[0].text
+        assert json.loads(text) == result.structured_content
+        assert "\n" not in text and ": " not in text
+
+    async def test_verification_hands_the_model_what_it_cites_not_geometry(self):
+        # The cards draw the passage through their own page tools (#363); a
+        # box, a page size or a hash in the model's context is paid for and
+        # never read.
         async with _client() as client:
             check = _payload(
                 await client.call_tool(
@@ -405,8 +399,11 @@ class TestPublishedContract:
                 )
             )
         citation = check["citation"]
-        assert citation["coord_origin"] == "TOPLEFT"
-        assert (citation["page_width"], citation["page_height"]) == (612.0, 792.0)
+        assert citation["uri"] == anchor_uri(PREAVIS_REF)
+        assert citation["page"] == 1
+        assert citation["deep_link"].startswith("http://localhost:3000/analyses/")
+        for withheld in ("bbox", "coord_origin", "page_width", "page_height", "quote_hash"):
+            assert withheld not in citation
 
     async def test_a_stale_anchor_reports_its_own_status(self):
         jobs = [make_job()]
@@ -468,45 +465,3 @@ class TestNextStep:
 
         assert set(_VERIFICATION_NEXT_STEP) == set(CitationStatus)
         assert all(text.strip() for text in _VERIFICATION_NEXT_STEP.values())
-
-
-class TestCacheHints:
-    """SEP-2549: the only caching seam the protocol offers this server."""
-
-    async def test_the_deploy_scoped_listings_carry_a_freshness_hint(self):
-        server = build_mcp_server(
-            lambda: make_document_tools(), version="test", apps=False, cache_ttl_seconds=600
-        )
-        async with Client(server) as client:
-            tools = await client.list_tools()
-            prompts = await client.list_prompts()
-        assert tools.ttl_ms == 600_000
-        # Public: the tool list is identical for every caller of this server.
-        assert tools.cache_scope == "public"
-        assert prompts.ttl_ms == 600_000
-
-    async def test_the_ui_template_is_cacheable_too(self):
-        from mcp_adapter.apps import CITATION_APP_URI
-
-        server = build_mcp_server(
-            lambda: make_document_tools(), version="test", apps=True, cache_ttl_seconds=600
-        )
-        async with Client(server) as client:
-            read = await client.read_resource(CITATION_APP_URI)
-        assert read.ttl_ms == 600_000
-
-    async def test_zero_disables_it_rather_than_advertising_staleness(self):
-        server = build_mcp_server(
-            lambda: make_document_tools(), version="test", apps=False, cache_ttl_seconds=0
-        )
-        async with Client(server) as client:
-            tools = await client.list_tools()
-        assert tools.ttl_ms == 0
-
-    async def test_tool_calls_are_never_hinted(self):
-        # `tools/call` is not in CACHEABLE_METHODS — the protocol puts caching
-        # where this server's cost is not, and pretending otherwise would let
-        # a host serve a stale read.
-        from mcp.server.caching import CACHEABLE_METHODS
-
-        assert "tools/call" not in CACHEABLE_METHODS

@@ -22,7 +22,8 @@ from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from domain.navigation import BoundingBox
 from mcp_adapter import build_mcp_server
-from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI, INVESTIGATION_APP_HTML
+from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI
+from mcp_adapter.sources_view import SOURCES_APP_HTML
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError
 from tests.navigation_fixtures import (
@@ -508,9 +509,7 @@ class TestTemplate:
         assert "#94A3B8" in CITATION_APP_HTML  # the unknown-type fallback
 
 
-@pytest.mark.parametrize(
-    "html", [CITATION_APP_HTML, INVESTIGATION_APP_HTML], ids=["citation", "investigation"]
-)
+@pytest.mark.parametrize("html", [CITATION_APP_HTML, SOURCES_APP_HTML], ids=["citation", "sources"])
 class TestHostContract:
     """What SEP-1865 asks of both views — a strict host enforces each."""
 

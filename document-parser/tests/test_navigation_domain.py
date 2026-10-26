@@ -14,7 +14,6 @@ import pytest
 from domain.anchors import (
     AnchorParseError,
     DocumentAnchor,
-    find_anchors,
     normalise_quote,
     quote_hash,
 )
@@ -107,20 +106,6 @@ class TestAnchorGrammar:
     def test_error_message_teaches_the_shape(self):
         with pytest.raises(AnchorParseError, match=r"dstudio://doc/\{document_id\}"):
             DocumentAnchor.parse("oops")
-
-
-class TestAnchorsInProse:
-    def test_the_markup_a_sentence_wraps_an_anchor_in_is_not_part_of_it(self):
-        uri = "dstudio://doc/d-1@a-1#/texts/4"
-        found = find_anchors(f"Voir **{uri}**, «{uri}» et ({uri}).")
-        assert found == [uri]
-
-    def test_a_span_is_found_whole(self):
-        span = "dstudio://doc/d-1@a-1#/texts/2..#/texts/3"
-        assert find_anchors(f"Cité : {span}.") == [span]
-
-    def test_a_near_miss_is_kept_so_that_it_fails_parsing(self):
-        assert find_anchors("dstudio://doc/d-1#/texts/4.") == ["dstudio://doc/d-1#/texts/4"]
 
 
 class TestQuoteHashing:

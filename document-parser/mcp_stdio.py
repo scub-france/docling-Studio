@@ -52,7 +52,6 @@ async def _serve() -> None:
     from persistence.analysis_repo import SqliteAnalysisRepository
     from persistence.database import init_db
     from persistence.document_repo import SqliteDocumentRepository
-    from persistence.investigation_repo import SqliteInvestigationRepository
 
     # Applies pending migrations; idempotent against an up-to-date database.
     await init_db()
@@ -60,14 +59,11 @@ async def _serve() -> None:
     tools = build_document_tools(
         SqliteDocumentRepository(),
         SqliteAnalysisRepository(),
-        SqliteInvestigationRepository(),
     )
     server = build_mcp_server(
         lambda: tools,
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
-        cache_ttl_seconds=settings.mcp_cache_ttl_seconds,
-        investigations=settings.mcp_investigation_enabled,
     )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()

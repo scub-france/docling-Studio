@@ -26,10 +26,10 @@ from services.citation_service import CitationService
 from services.document_service import DocumentConfig, DocumentService
 from services.document_tools import DocumentTools
 from services.ingestion_service import IngestionConfig, IngestionService
-from services.investigation_service import InvestigationService
-from services.navigation_config import InvestigationConfig, NavigationConfig
+from services.navigation_config import NavigationConfig
 from services.navigation_service import NavigationService
 from services.parse_loader import ParseLoader
+from services.source_service import SourceService
 from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
@@ -237,17 +237,15 @@ def build_chunk_service(**repos) -> ChunkService:
     )
 
 
-def build_document_tools(document_repo, analysis_repo, investigation_repo) -> DocumentTools:
+def build_document_tools(document_repo, analysis_repo) -> DocumentTools:
     """The document-agent services (MCP lot 1+).
 
     Wired unconditionally: they are orchestration over repositories the app
     already has, so there is nothing to fail at boot. Whether the surface is
-    *exposed* is a separate decision (`MCP_ENABLED`), taken in `main.py`, and
-    whether the journal's tools are published is another
-    (`MCP_INVESTIGATION_ENABLED`), taken in the adapter.
+    *exposed* is a separate decision (`MCP_ENABLED`), taken in `main.py`.
 
     One `ParseLoader` is shared by all four so a document read, then cited,
-    then shown, then recorded is indexed once.
+    then shown on its page, then mapped as a source is indexed once.
     """
     config = NavigationConfig(
         studio_base_url=settings.mcp_studio_base_url,
@@ -265,15 +263,8 @@ def build_document_tools(document_repo, analysis_repo, investigation_repo) -> Do
         navigation=navigation,
         citations=citations,
         images=CitationImageService(parses=parses, rasterizer=_build_rasterizer(), config=config),
-        investigations=InvestigationService(
-            parses=parses,
-            navigation=navigation,
-            citations=citations,
-            investigations=investigation_repo,
-            config=InvestigationConfig(
-                max_attempts_per_step=settings.mcp_max_attempts_per_step,
-                max_steps_per_investigation=settings.mcp_max_steps_per_investigation,
-            ),
+        sources=SourceService(
+            parses=parses, navigation=navigation, citations=citations, config=config
         ),
     )
 

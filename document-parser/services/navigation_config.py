@@ -1,4 +1,4 @@
-"""Budgets for the document-agent surface — one place, three consumers.
+"""Budgets for the document-agent surface — one place, every consumer.
 
 Every value is a server-side ceiling: a client argument may lower it, never
 raise it. Kept in its own module because the parse loader, the navigation
@@ -40,22 +40,9 @@ class NavigationConfig:
     image_min_dpi: int = 40
     image_page_max_bytes: int = 400_000
 
-
-@dataclass(frozen=True)
-class InvestigationConfig:
-    """Ceilings for the investigation journal (#329).
-
-    Same rule as `NavigationConfig`: a client may plan fewer steps or spend
-    fewer attempts, never more. `max_attempts_per_step` is the one that
-    changes behaviour rather than cost — it is what turns a bad ref into a
-    second try instead of a wrong answer, and what eventually closes a step
-    as `unanswered` rather than letting an agent grind.
-    """
-
-    max_attempts_per_step: int = 3
-    max_steps_per_investigation: int = 12
-    # Every string the journal stores verbatim. A question, a why or a
-    # thought is a sentence or two; an answer is a few paragraphs of prose
-    # with its anchors.
-    max_text_chars: int = 2_000
-    max_answer_chars: int = 20_000
+    # --- show_sources ----------------------------------------------------
+    # The anchors one answer reads and cites: a handful in practice, bounded
+    # so a runaway list cannot turn one call into a full-document walk. The
+    # question and each `why` are a sentence or two, stored nowhere.
+    max_source_anchors: int = 50
+    max_source_text_chars: int = 2_000

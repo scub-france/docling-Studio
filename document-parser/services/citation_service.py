@@ -183,7 +183,7 @@ class CitationService:
             page=element.page,
             bbox=element.bbox,
             headings=list(element.headings),
-            deep_link=self._deep_link(version_id, element),
+            deep_link=self.deep_link(version_id, element),
         )
 
     # ------------------------------------------------------------------
@@ -276,7 +276,7 @@ class CitationService:
             start += 1
         return start
 
-    def _deep_link(self, version_id: str, element: ResolvedElement) -> str | None:
+    def deep_link(self, version_id: str, element: ResolvedElement) -> str | None:
         """The Studio URL that opens the cited parse on this element — None
         without a configured base: a bare path is no link for a reader."""
         base = self._config.studio_base_url.rstrip("/")

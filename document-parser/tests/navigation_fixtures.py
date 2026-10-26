@@ -427,8 +427,6 @@ def make_document_tools(
     jobs=None,
     config=None,
     rasterizer=None,
-    investigations=None,
-    investigation_config=None,
 ):
     """The four document-agent services over in-memory repositories.
 
@@ -441,10 +439,10 @@ def make_document_tools(
     from services.citation_image_service import CitationImageService
     from services.citation_service import CitationService
     from services.document_tools import DocumentTools
-    from services.investigation_service import InvestigationService
-    from services.navigation_config import InvestigationConfig, NavigationConfig
+    from services.navigation_config import NavigationConfig
     from services.navigation_service import NavigationService
     from services.parse_loader import ParseLoader
+    from services.source_service import SourceService
 
     docs = documents if documents is not None else [make_document()]
     if jobs is not None:
@@ -471,12 +469,8 @@ def make_document_tools(
         images=CitationImageService(
             parses=parses, rasterizer=rasterizer or FakeRasterizer(), config=settings
         ),
-        investigations=InvestigationService(
-            parses=parses,
-            navigation=navigation,
-            citations=citations,
-            investigations=investigations or FakeInvestigationRepository(),
-            config=investigation_config or InvestigationConfig(),
+        sources=SourceService(
+            parses=parses, navigation=navigation, citations=citations, config=settings
         ),
     )
 
@@ -490,99 +484,3 @@ def anchor_uri(ref: str, *, doc_id: str = DOC_ID, job_id: str = JOB_ID) -> str:
     from domain.anchors import DocumentAnchor
 
     return DocumentAnchor(doc_id, job_id, ref).uri
-
-
-class FakeInvestigationRepository:
-    """An in-memory `InvestigationRepository` — the journal without SQLite.
-
-    Service tests are about adjudication and budgets, not about rows; the
-    persistence contract has its own suite (`test_investigation_repo.py`)
-    running against a real database. The one behaviour reproduced faithfully
-    here is the cap check inside `record_attempt`, because the service's
-    exhaustion path hangs off the exception it raises.
-    """
-
-    def __init__(self) -> None:
-        self.investigations: dict = {}
-
-    async def create(self, investigation) -> None:
-        self.investigations[investigation.id] = investigation
-
-    async def find_by_id(self, investigation_id):
-        return self.investigations.get(investigation_id)
-
-    async def add_steps(self, investigation_id, steps) -> None:
-        self._replace(investigation_id, steps=list(steps))
-
-    async def record_attempt(self, attempt, *, cap: int):
-        from dataclasses import replace
-
-        from domain.ports import AttemptBudgetSpentError
-
-        step = self._step(attempt.step_id)
-        if step is None or len(step.attempts) >= cap:
-            raise AttemptBudgetSpentError(attempt.step_id)
-        stored = replace(attempt, ordinal=len(step.attempts) + 1)
-        step.attempts.append(stored)
-        return stored
-
-    async def settle_attempt(self, attempt) -> None:
-        step = self._step(attempt.step_id)
-        for index, existing in enumerate(step.attempts):
-            if existing.id == attempt.id:
-                step.attempts[index] = attempt
-
-    async def set_step_state(self, step_id, state) -> None:
-        from dataclasses import replace
-
-        from domain.investigation import StepState
-
-        for investigation in self.investigations.values():
-            steps = investigation.steps
-            for index, step in enumerate(steps):
-                if step.id == step_id:
-                    if step.state is StepState.PENDING or state is StepState.ANSWERED:
-                        steps[index] = replace(step, state=state)
-                    return
-
-    async def mark_stale(self, investigation_id) -> None:
-        self._replace(investigation_id, stale=True)
-
-    async def close(self, investigation_id, *, answer: str, at) -> bool:
-        from domain.investigation import InvestigationState
-
-        if self.investigations[investigation_id].state is not InvestigationState.OPEN:
-            return False
-        self._replace(
-            investigation_id,
-            state=InvestigationState.CLOSED,
-            answer=answer,
-            closed_at=at,
-        )
-        return True
-
-    # -- helpers ---------------------------------------------------------
-
-    def _replace(self, investigation_id, **changes) -> None:
-        from dataclasses import replace
-
-        current = self.investigations[investigation_id]
-        self.investigations[investigation_id] = replace(current, **changes)
-
-    def _step(self, step_id):
-        for investigation in self.investigations.values():
-            for step in investigation.steps:
-                if step.id == step_id:
-                    return step
-        return None
-
-
-async def open_planned_investigation(tools, *, questions=("Quel est le préavis ?",)):
-    """Open an investigation on the fixture document and plan `questions`."""
-    investigation, _ = await tools.investigations.open(
-        document_id=DOC_ID, question="Comment résilier ?"
-    )
-    planned = await tools.investigations.plan(
-        investigation.id, [(question, "because") for question in questions]
-    )
-    return planned

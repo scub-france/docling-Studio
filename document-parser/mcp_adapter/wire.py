@@ -145,27 +145,19 @@ class OutlineResult:
 
 @dataclass(frozen=True)
 class CitationOut:
-    """A verifiable pointer into one parse of one document.
+    """The anchor a verified quote should cite — and nothing a model cannot use.
 
-    `bbox` is `[left, top, right, bottom]` in the parse's own coordinates —
-    read `coord_origin` before the numbers. With `BOTTOMLEFT` (what docling
-    emits for PDF-native parses) the y axis grows upwards, so `top` is the
-    LARGER number and the height is `top - bottom`; with `TOPLEFT` it is the
-    smaller one and the height is `bottom - top`. `page_height` is given so
-    the box can be flipped between the two without another call.
+    Geometry (box, page size, coordinate origin) and the quote's hash stay
+    server-side (#363): the two cards draw the passage themselves, through
+    their own app-only page tools, so sending them to the model was paying for
+    numbers it never reads. The model gets what it cites, the page it names,
+    and the link that opens the passage in Studio.
     """
 
     uri: str
     ref: str
     label: str
-    quote: str
-    quote_hash: str
-    headings: list[str] = field(default_factory=list)
     page: int | None = None
-    bbox: list[float] | None = None
-    coord_origin: str | None = None
-    page_width: float | None = None
-    page_height: float | None = None
     deep_link: str | None = None
 
 

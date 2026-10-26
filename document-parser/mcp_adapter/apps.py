@@ -1,8 +1,8 @@
 """MCP Apps extension — the two viewers (`io.modelcontextprotocol/ui`).
 
-`show_citation` shows one passage on its page; `show_investigation` (#329)
-shows a whole recorded investigation — the steps, the verdict on every ref
-tried, and the navigation tree those verdicts draw on the document. Each is
+`show_citation` shows one passage on its page; `show_sources` (#363) shows
+where a whole answer came from — the sections read, in order, on their pages,
+and the passages cited (see `sources_view`). Each is
 bound to one predeclared `ui://` template. That shape is the spec's, not a
 preference: SEP-1865 models UI as a *static* resource the host fetches once
 and caches, with the tool result pushed into the sandboxed iframe afterwards.
@@ -16,8 +16,8 @@ citation view exists.
 
 Degradation is a spec requirement (SEP-2133) and it is the reason this costs
 nothing to ship: a host that never advertises the extension never fetches the
-template, and both tools return their record as text: `show_investigation`
-returns what `get_investigation` does, plus its tallies.
+template, and both tools return their record as text: `show_sources` as a
+short tree a model can relay.
 """
 
 from __future__ import annotations
@@ -25,21 +25,17 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from mcp.server.apps import Apps, ResourcePermissions
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, ToolAnnotations
 
 from domain.anchors import AnchorParseError
-from domain.investigation import AttemptOutcome, StepState, step_tally
 from domain.navigation import estimate_tokens
-from mcp_adapter.investigation_wire import (
-    MapEntry,
-    TraceStep,
-    map_entries,
-    trace_steps,
-)
+from mcp_adapter.page_image import CitationImageOut, image_out
+from mcp_adapter.results import compact
+from mcp_adapter.sources_view import SOURCES_APP_HTML, register_sources_view
 from mcp_adapter.wire import neutralise
 from services.navigation_errors import NavigationServiceError
 
@@ -59,8 +55,8 @@ def _versioned_uri(name: str, html: str) -> str:
     indefinitely. Versioning the uri is the spec-shaped answer: a changed
     template is a *different resource*, one the host has never seen, so the
     fetch-once rule works for it instead of against it. Staleness is then
-    bounded by the tools/list cache (`MCP_CACHE_TTL_SECONDS`), not by how
-    long the host keeps a session open.
+    bounded by when the host next lists tools, not by how long it keeps a
+    session open.
     """
     digest = hashlib.sha256(html.encode("utf-8")).hexdigest()[:12]
     return f"ui://docling-studio/{name}.{digest}.html"
@@ -69,30 +65,7 @@ def _versioned_uri(name: str, html: str) -> str:
 CITATION_APP_HTML = (Path(__file__).parent / "citation_app.html").read_text(encoding="utf-8")
 CITATION_APP_URI = _versioned_uri("citation", CITATION_APP_HTML)
 
-INVESTIGATION_APP_HTML = (Path(__file__).parent / "investigation_app.html").read_text(
-    encoding="utf-8"
-)
-INVESTIGATION_APP_URI = _versioned_uri("investigation", INVESTIGATION_APP_HTML)
-
-
-@dataclass(frozen=True)
-class CitationImageOut:
-    """A raster for the viewer, never for the model.
-
-    `highlight` is the cited passage's box **in this image's own pixels** —
-    the renderer knows the dpi it settled on, so the view draws a rectangle
-    instead of converting page points. Present on a page thumbnail, absent on
-    a crop, which is already the passage.
-    """
-
-    data_uri: str
-    media_type: str
-    width: int
-    height: int
-    page: int
-    bytes: int
-    highlight: list[int] | None = None
-    page_count: int | None = None
+SOURCES_APP_URI = _versioned_uri("sources", SOURCES_APP_HTML)
 
 
 @dataclass(frozen=True)
@@ -131,39 +104,6 @@ class CitationView:
     next_step: str | None = None
 
 
-@dataclass(frozen=True)
-class InvestigationCard:
-    """A whole investigation, for the viewer and for a host without one.
-
-    Field for field the same record `get_investigation` returns — same
-    `reasoning`, same `map`, same mappers — plus the three numbers a card
-    states and prose would have to recount: the step tally and the attempt
-    budget each step was allowed. A viewer that showed
-    something the text payload does not carry would be a second account of
-    the investigation, and the two would drift.
-
-    `max_attempts_per_step` is what lets the card draw a budget rather than a
-    count: three marks with none of them kept says the document did not
-    answer, which a bare "3 attempts" does not.
-    """
-
-    investigation_id: str
-    document_id: str
-    version_id: str
-    filename: str
-    question: str
-    state: str
-    stale: bool
-    reasoning: list[TraceStep]
-    map: list[MapEntry]
-    steps_answered: int
-    steps_unanswered: int
-    steps_pending: int
-    attempts_kept: int
-    max_attempts_per_step: int
-    answer: str | None = None
-
-
 # What to do when the card does not appear. Phrased to hold whether or not a
 # viewer mounted: the server has no way to know.
 def _no_card(deep_link: str | None) -> str:
@@ -178,24 +118,16 @@ def _no_card(deep_link: str | None) -> str:
     )
 
 
-def build_apps_extension(
-    tools: Callable[[], DocumentTools],
-    *,
-    investigations: bool = True,
-) -> Apps:
-    """Build the Apps extension over the same lazily-resolved service.
-
-    `investigations` follows `MCP_INVESTIGATION_ENABLED`: a viewer for a
-    record the server does not keep would be a tool that always errors.
-    """
+def build_apps_extension(tools: Callable[[], DocumentTools]) -> Apps:
+    """Build the Apps extension — the two cards — over the same lazily-resolved
+    service."""
     apps = Apps()
 
-    # Names show_investigation only when the journal publishes it.
     citation_description = (
-        "Show a citation on its page, highlighted, beside its text: for when the passage "
-        "itself is the point (a figure, a number, a clause) or the reader asks to see it. "
+        "Show a citation on its page, highlighted, beside its text: for the passage that "
+        "carries the answer (a figure, a number, a clause) or one the reader asks to see. "
         "`uri`: an anchor a read returned."
-    ) + (" To show an investigation, use show_investigation." if investigations else "")
+    )
 
     @apps.tool(
         resource_uri=CITATION_APP_URI,
@@ -207,7 +139,7 @@ def build_apps_extension(
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
         description=citation_description,
     )
-    async def show_citation(uri: str) -> CitationView:
+    async def show_citation(uri: str) -> Annotated[CallToolResult, CitationView]:
         # `get_citation` is the named use case for "what does this anchor
         # point at": no quote to check, just the citation.
         try:
@@ -216,7 +148,7 @@ def build_apps_extension(
             raise ToolError(str(exc)) from exc
         except NavigationServiceError as exc:
             raise ToolError(str(exc)) from exc
-        return CitationView(
+        view = CitationView(
             uri=citation.uri,
             ref=citation.ref,
             label=citation.label,
@@ -230,6 +162,7 @@ def build_apps_extension(
             deep_link=citation.deep_link,
             next_step=_no_card(citation.deep_link),
         )
+        return compact(view)
 
     @apps.tool(
         resource_uri=CITATION_APP_URI,
@@ -253,19 +186,9 @@ def build_apps_extension(
             raise ToolError(str(exc)) from exc
         except NavigationServiceError as exc:
             raise ToolError(str(exc)) from exc
-        return CitationImageOut(
-            data_uri=image.data_uri,
-            media_type=image.media_type,
-            width=image.width,
-            height=image.height,
-            page=image.page,
-            bytes=len(image.png),
-            highlight=list(image.highlight) if image.highlight else None,
-            page_count=image.page_count,
-        )
+        return image_out(image)
 
-    if investigations:
-        _register_investigation_view(apps, tools)
+    register_sources_view(apps, tools, SOURCES_APP_URI)
 
     apps.add_html_resource(
         CITATION_APP_URI,
@@ -283,103 +206,15 @@ def build_apps_extension(
         # travels as a URL — and then the view only works while the Studio
         # backend is reachable from the host, which it is not over stdio.
     )
-    if investigations:
-        apps.add_html_resource(
-            INVESTIGATION_APP_URI,
-            INVESTIGATION_APP_HTML,
-            title="Investigation",
-            description="Shows what an agent tried in a document, and what held up.",
-            prefers_border=True,
-            # No clipboard permission and no `csp=`: the default policy already
-            # allows `img-src data:`, which is all the path view's thumbnails
-            # need. The record renders the tool result it was handed; only the
-            # path tab fetches, through `get_investigation_page`, and only when
-            # opened.
-        )
+    apps.add_html_resource(
+        SOURCES_APP_URI,
+        SOURCES_APP_HTML,
+        title="Sources",
+        description="Shows where an answer came from: the sections read, on their pages.",
+        prefers_border=True,
+        # No clipboard permission and no `csp=`: the default policy already
+        # allows `img-src data:`, which is all the path's thumbnails need. The
+        # card renders the tool result it was handed; only the path fetches,
+        # through `get_source_page`, and only when opened.
+    )
     return apps
-
-
-def _register_investigation_view(apps: Apps, tools: Callable[[], DocumentTools]) -> None:
-    """Publish the investigation viewer.
-
-    Split out so the flag guards the *registration* rather than the handler:
-    a tool that exists and always errors is worse than one that is absent,
-    because a model reads the description before it learns otherwise.
-    """
-
-    @apps.tool(
-        resource_uri=INVESTIGATION_APP_URI,
-        visibility=["model"],
-        annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
-        description=(
-            "Show an investigation as one card: its steps, every verdict, and where in the "
-            "document they landed. The way to end an investigation; it returns the same "
-            "record as get_investigation."
-        ),
-    )
-    async def show_investigation(investigation_id: str) -> InvestigationCard:
-        try:
-            report = await tools().investigations.view(investigation_id)
-        except NavigationServiceError as exc:
-            raise ToolError(str(exc)) from exc
-
-        investigation = report.investigation
-        tally = step_tally(investigation)
-        return InvestigationCard(
-            investigation_id=investigation.id,
-            document_id=investigation.document_id,
-            version_id=investigation.version_id,
-            filename=neutralise(report.filename),
-            question=neutralise(investigation.question),
-            state=str(investigation.state),
-            stale=investigation.stale,
-            reasoning=trace_steps(investigation),
-            map=map_entries(report.map),
-            steps_answered=tally[StepState.ANSWERED],
-            steps_unanswered=tally[StepState.UNANSWERED],
-            steps_pending=tally[StepState.PENDING],
-            attempts_kept=sum(
-                1
-                for step in investigation.steps
-                for attempt in step.attempts
-                if attempt.outcome is AttemptOutcome.KEPT
-            ),
-            max_attempts_per_step=tools().investigations.config.max_attempts_per_step,
-            answer=neutralise(investigation.answer) if investigation.answer else None,
-        )
-
-    @apps.tool(
-        resource_uri=INVESTIGATION_APP_URI,
-        # App-only, like `get_citation_image`, and bound to this view's own
-        # resource: a host is free to scope an app's calls to the tools its
-        # template declares, so the path view fetches through a tool that is
-        # unambiguously its.
-        visibility=["app"],
-        annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
-        description=(
-            "Internal to the investigation viewer: a page image as a data URI. Not for reading."
-        ),
-    )
-    async def get_investigation_page(
-        uri: str, max_width: int = 240, page: int | None = None
-    ) -> CitationImageOut:
-        # Same clamp as `get_citation_image(kind='page')`: the dpi ladder
-        # bounds the bytes, this bounds the work.
-        try:
-            image = await tools().images.render_page(
-                uri, max_width=max(120, min(max_width, 1600)), page=page
-            )
-        except AnchorParseError as exc:
-            raise ToolError(str(exc)) from exc
-        except NavigationServiceError as exc:
-            raise ToolError(str(exc)) from exc
-        return CitationImageOut(
-            data_uri=image.data_uri,
-            media_type=image.media_type,
-            width=image.width,
-            height=image.height,
-            page=image.page,
-            bytes=len(image.png),
-            highlight=list(image.highlight) if image.highlight else None,
-            page_count=image.page_count,
-        )

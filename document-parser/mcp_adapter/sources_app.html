@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Investigation</title>
+<title>Sources</title>
 <style>
   /* Design tokens lifted from the Studio shell (frontend/src/app/App.vue) and
      shared with citation_app.html — same names, same values, so the two
@@ -23,10 +23,9 @@
     --text-muted: #a1a1aa;
     --border: #e4e4e7;
     --border-light: #d4d4d8;
-    /* Verdict colours. Only three states are ever coloured — what the server
-       kept, what it refused, and what it has not judged yet. `path` is a
-       route rather than a finding, so it stays grey on purpose: colouring it
-       would claim something happened there. */
+    /* Source colours. Green is what the answer cites; `read` is grey-filled;
+       `path` is a route rather than a source, so it stays hollow on purpose:
+       colouring it would claim something was read there. */
     --kept: #15803d;
     --kept-bg: rgba(22, 163, 74, 0.12);
     --bad: #b91c1c;
@@ -125,23 +124,6 @@
   .origin .doc { color: var(--text-secondary); overflow-wrap: anywhere; }
   .dot-sep { opacity: 0.5; }
 
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 1px 7px;
-    border-radius: 999px;
-    border: 1px solid var(--border-light);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-  }
-  .badge.closed { color: var(--kept); border-color: var(--kept); background: var(--kept-bg); }
-  .badge.open { color: var(--accent); border-color: var(--accent); background: var(--accent-muted); }
-  .badge.stale { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
-
   /* ---- the two halves ------------------------------------------------ */
   /* A rail that answers "where in the document did this go", and a timeline
      that answers "what was tried, and what did the server make of it". */
@@ -170,9 +152,9 @@
   }
 
   /* ---- tabs ----------------------------------------------------------- */
-  /* Two readings of one record. The record is the ledger — tree + timeline,
-     every verdict in place. The path is the same steps laid out as the
-     journey they took through the document, one page thumbnail per kept ref. */
+  /* Two readings of one answer. Reading is the ledger — the map and the
+     reading order side by side. The path is the same reads laid out as the
+     journey through the document, one page thumbnail per section read. */
 
   .tabs {
     display: flex;
@@ -228,10 +210,9 @@
   .tree.collapsed h2 { margin-bottom: 0; }
 
   /* ---- the path ------------------------------------------------------- */
-  /* One tile per step, in the order they were worked, joined left to right.
-     The tile shows the page the kept ref sits on with the passage boxed; a
-     step nothing was kept for shows its state instead of borrowing a page it
-     did not earn. */
+  /* One tile per section read, in reading order, joined left to right. The
+     tile shows the page a cited passage sits on, boxed — or, for a section
+     read but not quoted, the page where it starts. */
 
   .pane-path { padding: 14px 16px 16px; }
   .flow {
@@ -270,8 +251,7 @@
     text-transform: uppercase;
     color: var(--text-muted);
   }
-  .hop-state.answered { color: var(--kept); }
-  .hop-state.unanswered { color: var(--bad); }
+  .hop-state.cited { color: var(--kept); }
   .hop .shot {
     position: relative;
     display: block;
@@ -299,10 +279,7 @@
   }
   .hop .shot:hover .glass,
   .hop .shot:focus-visible .glass { opacity: 1; }
-  .hop[data-state="answered"] .shot { border-color: var(--kept); }
-  .hop[data-state="unanswered"] .shot { border-style: dashed; border-color: var(--bad); }
-  .hop[data-state="abandoned"] .shot,
-  .hop[data-state="pending"] .shot { border-style: dashed; }
+  .hop[data-state="cited"] .shot { border-color: var(--kept); }
   .shot img { display: block; width: 100%; height: auto; }
   .shot .mark {
     position: absolute;
@@ -430,10 +407,9 @@
     justify-self: center;
     transform: translateY(-1px);
   }
-  .node[data-status="kept"] { color: var(--text); font-weight: 550; }
-  .node[data-status="kept"] .pin { background: var(--kept); }
-  .node[data-status="rejected"] .pin { background: var(--bad); }
-  .node[data-status="visited"] .pin { background: var(--text-muted); }
+  .node[data-status="cited"] { color: var(--text); font-weight: 550; }
+  .node[data-status="cited"] .pin { background: var(--kept); }
+  .node[data-status="read"] .pin { background: var(--text-muted); }
   .node[data-status="path"] .pin { background: transparent; border: 1px solid var(--border-light); }
   .node .label { overflow-wrap: anywhere; }
   .node .page { color: var(--text-muted); font-size: 11px; }
@@ -469,18 +445,6 @@
     overflow-wrap: anywhere;
   }
 
-  /* The attempt budget, spent left to right. A step is legible at a glance:
-     three filled marks and no green means the document did not answer. */
-  .pips { display: inline-flex; gap: 3px; align-items: center; white-space: nowrap; }
-  .pip {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--border-light);
-  }
-  .pip.kept { background: var(--kept); }
-  .pip.rejected { background: var(--bad); }
-  .pip.pending { background: var(--text-muted); }
-  .pip.left { background: transparent; border: 1px solid var(--border-light); }
   .state {
     font-size: 10.5px;
     font-weight: 600;
@@ -489,26 +453,28 @@
     color: var(--text-muted);
     margin-left: 7px;
   }
-  .state.answered { color: var(--kept); }
-  .state.unanswered { color: var(--bad); }
+  .state.cited { color: var(--kept); }
+  .tokens { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .open {
+    margin-left: 7px;
+    padding: 1px 7px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .open:hover { background: var(--accent-muted); }
 
   .attempts { margin: 8px 0 4px; display: grid; gap: 7px; }
   .attempt {
     border-left: 2px solid var(--border-light);
     padding: 1px 0 1px 10px;
   }
-  .attempt[data-outcome="kept"] { border-left-color: var(--kept); }
-  .attempt.rejected { border-left-color: var(--bad); }
+  .attempt[data-outcome="cited"] { border-left-color: var(--kept); }
 
-  /* The thought is the model's own words, and nothing checked it. Italic is
-     doing real work here: it is what tells a reader this line is testimony
-     and the chip beside it is evidence. */
-  .thought {
-    font-style: italic;
-    font-size: 12.5px;
-    color: var(--text-secondary);
-    overflow-wrap: anywhere;
-  }
   .verdict {
     margin-top: 3px;
     display: flex;
@@ -528,41 +494,29 @@
     background: var(--bg-hover);
     color: var(--text-secondary);
   }
-  .chip.kept { background: var(--kept-bg); color: var(--kept); }
-  .chip.rejected { background: var(--bad-bg); color: var(--bad); }
+  .chip.cited { background: var(--kept-bg); color: var(--kept); }
   .ref {
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--text-muted);
     overflow-wrap: anywhere;
   }
-  .detail { font-size: 11.5px; color: var(--text-muted); overflow-wrap: anywhere; }
-  .said {
-    margin-top: 4px;
-    font-size: 11.5px;
-    color: var(--text-secondary);
-    background: var(--bg-elevated);
-    border-radius: var(--radius-sm);
-    padding: 4px 7px;
-    overflow-wrap: anywhere;
-  }
-  .said b { font-weight: 600; color: var(--text-muted); font-style: normal; }
-
   /* ---- footer -------------------------------------------------------- */
 
   .foot { border-top: 1px solid var(--border); padding: 13px 18px 15px; }
-  .answer { font-size: 13.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+  /* The one line a reader quotes: how little of the document the answer
+     needed. Larger than the rest of the footer on purpose. */
+  .ratio { font-size: 13.5px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
   .tally {
-    margin-top: 10px;
+    margin-top: 6px;
     display: flex;
     flex-wrap: wrap;
     gap: 5px 10px;
     font-size: 11px;
     color: var(--text-muted);
   }
-  /* Said once, plainly, on the artefact itself — not only in the docs nobody
-     reads next to the card. A stored trace looks certified; half of it is
-     not. */
+  /* Said once, plainly, on the artefact itself: the `why` lines are the
+     agent's words; everything else is the server's. */
   .caveat {
     margin-top: 8px;
     font-size: 11px;
@@ -577,7 +531,7 @@
 </head>
 <body>
 <main>
-  <div class="fallback" id="root">Waiting for the investigation…</div>
+  <div class="fallback" id="root">Waiting for the sources…</div>
 </main>
 <script>
   "use strict";
@@ -603,27 +557,10 @@
   };
   const short = (id) => (id && id.length > 12 ? id.slice(0, 8) + "…" : id || "—");
 
-  // Rejections read better as words than as enum names, and the reader needs
-  // to tell "the quote is not there" from "the ref is not there".
-  const OUTCOMES = {
-    kept: "kept",
-    quote_drift: "quote drift",
-    unknown_ref: "unknown ref",
-    empty_element: "empty element",
-    bad_anchor: "bad anchor",
-    foreign_document: "other document",
-  };
-
-  const isKept = (outcome) => outcome === "kept";
-  const isRejected = (outcome) => Boolean(outcome) && outcome !== "kept";
-
-  // Unanswered with nothing tried is a step that was dropped, not one the
-  // document failed to answer. Two honest outcomes, two different findings —
-  // showing both as "unanswered" would blame the document for a decision the
-  // agent made.
-  const wasAbandoned = (step) =>
-    step.state === "unanswered" && !(step.attempts || []).length;
-  const stateLabel = (step) => (wasAbandoned(step) ? "abandoned" : step.state);
+  // A hop the answer quotes from is a source; one read without a quote is
+  // context. Two states, both earned by the server resolving the anchors.
+  const hopState = (hop) => ((hop.cited || []).length ? "cited" : "read");
+  const isLink = (url) => /^https?:\/\//i.test(String(url || ""));
 
   const root = document.getElementById("root");
 
@@ -633,9 +570,9 @@
   let treeCollapsed = false;
 
   function render(view) {
-    const steps = Array.isArray(view.reasoning) ? view.reasoning : [];
+    const hops = Array.isArray(view.hops) ? view.hops : [];
     const nodes = Array.isArray(view.map) ? view.map : [];
-    const closed = view.state === "closed";
+    const unknown = Array.isArray(view.unknown) ? view.unknown : [];
 
     root.className = "card";
     root.dataset.view = activeTab;
@@ -643,8 +580,6 @@
       <div class="head">
         <div class="question">${esc(view.question)}</div>
         <div class="origin">
-          <span class="badge ${closed ? "closed" : "open"}">${esc(view.state)}</span>
-          ${view.stale ? '<span class="badge stale">stale parse</span>' : ""}
           <span class="doc">${esc(view.filename || view.document_id)}</span>
           <span class="dot-sep">·</span>
           <span>parse ${esc(short(view.version_id))}</span>
@@ -653,7 +588,7 @@
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" id="tab-record" data-tab="record"
           aria-controls="pane-record" aria-selected="${activeTab === "record"}"
-          tabindex="${activeTab === "record" ? 0 : -1}">Record</button>
+          tabindex="${activeTab === "record" ? 0 : -1}">Reading</button>
         <button class="tab" role="tab" id="tab-path" data-tab="path"
           aria-controls="pane-path" aria-selected="${activeTab === "path"}"
           tabindex="${activeTab === "path" ? 0 : -1}">Path</button>
@@ -662,26 +597,26 @@
         <section class="tree${treeCollapsed ? " collapsed" : ""}">
           <h2><button class="fold" data-fold aria-controls="tree-nodes"
             aria-expanded="${!treeCollapsed}"><span
-            class="chev" aria-hidden="true">▾</span>Where it went</button></h2>
+            class="chev" aria-hidden="true">▾</span>Where it read</button></h2>
           <div class="nodes" id="tree-nodes">
-          ${nodes.length ? nodes.map(nodeRow).join("") : '<p class="empty">Nothing located in the document yet.</p>'}
+          ${nodes.length ? nodes.map(nodeRow).join("") : '<p class="empty">Nothing located in the document.</p>'}
           </div>
         </section>
         <section class="timeline">
-          <h2>What it did</h2>
-          ${steps.length ? steps.map((step) => stepBlock(step, view)).join("") : '<p class="empty">No steps planned yet.</p>'}
+          <h2>What it read</h2>
+          ${hops.length ? hops.map(hopBlock).join("") : '<p class="empty">No section read.</p>'}
         </section>
       </div>
       <section class="pane-path" role="tabpanel" id="pane-path" aria-labelledby="tab-path">
         <h2>How it moved</h2>
-        ${steps.length ? `<div class="flow">${flowStrip(steps, nodes)}</div>` : '<p class="empty">No steps planned yet.</p>'}
+        ${hops.length ? `<div class="flow">${flowStrip(hops, nodes)}</div>` : '<p class="empty">No section read.</p>'}
       </section>
       <div class="foot">
-        ${view.answer ? `<div class="answer">${esc(view.answer)}</div>` : ""}
-        <div class="tally">${tally(view, steps).join('<span class="dot-sep">·</span>')}</div>
-        <p class="caveat">Each thought is what the agent said it was doing, recorded as
-        written and never checked. The verdict beside it — kept, quote drift, unknown
-        ref — is the server's, reached by re-reading the document.</p>
+        <div class="ratio">${esc(view.summary || "")}</div>
+        ${unknown.length ? `<div class="tally">${unknown.length} anchor${unknown.length === 1 ? "" : "s"} resolved to nothing and ${unknown.length === 1 ? "is" : "are"} not shown.</div>` : ""}
+        <p class="caveat">Each “why” is what the agent said it was looking for, recorded as
+        written. The sections, pages and quotes are the server's, resolved from the anchors
+        the agent read and cited.</p>
       </div>`;
 
     wire();
@@ -692,65 +627,54 @@
   }
 
   // ---- the path ------------------------------------------------------
-  // The same steps the timeline lists, laid end to end in the order they
-  // were worked. Only a kept ref earns a page: a step the document did not
-  // answer shows its state, because a thumbnail under an unanswered step
-  // would claim the investigation found something there.
+  // The same reads the timeline lists, laid end to end in reading order.
+  // Every section read has a page: a cited one shows the quoted passage
+  // boxed, the others the page where the section starts.
 
-  function flowStrip(steps, nodes) {
-    const where = nodesByStep(nodes);
-    return steps
-      .map((step) => hopTile(step, where.get(step.step_id)))
+  function flowStrip(hops, nodes) {
+    const where = nodesByHop(nodes);
+    return hops
+      .map((hop) => hopTile(hop, where.get(hop.hop_id)))
       .join('<span class="link" aria-hidden="true">→</span>');
   }
 
-  // The map already knows which outline section each step reached; prefer
-  // the node a ref was kept at over one that was merely tried.
-  function nodesByStep(nodes) {
-    const byStep = new Map();
+  // The map already knows which outline section each read reached; prefer
+  // the node a quote was cited at over one that was only read.
+  function nodesByHop(nodes) {
+    const byHop = new Map();
     for (const node of nodes) {
-      for (const id of node.step_ids || []) {
-        const seen = byStep.get(id);
-        if (!seen || (node.status === "kept" && seen.status !== "kept")) byStep.set(id, node);
+      for (const id of node.hop_ids || []) {
+        const seen = byHop.get(id);
+        if (!seen || (node.status === "cited" && seen.status !== "cited")) byHop.set(id, node);
       }
     }
-    return byStep;
+    return byHop;
   }
 
-  // Two buttons, not one: the page enlarges, the words jump to the step in
-  // the record. One button doing both would have to guess which the click
-  // meant. A shot with no page to enlarge jumps too, so no tile is dead.
-  function hopTile(step, node) {
-    const kept = (step.attempts || []).find((attempt) => isKept(attempt.outcome));
-    const uri = kept ? kept.kept_uri || kept.uri : "";
-    const state = stateLabel(step);
-    const where = node ? node.title : uri ? refOf(uri) : "";
-    return `<div class="hop" data-state="${esc(state)}" data-hop="${esc(step.step_id)}"
+  // Two buttons, not one: the page enlarges, the words jump to the read in
+  // the timeline. One button doing both would have to guess which the click
+  // meant.
+  function hopTile(hop, node) {
+    const uri = (hop.cited || [])[0] || hop.uri || "";
+    const state = hopState(hop);
+    const where = node ? node.title : hop.title;
+    const page = hop.page || (node && node.page);
+    return `<div class="hop" data-state="${esc(state)}" data-hop="${esc(hop.hop_id)}"
       ${uri ? `data-uri="${esc(uri)}"` : ""}>
       <span class="hop-top">
-        <span class="ord">${esc(step.ordinal)}</span>
+        <span class="ord">${esc(hop.ordinal)}</span>
         <span class="hop-state ${esc(state)}">${esc(state)}</span>
       </span>
       <button class="shot ${uri ? "pending" : "none"}" data-shot
-        aria-label="${uri ? "Enlarge the page" : "Open this step in the record"}">${
-          uri ? "" : `<span class="ph">${esc(OUTCOMES_EMPTY[state] || state)}</span>`
-        }</button>
-      <button class="hop-meta" data-jump title="${esc(step.question)}">
+        aria-label="${uri ? "Enlarge the page" : "Open this read in the timeline"}"></button>
+      <button class="hop-meta" data-jump title="${esc(hop.why || hop.title)}">
         <span class="hop-where">${esc(where || "—")}${
-          node && node.page ? `<span class="page"> · p.${esc(node.page)}</span>` : ""
+          page ? `<span class="page"> · p.${esc(page)}</span>` : ""
         }</span>
-        <span class="hop-q">${esc(step.question)}</span>
+        <span class="hop-q">${esc(hop.why || "")}</span>
       </button>
     </div>`;
   }
-
-  // What an empty tile says. Terser than the timeline's chips: a tile has
-  // room for a verdict, not for a sentence.
-  const OUTCOMES_EMPTY = {
-    unanswered: "the document did not answer",
-    abandoned: "dropped, with a reason on the record",
-    pending: "not worked yet",
-  };
 
   // ---- thumbnails -----------------------------------------------------
   // Fetched only when the path is opened, through the view's own app-only
@@ -819,7 +743,7 @@
     const result = await call(
       "tools/call",
       {
-        name: "get_investigation_page",
+        name: "get_source_page",
         arguments: page == null ? { uri, max_width: maxWidth } : { uri, max_width: maxWidth, page },
       },
       20000
@@ -861,7 +785,7 @@
     shot.style.aspectRatio = `${image.width} / ${image.height}`;
     shot.style.height = "auto";
     shot.innerHTML =
-      `<img alt="Page ${esc(image.page)}, the kept passage boxed" src="${esc(image.data_uri)}">` +
+      `<img alt="Page ${esc(image.page)}, the passage boxed" src="${esc(image.data_uri)}">` +
       mark +
       '<span class="glass" aria-hidden="true">⤢</span>';
     shot.setAttribute("aria-label", `Enlarge page ${image.page}`);
@@ -1048,7 +972,7 @@
     // button that does nothing.
     const cap = lensZoom > 1 ? "none" : "100%";
     const alt = mark
-      ? `Page ${esc(image.page)}, the kept passage boxed`
+      ? `Page ${esc(image.page)}, the passage boxed`
       : `Page ${esc(image.page)}`;
     lens.querySelector("#lens-stage").innerHTML =
       `<div class="lens-page${provisional}" style="width:${width}px;max-width:${cap}">` +
@@ -1086,8 +1010,8 @@
     // `level` is the document's own heading depth; the first level sits flush
     // so a single-chapter map does not open on a wasted indent.
     const indent = Math.max(0, (Number(node.level) || 0) - 1) * 11;
-    const steps = (node.step_ids || []).join(" ");
-    return `<button class="node" data-status="${esc(node.status)}" data-steps="${esc(steps)}"
+    const hops = (node.hop_ids || []).join(" ");
+    return `<button class="node" data-status="${esc(node.status)}" data-steps="${esc(hops)}"
       title="${esc(node.ref)}">
       <span class="pin"></span>
       <span>
@@ -1097,48 +1021,33 @@
     </button>`;
   }
 
-  function stepBlock(step, view) {
-    const attempts = Array.isArray(step.attempts) ? step.attempts : [];
-    return `<div class="step" data-step="${esc(step.step_id)}">
-      <button class="step-head" data-step-toggle="${esc(step.step_id)}">
+  function hopBlock(hop) {
+    const cited = Array.isArray(hop.cited) ? hop.cited : [];
+    const state = hopState(hop);
+    return `<div class="step" data-step="${esc(hop.hop_id)}">
+      <button class="step-head" data-step-toggle="${esc(hop.hop_id)}">
         <span>
-          <span class="step-q"><span class="ord">${esc(step.ordinal)}.</span>${esc(step.question)}</span>
-          ${step.why ? `<div class="step-why">${esc(step.why)}</div>` : ""}
+          <span class="step-q"><span class="ord">${esc(hop.ordinal)}.</span>${esc(hop.title)}${
+            hop.page ? `<span class="page"> · p.${esc(hop.page)}</span>` : ""
+          }</span>
+          ${hop.why ? `<div class="step-why">${esc(hop.why)}</div>` : ""}
         </span>
         <span>
-          <span class="pips">${wasAbandoned(step) ? "" : pips(attempts, view.max_attempts_per_step)}</span>
-          <span class="state ${esc(step.state)}">${esc(stateLabel(step))}</span>
+          <span class="tokens">~${num(hop.est_tokens)} t</span>
+          <span class="state ${esc(state)}">${esc(state)}</span>
         </span>
       </button>
-      ${attempts.length ? `<div class="attempts">${attempts.map(attemptRow).join("")}</div>` : ""}
+      ${cited.length ? `<div class="attempts">${cited.map(citedRow).join("")}</div>` : ""}
+      ${isLink(hop.deep_link) ? `<button class="open" data-open="${esc(hop.deep_link)}">Open in Studio</button>` : ""}
     </div>`;
   }
 
-  // One mark per attempt the step was allowed, filled left to right as they
-  // are spent. Three filled and none green is a step the document did not
-  // answer — which is a finding, and should look like one.
-  function pips(attempts, cap) {
-    const budget = Math.max(Number(cap) || attempts.length, attempts.length);
-    const marks = attempts.map((attempt) => {
-      if (isKept(attempt.outcome)) return '<span class="pip kept"></span>';
-      if (isRejected(attempt.outcome)) return '<span class="pip rejected"></span>';
-      return '<span class="pip pending"></span>';
-    });
-    for (let i = attempts.length; i < budget; i += 1) marks.push('<span class="pip left"></span>');
-    return marks.join("");
-  }
-
-  function attemptRow(attempt) {
-    const outcome = attempt.outcome || "";
-    const cited = attempt.kept_uri || attempt.uri;
-    return `<div class="attempt ${isRejected(outcome) ? "rejected" : ""}" data-outcome="${esc(outcome)}">
-      ${attempt.thought ? `<div class="thought">${esc(attempt.thought)}</div>` : ""}
+  function citedRow(uri) {
+    return `<div class="attempt" data-outcome="cited">
       <div class="verdict">
-        <span class="chip ${isKept(outcome) ? "kept" : isRejected(outcome) ? "rejected" : ""}">${esc(OUTCOMES[outcome] || "pending")}</span>
-        <span class="ref">${esc(refOf(cited))}</span>
-        ${attempt.detail ? `<span class="detail">${esc(attempt.detail)}</span>` : ""}
+        <span class="chip cited">cited</span>
+        <span class="ref">${esc(refOf(uri))}</span>
       </div>
-      ${attempt.actual_quote ? `<div class="said"><b>The page says:</b> ${esc(attempt.actual_quote)}</div>` : ""}
     </div>`;
   }
 
@@ -1149,20 +1058,6 @@
     const text = String(uri || "");
     const hash = text.indexOf("#");
     return hash === -1 ? text : text.slice(hash);
-  }
-
-  function tally(view, steps) {
-    const attempts = steps.reduce((total, step) => total + (step.attempts || []).length, 0);
-    const kept = steps.reduce(
-      (total, step) => total + (step.attempts || []).filter((a) => isKept(a.outcome)).length,
-      0
-    );
-    const parts = [
-      `${num(view.steps_answered ?? 0)} answered`,
-      `${num(view.steps_unanswered ?? 0)} unanswered`,
-      `${attempts} attempt${attempts === 1 ? "" : "s"}, ${kept} kept`,
-    ];
-    return parts;
   }
 
   // ---- the two-way link ------------------------------------------------
@@ -1200,8 +1095,8 @@
         reportSize();
       });
     }
-    // A hop is the same step the timeline lists: its words land on that step
-    // in the record, lit — the two readings stay one record. `lit` is
+    // A hop is the same read the timeline lists: its words land on that read
+    // in the timeline, lit — the two readings stay one record. `lit` is
     // cleared first because highlight() is a toggle, and landing on a step
     // that happened to be lit already must not arrive with the light off.
     // Its page enlarges instead — and a shot with nothing to enlarge jumps
@@ -1214,6 +1109,13 @@
         .querySelector(`.step[data-step="${cssEscape(hop.dataset.hop)}"]`)
         ?.scrollIntoView({ block: "nearest" });
     };
+    // `ui/open-link` is the host's job: an app cannot navigate the user by
+    // itself, and hosts gate this behind their own confirmation.
+    root.querySelectorAll("[data-open]").forEach((button) => {
+      button.addEventListener("click", () => {
+        post({ jsonrpc: "2.0", id: Date.now(), method: "ui/open-link", params: { url: button.dataset.open } });
+      });
+    });
     root.querySelectorAll(".hop [data-jump]").forEach((button) => {
       button.addEventListener("click", () => jump(button.closest(".hop")));
     });
@@ -1249,9 +1151,9 @@
 
   // ---- the bridge ------------------------------------------------------
   // JSON-RPC 2.0 over postMessage, as the MCP Apps spec defines it. The
-  // record renders from the tool result alone; the only fetches are the
-  // handshake and, when the path is opened, `get_investigation_page` — one
-  // thumbnail per kept ref, never eagerly, and the same page again at
+  // card renders from the tool result alone; the only fetches are the
+  // handshake and, when the path is opened, `get_source_page` — one
+  // thumbnail per section read, never eagerly, and the same page again at
   // reading width when someone enlarges it.
 
   const pending = new Map();
@@ -1300,7 +1202,7 @@
       {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        appInfo: { name: "docling-studio-investigation", version: "1" },
+        appInfo: { name: "docling-studio-sources", version: "1" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
       },
       HANDSHAKE_MS
@@ -1392,13 +1294,13 @@
     for (const candidate of [data.params?.result, data.params, data.result, data]) {
       if (!candidate || typeof candidate !== "object") continue;
       const structured = candidate.structuredContent ?? candidate.structured_content;
-      if (structured?.investigation_id && structured.reasoning) return structured;
-      if (candidate.investigation_id && candidate.reasoning) return candidate;
+      if (structured?.hops && structured.totals) return structured;
+      if (candidate.hops && candidate.totals) return candidate;
       const text = candidate.content?.[0]?.text;
       if (typeof text === "string") {
         try {
           const parsed = JSON.parse(text);
-          if (parsed?.investigation_id && parsed.reasoning) return parsed;
+          if (parsed?.hops && parsed.totals) return parsed;
         } catch (_) { /* not our payload */ }
       }
     }
@@ -1439,7 +1341,7 @@
     const view = extract(data);
     if (view) render(view);
     else if (data?.method === "ui/notifications/tool-result") {
-      showState("The result carries no investigation to show.");
+      showState("The result carries no sources to show.");
     }
   });
 

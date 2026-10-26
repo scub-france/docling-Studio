@@ -1,4 +1,4 @@
-"""Tests for the MCP prompts — the user-invoked protocols.
+"""Tests for the MCP prompt — the Chunkless RAG loop as a slash command (#363).
 
 A prompt is a contract too: its name is what the user types, its arguments are
 what the client asks them for, and its text is what the model then executes.
@@ -13,107 +13,83 @@ import pytest
 from mcp import Client
 
 from mcp_adapter import build_mcp_server
-from tests.navigation_fixtures import (
-    make_document_tools,
-)
+from tests.navigation_fixtures import make_document_tools
+
+ARGS = {"document": "d", "question": "q"}
 
 
 @asynccontextmanager
-async def _client(*, apps: bool = False, investigations: bool = True):
-    server = build_mcp_server(
-        lambda: make_document_tools(),
-        version="test",
-        apps=apps,
-        investigations=investigations,
-    )
+async def _client(*, apps: bool = True):
+    server = build_mcp_server(lambda: make_document_tools(), version="test", apps=apps)
     async with Client(server) as client:
         yield client
 
 
-async def _render(name: str, args: dict[str, str], *, apps: bool = True) -> str:
+async def _render(args: dict[str, str], *, apps: bool = True) -> str:
     async with _client(apps=apps) as client:
-        result = await client.get_prompt(name, args)
+        result = await client.get_prompt("chunkless_rag", args)
     return result.messages[0].content.text
 
 
 class TestSurface:
-    async def test_lists_the_procedures(self):
+    async def test_one_procedure_named_after_what_it_does(self):
         async with _client() as client:
             prompts = {p.name: p for p in (await client.list_prompts()).prompts}
-        assert set(prompts) == {"cite_answer", "investigate"}
-        assert prompts["cite_answer"].title == "Answer with verified citations"
-
-    async def test_investigate_is_withheld_when_its_tools_are_not_published(self):
-        """A procedure driving five tools the server did not register would be
-        one the agent cannot execute — worse than one it never sees."""
-        async with _client(investigations=False) as client:
-            prompts = {p.name for p in (await client.list_prompts()).prompts}
-        assert prompts == {"cite_answer"}
+        assert set(prompts) == {"chunkless_rag"}
+        assert prompts["chunkless_rag"].title.startswith("Chunkless RAG")
 
     async def test_arguments_are_described_for_the_person_typing_them(self):
         async with _client() as client:
-            prompt = next(
-                p for p in (await client.list_prompts()).prompts if p.name == "cite_answer"
-            )
+            prompt = (await client.list_prompts()).prompts[0]
         args = {a.name: a for a in prompt.arguments or []}
-        assert set(args) == {"document", "question", "evidence"}
-        assert args["document"].required and args["question"].required
-        assert not args["evidence"].required
-        assert all(a.description for a in args.values())
+        assert set(args) == {"document", "question"}
+        assert all(a.required and a.description for a in args.values())
 
-    async def test_prompts_do_not_depend_on_the_ui_extension(self):
-        # They drive the text tools; enabling a UI is orthogonal.
-        async with _client(apps=True) as client:
-            assert len((await client.list_prompts()).prompts) == 2
+    async def test_it_is_listed_with_or_without_the_cards(self):
+        async with _client(apps=False) as client:
+            assert [p.name for p in (await client.list_prompts()).prompts] == ["chunkless_rag"]
 
     async def test_a_missing_argument_is_refused(self):
         with pytest.raises(Exception):  # noqa: B017 — the SDK wraps it as a protocol error
-            await _render("cite_answer", {"document": "contrat.pdf"})
+            await _render({"document": "contrat.pdf"})
 
 
-class TestCiteAnswer:
+class TestLoop:
     async def test_carries_the_question_and_the_document(self):
-        text = await _render(
-            "cite_answer", {"document": "contrat.pdf", "question": "Quel est le préavis ?"}
-        )
+        text = await _render({"document": "contrat.pdf", "question": "Quel est le préavis ?"})
         assert "contrat.pdf" in text
         assert "Quel est le préavis ?" in text
 
-    async def test_walks_the_four_tools_in_order(self):
-        text = await _render("cite_answer", {"document": "d", "question": "q"})
-        positions = [
-            text.index(tool)
-            for tool in ("find_documents", "get_outline", "read_element", "verify_citation")
-        ]
+    async def test_walks_the_loop_then_the_two_cards_in_order(self):
+        text = await _render(ARGS)
+        steps = (
+            "find_documents",
+            "get_outline",
+            "read_element",
+            "verify_citation",
+            "show_citation",
+            "show_sources",
+        )
+        positions = [text.index(tool) for tool in steps]
         assert positions == sorted(positions)
 
     async def test_pins_the_two_rules_agents_get_wrong(self):
-        text = await _render("cite_answer", {"document": "d", "question": "q"})
+        text = await _render(ARGS)
         # Citing the section uri instead of the element's, and resuming a
         # truncated read by re-reading it larger.
         assert "citations[].uri" in text
         assert "cursor=next_cursor" in text
 
+    async def test_tells_the_agent_what_to_hand_show_sources(self):
+        text = await _render(ARGS)
+        assert "in the order you read them" in text
+        assert "`why`" in text
+
     async def test_refuses_to_fill_a_gap_from_memory(self):
-        text = await _render("cite_answer", {"document": "d", "question": "q"})
+        text = await _render(ARGS)
         assert "Do not complete the answer from what you already know" in text
 
-    async def test_text_evidence_does_not_ask_for_images(self):
-        text = await _render("cite_answer", {"document": "d", "question": "q"})
-        assert "show_citation" not in text
-
-    async def test_image_evidence_adds_the_visual_step(self):
-        text = await _render(
-            "cite_answer", {"document": "d", "question": "q", "evidence": "images"}
-        )
-        assert "show_citation(uri)" in text
-        assert text.index("show_citation") > text.index("verify_citation")
-
-    async def test_image_evidence_names_no_viewer_the_server_did_not_publish(self):
-        args = {"document": "d", "question": "q", "evidence": "images"}
-        assert "show_citation" not in await _render("cite_answer", args, apps=False)
-
-    @pytest.mark.parametrize("value", ["text", "TEXT", "", "prose", "  images  "])
-    async def test_evidence_is_read_leniently(self, value: str):
-        text = await _render("cite_answer", {"document": "d", "question": "q", "evidence": value})
-        assert ("show_citation" in text) is (value.strip().lower() == "images")
+    async def test_names_no_card_the_server_did_not_publish(self):
+        text = await _render(ARGS, apps=False)
+        assert "show_" not in text
+        assert "deep_link" in text
