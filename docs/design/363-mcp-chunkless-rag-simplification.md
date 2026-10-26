@@ -461,12 +461,12 @@ own Ask); a `cursor` continuation is the same round.
 Mockups were made on a design canvas and option A was chosen, with B's
 filmstrip kept as a second tab.
 
-- **Sources card.** It opens on one large figure, the share of the document
-  read, with a gauge of rounds against the cap. Below it come the whole
-  document as a bar (one segment per section, sized by its own text, the
-  sections read lit), then a fan-out of the rounds that read them, then each
-  round with *pourquoi* and *trouvé*. The *Parcours* tab is the filmstrip:
-  real pages, cited passages boxed, empty slots up to the cap.
+- **Sources card.** It was revised after the first live run, where a large
+  figure and a one-box fan-out read oddly. It is now one view: each round
+  beside its real page with the passage boxed, then *pourquoi*, *trouvé* and
+  a link into Studio. A compact band above holds the share read, the round
+  gauge and a thin map of the document (one segment per section, the
+  sections read lit). Unused rounds are one quiet line, not empty tiles.
 - **`show_sources`** now also returns `segments`: every outline section with
   its own tokens and status (`domain/source_bar.py`). The subsections of a
   section read whole are lit with it.

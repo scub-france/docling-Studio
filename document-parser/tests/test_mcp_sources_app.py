@@ -192,20 +192,14 @@ class TestTemplate:
         assert "num(hop.ordinal)" in SOURCES_APP_HTML and "num(maxRounds)" in SOURCES_APP_HTML
 
     def test_a_round_shows_against_the_cap_and_a_breach_is_coloured(self):
-        assert "${num(hop.ordinal)}<small>/${num(maxRounds)}</small>" in SOURCES_APP_HTML
+        assert "Tour ${num(hop.ordinal)}/${num(maxRounds)}" in SOURCES_APP_HTML
         assert "totals.over_cap === true" in SOURCES_APP_HTML
         assert ".gauge-label.over" in SOURCES_APP_HTML and ".pip.over" in SOURCES_APP_HTML
-        assert "Pas nécessaire" in SOURCES_APP_HTML
+        assert "non utilisé" in SOURCES_APP_HTML
 
     def test_the_overview_leads_with_the_share_of_the_document_read(self):
-        """The figure the talk is about, then the whole document as a bar."""
-        for marker in (
-            'class="pct"',
-            "du document lu",
-            'class="bar"',
-            'class="funnel"',
-            'class="zoom"',
-        ):
+        """The share read, then the whole document as a thin map."""
+        for marker in ('class="pct"', "du document lu", 'class="minimap"'):
             assert marker in SOURCES_APP_HTML, marker
         assert 'data-status="${esc(s.status)}"' in SOURCES_APP_HTML
 
@@ -222,10 +216,10 @@ class TestTemplate:
             "view.filename",
             "s.title",
             "s.status",
-            "shortLabel(hop.title)",
             "hop.title",
             "hop.why",
             "hop.found",
+            "hop.deep_link",
             "link",
             "image.data_uri",
             "image.page",
@@ -247,9 +241,14 @@ class TestTemplate:
         assert 'name: "get_source_page"' in SOURCES_APP_HTML
         assert SOURCES_APP_HTML.count('"tools/call"') == 1
 
-    def test_it_offers_the_two_readings(self):
-        for marker in ('data-tab="record"', 'data-tab="path"', "Vue d\u2019ensemble", "Parcours"):
-            assert marker in SOURCES_APP_HTML, marker
+    def test_each_round_sits_beside_its_page(self):
+        """One view (#363): the rounds, each beside its page with the passage
+        boxed — no tabs to find them behind."""
+        assert '<ol class="rounds">' in SOURCES_APP_HTML
+        assert 'class="shot ${uri ? "pending" : "none"}" data-shot' in SOURCES_APP_HTML
+        assert 'role="tab"' not in SOURCES_APP_HTML
+        for label in ("<b>Pourquoi</b>", "<b>Trouvé</b>"):
+            assert label in SOURCES_APP_HTML, label
 
     def test_a_thumbnail_enlarges_like_the_citation_cards_page(self):
         """The lens: fullscreen requested (never assumed), the thumbnail

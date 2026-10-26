@@ -20,7 +20,6 @@
     --read-border: #fb923c;
     --read-ink: #7c2d12;
     --unread: #e4e4e7;
-    --funnel: #ffedd5;
     --text: #111113;
     --text-secondary: #3f3f46;
     --text-muted: #52525b;
@@ -97,147 +96,125 @@
     overflow-wrap: anywhere;
   }
 
-  /* ---- tabs ----------------------------------------------------------- */
-  /* Two readings of one answer: the overview — how much of the document,
-     and where — and the path, one real page per round. */
+  /* ---- summary ------------------------------------------------------ */
+  /* How much of the document the answer needed, the rounds against the cap,
+     and where in the document they went — one band, above the rounds. */
 
-  .tabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid var(--border); }
-  .tab {
-    appearance: none;
-    background: none;
-    border: 0;
-    border-bottom: 3px solid transparent;
-    margin-bottom: -1px;
-    padding: 10px 10px 9px;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-faint);
-    cursor: pointer;
+  .summary {
+    padding: 2px 26px 18px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 14px 20px;
+    border-bottom: 1px solid var(--border);
   }
-  .tab:hover { color: var(--text-secondary); }
-  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
-  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  [data-view="record"] .pane-path { display: none; }
-  [data-view="path"] .pane-record { display: none; }
-
-  /* ---- overview ------------------------------------------------------- */
-
-  .pane-record { padding: 22px 26px 6px; display: grid; gap: 22px; }
-
-  .hero { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 24px; }
-  .hero-main { display: flex; align-items: flex-end; gap: 16px; min-width: 0; }
-  /* The figure the talk is about: how little of the document the answer
-     needed. As large as the card allows. */
+  .share { display: flex; align-items: flex-end; gap: 14px; min-width: 0; }
   .pct {
     font-family: var(--display);
-    font-size: clamp(60px, 15cqi, 112px);
+    font-size: 48px;
     font-weight: 800;
-    line-height: 0.85;
-    letter-spacing: -0.04em;
+    line-height: 0.9;
+    letter-spacing: -0.03em;
     color: var(--accent);
     white-space: nowrap;
   }
-  .hero-label { display: grid; gap: 5px; padding-bottom: 5px; }
-  .hero-label b { font-size: 22px; font-weight: 700; }
-  .hero-label span { font-size: 15px; color: var(--text-muted); }
-
-  .gauge { display: grid; justify-items: end; gap: 8px; padding-bottom: 5px; margin-left: auto; }
-  .pips { display: flex; gap: 6px; }
-  .pip { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--text-faint); }
+  .share-label { display: grid; gap: 2px; padding-bottom: 2px; min-width: 0; }
+  .share-label b { font-size: 17px; font-weight: 700; }
+  .share-label span { font-size: 14px; color: var(--text-muted); }
+  .gauge { display: grid; justify-items: end; gap: 6px; padding-bottom: 2px; }
+  .pips { display: flex; gap: 5px; }
+  .pip { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text-faint); }
   .pip.on { background: var(--accent); border-color: var(--accent); }
   .pip.over { background: var(--bad); border-color: var(--bad); }
-  .gauge-label { font-size: 15px; font-weight: 600; }
+  .gauge-label { font-size: 14px; font-weight: 600; }
   /* Past the round cap: said in the line itself, coloured so it is seen. */
   .gauge-label.over { color: var(--bad); }
-
-  .bar-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
   /* The whole document, one segment per section, each as wide as its own
      text: the lit ones are all the answer needed. */
-  .bar { display: flex; height: 44px; border-radius: var(--radius-sm); overflow: hidden; }
+  .minimap { grid-column: 1 / -1; display: flex; height: 12px; border-radius: 999px; overflow: hidden; }
   .seg { flex-basis: 0; min-width: 0; background: var(--unread); box-shadow: inset -1px 0 0 var(--bg-surface); }
   .seg[data-status="read"] { background: var(--read); }
   .seg[data-status="cited"] { background: var(--accent); }
-  .funnel { display: block; width: 100%; height: 30px; }
-  .funnel polygon { fill: var(--funnel); }
-  .zoom { display: flex; gap: 6px; }
-  .zoom-item {
-    flex-basis: 0;
-    min-width: 64px;
-    height: 64px;
-    border-radius: var(--radius);
-    padding: 8px 12px;
-    border: 2px solid var(--read-border);
-    background: var(--read-bg);
-    color: var(--read-ink);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-  }
-  .zoom-item.cited { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .zoom-n { font-family: var(--display); font-size: 24px; font-weight: 800; line-height: 1; }
-  .zoom-label { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .rounds { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 22px; padding-bottom: 16px; }
-  @container (min-width: 560px) {
-    .rounds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* ---- rounds --------------------------------------------------------- */
+  /* One row per round: its page, the passage boxed, beside what the agent
+     went looking for and what it found. */
+
+  .rounds { list-style: none; padding: 4px 26px 2px; }
+  .hop {
+    display: grid;
+    grid-template-columns: 128px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
   }
-  .round { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+  .hop:last-child { border-bottom: 0; }
+  @container (max-width: 480px) {
+    .hop { grid-template-columns: 96px minmax(0, 1fr); gap: 12px; }
+  }
+  .round-body { display: grid; gap: 5px; min-width: 0; }
+  .round-kicker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
   .badge {
     flex: none;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     display: grid;
     place-items: center;
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 800;
+    letter-spacing: 0;
     background: var(--read-bg);
     color: var(--read-ink);
     border: 2px solid var(--read-border);
   }
   .badge.cited { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .round-body { display: grid; gap: 2px; min-width: 0; }
-  .round-title { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
-  .round-title .page { font-weight: 500; color: var(--text-muted); }
-  .cited-tag {
-    margin-left: 8px;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  .cited-tag { color: var(--accent); }
+  .hop-where { font-size: 18px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+  .hop-where .page { color: var(--text-muted); font-weight: 500; }
+  .round-why { font-size: 14px; color: var(--text-muted); overflow-wrap: anywhere; }
+  .round-found { font-size: 16px; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+  .round-why b, .round-found b { font-weight: 700; color: var(--text-secondary); margin-right: 4px; }
+  .open-link {
+    justify-self: start;
+    margin-top: 2px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
     color: var(--accent);
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
   }
-  .round-why { font-size: 13px; color: var(--text-faint); overflow-wrap: anywhere; }
-  .round-found { font-size: 15px; color: var(--text-secondary); line-height: 1.35; overflow-wrap: anywhere; }
+  .open-link:hover { text-decoration: underline; }
+  .spare { padding: 0 26px 14px; font-size: 13px; color: var(--text-faint); }
 
-  /* ---- the path ------------------------------------------------------- */
-  /* One real page per round, in reading order; the empty slots that follow
-     are the rounds the answer did not need. */
-
-  .pane-path { padding: 20px 26px 18px; display: grid; gap: 18px; }
-  .flow { display: flex; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
-  .hop { flex: 1 1 0; min-width: 104px; max-width: 150px; display: grid; gap: 7px; }
-  .hop button { background: none; border: 0; padding: 0; font: inherit; text-align: left; color: inherit; cursor: pointer; }
-  .hop-top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
-  .hop-top .ord { font-family: var(--display); font-size: 22px; font-weight: 800; }
-  .hop-top .ord small { font-size: 14px; color: var(--text-faint); }
-  .hop-state { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
-  .hop-state.cited { color: var(--accent); }
   .hop .shot {
     position: relative;
     display: block;
     width: 100%;
+    padding: 0;
     border: 2px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--bg-elevated);
     overflow: hidden;
+    cursor: zoom-in;
   }
-  .shot.pending, .shot.none, .shot.failed { height: 160px; }
+  .shot.pending, .shot.none, .shot.failed { height: 180px; }
   .hop[data-state="cited"] .shot { border: 3px solid var(--accent); }
   .shot img { display: block; width: 100%; height: auto; }
-  .shot .mark { position: absolute; border: 2px solid var(--accent); background: var(--accent-muted); border-radius: 2px; }
+  .shot .mark { position: absolute; border: 2px solid var(--accent); background: var(--accent-muted); border-radius: 2px; min-height: 6px; }
   .hop[data-state="read"] .shot .mark { border-color: var(--read-border); background: rgba(251, 146, 60, 0.22); }
   .shot .ph {
     position: absolute;
@@ -267,60 +244,6 @@
   .hop .shot:hover .glass,
   .hop .shot:focus-visible .glass { opacity: 1; }
   .hop .shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .hop-where {
-    font-size: 14px;
-    font-weight: 700;
-    line-height: 1.25;
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .hop-where .page { color: var(--text-muted); font-weight: 500; }
-  .hop-q {
-    font-size: 13px;
-    color: var(--text-secondary);
-    line-height: 1.35;
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .shot-empty {
-    height: 160px;
-    border: 2px dashed var(--border-light);
-    border-radius: var(--radius-sm);
-    display: grid;
-    place-items: center;
-    padding: 10px;
-    text-align: center;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-faint);
-  }
-  .hop.empty .ord { color: var(--text-faint); }
-  .flow .link {
-    flex: 0 0 18px;
-    align-self: center;
-    margin-top: -40px;
-    text-align: center;
-    color: var(--text-faint);
-    font-size: 14px;
-    user-select: none;
-  }
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-  }
-  .stats div { display: grid; gap: 2px; min-width: 0; }
-  .stats b { font-family: var(--display); font-size: clamp(22px, 5cqi, 32px); font-weight: 800; white-space: nowrap; }
-  .stats b small { font-size: 0.68em; color: var(--text-faint); }
-  .stats span { font-size: 14px; color: var(--text-muted); }
 
   /* ---- the enlarged page ---------------------------------------------- */
   /* Same shape as the citation view's lens: on <body>, not inside <main>,
@@ -450,11 +373,6 @@
       ? number.toLocaleString("fr-FR", { maximumFractionDigits: digits })
       : "—";
   };
-  // "§2.1" for a numbered section; its own title otherwise.
-  const shortLabel = (title) => {
-    const match = String(title || "").match(/^([A-Z]?\d+(?:\.\d+)*)\s/);
-    return match ? `§${match[1]}` : String(title || "");
-  };
   const CHECK =
     '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#15803d" ' +
     'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -462,9 +380,6 @@
 
   const root = document.getElementById("root");
 
-  // Presentation state, kept outside `render` so a re-push of the result
-  // lands on the tab the person had chosen.
-  let activeTab = "record";
   // The loop's cap, set from each result rendered.
   let maxRounds = 0;
 
@@ -479,9 +394,9 @@
       hops.find((hop) => (hop.cited || []).length && isLink(hop.deep_link)) ||
       hops.find((hop) => isLink(hop.deep_link));
     const link = linked ? linked.deep_link : "";
+    const spare = Math.max(0, maxRounds - hops.length);
 
     root.className = "card";
-    root.dataset.view = activeTab;
     root.innerHTML = `
       <div class="head">
         <div class="eyebrow-row">
@@ -490,24 +405,9 @@
         </div>
         <div class="question">${esc(view.question)}</div>
       </div>
-      <div class="tabs" role="tablist">
-        <button class="tab" role="tab" id="tab-record" data-tab="record"
-          aria-controls="pane-record" aria-selected="${activeTab === "record"}"
-          tabindex="${activeTab === "record" ? 0 : -1}">Vue d’ensemble</button>
-        <button class="tab" role="tab" id="tab-path" data-tab="path"
-          aria-controls="pane-path" aria-selected="${activeTab === "path"}"
-          tabindex="${activeTab === "path" ? 0 : -1}">Parcours</button>
-      </div>
-      <section class="pane-record" role="tabpanel" id="pane-record" aria-labelledby="tab-record">
-        ${hero(totals)}
-        ${segments.length ? bar(segments, hops) : ""}
-        ${hops.length ? `<div class="rounds">${hops.map(roundRow).join("")}</div>` : '<p class="empty">Aucune section lue.</p>'}
-      </section>
-      <section class="pane-path" role="tabpanel" id="pane-path" aria-labelledby="tab-path">
-        <h2 class="bar-label">Comment il a avancé</h2>
-        <div class="flow">${filmstrip(hops)}</div>
-        ${stats(totals)}
-      </section>
+      ${summary(totals, segments)}
+      ${hops.length ? `<ol class="rounds">${hops.map(roundRow).join("")}</ol>` : '<p class="spare">Aucune section lue.</p>'}
+      ${hops.length && spare ? `<p class="spare">${spareLabel(hops.length, spare)}</p>` : ""}
       <div class="foot">
         <span class="cited-note">${CHECK}${num(cited)} passage${cited === 1 ? "" : "s"} cité${cited === 1 ? "" : "s"} dans la réponse</span>
         ${isLink(link) ? `<button type="button" class="open-btn" data-open="${esc(link)}">Ouvrir dans Docling Studio</button>` : ""}
@@ -516,12 +416,12 @@
       </div>`;
 
     wire();
-    if (activeTab === "path") hydratePath();
+    hydratePath();
   }
 
-  // ---- the overview ----------------------------------------------------
+  // ---- summary ---------------------------------------------------------
 
-  function hero(totals) {
+  function summary(totals, segments) {
     const rounds = Number(totals.rounds) || 0;
     const over = totals.over_cap === true;
     const slots = Math.max(maxRounds, rounds);
@@ -529,122 +429,65 @@
       const state = i >= rounds ? "off" : i < maxRounds ? "on" : "over";
       return `<span class="pip ${state}"></span>`;
     }).join("");
-    const unit = totals.mode === "pages" ? "pages" : "sections";
+    const read = Number(totals.sections_read) || 0;
+    const noun = totals.mode === "pages" ? "page" : "section";
     const label = over
       ? `${num(rounds)} tours, plafond de ${num(maxRounds)} dépassé`
       : `${num(rounds)} tour${rounds === 1 ? "" : "s"} sur ${num(maxRounds)}`;
-    return `<div class="hero">
-      <div class="hero-main">
+    return `<div class="summary">
+      <div class="share">
         <span class="pct">${fr(totals.percent, 1)} %</span>
-        <div class="hero-label">
+        <div class="share-label">
           <b>du document lu</b>
-          <span>${num(totals.sections_read)} ${unit} sur ${num(totals.sections_total)} · ${num(totals.tokens_read)} tokens sur ${num(totals.tokens_total)}</span>
+          <span>${num(read)} ${noun}${read === 1 ? "" : "s"} sur ${num(totals.sections_total)} · ${num(totals.tokens_read)} tokens sur ${num(totals.tokens_total)}</span>
         </div>
       </div>
       <div class="gauge">
         <span class="pips" aria-hidden="true">${pips}</span>
         <span class="gauge-label${over ? " over" : ""}">${label}</span>
       </div>
+      ${segments.length ? minimap(segments) : ""}
     </div>`;
   }
 
-  // The whole document as a bar, the lit part fanned out into the rounds
-  // that read it, in document order.
-  function bar(segments, hops) {
-    const total = segments.reduce((sum, s) => sum + (Number(s.tokens) || 0), 0) || 1;
-    let cursor = 0;
-    let first = null;
-    let last = null;
+  // The whole document, one segment per section, the sections read lit.
+  function minimap(segments) {
     const segs = segments
-      .map((s) => {
-        const tokens = Number(s.tokens) || 0;
-        if (s.status === "read" || s.status === "cited") {
-          if (first === null) first = cursor;
-          last = cursor + tokens;
-        }
-        cursor += tokens;
-        return `<span class="seg" data-status="${esc(s.status)}" style="flex-grow: ${tokens}" title="${esc(s.title)}"></span>`;
-      })
+      .map(
+        (s) =>
+          `<span class="seg" data-status="${esc(s.status)}" style="flex-grow: ${Number(s.tokens) || 0}" title="${esc(s.title)}"></span>`
+      )
       .join("");
-    const order = new Map(segments.map((s, i) => [s.ref, i]));
-    const at = (hop) => order.get(hop.node_ref || hop.ref) ?? Number.MAX_SAFE_INTEGER;
-    const zoom = hops
-      .slice()
-      .sort((a, b) => at(a) - at(b))
-      .map((hop) => {
-        const state = hopState(hop);
-        const grow = Math.max(1, Number(hop.est_tokens) || 1);
-        return `<div class="zoom-item ${state}" style="flex-grow: ${grow}">
-          <span class="zoom-n">${num(hop.ordinal)}${state === "cited" ? " ✓" : ""}</span>
-          <span class="zoom-label">${esc(shortLabel(hop.title))}${state === "cited" ? " cité" : ""}</span>
-        </div>`;
-      })
-      .join("");
-    const lit = first !== null && hops.length;
-    const left = lit ? ((first / total) * 100).toFixed(2) : 0;
-    const right = lit ? ((last / total) * 100).toFixed(2) : 0;
-    return `<div>
-      <span class="bar-label">Tout le document, section par section</span>
-      <div class="bar">${segs}</div>
-      ${lit ? `<svg class="funnel" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polygon points="${left},0 ${right},0 100,30 0,30"></polygon></svg>
-      <div class="zoom">${zoom}</div>` : ""}
-    </div>`;
+    return `<div class="minimap" role="img" aria-label="Les sections lues, dans tout le document">${segs}</div>`;
   }
+
+  function spareLabel(used, spare) {
+    return spare === 1
+      ? `Tour ${num(used + 1)} non utilisé.`
+      : `Tours ${num(used + 1)} à ${num(used + spare)} non utilisés.`;
+  }
+
+  // ---- rounds ----------------------------------------------------------
+  // One row per round. A cited round shows the quoted passage, boxed on its
+  // page; a round read without a quote shows the page its section starts on.
 
   function roundRow(hop) {
-    const state = hopState(hop);
-    return `<div class="round">
-      <span class="badge ${state}">${num(hop.ordinal)}</span>
-      <div class="round-body">
-        <span class="round-title">${esc(hop.title)}${hop.page ? `<span class="page"> · p.${num(hop.page)}</span>` : ""}${state === "cited" ? '<span class="cited-tag">cité</span>' : ""}</span>
-        ${hop.why ? `<span class="round-why">Pourquoi : ${esc(hop.why)}</span>` : ""}
-        ${hop.found ? `<span class="round-found">Trouvé : ${esc(hop.found)}</span>` : ""}
-      </div>
-    </div>`;
-  }
-
-  // ---- the path ------------------------------------------------------
-  // The rounds laid end to end, each on its real page; then the rounds the
-  // answer did not need, as empty slots up to the cap.
-
-  function filmstrip(hops) {
-    const tiles = hops.map(hopTile);
-    for (let n = hops.length + 1; n <= maxRounds; n += 1) tiles.push(emptyTile(n));
-    return tiles.join('<span class="link" aria-hidden="true">→</span>');
-  }
-
-  // A cited round shows the quoted passage, boxed; a round read without a
-  // quote shows the page its section starts on.
-  function hopTile(hop) {
     const uri = (hop.cited || [])[0] || hop.uri || "";
     const state = hopState(hop);
-    return `<div class="hop" data-state="${esc(state)}" data-hop="${esc(hop.hop_id)}"
+    const cites = (hop.cited || []).length;
+    const tag = cites > 1 ? `${num(cites)} citations` : "cité";
+    return `<li class="hop" data-state="${esc(state)}" data-hop="${esc(hop.hop_id)}"
       ${uri ? `data-uri="${esc(uri)}"` : ""}>
-      <span class="hop-top">
-        <span class="ord">${num(hop.ordinal)}<small>/${num(maxRounds)}</small></span>
-        <span class="hop-state ${esc(state)}">${state === "cited" ? "Cité ✓" : "Lu"}</span>
-      </span>
       <button type="button" class="shot ${uri ? "pending" : "none"}" data-shot
         aria-label="Agrandir la page"></button>
-      <span class="hop-where" title="${esc(hop.why || hop.title)}">${esc(hop.title)}${hop.page ? `<span class="page"> · p.${num(hop.page)}</span>` : ""}</span>
-      ${hop.found ? `<span class="hop-q">${esc(hop.found)}</span>` : ""}
-    </div>`;
-  }
-
-  function emptyTile(n) {
-    return `<div class="hop empty">
-      <span class="hop-top"><span class="ord">${num(n)}<small>/${num(maxRounds)}</small></span></span>
-      <span class="shot-empty">Pas nécessaire</span>
-    </div>`;
-  }
-
-  function stats(totals) {
-    const unit = totals.mode === "pages" ? "pages ouvertes" : "sections ouvertes";
-    return `<div class="stats">
-      <div><b>${num(totals.rounds)}<small> / ${num(maxRounds)}</small></b><span>tours</span></div>
-      <div><b>${num(totals.sections_read)}<small> / ${num(totals.sections_total)}</small></b><span>${unit}</span></div>
-      <div><b>${num(totals.tokens_read)}<small> / ${num(totals.tokens_total)}</small></b><span>tokens lus</span></div>
-    </div>`;
+      <div class="round-body">
+        <span class="round-kicker"><span class="badge ${state}">${num(hop.ordinal)}</span>Tour ${num(hop.ordinal)}/${num(maxRounds)}${state === "cited" ? `<span class="cited-tag">· ${tag}</span>` : ""}</span>
+        <span class="hop-where">${esc(hop.title)}${hop.page ? `<span class="page"> · p.${num(hop.page)}</span>` : ""}</span>
+        ${hop.why ? `<span class="round-why"><b>Pourquoi</b>${esc(hop.why)}</span>` : ""}
+        ${hop.found ? `<span class="round-found"><b>Trouvé</b>${esc(hop.found)}</span>` : ""}
+        ${isLink(hop.deep_link) ? `<button type="button" class="open-link" data-open="${esc(hop.deep_link)}">Ouvrir dans Studio ↗</button>` : ""}
+      </div>
+    </li>`;
   }
 
   // ---- thumbnails -----------------------------------------------------
@@ -707,7 +550,7 @@
     await Promise.all(workers);
   }
 
-  async function fetchThumb(uri, maxWidth = 240, page = null) {
+  async function fetchThumb(uri, maxWidth = 320, page = null) {
     // Twice the default budget: the first fetch of a page can pay for the
     // whole document to be rasterized, and a premature timeout would cache
     // a failure the server never produced.
@@ -965,32 +808,9 @@
       ? CSS.escape(value)
       : String(value).replaceAll(/["\\\]]/g, "\\$&");
 
-  function selectTab(tab) {
-    activeTab = tab;
-    root.dataset.view = tab;
-    root.querySelectorAll(".tab").forEach((button) => {
-      const selected = button.dataset.tab === tab;
-      button.setAttribute("aria-selected", String(selected));
-      button.tabIndex = selected ? 0 : -1;
-    });
-    if (tab === "path") hydratePath();
-    reportSize();
-  }
-
   // ---- wiring ----------------------------------------------------------
 
   function wire() {
-    root.querySelectorAll(".tab").forEach((button) => {
-      button.addEventListener("click", () => selectTab(button.dataset.tab));
-    });
-    // The tablist contract: arrows move selection, the selected tab is the
-    // one tab stop. Two tabs make the arrows symmetric.
-    root.querySelector(".tabs")?.addEventListener("keydown", (event) => {
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      event.preventDefault();
-      selectTab(activeTab === "record" ? "path" : "record");
-      root.querySelector(`.tab[data-tab="${activeTab}"]`)?.focus();
-    });
     // `ui/open-link` is the host's job: an app cannot navigate the user by
     // itself, and hosts gate this behind their own confirmation.
     root.querySelectorAll("[data-open]").forEach((button) => {

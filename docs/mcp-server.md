@@ -185,16 +185,16 @@ On hosts that support MCP Apps (SEP-1865), `show_citation` and
 - the **citation card** says one thing: *texte exact du document*. It shows
   the passage boxed on its page, then the passage itself, large; a long one
   folds to seven lines. No ids or hashes;
-- the **sources card** opens on the share of the document read, as one large
-  figure ("9,4 % du document lu"). Below it:
-  - the whole document as a bar, one segment per section, each as wide as its
-    own text, with the sections read lit;
-  - the rounds that read them, fanned out under the bar;
-  - each round with its *pourquoi* and its *trouvé*.
+- the **sources card** is one view: each round beside its real page, the
+  passage boxed, with its *pourquoi* and its *trouvé* and a link into Studio.
+  Above the rounds sit three things:
+  - the share of the document read ("9,4 % du document lu");
+  - the rounds against the cap;
+  - a thin map of the whole document, one segment per section with the
+    sections read lit.
 
-  A second tab, *Parcours*, shows one real page per round, the cited
-  passages boxed, empty slots for the rounds not needed, and a lens to zoom
-  and leaf through pages.
+  A click on a page enlarges it, with a lens to zoom and leaf through the
+  document.
 
 Both cards are light only, so they read the same off a projector whatever
 the host's theme. Their labels are in French.
