@@ -21,8 +21,15 @@ from infra.settings import settings
 from persistence.database import get_connection
 from services.analysis_service import AnalysisConfig, AnalysisService
 from services.chunk_service import ChunkService
+from services.citation_image_service import CitationImageService
+from services.citation_service import CitationService
 from services.document_service import DocumentConfig, DocumentService
+from services.document_tools import DocumentTools
 from services.ingestion_service import IngestionConfig, IngestionService
+from services.navigation_config import NavigationConfig
+from services.navigation_service import NavigationService
+from services.parse_loader import ParseLoader
+from services.source_service import SourceService
 from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
@@ -223,13 +230,55 @@ def build_document_service(document_repo, analysis_repo) -> DocumentService:
 def build_chunk_service(**repos) -> ChunkService:
     """Doc-centric chunks (#256) on top of the chunk / chunk_edit /
     chunk_push repos introduced by #205."""
-    from infra.docling_tree import DoclingTreeReader
-
     return ChunkService(
-        tree_reader=DoclingTreeReader(),
+        tree_reader=_build_tree_reader(),
         chunker=build_chunker(),
         **repos,
     )
+
+
+def build_document_tools(document_repo, analysis_repo) -> DocumentTools:
+    """The document-agent services (MCP lot 1+).
+
+    Wired unconditionally: they are orchestration over repositories the app
+    already has, so there is nothing to fail at boot. Whether the surface is
+    *exposed* is a separate decision (`MCP_ENABLED`), taken in `main.py`.
+
+    One `ParseLoader` is shared by all four so a document read, then cited,
+    then shown on its page, then mapped as a source is indexed once.
+    """
+    config = NavigationConfig(
+        studio_base_url=settings.mcp_studio_base_url,
+        max_read_tokens=settings.mcp_max_read_tokens,
+    )
+    parses = ParseLoader(
+        document_repo=document_repo,
+        analysis_repo=analysis_repo,
+        tree_reader=_build_tree_reader(),
+        config=config,
+    )
+    citations = CitationService(parses=parses, config=config)
+    navigation = NavigationService(parses=parses, citations=citations, config=config)
+    return DocumentTools(
+        navigation=navigation,
+        citations=citations,
+        images=CitationImageService(parses=parses, rasterizer=_build_rasterizer(), config=config),
+        sources=SourceService(
+            parses=parses, navigation=navigation, citations=citations, config=config
+        ),
+    )
+
+
+def _build_rasterizer():
+    from infra.page_raster import PdfPageRasterizer
+
+    return PdfPageRasterizer()
+
+
+def _build_tree_reader():
+    from infra.docling_tree import DoclingTreeReader
+
+    return DoclingTreeReader()
 
 
 def build_ingestion_service(graph_writer) -> IngestionService | None:

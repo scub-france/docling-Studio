@@ -1,0 +1,1387 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Sources</title>
+<style>
+  /* Light only, on purpose (#363): the card is read off a projector, and a
+     host in dark mode still gets the same high-contrast card. The palette is
+     Studio's light theme; orange marks what was read, green what was quoted
+     and checked, as in Studio's own trace. */
+  :root {
+    color-scheme: light;
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --elevated: #f4f4f5;
+    --border: #e4e4e7;
+    --border-strong: #d4d4d8;
+    --text: #18181b;
+    --text-2: #3f3f46;
+    --text-3: #52525b;
+    --muted: #71717a;
+    --faint: #a1a1aa;
+    --read: #f97316;
+    --read-ink: #c2410c;
+    --read-soft: #fed7aa;
+    --read-deep: #7c2d12;
+    --read-bg: #fff7ed;
+    --read-line: #fdba74;
+    --cite: #16a34a;
+    --cite-ink: #15803d;
+    --cite-tint: rgba(22, 163, 74, 0.12);
+    --bad: #b91c1c;
+    --bad-tint: rgba(185, 28, 28, 0.1);
+    --radius: 8px;
+    --radius-lg: 12px;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { max-width: 100%; }
+  body {
+    font-family: var(--sans);
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+  button:focus-visible { outline: 2px solid var(--read); outline-offset: 2px; }
+
+  /* The card measures itself against `main`, never against the window: the
+     host owns the frame width, and a viewport media query asked inside an
+     iframe answers a question about the frame, not about the card. */
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: clamp(4px, 2vw, 10px);
+    container-type: inline-size;
+  }
+  .card {
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .mono { font-family: var(--mono); }
+  .grow { flex: 1; }
+
+  /* ---- top bar ------------------------------------------------------ */
+
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px 9px 16px;
+    border-bottom: 1px solid var(--border);
+    min-width: 0;
+  }
+  .bar svg { flex: none; }
+  .brand { flex: none; font-size: 13px; font-weight: 700; }
+  .sep { flex: none; color: var(--faint); }
+  .file {
+    min-width: 0;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-2);
+    background: var(--elevated);
+    border-radius: 5px;
+    padding: 2px 7px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tabs { flex: none; display: flex; gap: 2px; background: var(--elevated); border-radius: var(--radius); padding: 3px; }
+  .tabs button {
+    border: 0;
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-3);
+    background: transparent;
+    cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+  @container (max-width: 520px) {
+    .brand, .sep { display: none; }
+  }
+
+  /* ---- the question --------------------------------------------------- */
+
+  .ask { padding: 14px 16px 12px; display: grid; gap: 9px; border-bottom: 1px solid var(--border); }
+  .question { font-size: 17px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; font-family: var(--mono); font-size: 11px; font-weight: 500; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; background: var(--elevated); color: var(--text-2); border-radius: 5px; padding: 3px 8px; }
+  .chip.ok { background: var(--cite-tint); color: var(--cite-ink); }
+  .chip.bad, .chip.over { background: var(--bad-tint); color: var(--bad); }
+
+  /* ---- Sources: the page beside the rounds ---------------------------- */
+
+  .body { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(250px, 1fr); }
+  @container (max-width: 620px) {
+    .body { grid-template-columns: minmax(0, 1fr); }
+    .stage { border-right: 0; border-bottom: 1px solid var(--border); }
+  }
+  .stage {
+    background: var(--elevated);
+    padding: 12px 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-right: 1px solid var(--border);
+    min-width: 0;
+  }
+  .legend { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .key {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 4px; background: var(--read); }
+  .dot.cite { background: var(--cite); }
+  .here { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+  .page {
+    position: relative;
+    width: 100%;
+    background: var(--surface);
+    border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+  .page img { display: block; width: 100%; height: 100%; border-radius: 4px; }
+  .page .ph {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    font-size: 12px;
+    text-align: center;
+    color: var(--muted);
+  }
+  /* Sections read: the selected round strong, the others faint, as Studio's
+     Parse view dims what is not in focus. */
+  .mark { position: absolute; border-radius: 3px; pointer-events: none; }
+  .mark.sel { border: 2px solid var(--read); background: rgba(249, 115, 22, 0.07); box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.16); }
+  .mark.dim { border: 2px solid rgba(249, 115, 22, 0.45); background: rgba(249, 115, 22, 0.05); }
+  .mark.cite { border-radius: 2px; }
+  .mark.cite.ok { border: 2px solid var(--cite); background: rgba(22, 163, 74, 0.14); }
+  .mark.cite.unchecked { border: 2px dashed var(--cite); background: rgba(22, 163, 74, 0.06); }
+  .mark.cite.bad { border: 2px dashed var(--bad); background: var(--bad-tint); }
+  /* Markers sit in the page's margin, beside the box, so none covers text. */
+  .pin {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 10px;
+    border: 0;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+  button.pin { cursor: pointer; }
+  .pin.sel { background: var(--read-ink); color: #fff; }
+  .pin.dim { background: var(--read-soft); color: var(--read-deep); }
+  .pin.cite.ok, .pin.cite.unchecked { background: var(--cite-ink); color: #fff; }
+  .pin.cite.bad { background: var(--bad); color: #fff; }
+
+  .nav { display: flex; align-items: center; gap: 6px; }
+  .nav button {
+    height: 30px;
+    min-width: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-2);
+    cursor: pointer;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .nav button:disabled { opacity: 0.4; cursor: default; }
+  .nav .count { font-family: var(--mono); font-size: 12px; color: var(--text-2); padding: 0 4px; }
+  .nav .zoom { margin-left: auto; }
+
+  .rail { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .rail-head { display: flex; align-items: baseline; justify-content: space-between; padding: 2px 2px 3px; }
+  .kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); }
+  .rail-head .mono { font-size: 11px; color: var(--text-3); }
+  .rail-head .over { color: var(--bad); font-weight: 600; }
+  .round {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    text-align: left;
+  }
+  button.round { cursor: pointer; }
+  button.round:hover { border-color: var(--read-line); }
+  .round.open { padding: 10px; border-color: var(--read-line); background: var(--read-bg); }
+  .num {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    background: rgba(249, 115, 22, 0.15);
+    color: var(--read-ink);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .open .num { background: var(--read-ink); color: #fff; }
+  .num.over { background: var(--bad); color: #fff; }
+  .round-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .open .round-body { gap: 5px; }
+  .round-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .round-title .t { min-width: 0; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tag { flex: none; font-family: var(--mono); font-size: 10px; color: var(--text-3); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+  .flag { flex: none; display: inline-flex; align-items: center; gap: 3px; font-family: var(--mono); font-size: 10px; font-weight: 600; border-radius: 999px; padding: 1px 6px; color: var(--text-3); background: var(--elevated); }
+  .flag.ok { color: var(--cite-ink); background: var(--cite-tint); }
+  .flag.bad { color: var(--bad); background: var(--bad-tint); }
+  .found { font-size: 12px; line-height: 1.4; color: var(--text-3); overflow-wrap: anywhere; }
+  .open .found { font-size: 12.5px; color: var(--text); }
+  .why { font-size: 11.5px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+  .why b { font-weight: 600; color: var(--text-3); }
+  .quote {
+    position: relative;
+    margin-top: 2px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .quote .q {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .quote .q.none { color: var(--muted); font-style: italic; }
+  .quote .q, .quote .row { margin-right: 34px; }
+  /* A quote out of a table reads as the row it came from. */
+  .row { display: flex; flex-wrap: wrap; gap: 3px; }
+  .row span { font-family: var(--mono); font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); }
+  .q-foot { display: flex; align-items: center; gap: 8px; }
+  .q-status { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+  .quote.ok .q-status { color: var(--cite-ink); }
+  .quote.bad .q-status { color: var(--bad); }
+  .q-page { position: absolute; top: 7px; right: 8px; font-family: var(--mono); font-size: 10px; color: var(--text-3); background: var(--elevated); border: 0; border-radius: 4px; padding: 1px 6px; cursor: pointer; }
+  .q-page:hover { color: var(--read-ink); }
+  .link { align-self: flex-start; border: 0; background: none; padding: 0; font-size: 12px; font-weight: 600; color: var(--read-ink); cursor: pointer; }
+  .link:hover { text-decoration: underline; }
+  .spare {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .spare .num { width: auto; min-width: 22px; padding: 0 5px; background: none; border: 1px dashed var(--faint); color: var(--muted); font-size: 10px; }
+  .spare small { display: block; font-size: 11.5px; color: var(--muted); }
+  .open-btn {
+    margin-top: auto;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .open-btn:hover { border-color: var(--read); }
+  .tally { font-size: 12px; color: var(--bad); }
+
+  /* ---- Détails: what the reading cost --------------------------------- */
+
+  .details { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  @container (max-width: 620px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .tile { border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .tile-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+  .tile-value { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+  .tile-value small { font-size: 15px; color: var(--muted); }
+  .tile-value.ok { color: var(--cite-ink); }
+  .tile-sub { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+  .meter { height: 5px; border-radius: 3px; background: var(--elevated); overflow: hidden; }
+  .meter span { display: block; height: 5px; background: var(--read); }
+  .pips { display: flex; gap: 3px; height: 5px; }
+  .pips span { flex: 1; border-radius: 2px; background: var(--border); }
+  .pips .on { background: var(--read); }
+  .pips .over, .pips .bad { background: var(--bad); }
+  .pips .ok { background: var(--cite); }
+  .pips .unchecked { background: rgba(22, 163, 74, 0.4); }
+
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .section-head .mono { font-size: 11px; color: var(--text-3); }
+  .coverage { position: relative; padding-bottom: 30px; }
+  .segments { display: flex; height: 16px; border-radius: 4px; overflow: hidden; }
+  .seg { flex-basis: 0; min-width: 2px; background: var(--border); box-shadow: inset -2px 0 0 var(--surface); }
+  .seg[data-status="read"] { background: var(--read); }
+  .seg[data-status="cited"] { background: var(--cite); }
+  .bracket { position: absolute; top: 20px; height: 6px; border: 1.5px solid var(--read-ink); border-top: 0; border-radius: 0 0 3px 3px; }
+  .bracket-label { position: absolute; top: 30px; transform: translateX(-50%); font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--read-ink); white-space: nowrap; }
+  .end { position: absolute; top: 30px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+  .end.right { right: 0; }
+  .keys { display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px; color: var(--text-2); }
+  .keys span { display: inline-flex; align-items: center; gap: 5px; }
+  .keys i { width: 10px; height: 10px; border-radius: 2px; background: var(--border); }
+  .keys .read { background: var(--read); }
+  .keys .cited { background: var(--cite); }
+
+  .table { display: flex; flex-direction: column; }
+  .tr {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 54px minmax(90px, 170px) 70px;
+    gap: 12px;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 10px;
+    border-top: 1px solid var(--border);
+  }
+  @container (max-width: 620px) { .tr { grid-template-columns: 24px minmax(0, 1fr) 44px 70px 60px; gap: 8px; } }
+  .tr.th { min-height: 0; padding-bottom: 6px; border-top: 0; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+  .tr.unused { color: var(--muted); }
+  .tr.total { border-top-color: var(--border-strong); background: var(--bg); border-radius: 0 0 6px 6px; }
+  .tr .t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tr.total .t { font-weight: 600; }
+  .tr .m { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+  .tr .end-cell { justify-self: end; }
+  .cost { display: flex; align-items: center; gap: 8px; }
+  .track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--elevated); }
+  .track span { position: absolute; left: 0; top: 0; height: 8px; border-radius: 4px; background: var(--read); }
+  .cost .m { width: 42px; text-align: right; color: var(--text-2); }
+  .tr.total .cost .m { font-weight: 600; color: var(--text); }
+  .ghost { width: 22px; height: 22px; border-radius: 6px; border: 1px dashed var(--faint); display: grid; place-items: center; font-family: var(--mono); font-size: 11px; font-weight: 600; }
+
+  .meta { display: flex; flex-direction: column; gap: 3px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .meta .mono { font-size: 10.5px; color: var(--text-3); overflow-wrap: anywhere; }
+  /* Said once, plainly, on the artefact itself: the `why` and `found` lines
+     are the agent's words; everything else is the server's. */
+  .caveat { font-size: 11px; color: var(--muted); }
+
+  /* ---- the enlarged page ---------------------------------------------- */
+  /* On <body>, not inside <main>: an overlay meant to fill the frame must not
+     inherit the card's layout. The stage's page stands in, upscaled, while
+     the readable render is on its way — same page, boxes already in place. */
+  .lens {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+    background: color-mix(in srgb, var(--bg) 88%, #000);
+  }
+  .lens[hidden] { display: none; }
+  .lens-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .lens-title { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+  .lens-title b { color: var(--read-ink); font-weight: 600; }
+  .lens-bar button {
+    font-size: 12.5px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    cursor: pointer;
+  }
+  .lens-bar button:hover { border-color: var(--read); color: var(--read-ink); }
+  .lens-bar button:disabled { opacity: 0.4; cursor: default; }
+  .lens-tools { margin-left: auto; display: flex; gap: 6px; }
+  .lens-stage { display: grid; place-items: center; min-height: 0; overflow: auto; }
+  .lens-page { position: relative; line-height: 0; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 12px 44px rgba(0, 0, 0, 0.34); }
+  .lens-page img { display: block; width: 100%; height: auto; }
+  .lens-page.provisional img { filter: blur(0.4px); }
+
+  .fallback { padding: 18px; font-size: 13px; color: var(--text-2); }
+</style>
+</head>
+<body>
+<main>
+  <div class="fallback" id="root">En attente des sources…</div>
+</main>
+<script>
+  "use strict";
+
+  // Every interpolation of model- or document-derived text goes through this
+  // before it becomes markup. The server already defuses the content-wrapper
+  // delimiter on its way out; this is the second half of the same promise,
+  // because a `why` is a string a model wrote after reading a PDF.
+  const esc = (value) =>
+    String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+  // Numbers are coerced before they are formatted, because the result lands
+  // in markup unescaped.
+  const num = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? String(number).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
+      : "—";
+  };
+  // French figures for a French stage: 9,4.
+  const fr = (value, digits = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? number.toLocaleString("fr-FR", { maximumFractionDigits: digits })
+      : "—";
+  };
+  // A fraction of the page as a CSS percentage, clamped to the page.
+  const pct = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? (Math.min(1, Math.max(0, number)) * 100).toFixed(2) : "0";
+  };
+  const int = (value) => (Number.isInteger(Number(value)) ? String(Number(value)) : "");
+  const list = (value) => (Array.isArray(value) ? value : []);
+  const plural = (count, word) => (Number(count) === 1 ? word : `${word}s`);
+  const isLink = (url) => /^https?:\/\//i.test(String(url || ""));
+
+  const ICON = {
+    doc:
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 ' +
+      '2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path><path d="M9 13h6M9 17h4"></path></svg>',
+    check:
+      '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>',
+    cross:
+      '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" ' +
+      'stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>',
+    prev:
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>',
+    next:
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>',
+    zoom:
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 ' +
+      '7M3 21l7-7"></path></svg>',
+    out:
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c2410c" stroke-width="2.4" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"></path></svg>',
+  };
+
+  // ---- what a citation's status means on the card ------------------------
+  // Three looks, all earned by the server checking the quote again: green
+  // (it is there), red (it is not), and a dashed green for an anchor that
+  // came without a quote — cited, never called verified.
+
+  const OK = new Set(["verified", "stale_version"]);
+  const tone = (passage) =>
+    OK.has(passage.status) ? "ok" : passage.status ? "bad" : "unchecked";
+  const verdict = (passage) => {
+    if (passage.status === "verified") return "mot pour mot · vérifiée par le serveur";
+    if (passage.status === "stale_version") return "vérifiée · sur une analyse antérieure";
+    if (passage.status) return "introuvable à cet endroit";
+    return "non vérifiée";
+  };
+
+  const root = document.getElementById("root");
+  const state = { view: null, tab: "sources", selected: null, page: 1 };
+  // The loop's cap, set from each result rendered.
+  let maxRounds = 0;
+
+  const hopsOf = (view) => list(view && view.hops);
+  const passagesOf = (view) => list(view && view.passages);
+  const regionsOn = (regions, page) => list(regions).filter((r) => Number(r.page) === page);
+  const pagesOf = (hop) => {
+    const pages = [...new Set(list(hop.regions).map((r) => Number(r.page)))].filter(Number.isInteger);
+    if (!pages.length && Number.isInteger(Number(hop.page))) pages.push(Number(hop.page));
+    return pages.sort((a, b) => a - b);
+  };
+  const pageSpan = (pages) =>
+    !pages.length ? "" : pages.length === 1 ? num(pages[0]) : `${num(pages[0])}–${num(pages[pages.length - 1])}`;
+  const quotesOf = (view, hop) => passagesOf(view).filter((p) => p.hop_id === hop.hop_id);
+  const pageCount = (view) => Number(view.page_count) || 0;
+
+  function render(view) {
+    const hops = hopsOf(view);
+    maxRounds = Number(view.totals && view.totals.max_rounds) || 0;
+    const kept = hops.some((hop) => hop.hop_id === state.selected);
+    state.view = view;
+    if (!kept) {
+      // A round the answer quotes from first: that is what a reader checks.
+      const quoted = new Set(passagesOf(view).map((p) => p.hop_id));
+      const first = hops.find((hop) => quoted.has(hop.hop_id)) || hops[0];
+      state.selected = first ? first.hop_id : null;
+      state.page = startPage(view);
+    }
+    paint();
+    hydrate();
+  }
+
+  function startPage(view) {
+    const hop = hopsOf(view).find((h) => h.hop_id === state.selected);
+    const quote = hop && quotesOf(view, hop).find((p) => list(p.regions).length);
+    const page =
+      (quote && Number(quote.regions[0].page)) ||
+      (hop && pagesOf(hop)[0]) ||
+      Number(passagesOf(view)[0] && passagesOf(view)[0].page) ||
+      1;
+    return Number.isInteger(page) && page > 0 ? page : 1;
+  }
+
+  function paint() {
+    const view = state.view;
+    if (!view) return;
+    root.className = "card";
+    root.innerHTML =
+      bar(view) + ask(view) + (state.tab === "details" ? details(view) : sources(view));
+    reportSize();
+  }
+
+  // Only the page and its controls change when the reader leafs through.
+  // The size is reported straight away too: a page that lands changes the
+  // stage's height, and a host may not wait for an observer to say so.
+  function paintStage() {
+    const stage = root.querySelector("[data-stage]");
+    if (stage && state.view) stage.innerHTML = stageInner(state.view);
+    reportSize();
+  }
+
+  // ---- top bar and question ---------------------------------------------
+
+  function bar(view) {
+    const tab = (id, label) =>
+      `<button type="button" role="tab" data-tab="${id}" aria-selected="${state.tab === id}">${label}</button>`;
+    return `<div class="bar">
+      ${ICON.doc}<span class="brand">Docling Studio</span><span class="sep" aria-hidden="true">/</span>
+      <span class="file">${esc(view.filename || view.document_id)}</span>
+      <span class="grow"></span>
+      <div class="tabs" role="tablist" aria-label="Vue de la carte">${tab("sources", "Sources")}${tab("details", "Détails")}</div>
+    </div>`;
+  }
+
+  function ask(view) {
+    const totals = view.totals || {};
+    const rounds = Number(totals.rounds) || 0;
+    const passages = passagesOf(view);
+    const counts = { ok: 0, bad: 0, unchecked: 0 };
+    passages.forEach((p) => (counts[tone(p)] += 1));
+    const roundsChip =
+      totals.over_cap === true
+        ? `<span class="chip over">${num(rounds)} tours · plafond de ${num(maxRounds)} dépassé</span>`
+        : `<span class="chip">${num(rounds)}/${num(maxRounds)} ${plural(rounds, "tour")}</span>`;
+    return `<div class="ask">
+      <div class="question">${esc(view.question)}</div>
+      <div class="chips">
+        ${roundsChip}
+        <span class="chip">${fr(totals.percent, 1)} % du document lu</span>
+        <span class="chip">~${num(totals.tokens_read)} tokens</span>
+        ${counts.ok ? `<span class="chip ok">${ICON.check}${num(counts.ok)} ${plural(counts.ok, "citation")} ${plural(counts.ok, "vérifiée")}</span>` : ""}
+        ${counts.bad ? `<span class="chip bad">${ICON.cross}${num(counts.bad)} ${plural(counts.bad, "introuvable")}</span>` : ""}
+        ${counts.unchecked ? `<span class="chip">${num(counts.unchecked)} non ${plural(counts.unchecked, "vérifiée")}</span>` : ""}
+      </div>
+    </div>`;
+  }
+
+  // ---- Sources: the page and its boxes ---------------------------------
+
+  function sources(view) {
+    return `<div class="body">
+      <div class="stage" data-stage>${stageInner(view)}</div>
+      <div class="rail">${rail(view)}</div>
+    </div>`;
+  }
+
+  function stageInner(view) {
+    const page = state.page;
+    const count = pageCount(view);
+    const here = hopsOf(view).filter((hop) => regionsOn(hop.regions, page).length);
+    const label = here.length
+      ? `${plural(here.length, "tour")} ${here.map((hop) => num(hop.ordinal)).join(" · ")} ici`
+      : "aucun tour sur cette page";
+    const cached = pages.get(page);
+    const image = cached && cached.image;
+    const ratio = image ? `${Number(image.width) || 1} / ${Number(image.height) || 1.414}` : "1 / 1.414";
+    return `<div class="legend">
+        <span class="key"><span class="dot"></span>Section lue</span>
+        <span class="key"><span class="dot cite"></span>Passage cité</span>
+        <span class="here">${label}</span>
+      </div>
+      <div class="page" data-page style="aspect-ratio: ${ratio}">${pageImage(page, cached)}${overlays(view, page, true)}</div>
+      <div class="nav">
+        <button type="button" data-step="-1" aria-label="Page précédente"${page <= 1 ? " disabled" : ""}>${ICON.prev}</button>
+        <span class="count">p. ${num(page)}${count ? ` / ${num(count)}` : ""}</span>
+        <button type="button" data-step="1" aria-label="Page suivante"${count && page >= count ? " disabled" : ""}>${ICON.next}</button>
+        <button type="button" class="zoom" data-zoom${image ? "" : " disabled"}>${ICON.zoom}Agrandir</button>
+      </div>`;
+  }
+
+  function pageImage(page, cached) {
+    if (cached && cached.image) {
+      return `<img alt="Page ${esc(cached.image.page)}, les sections lues encadrées" src="${esc(cached.image.data_uri)}">`;
+    }
+    const message = noServerTools
+      ? "Cet hôte ne relaie pas les appels d’outils : pas d’aperçu de page."
+      : cached && cached.error
+        ? cached.error
+        : `Chargement de la page ${num(page)}…`;
+    return `<span class="ph">${esc(message)}</span>`;
+  }
+
+  // The boxes for one page: every round's section, the selected one strong,
+  // then every passage quoted. Markers go in the margin beside each box,
+  // nudged down when two would sit on top of each other.
+  function overlays(view, page, interactive) {
+    const marks = [];
+    const pins = [];
+    hopsOf(view).forEach((hop) => {
+      const regions = regionsOn(hop.regions, page);
+      if (!regions.length) return;
+      const look = hop.hop_id === state.selected ? "sel" : "dim";
+      regions.forEach((r) => marks.push(`<span class="mark ${look}" style="${boxStyle(r.box, 0.008, 0.005)}"></span>`));
+      const label = `Tour ${num(hop.ordinal)}`;
+      pins.push({
+        box: regions[0].box,
+        html: (style) =>
+          interactive
+            ? `<button type="button" class="pin ${look}" data-pin="${esc(hop.hop_id)}" aria-label="${label}" style="${style}">${num(hop.ordinal)}</button>`
+            : `<span class="pin ${look}" style="${style}">${num(hop.ordinal)}</span>`,
+      });
+    });
+    passagesOf(view).forEach((passage) => {
+      const regions = regionsOn(passage.regions, page);
+      if (!regions.length) return;
+      const look = tone(passage);
+      regions.forEach((r) => marks.push(`<span class="mark cite ${look}" style="${boxStyle(r.box, 0.003, 0.002)}"></span>`));
+      pins.push({
+        box: regions[0].box,
+        html: (style) =>
+          `<span class="pin cite ${look}" role="img" aria-label="Passage cité, ${esc(verdict(passage))}" style="${style}">${look === "bad" ? ICON.cross : ICON.check}</span>`,
+      });
+    });
+    const placed = [];
+    const markers = pins.map((pin) => {
+      const box = list(pin.box);
+      const left = Number(box[0]) || 0;
+      let top = Number(box[1]) || 0;
+      while (placed.some((p) => Math.abs(p.top - top) < 0.04 && Math.abs(p.left - left) < 0.1)) top += 0.04;
+      placed.push({ top, left });
+      // No margin to the left of a box flush with the page edge: inside it.
+      const style =
+        left < 0.06
+          ? `left: calc(${pct(left)}% + 3px); top: calc(${pct(top)}% + 3px)`
+          : `left: calc(${pct(left - 0.008)}% - 24px); top: ${pct(top - 0.005)}%`;
+      return pin.html(style);
+    });
+    return marks.join("") + markers.join("");
+  }
+
+  function boxStyle(box, padX, padY) {
+    const [l, t, r, b] = list(box).map(Number);
+    return `left: ${pct(l - padX)}%; top: ${pct(t - padY)}%; width: ${pct(r - l + 2 * padX)}%; height: ${pct(b - t + 2 * padY)}%`;
+  }
+
+  // ---- Sources: the rounds ----------------------------------------------
+
+  function rail(view) {
+    const hops = hopsOf(view);
+    const over = hops.length > maxRounds && maxRounds > 0;
+    const orphans = passagesOf(view).filter((p) => !p.hop_id);
+    const unknown = list(view.unknown);
+    const quoted = hops.find((hop) => quotesOf(view, hop).length && isLink(hop.deep_link));
+    const linked = quoted || hops.find((hop) => isLink(hop.deep_link));
+    const link = linked ? linked.deep_link : "";
+    return `<div class="rail-head">
+        <span class="kicker">Tours de lecture</span>
+        <span class="mono${over ? " over" : ""}">${num(hops.length)} / ${num(maxRounds)}${over ? " · plafond dépassé" : ""}</span>
+      </div>
+      ${hops.map((hop) => (hop.hop_id === state.selected ? openRound(view, hop) : round(view, hop))).join("")}
+      ${spare(view, hops.length)}
+      ${orphans.length ? `<span class="kicker">Cité hors des tours</span>${orphans.map(quote).join("")}` : ""}
+      ${unknown.length ? `<p class="tally">${num(unknown.length)} ${plural(unknown.length, "ancre")} ${plural(unknown.length, "introuvable")}, non ${plural(unknown.length, "affichée")}.</p>` : ""}
+      ${isLink(link) ? `<button type="button" class="open-btn" data-open="${esc(link)}">Ouvrir dans Docling Studio${ICON.out}</button>` : ""}`;
+  }
+
+  function badge(view, hop) {
+    const over = maxRounds > 0 && Number(hop.ordinal) > maxRounds;
+    return `<span class="num${over ? " over" : ""}">${num(hop.ordinal)}</span>`;
+  }
+
+  function title(view, hop) {
+    const quotes = quotesOf(view, hop);
+    const pages = pageSpan(pagesOf(hop));
+    const worst = quotes.some((p) => tone(p) === "bad")
+      ? `<span class="flag bad">${ICON.cross}introuvable</span>`
+      : quotes.some((p) => tone(p) === "ok")
+        ? `<span class="flag ok">${ICON.check}cité</span>`
+        : quotes.length
+          ? '<span class="flag">cité</span>'
+          : "";
+    return `<span class="round-title"><span class="t">${esc(hop.title)}</span>${pages ? `<span class="tag">p.${pages}</span>` : ""}${worst}</span>`;
+  }
+
+  function round(view, hop) {
+    return `<button type="button" class="round" data-hop="${esc(hop.hop_id)}" aria-label="Tour ${num(hop.ordinal)} sur ${num(maxRounds)}">
+      ${badge(view, hop)}
+      <span class="round-body">${title(view, hop)}${hop.found ? `<span class="found">${esc(hop.found)}</span>` : ""}</span>
+    </button>`;
+  }
+
+  function openRound(view, hop) {
+    return `<div class="round open" aria-current="true">
+      ${badge(view, hop)}
+      <div class="round-body">
+        ${title(view, hop)}
+        ${hop.why ? `<span class="why"><b>Pourquoi</b> · ${esc(hop.why)}</span>` : ""}
+        ${hop.found ? `<span class="found">${esc(hop.found)}</span>` : ""}
+        ${quotesOf(view, hop).map(quote).join("")}
+        ${isLink(hop.deep_link) ? `<button type="button" class="link" data-open="${esc(hop.deep_link)}">Ouvrir ce passage dans Studio ↗</button>` : ""}
+      </div>
+    </div>`;
+  }
+
+  function quote(passage) {
+    const look = tone(passage);
+    const page = int(passage.page);
+    const cells = String(passage.quote || "").split("|").map((c) => c.trim()).filter(Boolean);
+    const text = !passage.quote
+      ? '<span class="q none">Passage cité sans citation transmise.</span>'
+      : cells.length >= 3
+        ? `<span class="row">${cells.map((c) => `<span>${esc(c)}</span>`).join("")}</span>`
+        : `<span class="q">« ${esc(passage.quote)} »</span>`;
+    return `<div class="quote ${look}">
+      ${text}
+      <span class="q-foot"><span class="q-status">${look === "bad" ? ICON.cross : look === "ok" ? ICON.check : ""}${esc(verdict(passage))}</span></span>
+      ${page ? `<button type="button" class="q-page" data-goto="${page}" aria-label="Aller à la page ${page}">p.${page}</button>` : ""}
+    </div>`;
+  }
+
+  function spare(view, used) {
+    const left = Math.max(0, maxRounds - used);
+    if (!used || !left) return "";
+    const ids = left === 1 ? num(used + 1) : `${num(used + 1)}–${num(maxRounds)}`;
+    const text = left === 1 ? "Tour non utilisé" : "Tours non utilisés";
+    const early =
+      used === 1 && passagesOf(view).some((p) => tone(p) === "ok")
+        ? "<small>Réponse trouvée au premier tour.</small>"
+        : "";
+    return `<div class="spare"><span class="num">${ids}</span><span>${text}${early}</span></div>`;
+  }
+
+  // ---- Détails ----------------------------------------------------------
+
+  function details(view) {
+    const totals = view.totals || {};
+    const hops = hopsOf(view);
+    const passages = passagesOf(view);
+    const rounds = Number(totals.rounds) || 0;
+    const ok = passages.filter((p) => tone(p) === "ok").length;
+    const noun = totals.mode === "pages" ? "page" : "section";
+    const slots = Math.max(maxRounds, rounds);
+    const roundPips = Array.from({ length: slots }, (_, i) =>
+      `<span class="${i >= rounds ? "" : i < maxRounds ? "on" : "over"}"></span>`
+    ).join("");
+    const quotePips = passages.map((p) => `<span class="${tone(p)}"></span>`).join("");
+    const share = `${pct(Number(totals.percent) / 100)}%`;
+    return `<div class="details">
+      <div class="tiles">
+        <div class="tile"><span class="tile-label">Document lu</span>
+          <span class="tile-value">${fr(totals.percent, 1)} %</span>
+          <span class="meter"><span style="width: ${share}"></span></span>
+          <span class="tile-sub">${num(totals.sections_read)} ${plural(totals.sections_read, noun)} sur ${num(totals.sections_total)}</span></div>
+        <div class="tile"><span class="tile-label">Tours</span>
+          <span class="tile-value">${num(rounds)} <small>/ ${num(maxRounds)}</small></span>
+          <span class="pips">${roundPips}</span>
+          <span class="tile-sub">une ${noun} par tour</span></div>
+        <div class="tile"><span class="tile-label">Tokens lus</span>
+          <span class="tile-value">${num(totals.tokens_read)}</span>
+          <span class="meter"><span style="width: ${share}"></span></span>
+          <span class="tile-sub">sur ${num(totals.tokens_total)} au total</span></div>
+        <div class="tile"><span class="tile-label">Citations</span>
+          <span class="tile-value${passages.length && ok === passages.length ? " ok" : ""}">${num(ok)} <small>/ ${num(passages.length)}</small></span>
+          <span class="pips">${quotePips || "<span></span>"}</span>
+          <span class="tile-sub">vérifiées mot pour mot</span></div>
+      </div>
+      ${coverage(view, noun)}
+      ${table(view, hops, totals, noun)}
+      <div class="meta">
+        <span class="mono">analyse ${esc(view.version_id)} · ancres dstudio:// résolues par le serveur</span>
+        <span class="caveat">Pages, tokens et citations viennent du serveur. Les « pourquoi » et « trouvé » sont les mots de l’agent.</span>
+      </div>
+    </div>`;
+  }
+
+  // The whole document, one segment per section as wide as its own text; a
+  // bracket under the run the agent read.
+  function coverage(view, noun) {
+    const segments = list(view.segments);
+    if (!segments.length) return "";
+    const total = segments.reduce((sum, s) => sum + (Number(s.tokens) || 0), 0) || 1;
+    const lit = segments.map((s) => s.status === "read" || s.status === "cited");
+    const first = lit.indexOf(true);
+    const last = lit.lastIndexOf(true);
+    const before = (i) => segments.slice(0, i).reduce((sum, s) => sum + (Number(s.tokens) || 0), 0) / total;
+    const litCount = lit.filter(Boolean).length;
+    const bracket =
+      first < 0
+        ? ""
+        : `<span class="bracket" style="left: ${pct(before(first))}%; width: ${pct(before(last + 1) - before(first))}%"></span>
+           <span class="bracket-label" style="left: ${pct((before(first) + before(last + 1)) / 2)}%">${num(litCount)} ${plural(litCount, noun)} ${plural(litCount, "lue")}</span>`;
+    const segs = segments
+      .map(
+        (s) =>
+          `<span class="seg" data-status="${esc(s.status)}" style="flex-grow: ${Number(s.tokens) || 0}" title="${esc(s.title)}"></span>`
+      )
+      .join("");
+    const count = pageCount(view);
+    return `<div>
+      <div class="section-head"><span class="kicker">Ce que l’agent a lu du document</span>
+        <span class="mono">${num(segments.length)} ${plural(segments.length, noun)}${count ? ` · ${num(count)} ${plural(count, "page")}` : ""} · largeur = tokens</span></div>
+      <div class="coverage" style="margin-top: 8px">
+        <div class="segments" role="img" aria-label="Le document entier, ${noun} par ${noun}, celles que l’agent a lues en couleur">${segs}</div>
+        ${bracket}
+        <span class="end">début</span><span class="end right">fin</span>
+      </div>
+      <div class="keys"><span><i class="cited"></i>Lue et citée</span><span><i class="read"></i>Lue</span><span><i></i>Pas ouverte</span></div>
+    </div>`;
+  }
+
+  function table(view, hops, totals, noun) {
+    const widest = Math.max(1, ...hops.map((hop) => Number(hop.est_tokens) || 0));
+    const rows = hops
+      .map((hop) => {
+        const quotes = quotesOf(view, hop);
+        const status = quotes.some((p) => tone(p) === "bad")
+          ? `<span class="flag bad">${ICON.cross}introuvable</span>`
+          : quotes.some((p) => tone(p) === "ok")
+            ? `<span class="flag ok">${ICON.check}cité</span>`
+            : quotes.length
+              ? '<span class="flag">cité</span>'
+              : '<span class="flag">lu</span>';
+        return `<div class="tr">
+          ${badge(view, hop)}
+          <span class="t">${esc(hop.title)}</span>
+          <span class="m">${pageSpan(pagesOf(hop))}</span>
+          <span class="cost"><span class="track"><span style="width: ${pct((Number(hop.est_tokens) || 0) / widest)}%"></span></span><span class="m">${num(hop.est_tokens)}</span></span>
+          <span class="end-cell">${status}</span>
+        </div>`;
+      })
+      .join("");
+    const left = Math.max(0, maxRounds - hops.length);
+    const unused = left
+      ? `<div class="tr unused"><span class="ghost">${left === 1 ? num(hops.length + 1) : "+" + num(left)}</span><span class="t">${left === 1 ? "Non utilisé" : `${num(left)} tours non utilisés`}</span><span></span><span></span><span></span></div>`
+      : "";
+    const allPages = [...new Set(hops.flatMap(pagesOf))].sort((a, b) => a - b);
+    const cited = passagesOf(view).length;
+    return `<div class="table">
+      <div class="tr th"><span>Tour</span><span>${noun === "page" ? "Page" : "Section"}</span><span>Pages</span><span>Tokens lus</span><span class="end-cell">Statut</span></div>
+      ${rows}${unused}
+      <div class="tr total"><span></span><span class="t">${num(totals.sections_read)} ${plural(totals.sections_read, noun)} ${plural(totals.sections_read, "lue")}</span>
+        <span class="m">${pageSpan(allPages)}</span>
+        <span class="cost"><span class="track" style="visibility: hidden"></span><span class="m">${num(totals.tokens_read)}</span></span>
+        <span class="end-cell m">${num(cited)} ${plural(cited, "cité")}</span></div>
+    </div>`;
+  }
+
+  // ---- interaction --------------------------------------------------------
+  // One listener on the card: the markup is rebuilt on every change, and a
+  // listener per element would have to be rebuilt with it.
+
+  root.addEventListener("click", (event) => {
+    const target = event.target.closest("button");
+    if (!target || !root.contains(target) || target.disabled) return;
+    const { tab, hop, pin, goto, step, open } = target.dataset;
+    if (tab) {
+      state.tab = tab === "details" ? "details" : "sources";
+      paint();
+      if (state.tab === "sources") ensure(state.page);
+    } else if (hop) {
+      select(hop, true);
+    } else if (pin) {
+      select(pin, false);
+    } else if (goto) {
+      go(Number(goto));
+    } else if (step) {
+      go(state.page + Number(step));
+    } else if ("zoom" in target.dataset) {
+      openLens(state.page);
+    } else if (open) {
+      // The host's job: an app cannot navigate the user by itself, and hosts
+      // gate this behind their own confirmation.
+      post({ jsonrpc: "2.0", id: Date.now(), method: "ui/open-link", params: { url: open } });
+    }
+  });
+
+  // A round chosen in the list takes the page to it; one chosen on the page
+  // stays on that page.
+  function select(hopId, move) {
+    const hop = hopsOf(state.view).find((h) => h.hop_id === hopId);
+    if (!hop) return;
+    state.selected = hop.hop_id;
+    if (move) state.page = startPage(state.view);
+    paint();
+    ensure(state.page);
+  }
+
+  function go(page) {
+    const count = pageCount(state.view);
+    const target = Math.max(1, count ? Math.min(page, count) : page);
+    if (!Number.isInteger(target) || target === state.page) return;
+    state.page = target;
+    paintStage();
+    ensure(target);
+  }
+
+  // ---- pages ------------------------------------------------------------
+  // Fetched through the card's own app-only tool, at the width the page is
+  // drawn at, and remembered: leafing back costs nothing. A local timeout is
+  // worth retrying; a server refusal stays refused.
+
+  const pages = new Map();
+  const inflight = new Set();
+  let noServerTools = false;
+
+  function anchorUri(view) {
+    const hop = hopsOf(view)[0];
+    const passage = passagesOf(view)[0];
+    return (hop && hop.uri) || (passage && passage.uri) || "";
+  }
+
+  function drawWidth() {
+    const page = root.querySelector("[data-page]");
+    const css = page ? page.clientWidth : 420;
+    return Math.max(320, Math.min(1200, Math.round(css * (window.devicePixelRatio || 1))));
+  }
+
+  async function hydrate() {
+    const negotiated = await handshake();
+    if (negotiated && host.capabilities && !host.capabilities.serverTools) noServerTools = true;
+    if (noServerTools) {
+      paintStage();
+      return;
+    }
+    // The page on show first, then the first page of every round.
+    const wanted = [state.page, ...hopsOf(state.view).map((hop) => pagesOf(hop)[0])];
+    for (const page of [...new Set(wanted)].filter(Number.isInteger)) await ensure(page);
+  }
+
+  async function ensure(page) {
+    if (noServerTools || !state.view || inflight.has(page)) return;
+    const cached = pages.get(page);
+    if (cached && !cached.retriable) return;
+    const uri = anchorUri(state.view);
+    if (!uri) return;
+    inflight.add(page);
+    try {
+      pages.set(page, { image: await fetchPage(uri, page, drawWidth()) });
+    } catch (error) {
+      pages.set(page, {
+        error: error.message || "pas d’aperçu",
+        retriable: error.message === TIMEOUT_MESSAGE,
+      });
+    } finally {
+      inflight.delete(page);
+    }
+    if (page === state.page) paintStage();
+  }
+
+  async function fetchPage(uri, page, maxWidth) {
+    // A generous budget: the first fetch of a page can pay for the whole
+    // document to be rasterized, and a premature timeout would cache a
+    // failure the server never produced.
+    const result = await call(
+      "tools/call",
+      { name: "get_source_page", arguments: { uri, max_width: maxWidth, page } },
+      20000
+    );
+    if (result && (result.isError || result.is_error)) {
+      throw new Error(result?.content?.[0]?.text || "le serveur a refusé");
+    }
+    const image =
+      result?.structuredContent ??
+      result?.structured_content ??
+      JSON.parse(result?.content?.[0]?.text ?? "{}");
+    if (!image || !image.data_uri || !image.width || !image.height) {
+      throw new Error("la réponse ne contenait pas d’image");
+    }
+    return image;
+  }
+
+  // ---- the enlarged page ----------------------------------------------
+  // The stage answers "which page, where on it"; reading the passage asks
+  // for more. Fullscreen is requested, never assumed, and a host that
+  // refuses still gets the overlay filling the card's own frame. The
+  // stage's page stands in, upscaled, until the readable render lands.
+
+  const LENS_WIDTH = 1400;
+  const ZOOM_STEP = 1.25;
+  const ZOOM_MIN = 0.2;
+  const ZOOM_MAX = 3;
+  const bigPages = new Map();
+  let lensPage = null;
+  let lensLoading = false;
+  let lensZoom = 1;
+
+  const lens = document.createElement("div");
+  lens.className = "lens";
+  lens.hidden = true;
+  lens.setAttribute("role", "dialog");
+  lens.setAttribute("aria-modal", "true");
+  lens.setAttribute("aria-label", "Page agrandie");
+  lens.innerHTML =
+    '<div class="lens-bar"><span class="lens-title" id="lens-title"></span>' +
+    '<span class="lens-tools">' +
+    '<button type="button" data-lens-prev aria-label="Page précédente">‹</button>' +
+    '<button type="button" data-lens-next aria-label="Page suivante">›</button>' +
+    '<button type="button" data-lens-out aria-label="Dézoomer">−</button>' +
+    '<button type="button" data-lens-fit aria-label="Toute la page">Ajuster</button>' +
+    '<button type="button" data-lens-in aria-label="Zoomer">+</button>' +
+    '<button type="button" id="lens-close">Fermer</button>' +
+    "</span></div>" +
+    '<div class="lens-stage" id="lens-stage"></div>';
+  document.body.appendChild(lens);
+  lens.querySelector("#lens-close").addEventListener("click", closeLens);
+  lens.querySelector("[data-lens-prev]").addEventListener("click", () => turnLens(-1));
+  lens.querySelector("[data-lens-next]").addEventListener("click", () => turnLens(1));
+  lens.querySelector("[data-lens-out]").addEventListener("click", () => zoomLens(1 / ZOOM_STEP));
+  lens.querySelector("[data-lens-in]").addEventListener("click", () => zoomLens(ZOOM_STEP));
+  lens.querySelector("[data-lens-fit]").addEventListener("click", fitLens);
+  // The scrim closes; the page itself does not.
+  lens.addEventListener("click", (event) => {
+    if (event.target === lens || event.target.id === "lens-stage") closeLens();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (lens.hidden) return;
+    if (event.key === "Escape") closeLens();
+    else if (event.key === "+" || event.key === "=") zoomLens(ZOOM_STEP);
+    else if (event.key === "-") zoomLens(1 / ZOOM_STEP);
+    else if (event.key === "ArrowLeft") turnLens(-1);
+    else if (event.key === "ArrowRight") turnLens(1);
+  });
+
+  function openLens(page) {
+    lensPage = page;
+    lensZoom = 1;
+    lens.hidden = false;
+    paintLens();
+    lens.querySelector("#lens-close").focus();
+    call("ui/request-display-mode", { mode: "fullscreen" }).catch(() => {});
+    ensureLens();
+  }
+
+  function turnLens(delta) {
+    const count = pageCount(state.view);
+    const target = Math.max(1, count ? Math.min(lensPage + delta, count) : lensPage + delta);
+    if (target === lensPage) return;
+    lensPage = target;
+    paintLens();
+    ensureLens();
+  }
+
+  function lensImage() {
+    const big = bigPages.get(lensPage);
+    const small = pages.get(lensPage);
+    return big || (small && small.image) || null;
+  }
+
+  function zoomLens(factor) {
+    lensZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, lensZoom * factor));
+    paintLens();
+  }
+
+  // The whole page at once, never upscaled past reading width.
+  function fitLens() {
+    const image = lensImage();
+    const stage = lens.querySelector("#lens-stage");
+    if (!image || !stage) return;
+    const box = stage.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const aspect = image.height / image.width;
+    const target = Math.min(box.width - 16, (box.height - 16) / aspect);
+    lensZoom = Math.min(1, Math.max(ZOOM_MIN, target / 860));
+    paintLens();
+  }
+
+  // Closing leaves the stage on the page the reader turned to.
+  function closeLens() {
+    if (lens.hidden) return;
+    lens.hidden = true;
+    if (Number.isInteger(lensPage) && lensPage !== state.page) go(lensPage);
+    lensPage = null;
+    call("ui/request-display-mode", { mode: "inline" }).catch(() => {});
+  }
+
+  async function ensureLens() {
+    if (bigPages.has(lensPage) || lensLoading || !state.view) return;
+    lensLoading = true;
+    const page = lensPage;
+    try {
+      bigPages.set(page, await fetchPage(anchorUri(state.view), page, LENS_WIDTH));
+    } catch (_) {
+      // The stage's page stands in; a failed upgrade costs sharpness only.
+    } finally {
+      lensLoading = false;
+      if (!lens.hidden && lensPage === page) paintLens();
+      else if (!lens.hidden) ensureLens();
+    }
+  }
+
+  function paintLens() {
+    const image = lensImage();
+    const title = lens.querySelector("#lens-title");
+    const count = pageCount(state.view);
+    const provisional = bigPages.has(lensPage) ? "" : " provisional";
+    const width = Math.round(860 * lensZoom);
+    const cap = lensZoom > 1 ? "none" : "100%";
+    lens.querySelector("#lens-stage").innerHTML = image
+      ? `<div class="lens-page${provisional}" style="width: ${width}px; max-width: ${cap}">` +
+        `<img alt="Page ${esc(image.page)}" src="${esc(image.data_uri)}">${overlays(state.view, lensPage, false)}</div>`
+      : "";
+    const zoom = lensZoom === 1 ? "" : ` · ${Math.round(lensZoom * 100)} %`;
+    title.innerHTML =
+      `page <b>${num(lensPage)}</b>${count ? ` / ${num(count)}` : ""}${zoom}` +
+      (image ? (provisional ? " · mise au point…" : "") : " · chargement…");
+    lens.querySelector("[data-lens-prev]").disabled = lensPage <= 1;
+    lens.querySelector("[data-lens-next]").disabled = !count || lensPage >= count;
+  }
+
+  function post(message) {
+    try { window.parent?.postMessage(message, "*"); } catch (_) { /* no host, no-op */ }
+  }
+
+  // ---- the bridge ------------------------------------------------------
+  // JSON-RPC 2.0 over postMessage, as the MCP Apps spec defines it. The
+  // card renders from the tool result alone; the only fetches are the
+  // handshake and `get_source_page` — the pages the rounds sit on, at the
+  // width they are drawn, and one again at reading width when enlarged.
+
+  const pending = new Map();
+  let nextRequestId = 1;
+  // Named so the page cache can tell a local timeout — worth retrying —
+  // from an answer the server actually gave.
+  const TIMEOUT_MESSAGE = "l’hôte n’a pas répondu";
+
+  function call(method, params, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      const id = `app-${nextRequestId++}`;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(TIMEOUT_MESSAGE));
+      }, timeoutMs);
+      pending.set(id, { resolve, reject, timer });
+      post({ jsonrpc: "2.0", id, method, params });
+    });
+  }
+
+  function settle(data) {
+    const entry = data && data.id != null && pending.get(data.id);
+    if (!entry) return false;
+    pending.delete(data.id);
+    clearTimeout(entry.timer);
+    if (data.error) entry.reject(new Error(data.error.message || "call failed"));
+    else entry.resolve(data.result);
+    return true;
+  }
+
+  // ---- handshake -------------------------------------------------------
+  // `ui/initialize`, then `ui/notifications/initialized` once the host has
+  // answered. The notification is what allows the host to push the tool
+  // result at all, so it is sent even when the request fails — withholding it
+  // on a host that predates the handshake would trade a theme for a blank
+  // card. The answer carries the frame to fit.
+  const PROTOCOL_VERSION = "2026-01-26";
+  const HANDSHAKE_MS = 2500;
+  let host = { capabilities: null, context: {} };
+  let ready = null;
+
+  function handshake() {
+    if (ready) return ready;
+    ready = call(
+      "ui/initialize",
+      {
+        protocolVersion: PROTOCOL_VERSION,
+        capabilities: {},
+        appInfo: { name: "docling-studio-sources", version: "3" },
+        appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+      },
+      HANDSHAKE_MS
+    )
+      .then((result) => {
+        host = {
+          capabilities: result?.hostCapabilities ?? null,
+          context: result?.hostContext ?? {},
+        };
+        applyHostContext(host.context);
+        return true;
+      })
+      .catch(() => false)
+      .then((negotiated) => {
+        post({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+        return negotiated;
+      });
+    return ready;
+  }
+
+  function applyHostContext(context) {
+    if (!context || typeof context !== "object") return;
+    applyContainerDimensions(context.containerDimensions);
+    reportSize();
+  }
+
+  // The host owns the frame. A fixed `width` means "fill exactly this"; a
+  // `maxWidth` means "grow up to here". `100%` rather than the spec snippet's
+  // `100vw`, which counts the scrollbar gutter the client width does not.
+  let frame = null;
+  function applyContainerDimensions(dimensions) {
+    if (!dimensions || typeof dimensions !== "object") return;
+    frame = dimensions;
+    const style = document.documentElement.style;
+    if (typeof dimensions.width === "number") {
+      style.width = "100%";
+      style.maxWidth = "100%";
+    } else if (typeof dimensions.maxWidth === "number") {
+      style.maxWidth = `${dimensions.maxWidth}px`;
+    }
+    if (typeof dimensions.height === "number") style.height = "100%";
+    else if (typeof dimensions.maxHeight === "number") {
+      style.maxHeight = `${dimensions.maxHeight}px`;
+    }
+  }
+
+  let lastHeight = 0;
+  let lastWidth = 0;
+  function reportSize() {
+    const main = document.querySelector("main");
+    if (!main) return;
+    const height = Math.ceil(main.getBoundingClientRect().height);
+    // Clamped to what the host declared: asking for more than it offered is
+    // asking to be cropped.
+    const ceiling =
+      typeof frame?.width === "number"
+        ? frame.width
+        : typeof frame?.maxWidth === "number"
+          ? frame.maxWidth
+          : Infinity;
+    const width = Math.ceil(Math.min(document.documentElement.clientWidth, ceiling));
+    if (!height) return;
+    if (Math.abs(height - lastHeight) < 8 && width === lastWidth) return;
+    lastHeight = height;
+    lastWidth = width;
+    post({
+      jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { width, height },
+    });
+  }
+
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(reportSize).observe(document.querySelector("main"));
+  }
+
+  // Host -> app. Hosts differ in how much of the JSON-RPC envelope reaches
+  // the guest, so the payload is dug out of every documented shape rather
+  // than betting on one: params.result / result / the message itself,
+  // structured content first, then the JSON in the text content block.
+  function extract(data) {
+    if (!data || typeof data !== "object") return null;
+    for (const candidate of [data.params?.result, data.params, data.result, data]) {
+      if (!candidate || typeof candidate !== "object") continue;
+      const structured = candidate.structuredContent ?? candidate.structured_content;
+      if (structured?.hops && structured.totals) return structured;
+      if (candidate.hops && candidate.totals) return candidate;
+      const text = candidate.content?.[0]?.text;
+      if (typeof text === "string") {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.hops && parsed.totals) return parsed;
+        } catch (_) { /* not our payload */ }
+      }
+    }
+    return null;
+  }
+
+  window.addEventListener("message", (event) => {
+    // Only the host frame speaks for the host. Another app on the same page
+    // can reach this window too, and would otherwise be rendered as a record
+    // or answer this view's own calls.
+    if (event.source !== window.parent) return;
+    const data = event.data;
+    if (settle(data)) return;
+
+    // The host asks before tearing the view down and waits for the answer.
+    if (data?.method === "ui/resource-teardown") {
+      if (data.id != null) post({ jsonrpc: "2.0", id: data.id, result: {} });
+      return;
+    }
+    if (data?.method === "ui/notifications/host-context-changed") {
+      host = { ...host, context: { ...host.context, ...(data.params || {}) } };
+      applyHostContext(host.context);
+      // Put back inline by the host: the overlay follows.
+      if (data.params?.displayMode === "inline") closeLens();
+      return;
+    }
+
+    // A refused or cancelled call has nothing to show: say so rather than
+    // leave the card waiting.
+    if (data?.method === "ui/notifications/tool-cancelled") {
+      showState("L’appel a été annulé.");
+      return;
+    }
+    if (data?.method === "ui/notifications/tool-result" && data.params?.isError) {
+      showState(`L’appel a échoué : ${data.params.content?.[0]?.text || "sans détail"}`);
+      return;
+    }
+    const view = extract(data);
+    if (view) render(view);
+    else if (data?.method === "ui/notifications/tool-result") {
+      showState("Le résultat ne contient aucune source à montrer.");
+    }
+  });
+
+  function showState(message) {
+    root.className = "fallback";
+    root.textContent = message;
+    reportSize();
+  }
+
+  handshake();
+</script>
+</body>
+</html>

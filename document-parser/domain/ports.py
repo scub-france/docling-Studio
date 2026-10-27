@@ -22,6 +22,7 @@ if TYPE_CHECKING:
         DocumentStoreLink,
         Store,
     )
+    from domain.navigation import RasterCrop
     from domain.value_objects import (
         ChunkingOptions,
         ChunkResult,
@@ -105,7 +106,9 @@ class DocumentRepository(Protocol):
 
     async def insert(self, doc: Document) -> None: ...
 
-    async def find_all(self, *, limit: int = 200, offset: int = 0) -> list[Document]: ...
+    async def find_all(
+        self, *, limit: int = 200, offset: int = 0, filename_like: str | None = None
+    ) -> list[Document]: ...
 
     async def find_by_id(self, doc_id: str) -> Document | None: ...
 
@@ -216,6 +219,14 @@ class AnalysisRepository(Protocol):
     async def find_latest_completed(self, document_id: str) -> AnalysisJob | None: ...
 
     async def find_latest_completed_by_document(self, document_id: str) -> AnalysisJob | None: ...
+
+    # The parse lookups below read ids and one column, never whole rows: a
+    # row carries the docling JSON, the HTML and the markdown.
+    async def latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]: ...
+
+    async def parsed_document_id(self, job_id: str) -> str | None: ...
+
+    async def parse_json(self, job_id: str) -> str | None: ...
 
     async def update_status(self, job: AnalysisJob) -> None: ...
 
@@ -385,6 +396,46 @@ class DocumentTreeReader(Protocol):
         """Return `(skip_refs, inline_meta)` — refs to omit from any
         projection and per-InlineGroup aggregated metadata (text + provs).
         """
+        ...
+
+    def dfs_order(self, doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
+        """Return `self_ref`s in reading order (DFS pre-order from body),
+        omitting `skip_refs`."""
+        ...
+
+    def iter_provs(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        """Flatten an item's provenance into rows carrying `page_no`,
+        `bbox_l/t/r/b`, `coord_origin` and the char span."""
+        ...
+
+    def iter_pages(self, doc_data: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Yield `{page_no, width, height}` for every page of the parse."""
+        ...
+
+
+@runtime_checkable
+class PageRasterizer(Protocol):
+    """Port for turning a stored document into page images.
+
+    Rasterising is infrastructure — poppler, PIL, a file on disk — while the
+    dpi ladder and the byte budget that drive it are policy. The split runs
+    here: the adapter renders and crops what it is told to, the service
+    decides what to ask for.
+    """
+
+    def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
+        """Return `page` of the document at `storage_path` as PNG bytes."""
+        ...
+
+    def crop(
+        self,
+        png: bytes,
+        box: tuple[int, int, int, int],
+        *,
+        fmt: str = "PNG",
+    ) -> RasterCrop:
+        """Crop a PNG to `box` (left, top, right, bottom in pixels), clamped
+        to the image, and re-encode it as `fmt` (`"PNG"` or `"WEBP"`)."""
         ...
 
 

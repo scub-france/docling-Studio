@@ -186,6 +186,10 @@ services:
       # tests until they're rewritten against /docs/:id (0.7.0).
       STUDIO_MODE_ENABLED: ${STUDIO_MODE_ENABLED:-false}
       RAG_PIPELINE_ENABLED: ${RAG_PIPELINE_ENABLED:-true}
+      # MCP document server at /mcp (docs/mcp-server.md): off unless MCP_ENABLED.
+      MCP_ENABLED: ${MCP_ENABLED:-false}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
+      MCP_STUDIO_BASE_URL: ${MCP_STUDIO_BASE_URL:-http://localhost:3000}
     deploy:
       resources:
         limits:
