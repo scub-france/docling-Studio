@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 
 from domain.app_config import ReasoningConfig
+from domain.mcp_config import McpRuntimeConfig
 from infra.docling_agent_reasoning import (
     DoclingAgentReasoningRunner,
     deps_present,
@@ -237,8 +238,36 @@ def build_chunk_service(**repos) -> ChunkService:
     )
 
 
-def build_document_tools(document_repo, analysis_repo) -> DocumentTools:
-    """The document-agent services (MCP lot 1+).
+def env_mcp_config() -> McpRuntimeConfig:
+    """Bootstrap defaults for the runtime-configurable MCP knobs (#364).
+
+    Env vars seed the config; `app_settings` rows override them at runtime via
+    `McpConfigService`.
+    """
+    return McpRuntimeConfig(
+        max_rounds=settings.mcp_max_rounds,
+        max_read_tokens=settings.mcp_max_read_tokens,
+        studio_base_url=settings.mcp_studio_base_url,
+    )
+
+
+def build_parse_loader(document_repo, analysis_repo) -> ParseLoader:
+    """The parse index shared by the document-agent services.
+
+    Built once and kept across runtime config changes (#364): it only reads
+    the cache bounds from its config, which are not runtime-configurable, so a
+    rebuild of the services above it keeps every indexed parse.
+    """
+    return ParseLoader(
+        document_repo=document_repo,
+        analysis_repo=analysis_repo,
+        tree_reader=_build_tree_reader(),
+        config=NavigationConfig(),
+    )
+
+
+def build_document_tools(parses: ParseLoader, runtime: McpRuntimeConfig) -> DocumentTools:
+    """The document-agent services (MCP lot 1+), on `runtime`'s budgets.
 
     Wired unconditionally: they are orchestration over repositories the app
     already has, so there is nothing to fail at boot. Whether the surface is
@@ -247,16 +276,7 @@ def build_document_tools(document_repo, analysis_repo) -> DocumentTools:
     One `ParseLoader` is shared by all four so a document read, then cited,
     then shown on its page, then mapped as a source is indexed once.
     """
-    config = NavigationConfig(
-        studio_base_url=settings.mcp_studio_base_url,
-        max_read_tokens=settings.mcp_max_read_tokens,
-    )
-    parses = ParseLoader(
-        document_repo=document_repo,
-        analysis_repo=analysis_repo,
-        tree_reader=_build_tree_reader(),
-        config=config,
-    )
+    config = NavigationConfig.from_runtime(runtime)
     citations = CitationService(parses=parses, config=config)
     navigation = NavigationService(parses=parses, citations=citations, config=config)
     return DocumentTools(
@@ -266,6 +286,7 @@ def build_document_tools(document_repo, analysis_repo) -> DocumentTools:
         sources=SourceService(
             parses=parses, navigation=navigation, citations=citations, config=config
         ),
+        config=config,
     )
 
 

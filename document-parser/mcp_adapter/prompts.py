@@ -13,9 +13,11 @@ publishes is checked by the server. It replaces `cite_answer` and
 `investigate`, which split the same loop in two.
 
 The loop is docling-agent's, run by the client model: one section per round,
-each with the reason for going there and what it gave, at most `MAX_ROUNDS`
-rounds — the same cap as Studio's own Ask loop. Bounded, so the model does not
-wander; explained, so the card can show the reasoning round by round.
+each with the reason for going there and what it gave, at most the round cap
+— by default the same as Studio's own Ask loop. Bounded, so the model does not
+wander; explained, so the card can show the reasoning round by round. The cap
+is read on every render, so a change in the admin panel (#364) reaches the
+next invocation.
 
 Nothing here is a second implementation of the tools. The prompt returns text
 that the model then executes with the same tools; keeping the procedure
@@ -31,6 +33,8 @@ from pydantic import Field
 from services.navigation_config import MAX_ROUNDS
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from mcp.server.mcpserver import MCPServer
 
 # Only when the cards are published: naming a tool this server did not publish
@@ -45,8 +49,14 @@ _TEXT_STEP = """
 5. Give the reader each verified quote with its `deep_link`, when there is one."""
 
 
-def register_prompts(server: MCPServer, *, apps: bool = True) -> None:
-    """Register `chunkless_rag`."""
+def _default_rounds() -> int:
+    return MAX_ROUNDS
+
+
+def register_prompts(
+    server: MCPServer, *, apps: bool = True, rounds: Callable[[], int] = _default_rounds
+) -> None:
+    """Register `chunkless_rag`; `rounds` gives the cap to state at render time."""
 
     @server.prompt(
         name="chunkless_rag",
@@ -61,6 +71,7 @@ def register_prompts(server: MCPServer, *, apps: bool = True) -> None:
         document: Annotated[str, Field(description="Filename, or a fragment of one.")],
         question: Annotated[str, Field(description="What to answer from that document.")],
     ) -> str:
+        cap = rounds()
         return f"""\
 Answer this from "{document}" only:
 
@@ -69,7 +80,7 @@ Answer this from "{document}" only:
 1. `find_documents(query="{document}")`: its document_id. If several match, ask which. A \
 null version_id means it was never parsed: say so and stop.
 2. `get_outline(document_id)`: the map, each entry with its `est_tokens`.
-3. Then at most {MAX_ROUNDS} rounds. Each round: pick ONE entry, say in one line why, \
+3. Then at most {cap} rounds. Each round: pick ONE entry, say in one line why, \
 `read_element(document_id, ref)`, and say in one line what it gave. When `truncated`, \
 continue with `cursor=next_cursor`: same round, not a new one. Stop as soon as you can \
 answer.
@@ -77,5 +88,5 @@ answer.
 `verify_citation(uri, quote)` each one. On `quote_drift`, fix the quote or drop the \
 claim.{_CARD_STEPS if apps else _TEXT_STEP}
 
-If {MAX_ROUNDS} rounds did not find the answer, or the document does not answer, say what \
+If {cap} rounds did not find the answer, or the document does not answer, say what \
 is missing. Do not complete the answer from what you already know."""

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
 
@@ -24,6 +25,11 @@ from domain.value_objects import (
     ReasoningStepPayload,
     ReasoningTrace,
 )
+
+if TYPE_CHECKING:
+    # Only the `from_*` constructors name these — no model field does, so
+    # Pydantic never resolves them.
+    from domain.mcp_config import McpRuntimeConfigView, McpServerStatus
 
 # Document lifecycle status — currently single-state (uploaded). Kept as a
 # constant so future statuses (e.g. "archived", "deleted") can extend the
@@ -735,3 +741,82 @@ class ReasoningProbeResponse(_CamelModel):
     @classmethod
     def from_result(cls, result: LLMHostProbeResult) -> ReasoningProbeResponse:
         return cls(**asdict(result))
+
+
+# ---------------------------------------------------------------------------
+# MCP (#364) — runtime config + the running server, for the admin panel.
+# ---------------------------------------------------------------------------
+
+
+class McpConfigSourcesResponse(_CamelModel):
+    """Where each effective MCP value comes from — `env` or `db`."""
+
+    max_rounds: ConfigSource
+    max_read_tokens: ConfigSource
+    studio_base_url: ConfigSource
+
+
+class McpConfigResponse(_CamelModel):
+    """Effective MCP runtime config (#364). No bounds on the fields: an env
+    value outside the panel's bounds is still the effective one."""
+
+    max_rounds: int = Field(description="Round cap (count, not a duration)")
+    max_read_tokens: int = Field(description="Ceiling on one read, in tokens")
+    studio_base_url: str
+    sources: McpConfigSourcesResponse
+    read_only: bool
+
+    @classmethod
+    def from_view(cls, view: McpRuntimeConfigView) -> McpConfigResponse:
+        return cls(
+            max_rounds=view.config.max_rounds,
+            max_read_tokens=view.config.max_read_tokens,
+            studio_base_url=view.config.studio_base_url,
+            sources=McpConfigSourcesResponse(**view.sources),
+            read_only=view.read_only,
+        )
+
+
+class McpConfigUpdateRequest(_CamelModel):
+    """Body for `PUT /api/config/mcp` — full-state replace, like reasoning.
+
+    Every field is required: an omitted base URL must not silently clear the
+    deep links. Send `""` to clear them.
+    """
+
+    max_rounds: int
+    max_read_tokens: int
+    studio_base_url: str
+
+
+class McpToolResponse(_CamelModel):
+    name: str
+    visibility: list[str]
+    card: bool
+
+
+class McpServerResponse(_CamelModel):
+    """The MCP HTTP transport as mounted at boot (#364) — restart-only facts."""
+
+    enabled: bool
+    path: str
+    allowed_hosts: list[str]
+    apps_enabled: bool
+    citation_card: bool
+    tools: list[McpToolResponse]
+    prompts: list[str]
+
+    @classmethod
+    def from_status(cls, status: McpServerStatus) -> McpServerResponse:
+        return cls(
+            enabled=status.enabled,
+            path=status.path,
+            allowed_hosts=list(status.allowed_hosts),
+            apps_enabled=status.apps_enabled,
+            citation_card=status.citation_card,
+            tools=[
+                McpToolResponse(name=t.name, visibility=list(t.visibility), card=t.card)
+                for t in status.tools
+            ],
+            prompts=list(status.prompts),
+        )

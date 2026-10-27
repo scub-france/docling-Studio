@@ -10,13 +10,18 @@ its constants.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from domain.mcp_config import McpRuntimeConfig
 
 # The Chunkless RAG loop's round cap: one section read per round, at most this
 # many before answering with what was found. The same default as Studio's own
 # loop (`REASONING_MAX_ITERATIONS`, docling-agent's `max_iterations`), so the
 # two runners of one idea stop at the same point. The prompt states it and the
 # sources card counts against it; nothing enforces it server-side — the server
-# is stateless and the client model drives the loop.
+# is stateless and the client model drives the loop. A default only:
+# `MCP_MAX_ROUNDS` and the admin panel (#364) override it.
 MAX_ROUNDS = 5
 
 
@@ -55,3 +60,13 @@ class NavigationConfig:
     max_source_anchors: int = 50
     max_source_text_chars: int = 2_000
     max_rounds: int = MAX_ROUNDS
+
+    @classmethod
+    def from_runtime(cls, runtime: McpRuntimeConfig) -> NavigationConfig:
+        """The budgets for the runtime-configurable knobs (#364); the rest
+        keep their defaults."""
+        return cls(
+            studio_base_url=runtime.studio_base_url,
+            max_read_tokens=runtime.max_read_tokens,
+            max_rounds=runtime.max_rounds,
+        )

@@ -472,6 +472,7 @@ def make_document_tools(
         sources=SourceService(
             parses=parses, navigation=navigation, citations=citations, config=settings
         ),
+        config=settings,
     )
 
 
