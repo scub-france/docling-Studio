@@ -45,8 +45,9 @@ def _app(**overrides) -> tuple[FastAPI, object]:
 
     app = FastAPI(lifespan=lifespan)
     with patch("bootstrap.mcp_mount.settings", settings):
-        session = mount_mcp_server(app)
-    return app, session
+        mounted = mount_mcp_server(app)
+    session = mounted.session if mounted is not None else None
+    return app, mounted
 
 
 def _paths(app: FastAPI) -> set[str]:
@@ -108,3 +109,44 @@ class TestTransport:
         with TestClient(app) as client:
             response = client.post("/mcp", json=INITIALIZE, headers=HEADERS)
         assert response.status_code == 200
+
+
+class TestDescribe:
+    """#364 — what the admin panel reports, read from the built server."""
+
+    async def test_disabled_reports_no_surface(self):
+        from bootstrap.mcp_mount import describe_mcp_server
+
+        settings = replace(real_settings, mcp_allowed_hosts=["localhost:*"])
+        with patch("bootstrap.mcp_mount.settings", settings):
+            status = await describe_mcp_server(None)
+        assert status.enabled is False
+        assert status.path == "/mcp"
+        assert status.allowed_hosts == ("localhost:*",)
+        assert status.tools == () and status.prompts == ()
+
+    async def test_lists_what_the_built_server_publishes(self):
+        from bootstrap.mcp_mount import describe_mcp_server
+
+        settings = replace(real_settings, mcp_enabled=True, mcp_citation_card=True)
+        app = FastAPI()
+        with patch("bootstrap.mcp_mount.settings", settings):
+            mounted = mount_mcp_server(app)
+            status = await describe_mcp_server(mounted)
+
+        tools = {tool.name: tool for tool in status.tools}
+        assert status.enabled is True and status.citation_card is True
+        assert tools["read_element"].visibility == ("model", "app")
+        assert tools["read_element"].card is False
+        assert tools["show_sources"].visibility == ("model",) and tools["show_sources"].card
+        assert tools["get_source_page"].visibility == ("app",)
+        assert "show_citation" in tools
+        assert status.prompts == ("chunkless_rag",)
+
+    async def test_the_citation_card_is_absent_when_off(self):
+        from bootstrap.mcp_mount import describe_mcp_server
+
+        settings = replace(real_settings, mcp_enabled=True, mcp_citation_card=False)
+        with patch("bootstrap.mcp_mount.settings", settings):
+            status = await describe_mcp_server(mount_mcp_server(FastAPI()))
+        assert "show_citation" not in {tool.name for tool in status.tools}

@@ -389,6 +389,47 @@ const messages: Messages = {
     'settings.reasoning.available': 'Raisonnement op\u00e9rationnel',
     'settings.reasoning.unavailable': 'Raisonnement indisponible',
     'settings.reasoning.provider': 'Fournisseur',
+    // #364 — MCP server (admin panel).
+    'settings.mcp.title': 'Serveur MCP',
+    'settings.mcp.readOnly':
+      'Configuration en lecture seule sur ce d\u00e9ploiement \u2014 les valeurs sont fournies par l\u2019environnement.',
+    'settings.mcp.status': 'Transport HTTP',
+    'settings.mcp.statusOn': 'Mont\u00e9 sur {path}',
+    'settings.mcp.statusOff': 'Non mont\u00e9',
+    'settings.mcp.unauthenticated':
+      'Sans authentification : toute personne qui atteint ce port lit tous les documents.',
+    'settings.mcp.enableHint':
+      'D\u00e9finissez MCP_ENABLED=true puis red\u00e9marrez le backend. Les r\u00e9glages ci-dessous valent aussi pour le serveur stdio.',
+    'settings.mcp.url': 'URL client',
+    'settings.mcp.hostWarning':
+      'L\u2019h\u00f4te {host} n\u2019est pas dans MCP_ALLOWED_HOSTS : un client qui utilise cette URL recevra une erreur 421.',
+    'settings.mcp.desktop': 'Claude Desktop (claude_desktop_config.json)',
+    'settings.mcp.desktopHint': 'Puis quittez Claude Desktop (Cmd+Q) et relancez-le.',
+    'settings.mcp.code': 'Claude Code',
+    'settings.mcp.copy': 'Copier',
+    'settings.mcp.copied': 'Copi\u00e9',
+    'settings.mcp.published': 'Publi\u00e9 par le serveur',
+    'settings.mcp.tools': 'Outils',
+    'settings.mcp.cards': 'Cartes',
+    'settings.mcp.cardOnly': 'R\u00e9serv\u00e9s aux cartes',
+    'settings.mcp.prompts': 'Prompts',
+    'settings.mcp.live': 'R\u00e9glages \u00e0 chaud',
+    'settings.mcp.liveHint':
+      'Appliqu\u00e9s \u00e0 l\u2019appel d\u2019outil suivant, sans red\u00e9marrage. Le serveur stdio les lit \u00e0 son prochain lancement.',
+    'settings.mcp.maxRounds': 'Tours max',
+    'settings.mcp.maxRoundsHint':
+      'Le prompt chunkless_rag et la carte sources suivent ce plafond tout de suite. Les instructions du serveur, lues une fois \u00e0 la connexion, gardent la valeur du d\u00e9marrage.',
+    'settings.mcp.maxReadTokens': 'Plafond de lecture (tokens)',
+    'settings.mcp.baseUrl': 'URL de base de Studio',
+    'settings.mcp.baseUrlHint': 'Cible des liens profonds des citations. Vide : pas de lien.',
+    'settings.mcp.save': 'Enregistrer',
+    'settings.mcp.saving': 'Enregistrement\u2026',
+    'settings.mcp.reset': 'R\u00e9tablir l\u2019environnement',
+    'settings.mcp.restartOnly': 'R\u00e9glages au d\u00e9marrage',
+    'settings.mcp.restartStep1': 'Modifiez la variable dans .env.',
+    'settings.mcp.restartStep2': 'Red\u00e9marrez le backend.',
+    'settings.mcp.restartStep3':
+      'Quittez compl\u00e8tement Claude Desktop (Cmd+Q : fermer la fen\u00eatre ne suffit pas), puis relancez-le.',
 
     // Inspect tab (#240, #241)
     'inspect.tabMarkdown': 'Markdown',
@@ -1034,6 +1075,47 @@ const messages: Messages = {
     'settings.reasoning.available': 'Reasoning operational',
     'settings.reasoning.unavailable': 'Reasoning unavailable',
     'settings.reasoning.provider': 'Provider',
+    // #364 — MCP server (admin panel).
+    'settings.mcp.title': 'MCP server',
+    'settings.mcp.readOnly':
+      'Configuration is read-only on this deployment — values come from the environment.',
+    'settings.mcp.status': 'HTTP transport',
+    'settings.mcp.statusOn': 'Mounted at {path}',
+    'settings.mcp.statusOff': 'Not mounted',
+    'settings.mcp.unauthenticated':
+      'No authentication: anyone who can reach this port reads every document.',
+    'settings.mcp.enableHint':
+      'Set MCP_ENABLED=true and restart the backend. The settings below also apply to the stdio server.',
+    'settings.mcp.url': 'Client URL',
+    'settings.mcp.hostWarning':
+      'Host {host} is not in MCP_ALLOWED_HOSTS: a client using this URL will get a 421 error.',
+    'settings.mcp.desktop': 'Claude Desktop (claude_desktop_config.json)',
+    'settings.mcp.desktopHint': 'Then quit Claude Desktop (Cmd+Q) and relaunch it.',
+    'settings.mcp.code': 'Claude Code',
+    'settings.mcp.copy': 'Copy',
+    'settings.mcp.copied': 'Copied',
+    'settings.mcp.published': 'Published by the server',
+    'settings.mcp.tools': 'Tools',
+    'settings.mcp.cards': 'Cards',
+    'settings.mcp.cardOnly': 'Card-only',
+    'settings.mcp.prompts': 'Prompts',
+    'settings.mcp.live': 'Live settings',
+    'settings.mcp.liveHint':
+      'Applied on the next tool call, with no restart. The stdio server reads them at its next launch.',
+    'settings.mcp.maxRounds': 'Max rounds',
+    'settings.mcp.maxRoundsHint':
+      'The chunkless_rag prompt and the sources card follow this cap at once. The server instructions, read once when a client connects, keep the boot-time value.',
+    'settings.mcp.maxReadTokens': 'Read ceiling (tokens)',
+    'settings.mcp.baseUrl': 'Studio base URL',
+    'settings.mcp.baseUrlHint': 'Where citation deep links point. Empty: no link.',
+    'settings.mcp.save': 'Save',
+    'settings.mcp.saving': 'Saving…',
+    'settings.mcp.reset': 'Reset to environment',
+    'settings.mcp.restartOnly': 'Restart-only settings',
+    'settings.mcp.restartStep1': 'Change the variable in .env.',
+    'settings.mcp.restartStep2': 'Restart the backend.',
+    'settings.mcp.restartStep3':
+      'Quit Claude Desktop entirely (Cmd+Q: closing the window is not enough), then relaunch it.',
 
     // Inspect tab (#240, #241)
     'inspect.tabMarkdown': 'Markdown',

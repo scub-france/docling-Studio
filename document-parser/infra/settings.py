@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 from domain.app_config import MAX_ITERATIONS_MAX as _MAX_ITERATIONS_MAX
 from domain.app_config import MAX_ITERATIONS_MIN as _MAX_ITERATIONS_MIN
+from domain.mcp_config import MAX_ROUNDS_MAX as _MCP_ROUNDS_MAX
+from domain.mcp_config import MAX_ROUNDS_MIN as _MCP_ROUNDS_MIN
 
 
 @dataclass(frozen=True)
@@ -93,8 +95,12 @@ class Settings:
         default_factory=lambda: ["127.0.0.1:*", "localhost:*", "[::1]:*"]
     )
     # Hard server-side ceiling on a single read. A client argument may lower
-    # it, never raise it.
+    # it, never raise it. Like the round cap and the deep-link base below, a
+    # bootstrap default: the admin panel overrides it at runtime (#364).
     mcp_max_read_tokens: int = 4000
+    # The Chunkless RAG round cap the prompt states and the sources card counts
+    # against. Nothing enforces it server-side: the client model drives the loop.
+    mcp_max_rounds: int = 5
     # MCP Apps (SEP-1865) — the citation and sources cards rendered inline by
     # hosts that negotiate `io.modelcontextprotocol/ui`. On by default because it
     # degrades to text on hosts that do not: a client that never advertises
@@ -105,8 +111,8 @@ class Settings:
     # each cited passage boxed on its page. Only with MCP Apps on.
     mcp_citation_card: bool = False
     # Absolute base for citation deep links (e.g. http://localhost:3000).
-    # Empty leaves them relative, which is right when Studio serves the API
-    # and the UI from the same origin.
+    # Empty: citations carry no deep link — a bare path is no link for a
+    # reader outside Studio.
     mcp_studio_base_url: str = ""
 
     def __post_init__(self) -> None:
@@ -145,6 +151,11 @@ class Settings:
             errors.append(f"embedding_dimension must be >= 1 (got {self.embedding_dimension})")
         if self.mcp_max_read_tokens < 1:
             errors.append(f"mcp_max_read_tokens must be >= 1 (got {self.mcp_max_read_tokens})")
+        if not (_MCP_ROUNDS_MIN <= self.mcp_max_rounds <= _MCP_ROUNDS_MAX):
+            errors.append(
+                f"mcp_max_rounds must be between {_MCP_ROUNDS_MIN} and {_MCP_ROUNDS_MAX} "
+                f"(got {self.mcp_max_rounds})"
+            )
         if self.mcp_enabled and not self.mcp_allowed_hosts:
             errors.append("mcp_allowed_hosts must not be empty when MCP_ENABLED is true")
         if not (self.studio_mode_enabled or self.rag_pipeline_enabled):
@@ -245,6 +256,7 @@ class Settings:
             mcp_citation_card=os.environ.get("MCP_CITATION_CARD", "false").lower()
             in ("1", "true", "yes", "on"),
             mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
+            mcp_max_rounds=int(os.environ.get("MCP_MAX_ROUNDS", "5")),
             mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
         )
 

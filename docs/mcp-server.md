@@ -30,10 +30,49 @@ itself, and that spawn is the authorisation.
 |----------|---------|---------|
 | `MCP_ENABLED` | `false` | Mounts `POST /mcp` on the backend. |
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host allow-list (DNS-rebinding protection). Empty means the default; `*` delegates the check to a fronting proxy. |
-| `MCP_STUDIO_BASE_URL` | empty (`http://localhost:3000` in compose) | Where citation deep links point. Empty: no deep links. |
-| `MCP_MAX_READ_TOKENS` | `4000` | Ceiling on one read. A client may ask for less, never more. |
+| `MCP_STUDIO_BASE_URL` | empty (`http://localhost:3000` in compose) | Where citation deep links point. Empty: no deep links. Live in Settings. |
+| `MCP_MAX_READ_TOKENS` | `4000` | Ceiling on one read. A client may ask for less, never more. Live in Settings. |
+| `MCP_MAX_ROUNDS` | `5` | Round cap of the loop (1–20), stated by the `chunkless_rag` prompt and counted by the sources card. Live in Settings. |
 | `MCP_APPS_ENABLED` | `true` | Publishes the MCP Apps sources card, `show_sources`. It degrades to text on hosts without UI support. |
 | `MCP_CITATION_CARD` | `false` | Also publishes the citation card, `show_citation`. Off by default: a model offered it called it on its own before every sources card, which already shows each cited passage on its page. |
+
+## Configure from Studio
+
+**Settings → MCP server** shows the HTTP transport and edits three budgets
+with no restart.
+
+- **Status**: whether `/mcp` is mounted, the URL a client should use, and a
+  warning when the browser's host is not in `MCP_ALLOWED_HOSTS` (a client on
+  that URL would get a 421).
+- **Connect a client**: the Claude Desktop config (through `mcp-remote`) and
+  the Claude Code command, ready to copy.
+- **Published by the server**: the tools, cards and prompts the running server
+  publishes, read from the server itself.
+- **Live settings**: `MCP_MAX_ROUNDS`, `MCP_MAX_READ_TOKENS` and
+  `MCP_STUDIO_BASE_URL`. The environment gives the defaults; a saved value is
+  stored in Studio's database, marked `db`, and used from the next tool call.
+  *Reset to environment* drops the saved values. The stdio server reads them
+  at its next launch.
+- **Restart-only settings**: `MCP_ENABLED`, `MCP_ALLOWED_HOSTS`,
+  `MCP_APPS_ENABLED` and `MCP_CITATION_CARD`, shown with their values.
+
+Two limits:
+
+- The round cap also appears in the server instructions, which a client reads
+  once, when it connects. Over HTTP they keep the boot-time value: restart the
+  backend, then the client, to align them.
+- The restart-only settings stay in the environment on purpose. The admin API
+  has no authentication, and `MCP_ALLOWED_HOSTS` is the DNS-rebinding guard,
+  so neither the switch nor the guard can be changed from it. The two card
+  flags change the tool list, which Claude Desktop rereads only on a full
+  restart: change the variable, restart the backend, then quit Claude Desktop
+  with Cmd+Q (closing the window is not enough) and relaunch it.
+
+On a Hugging Face Space (`DEPLOYMENT_MODE=huggingface`) the section is
+read-only.
+
+The routes behind it: `GET/PUT/DELETE /api/config/mcp` for the budgets,
+`GET /api/mcp/server` for the running server.
 
 ## Connect a client
 
@@ -55,7 +94,21 @@ claude mcp add docling-studio -- \
 `document-parser/` whatever the client's working directory. If the file is
 missing it exits with a message rather than serving an empty database.
 
-Claude Desktop, in `claude_desktop_config.json`:
+Claude Desktop, over HTTP, through `mcp-remote` (Settings → MCP server gives
+this block with the right URL):
+
+```json
+{
+  "mcpServers": {
+    "docling-studio": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:3000/mcp", "--allow-http", "--transport", "http-only"]
+    }
+  }
+}
+```
+
+Claude Desktop, over stdio, in `claude_desktop_config.json`:
 
 ```json
 {

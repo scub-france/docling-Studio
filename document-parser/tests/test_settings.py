@@ -183,6 +183,25 @@ class TestReasoningMaxIterations:
             Settings(reasoning_max_iterations=21)
 
 
+class TestMcpMaxRounds:
+    """#364 — the round cap is a bounded bootstrap default."""
+
+    def test_default_is_five(self):
+        assert Settings().mcp_max_rounds == 5
+
+    def test_from_env(self, monkeypatch):
+        monkeypatch.setenv("MCP_MAX_ROUNDS", "3")
+        assert Settings.from_env().mcp_max_rounds == 3
+
+    def test_out_of_bounds_rejected(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="mcp_max_rounds"):
+            Settings(mcp_max_rounds=0)
+        with pytest.raises(ValueError, match="mcp_max_rounds"):
+            Settings(mcp_max_rounds=21)
+
+
 class TestSettingsFromEnv:
     def test_reads_env_vars(self, monkeypatch):
         monkeypatch.setenv("APP_VERSION", "1.2.3")
