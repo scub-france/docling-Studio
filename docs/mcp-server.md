@@ -32,7 +32,8 @@ itself, and that spawn is the authorisation.
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host allow-list (DNS-rebinding protection). Empty means the default; `*` delegates the check to a fronting proxy. |
 | `MCP_STUDIO_BASE_URL` | empty (`http://localhost:3000` in compose) | Where citation deep links point. Empty: no deep links. |
 | `MCP_MAX_READ_TOKENS` | `4000` | Ceiling on one read. A client may ask for less, never more. |
-| `MCP_APPS_ENABLED` | `true` | Publishes the two MCP Apps cards, `show_citation` and `show_sources`. They degrade to text on hosts without UI support. |
+| `MCP_APPS_ENABLED` | `true` | Publishes the MCP Apps sources card, `show_sources`. It degrades to text on hosts without UI support. |
+| `MCP_CITATION_CARD` | `false` | Also publishes the citation card, `show_citation`. Off by default: a model offered it called it on its own before every sources card, which already shows each cited passage on its page. |
 
 ## Connect a client
 
@@ -75,7 +76,7 @@ Claude Desktop, in `claude_desktop_config.json`:
 | `get_outline` | `document_id`, `version_id?`, `depth?` | The map: sections, or pages when the document has no headings. Each entry has a `ref` and `est_tokens`. |
 | `read_element` | `document_id`, `ref`, `version_id?`, `include?`, `max_tokens?`, `cursor?` | The text in `content`, one anchor per element in `citations[]`, and `span_uri` covering them all. |
 | `verify_citation` | `uri`, `quote` | Whether the quote is at the anchor, server-side. |
-| `show_citation` | `uri` | One passage highlighted on its page, when the reader asks to see it (MCP Apps). Not part of the loop. |
+| `show_citation` | `uri` | One passage highlighted on its page, when the reader asks to see it. Only with `MCP_CITATION_CARD=true`. Not part of the loop. |
 | `show_sources` | `question`, `read`, `cited` | Where the answer came from, as one card. See [Sources](#sources). |
 
 Every result also carries a `next_step`: what to do with it, when it applies.
@@ -186,13 +187,13 @@ Studio link per section.
 
 ## MCP Apps
 
-On hosts that support MCP Apps (SEP-1865), `show_sources` and
-`show_citation` render inline cards. An answer ends on one card, the sources
-card; the citation card is for a passage the reader asks to see.
+On hosts that support MCP Apps (SEP-1865), `show_sources` renders an inline
+card, and so does `show_citation` when `MCP_CITATION_CARD=true`. An answer
+ends on one card, the sources card.
 
-- the **citation card** says one thing: *texte exact du document*. It shows
-  the passage boxed on its page, then the passage itself, large; a long one
-  folds to seven lines. No ids or hashes;
+- the **citation card**, off by default, says one thing: *texte exact du
+  document*. It shows the passage boxed on its page, then the passage itself,
+  large; a long one folds to seven lines. No ids or hashes;
 - the **sources card** has two tabs, in Studio's look:
   - **Sources**: the real page, with every round's section boxed in orange
     and numbered in the margin, and every quoted passage boxed in green.

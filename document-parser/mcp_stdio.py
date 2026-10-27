@@ -64,6 +64,7 @@ async def _serve() -> None:
         lambda: tools,
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
+        citation_card=settings.mcp_citation_card,
     )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()

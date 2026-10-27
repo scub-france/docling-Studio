@@ -48,7 +48,8 @@ def _png(width: int = 1275, height: int = 1650) -> bytes:
 
 @asynccontextmanager
 async def _client(tools, *, apps: bool = True, negotiates: bool = False):
-    server = build_mcp_server(lambda: tools, version="test", apps=apps)
+    # The citation card is off by default; this module is its test, so on.
+    server = build_mcp_server(lambda: tools, version="test", apps=apps, citation_card=True)
     async with Client(server, extensions=[APPS_CLIENT] if negotiates else None) as client:
         yield client
 
@@ -158,6 +159,18 @@ class TestAppsSurface:
     async def test_the_server_advertises_the_extension(self, tmp_path):
         async with _client(_service_with_file(tmp_path)) as client:
             assert EXTENSION_ID in (client.server_capabilities.extensions or {})
+
+    async def test_the_citation_card_is_off_by_default(self, tmp_path):
+        """Offered to a model, it was called on its own before every sources
+        card, which already shows each cited passage on its page."""
+        tools = _service_with_file(tmp_path)
+        server = build_mcp_server(lambda: tools, version="test", apps=True)
+        async with Client(server) as client:
+            listed = {t.name for t in (await client.list_tools()).tools}
+            resources = {str(r.uri) for r in (await client.list_resources()).resources}
+        assert {"show_sources", "get_source_page"} <= listed
+        assert not {"show_citation", "get_citation_image"} & listed
+        assert CITATION_APP_URI not in resources
 
     async def test_disabled_apps_leave_the_text_surface_alone(self, tmp_path):
         async with _client(_service_with_file(tmp_path), apps=False) as client:

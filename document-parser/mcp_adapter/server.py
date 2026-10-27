@@ -63,9 +63,9 @@ per round, with a reason; {MAX_ROUNDS} rounds at most.
 """
 
 # Only when the cards are published: naming a tool this server did not publish
-# spends a turn on a failure. One card ends an answer: show_sources already
-# shows each round's page with the passage boxed, so show_citation is left to
-# its own description — for a passage the reader asks to see.
+# spends a turn on a failure. One card ends an answer: show_sources shows each
+# round's page with the passages boxed. show_citation, when switched on, is
+# left to its own description.
 _CARDS = """\
 5. show_sources(question, read, cited) to end the answer.
 """
@@ -93,6 +93,7 @@ def build_mcp_server(
     name: str = SERVER_NAME,
     version: str = "",
     apps: bool = True,
+    citation_card: bool = False,
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -106,7 +107,7 @@ def build_mcp_server(
         name=name,
         version=version,
         instructions=instructions(apps=apps),
-        extensions=[build_apps_extension(tools)] if apps else None,
+        extensions=[build_apps_extension(tools, citation_card=citation_card)] if apps else None,
     )
     # The slash command: the whole loop, invoked by the user rather than
     # inflicted on every call (see mcp_adapter/prompts.py).

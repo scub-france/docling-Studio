@@ -17,17 +17,17 @@ from mcp_adapter import build_mcp_server
 from tests.navigation_fixtures import make_document_tools
 from tests.test_mcp_apps import APPS_CLIENT
 
-# About 900 tokens, for the largest surface: the read loop and both cards.
-# Was 6 000 with the investigation journal (#363 removed it); kept tight so the
-# surface does not creep back.
-MAX_SURFACE_CHARS = 3_650
+# About 850 tokens, for the largest surface: the read loop and the sources
+# card. Was 6 000 with the investigation journal (#363 removed it), 3 650 with
+# the citation card on by default; kept tight so the surface does not creep
+# back.
+MAX_SURFACE_CHARS = 3_400
 
 VISIBLE_TOOLS = {
     "find_documents",
     "get_outline",
     "read_element",
     "verify_citation",
-    "show_citation",
     "show_sources",
 }
 

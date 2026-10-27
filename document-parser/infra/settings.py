@@ -100,6 +100,10 @@ class Settings:
     # degrades to text on hosts that do not: a client that never advertises
     # the extension never fetches the template, and the tool answers as text.
     mcp_apps_enabled: bool = True
+    # The citation card (`show_citation`), off by default: offered to a model,
+    # it was called on its own before every sources card, which already shows
+    # each cited passage boxed on its page. Only with MCP Apps on.
+    mcp_citation_card: bool = False
     # Absolute base for citation deep links (e.g. http://localhost:3000).
     # Empty leaves them relative, which is right when Studio serves the API
     # and the UI from the same origin.
@@ -237,6 +241,8 @@ class Settings:
                 if h.strip()
             ],
             mcp_apps_enabled=os.environ.get("MCP_APPS_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_citation_card=os.environ.get("MCP_CITATION_CARD", "false").lower()
             in ("1", "true", "yes", "on"),
             mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
             mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),

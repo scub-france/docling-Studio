@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 # Only when the cards are published: naming a tool this server did not publish
 # spends a turn on a failure. One card ends the answer — show_sources shows
-# each round's page with the passage boxed; show_citation stays on request.
+# each round's page with the passages boxed; show_citation is off by default.
 _CARD_STEPS = """
 5. `show_sources(question, read, cited)` to end. `read`: your rounds in order, each \
 `{uri, why, found}` with the `uri` its read_element returned. `cited`: each quote you \

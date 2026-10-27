@@ -27,9 +27,9 @@ from tests.navigation_fixtures import (
     make_job,
 )
 
-# The text surface. `show_citation` is added by the Apps extension and is
-# asserted in tests/test_mcp_apps.py, so this set pins that enabling a UI does
-# not quietly change what a text-only host sees.
+# The text surface. The cards are added by the Apps extension and asserted in
+# tests/test_mcp_apps.py and tests/test_mcp_sources_app.py, so this set pins
+# that enabling a UI does not quietly change what a text-only host sees.
 TOOL_NAMES = {"find_documents", "get_outline", "read_element", "verify_citation"}
 
 

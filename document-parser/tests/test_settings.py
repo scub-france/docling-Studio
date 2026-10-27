@@ -168,6 +168,12 @@ class TestReasoningMaxIterations:
         monkeypatch.setenv("MCP_ALLOWED_HOSTS", "")
         assert Settings.from_env().mcp_allowed_hosts == ["127.0.0.1:*", "localhost:*", "[::1]:*"]
 
+    def test_the_citation_card_is_off_unless_asked_for(self, monkeypatch):
+        monkeypatch.delenv("MCP_CITATION_CARD", raising=False)
+        assert Settings.from_env().mcp_citation_card is False
+        monkeypatch.setenv("MCP_CITATION_CARD", "true")
+        assert Settings.from_env().mcp_citation_card is True
+
     def test_out_of_bounds_rejected(self):
         import pytest
 

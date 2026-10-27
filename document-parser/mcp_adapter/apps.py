@@ -1,10 +1,11 @@
 """MCP Apps extension — the two viewers (`io.modelcontextprotocol/ui`).
 
 `show_sources` (#363) ends an answer: it shows where the whole answer came
-from — the sections read, in order, on their pages,
-and the passages cited (see `sources_view`). `show_citation` shows one passage
-on its page, on request. Each is
-bound to one predeclared `ui://` template. That shape is the spec's, not a
+from — the sections read, in order, on their pages, and the passages cited
+(see `sources_view`). `show_citation` shows one passage on its page; it is
+off by default (`citation_card`), because a model offered it called it on its
+own before every sources card, which already shows each cited passage boxed
+on its page. Each card is bound to one predeclared `ui://` template. That shape is the spec's, not a
 preference: SEP-1865 models UI as a *static* resource the host fetches once
 and caches, with the tool result pushed into the sandboxed iframe afterwards.
 So there is one HTML document per view and no HTML generated per result.
@@ -119,10 +120,31 @@ def _no_card(deep_link: str | None) -> str:
     )
 
 
-def build_apps_extension(tools: Callable[[], DocumentTools]) -> Apps:
-    """Build the Apps extension — the two cards — over the same lazily-resolved
-    service."""
+def build_apps_extension(
+    tools: Callable[[], DocumentTools], *, citation_card: bool = False
+) -> Apps:
+    """Build the Apps extension over the same lazily-resolved service: the
+    sources card, and the citation card when `citation_card` is set."""
     apps = Apps()
+    register_sources_view(apps, tools, SOURCES_APP_URI)
+    apps.add_html_resource(
+        SOURCES_APP_URI,
+        SOURCES_APP_HTML,
+        title="Sources",
+        description="Shows where an answer came from: the sections read, on their pages.",
+        prefers_border=True,
+        # No clipboard permission and no `csp=`: the default policy already
+        # allows `img-src data:`, which is all the card's pages need. The card
+        # renders the tool result it was handed and fetches its pages through
+        # `get_source_page`.
+    )
+    if citation_card:
+        _register_citation_card(apps, tools)
+    return apps
+
+
+def _register_citation_card(apps: Apps, tools: Callable[[], DocumentTools]) -> None:
+    """`show_citation`, its page fetch and its template."""
 
     citation_description = (
         "Show one passage on its page, highlighted, beside its text, when the reader asks "
@@ -188,8 +210,6 @@ def build_apps_extension(tools: Callable[[], DocumentTools]) -> Apps:
             raise ToolError(str(exc)) from exc
         return image_out(image)
 
-    register_sources_view(apps, tools, SOURCES_APP_URI)
-
     apps.add_html_resource(
         CITATION_APP_URI,
         CITATION_APP_HTML,
@@ -206,15 +226,3 @@ def build_apps_extension(tools: Callable[[], DocumentTools]) -> Apps:
         # travels as a URL — and then the view only works while the Studio
         # backend is reachable from the host, which it is not over stdio.
     )
-    apps.add_html_resource(
-        SOURCES_APP_URI,
-        SOURCES_APP_HTML,
-        title="Sources",
-        description="Shows where an answer came from: the sections read, on their pages.",
-        prefers_border=True,
-        # No clipboard permission and no `csp=`: the default policy already
-        # allows `img-src data:`, which is all the path's thumbnails need. The
-        # card renders the tool result it was handed; only the path fetches,
-        # through `get_source_page`, and only when opened.
-    )
-    return apps
