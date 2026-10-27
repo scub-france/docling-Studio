@@ -66,6 +66,11 @@ class DocumentIndex:
     inline_meta: dict[str, dict[str, Any]]
     page_numbers: list[int] = field(default_factory=list)
     page_sizes: dict[int, tuple[float, float]] = field(default_factory=dict)
+    # Every box an element has, one per provenance. `bbox_of` keeps the
+    # first, which is what a citation reports; drawing where a section sits
+    # needs the rest too, or the half of a paragraph after a page break, the
+    # half a reader sees on the next page, has no box.
+    boxes_of: dict[str, tuple[BoundingBox, ...]] = field(default_factory=dict)
 
     @property
     def page_count(self) -> int:
@@ -117,6 +122,7 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
     page_of: dict[str, int] = {}
     pages_of: dict[str, frozenset[int]] = {}
     bbox_of: dict[str, BoundingBox] = {}
+    boxes_of: dict[str, tuple[BoundingBox, ...]] = {}
     for ref, item in by_ref.items():
         provs = tree_reader.iter_provs(item)
         if not provs and ref in inline_meta:
@@ -124,21 +130,11 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         located = [p for p in provs if p.get("page_no") is not None]
         if not located:
             continue
-        first = located[0]
-        page = int(first["page_no"])
-        page_of[ref] = page
+        page_of[ref] = int(located[0]["page_no"])
         pages_of[ref] = frozenset(int(p["page_no"]) for p in located)
-        width, height = page_sizes.get(page, (None, None))
-        bbox_of[ref] = BoundingBox(
-            page=page,
-            left=float(first.get("bbox_l", 0.0)),
-            top=float(first.get("bbox_t", 0.0)),
-            right=float(first.get("bbox_r", 0.0)),
-            bottom=float(first.get("bbox_b", 0.0)),
-            coord_origin=str(first.get("coord_origin") or "TOPLEFT"),
-            page_width=width,
-            page_height=height,
-        )
+        boxes = tuple(_box(prov, page_sizes) for prov in located)
+        bbox_of[ref] = boxes[0]
+        boxes_of[ref] = boxes
 
     # Union, not `or`: a parse whose `pages` map is partial (a page with no
     # `size`) would otherwise drop that page from the map entirely — and the
@@ -160,6 +156,23 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         inline_meta=inline_meta,
         page_numbers=page_numbers,
         page_sizes=page_sizes,
+        boxes_of=boxes_of,
+    )
+
+
+def _box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> BoundingBox:
+    """One provenance row as a box on its own page, with that page's size."""
+    page = int(prov["page_no"])
+    width, height = page_sizes.get(page, (None, None))
+    return BoundingBox(
+        page=page,
+        left=float(prov.get("bbox_l", 0.0)),
+        top=float(prov.get("bbox_t", 0.0)),
+        right=float(prov.get("bbox_r", 0.0)),
+        bottom=float(prov.get("bbox_b", 0.0)),
+        coord_origin=str(prov.get("coord_origin") or "TOPLEFT"),
+        page_width=width,
+        page_height=height,
     )
 
 

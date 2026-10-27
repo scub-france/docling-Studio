@@ -242,3 +242,40 @@ class TestSegments:
         assert status[ARTICLE_12] == STATUS_READ
         assert status[PREAVIS_SECTION] == STATUS_READ
         assert status[ARTICLE_13] == "unread"
+
+
+class TestWhereItSits:
+    """The blocks the card draws: each round's section, each cited passage."""
+
+    async def test_a_round_is_boxed_on_every_page_its_section_touches(self):
+        sources, _ = await project(reads=[read(PREAVIS_SECTION)])
+        regions = sources.hops[0].regions
+        assert regions[0].page == 1
+        assert 2 in {region.page for region in regions}
+        # The heading and its paragraph, one block: 240 pt to 332 pt down a
+        # 792 pt page.
+        assert (round(regions[0].top, 3), round(regions[0].bottom, 3)) == (0.303, 0.419)
+
+    async def test_a_cited_passage_carries_its_quote_status_and_block(self):
+        cited = SourceCited(
+            ref=PREAVIS_REF, uri=anchor_uri(PREAVIS_REF), quote="trois mois", status="verified"
+        )
+        sources, _ = await project(reads=[read(PREAVIS_SECTION)], cited=[cited])
+        [passage] = sources.passages
+        assert (passage.quote, passage.status, passage.hop_id) == ("trois mois", "verified", "h1")
+        assert passage.page == 1
+        [region] = passage.regions
+        assert (round(region.top, 3), round(region.bottom, 3)) == (0.366, 0.419)
+
+    async def test_a_passage_no_round_read_still_shows_on_its_page(self):
+        sources, _ = await project(reads=[read(ARTICLE_13)], cited=[cite(PREAVIS_REF)])
+        [passage] = sources.passages
+        assert passage.hop_id is None
+        assert passage.status is None
+        assert passage.regions
+
+    async def test_an_anchor_cited_twice_is_one_passage(self):
+        sources, _ = await project(
+            reads=[read(PREAVIS_SECTION)], cited=[cite(PREAVIS_REF), cite(PREAVIS_REF)]
+        )
+        assert len(sources.passages) == 1

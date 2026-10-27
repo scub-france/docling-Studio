@@ -38,8 +38,8 @@ if TYPE_CHECKING:
 # each round's page with the passage boxed; show_citation stays on request.
 _CARD_STEPS = """
 5. `show_sources(question, read, cited)` to end. `read`: your rounds in order, each \
-`{uri, why, found}` with the `uri` its read_element returned. `cited`: the anchors you \
-verified."""
+`{uri, why, found}` with the `uri` its read_element returned. `cited`: each quote you \
+verified, as `{uri, quote}`."""
 
 _TEXT_STEP = """
 5. Give the reader each verified quote with its `deep_link`, when there is one."""

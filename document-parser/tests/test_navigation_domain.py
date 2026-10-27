@@ -320,6 +320,15 @@ class TestPageProvenance:
         bbox = resolve(_index(MESSY), "#/texts/1").bbox
         assert (bbox.page_width, bbox.page_height) == (612.0, 792.0)
 
+    def test_every_box_of_an_element_is_kept_one_per_page(self):
+        """The citation reports the first box; drawing the paragraph needs
+        the half a reader sees on the next page too."""
+        index = _index(MESSY)
+        boxes = index.boxes_of["#/texts/3"]
+        assert [box.page for box in boxes] == [1, 2]
+        assert boxes[0] == index.bbox_of["#/texts/3"]
+        assert (boxes[1].top, boxes[1].bottom) == (40.0, 90.0)
+
     def test_running_headers_and_footers_carry_no_readable_text(self):
         index = _index(MESSY)
         assert element_text(index, "#/texts/0") == ""  # page_header
@@ -466,6 +475,37 @@ class TestSpanRefs:
             "#/texts/3",
             "#/texts/4",
         ]
+
+
+class TestPageFraction:
+    def test_topleft_divides_by_the_page(self):
+        box = BoundingBox(
+            page=1, left=61.2, top=79.2, right=306, bottom=396, page_width=612, page_height=792
+        )
+        assert box.page_fraction() == pytest.approx((0.1, 0.1, 0.5, 0.5))
+
+    def test_bottomleft_is_flipped_to_the_top(self):
+        # Docling's PDF-native origin: `top` is the LARGER number.
+        box = BoundingBox(
+            page=1,
+            left=61.2,
+            top=712.8,
+            right=306,
+            bottom=396,
+            coord_origin="BOTTOMLEFT",
+            page_width=612,
+            page_height=792,
+        )
+        assert box.page_fraction() == pytest.approx((0.1, 0.1, 0.5, 0.5))
+
+    def test_no_page_size_no_fraction(self):
+        assert BoundingBox(page=1, left=1, top=1, right=2, bottom=2).page_fraction() is None
+
+    def test_a_box_past_the_edge_is_clamped_to_the_page(self):
+        box = BoundingBox(
+            page=1, left=-10, top=0, right=700, bottom=800, page_width=612, page_height=792
+        )
+        assert box.page_fraction() == (0.0, 0.0, 1.0, 1.0)
 
 
 class TestBoxUnion:

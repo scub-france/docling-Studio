@@ -20,7 +20,7 @@ Pour chaque question :
    - écris une ligne « → trouvé : … ».
    Arrête-toi dès que tu peux répondre.
 4. Citations — appuie chaque affirmation sur une citation mot pour mot, avec le citations[].uri de l'élément cité, et vérifie-la avec verify_citation(uri, quote). Si le statut est quote_drift, corrige la citation ou retire l'affirmation.
-5. Sources — termine par show_sources(question, read, cited) : read = tes tours dans l'ordre, chacun {uri, why, found}, avec l'uri renvoyée par read_element ; cited = les ancres vérifiées. C'est la seule carte de la réponse.
+5. Sources — termine par show_sources(question, read, cited) : read = tes tours dans l'ordre, chacun {uri, why, found}, avec l'uri renvoyée par read_element ; cited = chaque citation vérifiée, {uri, quote}, avec la citation mot pour mot : le serveur la revérifie et la carte l'affiche. C'est la seule carte de la réponse.
 
 Ta réponse finale : une phrase qui répond, puis 2 à 4 points courts, chacun avec sa citation entre guillemets et sa page.
 

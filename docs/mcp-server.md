@@ -153,13 +153,20 @@ from. It is stateless: the agent passes back the anchors it already holds.
 
 - `read`: one entry per round, in order: the `uri` its `read_element`
   returned, a one-line `why`, and what it `found`.
-- `cited`: the anchors it verified.
+- `cited`: each quote it verified, as `{uri, quote}`. The server checks every
+  quote again, as `verify_citation` does, so the card says *vérifiée* on the
+  server's word. A bare anchor is still accepted and shows as cited, not
+  verified.
 
 The server resolves them against the one parse they all pin, then returns:
 
 - **the rounds**: one per section read, numbered against the cap (`2/5`),
   with its `why`, what it `found`, its page, its cost and the passages cited
-  from it;
+  from it. Each round carries `regions`: where its section sits, one block
+  per column run on each page, as fractions of the page;
+- **the passages**: each quote cited, with the server's status for it
+  (`verified`, `quote_drift`, …, or none when no quote came), its round and
+  its blocks on the page;
 - **the map**: the same reads placed on the outline, in document order. Each
   section is marked `cited`, `read`, or `path` (an ancestor);
 - **the segments**: every section of the document, each with the tokens of
@@ -186,16 +193,18 @@ card; the citation card is for a passage the reader asks to see.
 - the **citation card** says one thing: *texte exact du document*. It shows
   the passage boxed on its page, then the passage itself, large; a long one
   folds to seven lines. No ids or hashes;
-- the **sources card** is one view: each round beside its real page, the
-  passage boxed, with its *pourquoi* and its *trouvé* and a link into Studio.
-  Above the rounds sit three things:
-  - the share of the document read ("9,4 % du document lu");
-  - the rounds against the cap;
-  - a thin map of the whole document, one segment per section with the
-    sections read lit.
-
-  A click on a page enlarges it, with a lens to zoom and leaf through the
-  document.
+- the **sources card** has two tabs, in Studio's look:
+  - **Sources**: the real page, with every round's section boxed in orange
+    and numbered in the margin, and every quoted passage boxed in green.
+    Beside it, the rounds against the cap; the one selected opens on its
+    *pourquoi*, its *trouvé* and its quote, marked *vérifiée par le serveur*
+    or *introuvable*. A click on a round turns to its page; the arrows leaf
+    through the document; *Agrandir* opens the page fullscreen, boxes
+    included.
+  - **Détails**: the share of the document read, the rounds, the tokens
+    read and the quotes verified; the whole document as a bar, one segment
+    per section, with the sections read lit; and a table of the rounds with
+    their pages and cost.
 
 Both cards are light only, so they read the same off a projector whatever
 the host's theme. Their labels are in French.

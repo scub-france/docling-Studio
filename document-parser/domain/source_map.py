@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 from domain.element_reader import element_text, section_refs
 from domain.navigation import read_cost
 from domain.outline_locate import containing_chain, flatten, heading_ranges
+from domain.page_regions import regions_of
 from domain.source_bar import SourceSegment, build_segments
 from domain.spans import span_start
 
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from domain.navigation import DocumentOutline, OutlineNode
+    from domain.page_regions import PageRegion
     from domain.parse_index import DocumentIndex
 
 # Ordered weakest to strongest: a section that was read and also quoted from
@@ -60,10 +62,17 @@ class SourceRead:
 
 @dataclass(frozen=True)
 class SourceCited:
-    """One anchor the agent cites in its answer."""
+    """One anchor the agent cites in its answer, with the quote it gave.
+
+    `status` is what the server said of that quote when it checked it again
+    (a `CitationStatus` value), or None when no quote came with the anchor:
+    a citation nobody checked is shown as cited, never as verified.
+    """
 
     ref: str
     uri: str
+    quote: str = ""
+    status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +95,25 @@ class SourceHop:
     node_ref: str | None = None
     page: int | None = None
     cited: list[str] = field(default_factory=list)
+    # Where the section read sits: one block per column run, page by page.
+    regions: list[PageRegion] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SourcePassage:
+    """One cited passage: its quote, the server's word on it, where it sits.
+
+    `hop_id` is the round whose read covered it, or None when no read did:
+    the passage still shows, on its own page.
+    """
+
+    uri: str
+    ref: str
+    quote: str
+    status: str | None
+    regions: list[PageRegion]
+    hop_id: str | None = None
+    page: int | None = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +165,8 @@ class SourceMap:
     totals: SourceTotals
     # The whole document, section by section — the bar the card draws.
     segments: list[SourceSegment] = field(default_factory=list)
+    # The passages cited, in the order the agent gave them, each once.
+    passages: list[SourcePassage] = field(default_factory=list)
 
 
 def build_source_map(
@@ -160,17 +190,33 @@ def build_source_map(
     trail = _Trail()
     for hop in hops:
         trail.mark(hop.node_ref, STATUS_READ, hop.hop_id)
+    passages: dict[str, SourcePassage] = {}
     for anchor in cited:
         hop = _hop_covering(span_start(anchor.ref), hops, covered)
         if hop is not None:
             hop.cited.append(anchor.uri)
         trail.mark(locate(anchor.ref), STATUS_CITED, hop.hop_id if hop else None)
+        passages.setdefault(anchor.uri, _passage(anchor, index, hop))
 
     return SourceMap(
         nodes=trail.nodes(flat),
         hops=hops,
         totals=_totals(outline, len(flat), hops, covered, index),
         segments=build_segments(flat, trail.status, trail.reached),
+        passages=list(passages.values()),
+    )
+
+
+def _passage(anchor: SourceCited, index: DocumentIndex, hop: SourceHop | None) -> SourcePassage:
+    start = span_start(anchor.ref)
+    return SourcePassage(
+        uri=anchor.uri,
+        ref=anchor.ref,
+        quote=anchor.quote,
+        status=anchor.status,
+        regions=regions_of(index, section_refs(index, anchor.ref) or [start]),
+        hop_id=hop.hop_id if hop else None,
+        page=index.page_of.get(start),
     )
 
 
@@ -252,7 +298,8 @@ def _hops(
             continue
         seen[read.ref] = len(hops)
         hop_id = f"h{len(hops) + 1}"
-        refs = set(section_refs(index, read.ref) or [read.ref])
+        ordered = section_refs(index, read.ref) or [read.ref]
+        refs = set(ordered)
         covered[hop_id] = refs
         node_ref = locate(read.ref)
         node = published.get(node_ref) if node_ref else None
@@ -268,6 +315,7 @@ def _hops(
                 est_tokens=_cost(index, refs),
                 node_ref=node_ref,
                 page=index.page_of.get(span_start(read.ref)) or (node.page if node else None),
+                regions=regions_of(index, ordered),
             )
         )
     return hops, covered

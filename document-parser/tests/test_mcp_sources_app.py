@@ -154,6 +154,33 @@ class TestCard:
         assert card["totals"]["over_cap"] is True
         assert card["summary"].startswith("2 rounds, over the 1-round cap · ")
 
+    async def test_a_quote_travels_with_its_anchor_and_is_checked_again(self):
+        quote = "trois mois à compter de la notification"
+        async with _client(make_document_tools()) as client:
+            result = await _show(client, cited=[{"uri": PREAVIS_URI, "quote": quote}])
+        card = _payload(result)
+        [passage] = card["passages"]
+        assert (passage["quote"], passage["status"]) == (quote, "verified")
+        assert passage["hop_id"] == card["hops"][1]["hop_id"]
+        assert passage["deep_link"].startswith(f"http://localhost:3000/analyses/{JOB_ID}?ref=")
+        assert f"cited #/texts/4 — \u201c{quote}\u201d (verified)" in result.content[0].text
+
+    async def test_a_bare_anchor_is_still_taken_as_cited_unchecked(self):
+        async with _client(make_document_tools()) as client:
+            card = _payload(await _show(client, cited=[PREAVIS_URI]))
+        [passage] = card["passages"]
+        assert (passage["quote"], passage["status"]) == ("", None)
+
+    async def test_every_round_and_passage_says_where_it_sits(self):
+        async with _client(make_document_tools()) as client:
+            card = _payload(await _show(client))
+        assert card["page_count"] == 2
+        [region, *_] = card["hops"][1]["regions"]
+        assert region["page"] == 1
+        left, top, right, bottom = region["box"]
+        assert 0 <= left < right <= 1 and 0 <= top < bottom <= 1
+        assert card["passages"][0]["regions"][0]["page"] == 1
+
     async def test_unknown_anchors_are_shown_not_dropped(self):
         async with _client(make_document_tools()) as client:
             result = await _show(client, cited=[PREAVIS_URI, "not-an-anchor"])
@@ -183,29 +210,19 @@ class TestTemplate:
     def test_it_recognises_its_own_payload(self):
         assert "structured?.hops && structured.totals" in SOURCES_APP_HTML
 
-    def test_counts_render_as_numbers_only(self):
-        # Interpolated unescaped, so every count goes through `num()`, which
-        # coerces before it formats.
-        assert "Number.isFinite(number)" in SOURCES_APP_HTML
-        assert "num(totals.tokens_read)" in SOURCES_APP_HTML
-        assert "fr(totals.percent, 1)" in SOURCES_APP_HTML
-        assert "num(hop.ordinal)" in SOURCES_APP_HTML and "num(maxRounds)" in SOURCES_APP_HTML
-
-    def test_a_round_shows_against_the_cap_and_a_breach_is_coloured(self):
-        assert "Tour ${num(hop.ordinal)}/${num(maxRounds)}" in SOURCES_APP_HTML
-        assert "totals.over_cap === true" in SOURCES_APP_HTML
-        assert ".gauge-label.over" in SOURCES_APP_HTML and ".pip.over" in SOURCES_APP_HTML
-        assert "non utilisé" in SOURCES_APP_HTML
-
-    def test_the_overview_leads_with_the_share_of_the_document_read(self):
-        """The share read, then the whole document as a thin map."""
-        for marker in ('class="pct"', "du document lu", 'class="minimap"'):
+    def test_counts_and_boxes_render_as_numbers_only(self):
+        # Interpolated unescaped, so every count goes through `num()` or
+        # `fr()`, and every box edge through `pct()`, each of which coerces
+        # before it formats.
+        assert SOURCES_APP_HTML.count("Number.isFinite(number)") >= 3
+        for marker in (
+            "num(totals.tokens_read)",
+            "fr(totals.percent, 1)",
+            "num(hop.ordinal)",
+            "num(maxRounds)",
+            "pct(l - padX)",
+        ):
             assert marker in SOURCES_APP_HTML, marker
-        assert 'data-status="${esc(s.status)}"' in SOURCES_APP_HTML
-
-    def test_it_is_light_only(self):
-        assert "color-scheme: light;" in SOURCES_APP_HTML
-        assert "prefers-color-scheme" not in SOURCES_APP_HTML
 
     def test_every_field_it_renders_is_escaped_first(self):
         """The card renders strings a model wrote after reading a document.
@@ -214,18 +231,62 @@ class TestTemplate:
         for field in (
             "view.question",
             "view.filename",
+            "view.version_id",
             "s.title",
             "s.status",
             "hop.title",
             "hop.why",
             "hop.found",
+            "hop.hop_id",
             "hop.deep_link",
+            "passage.quote",
             "link",
+            "cached.image.data_uri",
             "image.data_uri",
-            "image.page",
-            "cached.error",
+            "message",
         ):
             assert f"esc({field}" in SOURCES_APP_HTML, field
+
+    def test_it_is_light_only(self):
+        assert "color-scheme: light;" in SOURCES_APP_HTML
+        assert "prefers-color-scheme" not in SOURCES_APP_HTML
+
+    def test_two_tabs_the_sources_and_the_details(self):
+        assert 'role="tablist"' in SOURCES_APP_HTML
+        assert 'tab("sources", "Sources")' in SOURCES_APP_HTML
+        assert 'tab("details", "Détails")' in SOURCES_APP_HTML
+
+    def test_the_page_carries_every_round_and_every_passage_boxed(self):
+        """Boxes from the server's fractions, the selected round strong."""
+        for marker in (
+            "regionsOn(hop.regions, page)",
+            "regionsOn(passage.regions, page)",
+            'hop.hop_id === state.selected ? "sel" : "dim"',
+            "mark cite ${look}",
+            "data-pin=",
+        ):
+            assert marker in SOURCES_APP_HTML, marker
+
+    def test_a_citation_says_verified_only_on_the_servers_word(self):
+        assert 'new Set(["verified", "stale_version"])' in SOURCES_APP_HTML
+        for label in (
+            "mot pour mot · vérifiée par le serveur",
+            "introuvable à cet endroit",
+            "non vérifiée",
+        ):
+            assert label in SOURCES_APP_HTML, label
+
+    def test_the_rounds_show_against_the_cap(self):
+        assert "totals.over_cap === true" in SOURCES_APP_HTML
+        assert "plafond dépassé" in SOURCES_APP_HTML
+        assert "Tours non utilisés" in SOURCES_APP_HTML
+        for label in ("<b>Pourquoi</b>", "Tours de lecture"):
+            assert label in SOURCES_APP_HTML, label
+
+    def test_the_details_lead_with_the_share_of_the_document_read(self):
+        for marker in ("Document lu", "Tokens lus", 'class="segments"', "Ce que l\u2019agent a lu"):
+            assert marker in SOURCES_APP_HTML, marker
+        assert 'data-status="${esc(s.status)}"' in SOURCES_APP_HTML
 
     def test_it_says_on_the_card_that_a_why_is_the_agents_word(self):
         assert "sont les mots de l\u2019agent" in SOURCES_APP_HTML
@@ -241,17 +302,8 @@ class TestTemplate:
         assert 'name: "get_source_page"' in SOURCES_APP_HTML
         assert SOURCES_APP_HTML.count('"tools/call"') == 1
 
-    def test_each_round_sits_beside_its_page(self):
-        """One view (#363): the rounds, each beside its page with the passage
-        boxed — no tabs to find them behind."""
-        assert '<ol class="rounds">' in SOURCES_APP_HTML
-        assert 'class="shot ${uri ? "pending" : "none"}" data-shot' in SOURCES_APP_HTML
-        assert 'role="tab"' not in SOURCES_APP_HTML
-        for label in ("<b>Pourquoi</b>", "<b>Trouvé</b>"):
-            assert label in SOURCES_APP_HTML, label
-
-    def test_a_thumbnail_enlarges_like_the_citation_cards_page(self):
-        """The lens: fullscreen requested (never assumed), the thumbnail
+    def test_a_page_enlarges_with_its_boxes(self):
+        """The lens: fullscreen requested (never assumed), the stage's page
         standing in until the readable render lands, Escape to leave, zoom
         out to the whole page, and leafing through the document."""
         for marker in (
@@ -260,17 +312,13 @@ class TestTemplate:
             'role", "dialog',
             "provisional",
             '"Escape"',
-            "data-shot",
+            "data-zoom",
             "data-lens-out",
             "data-lens-in",
             "data-lens-fit",
             "data-lens-prev",
             "data-lens-next",
             '"ArrowRight"',
+            "overlays(state.view, lensPage, false)",
         ):
             assert marker in SOURCES_APP_HTML, marker
-
-    def test_every_section_read_gets_a_page(self):
-        """A cited hop shows the quoted passage; a hop read without a quote
-        shows the page where its section starts."""
-        assert 'const uri = (hop.cited || [])[0] || hop.uri || ""' in SOURCES_APP_HTML

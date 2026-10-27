@@ -90,6 +90,33 @@ class BoundingBox:
             int(bottom + padding),
         )
 
+    def page_fraction(self) -> tuple[float, float, float, float] | None:
+        """The box as fractions of its page, from the top-left corner.
+
+        `(left, top, right, bottom)`, each in [0, 1]: what a viewer needs to
+        lay the box over a raster of the page at any size, without knowing the
+        dpi it was rendered at. None without the page's size, because a
+        fraction of a page of unknown size is not one.
+        """
+        if not self.page_width or not self.page_height:
+            return None
+        if self.coord_origin.upper() == "BOTTOMLEFT":
+            top, bottom = self.page_height - self.top, self.page_height - self.bottom
+        else:
+            top, bottom = self.top, self.bottom
+        left, right = sorted((self.left, self.right))
+        top, bottom = sorted((top, bottom))
+
+        def share(value: float, size: float) -> float:
+            return min(1.0, max(0.0, value / size))
+
+        return (
+            share(left, self.page_width),
+            share(top, self.page_height),
+            share(right, self.page_width),
+            share(bottom, self.page_height),
+        )
+
     @classmethod
     def union(cls, boxes: Sequence[BoundingBox]) -> BoundingBox | None:
         """The smallest box covering `boxes` — for a citation spanning several.

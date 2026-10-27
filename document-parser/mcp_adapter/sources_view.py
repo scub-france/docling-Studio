@@ -1,10 +1,10 @@
 """`show_sources` and the path card it renders in (#363).
 
 The card shows where an answer came from: the sections the agent read, in
-reading order, each with its page; the passages it quoted, boxed on those
-pages; and what the reading cost against the whole document. Same template
-and same page tool the investigation card used — only its source changed,
-from a journal the agent had to keep to the anchors it already holds.
+reading order, each boxed on its pages; the passages it quoted, each with its
+quote checked again by the server; and what the reading cost against the
+whole document. The boxes travel as fractions of the page, so the card lays
+them over a page raster of any size.
 
 A host without MCP Apps gets the same record as a short text tree, built
 here rather than left to the SDK's pretty-printed JSON: that text is what a
@@ -31,11 +31,36 @@ if TYPE_CHECKING:
 
     from mcp.server.apps import Apps
 
-    from domain.source_map import SourceHop, SourceNode
+    from domain.page_regions import PageRegion
+    from domain.source_map import SourceHop, SourceNode, SourcePassage
     from services.document_tools import DocumentTools
     from services.source_service import SourceReport
 
 SOURCES_APP_HTML = (Path(__file__).parent / "sources_app.html").read_text(encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class RegionOut:
+    """A block of a page: `box` is `[left, top, right, bottom]`, fractions of
+    the page from its top-left corner."""
+
+    page: int
+    box: list[float]
+
+
+@dataclass(frozen=True)
+class PassageOut:
+    """One cited passage. `status` is the server's word on `quote` (a
+    `verify_citation` status), absent when no quote came with the anchor."""
+
+    uri: str
+    ref: str
+    quote: str
+    status: str | None
+    regions: list[RegionOut]
+    hop_id: str | None = None
+    page: int | None = None
+    deep_link: str | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +77,7 @@ class SourceHopOut:
     page: int | None = None
     cited: list[str] = field(default_factory=list)
     deep_link: str | None = None
+    regions: list[RegionOut] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -97,10 +123,11 @@ class SourcesCard:
     """Where an answer came from, for the card and for a host without one.
 
     `hops` is the reading order — one per round of the loop, each with its
-    `why` and what it `found` — `map` the same reads placed on the outline
-    (status `cited`, `read`, or `path` for an ancestor), `summary` the one
-    line a reader quotes. `unknown` lists every anchor that resolved to
-    nothing — shown, never silently dropped.
+    `why`, what it `found` and where it sits on its pages — `passages` the
+    quotes cited, `map` the same reads placed on the outline (status `cited`,
+    `read`, or `path` for an ancestor), `summary` the one line a reader
+    quotes. `unknown` lists every anchor that resolved to nothing — shown,
+    never silently dropped.
     """
 
     document_id: str
@@ -112,6 +139,8 @@ class SourcesCard:
     hops: list[SourceHopOut]
     map: list[SourceNodeOut]
     segments: list[SourceSegmentOut] = field(default_factory=list)
+    passages: list[PassageOut] = field(default_factory=list)
+    page_count: int | None = None
     unknown: list[str] = field(default_factory=list)
     next_step: str = ""
 
@@ -119,9 +148,9 @@ class SourcesCard:
 _CARD = TypeAdapter(SourcesCard)
 
 _DESCRIPTION = (
-    "End the answer with where it came from, as one card. `read`: one entry per round, "
-    "in order: the read_element `uri`, a one-line `why`, what it `found`. `cited`: the "
-    "verified anchors."
+    "End the answer with its sources, as one card. `read`: one entry per round, in order: "
+    "the read_element `uri`, a one-line `why`, what it `found`. `cited`: each verified "
+    "quote as `{uri, quote}`."
 )
 
 
@@ -137,14 +166,14 @@ def register_sources_view(apps: Apps, tools: Callable[[], DocumentTools], uri: s
     async def show_sources(
         question: str,
         read: list[dict[str, str]],
-        cited: list[str] | None = None,
+        cited: list[dict[str, str] | str] | None = None,
     ) -> Annotated[CallToolResult, SourcesCard]:
         reads = [
             (str(e.get("uri") or ""), str(e.get("why") or ""), str(e.get("found") or ""))
             for e in read
         ]
         try:
-            report = await tools().sources.show(question, reads, cited or [])
+            report = await tools().sources.show(question, reads, _citations(cited or []))
         except NavigationServiceError as exc:
             raise ToolError(str(exc)) from exc
         card = sources_card(report)
@@ -172,6 +201,17 @@ def register_sources_view(apps: Apps, tools: Callable[[], DocumentTools], uri: s
         except (AnchorParseError, NavigationServiceError) as exc:
             raise ToolError(str(exc)) from exc
         return image_out(image)
+
+
+def _citations(cited: list[dict[str, str] | str]) -> list[tuple[str, str]]:
+    """`(uri, quote)` pairs. A bare anchor is still taken — the shape before
+    quotes travelled with it — and shows as cited, not verified."""
+    return [
+        (entry, "")
+        if isinstance(entry, str)
+        else (str(entry.get("uri") or ""), str(entry.get("quote") or ""))
+        for entry in cited
+    ]
 
 
 def sources_card(report: SourceReport) -> SourcesCard:
@@ -218,6 +258,8 @@ def sources_card(report: SourceReport) -> SourcesCard:
             )
             for s in sources.segments
         ],
+        passages=[_passage(p, links) for p in sources.passages],
+        page_count=report.page_count,
         unknown=list(report.unknown),
         next_step=(
             "If no card appeared, relay this tree and each `deep_link`, which opens the "
@@ -241,7 +283,32 @@ def _hop(hop: SourceHop, links: dict[str, str]) -> SourceHopOut:
         page=hop.page,
         cited=list(hop.cited),
         deep_link=cited_link or links.get(hop.node_ref or hop.ref),
+        regions=_regions(hop.regions),
     )
+
+
+def _passage(passage: SourcePassage, links: dict[str, str]) -> PassageOut:
+    return PassageOut(
+        uri=passage.uri,
+        ref=passage.ref,
+        quote=neutralise(passage.quote),
+        status=passage.status,
+        regions=_regions(passage.regions),
+        hop_id=passage.hop_id,
+        page=passage.page,
+        deep_link=links.get(passage.ref),
+    )
+
+
+def _regions(regions: list[PageRegion]) -> list[RegionOut]:
+    # Four places: a ten-thousandth of a page is under a pixel on any screen.
+    return [
+        RegionOut(
+            page=r.page,
+            box=[round(r.left, 4), round(r.top, 4), round(r.right, 4), round(r.bottom, 4)],
+        )
+        for r in regions
+    ]
 
 
 def _node(node: SourceNode, links: dict[str, str]) -> SourceNodeOut:
@@ -264,6 +331,7 @@ def sources_text(card: SourcesCard) -> str:
     lines = [f"Sources — {card.question}", f"{card.filename}: {card.summary}", ""]
     lines.append("Rounds:")
     cap = card.totals.max_rounds
+    quotes = {p.uri: p for p in card.passages}
     for hop in card.hops:
         page = f", p.{hop.page}" if hop.page else ""
         why = f" — {hop.why}" if hop.why else ""
@@ -271,7 +339,7 @@ def sources_text(card: SourcesCard) -> str:
         if hop.found:
             lines.append(f"   found: {hop.found}")
         for uri in hop.cited:
-            lines.append(f"   cited {DocumentAnchor.parse(uri).ref}")
+            lines.append(f"   cited {DocumentAnchor.parse(uri).ref}{_said(quotes.get(uri))}")
         if hop.deep_link:
             lines.append(f"   open in Studio: {hop.deep_link}")
     lines += ["", "On the map:"]
@@ -279,3 +347,10 @@ def sources_text(card: SourcesCard) -> str:
     if card.unknown:
         lines += ["", "Unknown anchors (not shown): " + ", ".join(card.unknown)]
     return "\n".join(lines)
+
+
+def _said(passage: PassageOut | None) -> str:
+    """A cited quote, and the server's word on it, for the text tree."""
+    if passage is None or not passage.quote:
+        return ""
+    return f" — \u201c{passage.quote}\u201d ({passage.status or 'not checked'})"

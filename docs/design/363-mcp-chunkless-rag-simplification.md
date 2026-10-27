@@ -362,7 +362,9 @@ read-only, bound to the path card's `ui://` template.
 
 - `read` lists the `uri` of each `read_element` result, in reading order, with
   one line of `why`.
-- `cited` lists the verified anchors.
+- `cited` lists the verified anchors. Since the card's third version it takes
+  `{uri, quote}` entries, and the server checks each quote again so the card
+  can show it as verified (a bare anchor is still accepted).
 - All anchors are ones the server issued; the model never builds one.
 
 On hosts with MCP Apps, the result renders in the path card (§5.6). Everywhere

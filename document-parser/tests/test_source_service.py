@@ -41,13 +41,15 @@ class TestResolution:
         assert report.sources.hops[0].found == "trois mois"
 
     async def test_a_malformed_anchor_is_reported_not_dropped(self):
-        report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "", "")], cited=["not-an-anchor"])
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")], cited=[("not-an-anchor", "")]
+        )
         assert report.unknown == ["not-an-anchor"]
         assert len(report.sources.hops) == 1
 
     async def test_a_ref_the_parse_does_not_hold_is_reported(self):
         missing = anchor_uri("#/texts/999")
-        report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "", "")], cited=[missing])
+        report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "", "")], cited=[(missing, "")])
         assert report.unknown == [missing]
         assert report.sources.hops[0].cited == []
 
@@ -55,7 +57,7 @@ class TestResolution:
         with pytest.raises(InvalidArgumentError, match="more than one document or parse"):
             await show(
                 reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
-                cited=[anchor_uri(PREAVIS_REF, job_id="another-parse")],
+                cited=[(anchor_uri(PREAVIS_REF, job_id="another-parse"), "")],
             )
 
     async def test_no_usable_anchor_is_refused(self):
@@ -92,6 +94,16 @@ class TestBounds:
                 config=config,
             )
 
+    async def test_an_overlong_quote_is_refused(self):
+        config = NavigationConfig(max_source_text_chars=10)
+        with pytest.raises(InvalidArgumentError, match="`quote`"):
+            await show(
+                reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+                cited=[(anchor_uri(PREAVIS_REF), "x" * 11)],
+                question="Préavis ?",
+                config=config,
+            )
+
     async def test_an_overlong_question_is_refused(self):
         config = NavigationConfig(max_source_text_chars=10)
         with pytest.raises(InvalidArgumentError, match="`question`"):
@@ -100,10 +112,53 @@ class TestBounds:
             )
 
 
+class TestQuotes:
+    """Each cited quote is checked again: "verified" is the server's word."""
+
+    async def test_a_quote_that_is_there_is_verified(self):
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_REF), "  trois mois à compter de la notification ")],
+        )
+        [passage] = report.sources.passages
+        assert passage.status == "verified"
+        assert passage.quote == "trois mois à compter de la notification"
+        assert passage.hop_id == "h1"
+
+    async def test_a_section_anchor_is_narrowed_to_the_element_holding_the_quote(self):
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_SECTION), "trois mois à compter de la notification")],
+        )
+        [passage] = report.sources.passages
+        assert (passage.ref, passage.status) == (PREAVIS_REF, "verified")
+
+    async def test_a_quote_that_is_not_there_says_so(self):
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_REF), "six mois à compter de la signature")],
+        )
+        [passage] = report.sources.passages
+        assert (passage.ref, passage.status) == (PREAVIS_REF, "quote_drift")
+
+    @pytest.mark.parametrize("quote", ["", "mois"], ids=["no quote", "too short to prove"])
+    async def test_an_unchecked_citation_has_no_status(self, quote):
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_REF), quote)],
+        )
+        [passage] = report.sources.passages
+        assert passage.status is None
+
+    async def test_the_report_carries_the_page_count(self):
+        report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "", "")])
+        assert report.page_count == 2
+
+
 class TestDeepLinks:
     async def test_cited_elements_and_map_nodes_get_a_studio_link(self):
         report = await show(
-            reads=[(anchor_uri(PREAVIS_SECTION), "", "")], cited=[anchor_uri(PREAVIS_REF)]
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")], cited=[(anchor_uri(PREAVIS_REF), "")]
         )
         assert report.deep_links[PREAVIS_REF].startswith(
             f"http://localhost:3000/analyses/{JOB_ID}?ref=%23%2Ftexts%2F4"

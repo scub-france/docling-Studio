@@ -9,6 +9,9 @@ Every anchor is one the server issued: a read returned it, or a citation
 check settled on it. An anchor that does not parse, or names an element the
 parse does not hold, is reported back as `unknown` rather than dropped — the
 card must not quietly show less than the agent claimed to have used.
+
+Each cited quote is checked again here, as `verify_citation` checks it, so
+the card says "verified" on the server's word, never on the agent's.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from typing import TYPE_CHECKING
 from domain.anchors import AnchorParseError, DocumentAnchor
 from domain.element_reader import resolve
 from domain.source_map import SourceCited, SourceRead, build_source_map
-from services.navigation_errors import InvalidArgumentError
+from services.navigation_errors import InvalidArgumentError, NavigationServiceError
 
 if TYPE_CHECKING:
     from domain.source_map import SourceMap
@@ -45,6 +48,8 @@ class SourceReport:
     unknown: list[str]
     # The loop's cap, so a reader sees the rounds against it (#363).
     max_rounds: int
+    # The parse's pages, so a viewer can leaf through before any is fetched.
+    page_count: int | None = None
 
 
 class SourceService:
@@ -65,20 +70,23 @@ class SourceService:
         self,
         question: str,
         reads: list[tuple[str, str, str]],
-        cited: list[str],
+        cited: list[tuple[str, str]],
     ) -> SourceReport:
-        """Project `(uri, why, found)` rounds and cited uris onto the parse they pin."""
+        """Project `(uri, why, found)` rounds and `(uri, quote)` citations onto
+        the parse they pin."""
         self._bound(question, reads, cited)
         unknown: list[str] = []
         read_anchors = [(a, w, f) for uri, w, f in reads if (a := _anchor(uri, unknown))]
-        cited_anchors = [a for uri in cited if (a := _anchor(uri, unknown))]
-        document_id, version_id = _single_pin([a for a, *_ in read_anchors] + cited_anchors)
+        checked = [await self._check(uri, quote) for uri, quote in cited]
+        cited_anchors = [(a, q, st) for uri, q, st in checked if (a := _anchor(uri, unknown))]
+        anchors = [a for a, *_ in read_anchors] + [a for a, *_ in cited_anchors]
+        document_id, version_id = _single_pin(anchors)
 
         parse = await self._parses.load(document_id, version_id)
         outline = await self._navigation.get_outline(
             document_id, version_id=version_id, depth=_MAP_DEPTH
         )
-        known = _resolvable(parse, [a for a, *_ in read_anchors] + cited_anchors, unknown)
+        known = _resolvable(parse, anchors, unknown)
         sources = build_source_map(
             outline,
             parse.index,
@@ -87,7 +95,11 @@ class SourceService:
                 for a, why, found in read_anchors
                 if a.uri in known
             ],
-            [SourceCited(a.ref, a.uri) for a in cited_anchors if a.uri in known],
+            [
+                SourceCited(a.ref, a.uri, quote, status)
+                for a, quote, status in cited_anchors
+                if a.uri in known
+            ],
         )
         return SourceReport(
             document_id=document_id,
@@ -98,9 +110,31 @@ class SourceService:
             deep_links=self._deep_links(parse, sources),
             unknown=unknown,
             max_rounds=self._config.max_rounds,
+            page_count=parse.index.page_count or None,
         )
 
-    def _bound(self, question: str, reads: list[tuple[str, str, str]], cited: list[str]) -> None:
+    async def _check(self, uri: str, quote: str) -> tuple[str, str, str | None]:
+        """The anchor to show for one citation, and the server's word on its quote.
+
+        A quote that checks out may sit in a narrower element than the anchor
+        named — a section anchor, a span — and the passage drawn is that
+        element, the one the quote is in. No quote, or one refused before any
+        matching (too short to prove anything, an anchor that does not
+        parse): no status, so the card shows it as cited, not verified.
+        """
+        quote = (quote or "").strip()
+        if not quote:
+            return uri, "", None
+        try:
+            check = await self._citations.verify_citation(uri, quote)
+        except (AnchorParseError, NavigationServiceError):
+            return uri, quote, None
+        narrowed = check.citation.uri if check.valid and check.citation else uri
+        return narrowed, quote, check.status.value
+
+    def _bound(
+        self, question: str, reads: list[tuple[str, str, str]], cited: list[tuple[str, str]]
+    ) -> None:
         """Refuse an input past its ceiling before any work is done."""
         cap = self._config.max_source_anchors
         if len(reads) + len(cited) > cap:
@@ -114,14 +148,17 @@ class SourceService:
             for _, why, found in reads
             for label, text in (("why", why), ("found", found))
         ]
+        texts += [("quote", quote) for _, quote in cited]
         for label, text in texts:
             if len(text or "") > limit:
                 raise InvalidArgumentError(f"`{label}` is over {limit} characters. Shorten it.")
 
     def _deep_links(self, parse: LoadedParse, sources: SourceMap) -> dict[str, str]:
-        refs = {node.ref for node in sources.nodes} | {
-            DocumentAnchor.parse(uri).ref for hop in sources.hops for uri in hop.cited
-        }
+        refs = (
+            {node.ref for node in sources.nodes}
+            | {DocumentAnchor.parse(uri).ref for hop in sources.hops for uri in hop.cited}
+            | {passage.ref for passage in sources.passages}
+        )
         links: dict[str, str] = {}
         for ref in refs:
             element = resolve(parse.index, ref)
