@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
+from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
 
@@ -69,6 +70,8 @@ class HealthResponse(_CamelModel):
     # so frontends pointed at an older backend keep every mode visible.
     inspect_mode_enabled: bool = True
     linked_mode_enabled: bool = True
+    # Independent UI rollout flag for the analysis editor.
+    analysis_editor_enabled: bool = True
 
 
 class DocStoreLinkResponse(_CamelModel):
@@ -130,6 +133,86 @@ class AnalysisResponse(_CamelModel):
     progress_total: int | None = None
     started_at: str | datetime | None = None
     completed_at: str | datetime | None = None
+    created_at: str | datetime
+
+
+class ReplaceTextEditRequest(_CamelModel):
+    type: Literal["replaceText"]
+    element_id: str
+    text: str
+
+
+class MergeTextEditRequest(_CamelModel):
+    type: Literal["mergeText"]
+    element_ids: list[str]
+    separator: str = " "
+
+
+class SetHeadingLevelEditRequest(_CamelModel):
+    type: Literal["setHeadingLevel"]
+    element_id: str
+    level: int
+
+
+class MoveElementEditRequest(_CamelModel):
+    type: Literal["moveElement"]
+    element_id: str
+    before_element_id: str | None = None
+    target_element_id: str | None = None
+    placement: Literal["before", "after", "inside"] | None = None
+
+
+class DeleteElementEditRequest(_CamelModel):
+    type: Literal["deleteElement"]
+    element_id: str
+
+
+class DeleteElementsEditRequest(_CamelModel):
+    type: Literal["deleteElements"]
+    element_ids: list[str]
+
+
+AnalysisEditCommandRequest = Annotated[
+    ReplaceTextEditRequest
+    | MergeTextEditRequest
+    | SetHeadingLevelEditRequest
+    | MoveElementEditRequest
+    | DeleteElementEditRequest
+    | DeleteElementsEditRequest,
+    Field(discriminator="type"),
+]
+
+
+class AnalysisEditRequest(_CamelModel):
+    commands: list[AnalysisEditCommandRequest] = Field(default_factory=list)
+    expected_applied_through_sequence: int = 0
+
+
+class AnalysisEditorResponse(_CamelModel):
+    model: dict
+    tree: list[dict]
+    reading_order: list[str] = Field(default_factory=list)
+    result: AnalysisResponse
+    applied_through_sequence: int
+    chunks_stale: bool
+    warnings: list[str] = Field(default_factory=list)
+    reference_changes: dict[str, str] = Field(default_factory=dict)
+
+
+class AnalysisEditSaveResponse(_CamelModel):
+    result: AnalysisResponse
+    base_analysis_id: str
+    applied_through_sequence: int
+    chunks_stale: bool
+
+
+class AnalysisEditHistoryEntryResponse(_CamelModel):
+    id: str
+    sequence: int
+    command_version: int
+    command_type: str
+    payload: dict
+    command_hash: str
     created_at: str | datetime
 
 

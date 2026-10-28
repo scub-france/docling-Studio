@@ -19,6 +19,12 @@ The server checks most values when it starts. If one is invalid, it does not sta
 | `CONVERSION_TIMEOUT` | `900` | Seconds before an analysis is stopped. |
 | `BATCH_PAGE_SIZE` | `0` (compose: `10`) | Local engine only. Converts long PDFs in batches of this many pages, which bounds memory use and shows the progress after each batch. A table that runs across two batches comes out as two tables. `0` converts in one pass. |
 
+## Feature flags
+
+| Variable | Default | What it does |
+|----------|---------|--------------|
+| `ANALYSIS_EDITOR_ENABLED` | `true` | Shows the **Edit analysis** action and enables the editor UI for completed analyses. Set to `false` to hide and disable the editor while keeping read-only analysis inspection available. |
+
 Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT` (300). The server only starts if `DOCUMENT_TIMEOUT` < `LOCK_TIMEOUT` < `CONVERSION_TIMEOUT`. So a `CONVERSION_TIMEOUT` of 300 or less needs a lower `LOCK_TIMEOUT` as well.
 
 ## Limits

@@ -20,16 +20,33 @@
           >
             {{ t('analyses.openDocument') }}
           </RouterLink>
+          <button
+            v-if="!editMode && editorEnabled"
+            type="button"
+            data-e2e="analysis-edit-toggle"
+            :disabled="!analysis.hasDocumentJson"
+            @click="editMode = true"
+          >
+            {{ t('workspace.editAnalysis') }}
+          </button>
+          <button v-else type="button" data-e2e="analysis-inspect-toggle" @click="closeEditor">
+            {{ t('workspace.inspectAnalysis') }}
+          </button>
           <DownloadDropdown :doc-id="analysis.documentId" :analysis-id="analysis.id" />
         </div>
       </header>
-      <DocParseTab :doc-id="analysis.documentId" :analysis="analysis" />
+      <AnalysisEditor
+        v-if="editMode && editorEnabled"
+        :document-id="analysis.documentId"
+        :analysis-id="analysis.id"
+      />
+      <DocParseTab v-else :doc-id="analysis.documentId" :analysis="analysis" />
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fetchAnalysis } from '../features/analysis/api'
 import type { Analysis } from '../shared/types'
@@ -37,12 +54,23 @@ import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocParseTab from './DocParseTab.vue'
 import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
+import { AnalysisEditor, useAnalysisEditorStore } from '../features/analysis-editor'
+import { useFeatureFlagStore } from '../features/feature-flags/store'
 
 const props = defineProps<{ id: string }>()
 const { t } = useI18n()
 const analysis = ref<Analysis | null>(null)
 const loading = ref(true)
 const error = ref(false)
+const editMode = ref(false)
+const editorStore = useAnalysisEditorStore()
+const featureFlags = useFeatureFlagStore()
+const editorEnabled = computed(() => featureFlags.isEnabled('analysisEditor'))
+
+function closeEditor(): void {
+  if (editorStore.hasUnsavedChanges && !window.confirm(t('analysisEditor.leaveConfirm'))) return
+  editMode.value = false
+}
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
@@ -58,6 +86,10 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+})
+
+watch(editorEnabled, (enabled) => {
+  if (!enabled) editMode.value = false
 })
 </script>
 

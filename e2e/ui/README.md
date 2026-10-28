@@ -14,11 +14,11 @@ Run the commands from the repository root.
 
 ```bash
 # 1. Generate the test PDFs (again after a clean)
-pip install fpdf2 pypdfium2
-python e2e/generate-test-data.py
+uv run --directory document-parser --group ci python ../e2e/generate-test-data.py
 
 # 2. Start the app as CI does, then wait until Docling Serve converts a PDF
 STUDIO_MODE_ENABLED=true RATE_LIMIT_RPM=0 CONVERSION_MODE=remote \
+  DB_PATH=/app/data/editor-e2e.db \
   docker compose --profile remote up -d --build --wait
 bash .github/scripts/warmup-docling-serve.sh
 
@@ -48,6 +48,54 @@ Features are in `src/test/resources/`, one folder per area:
 - `demo/`: a scripted walkthrough for a video, run only by `DemoRunner`. It is not a test.
 
 `UIRunner.java` has three methods. `testAll` runs every feature in the first four folders, `testLocal` the `@ui` ones, and `testCritical` the `@critical` ones in `documents/` and `analyses/`. To list the critical features, run `grep -rlE '^@.*critical' e2e/ui/src/test/resources`.
+
+## Analysis editor fixtures
+
+The generator creates small two-page PDFs for editor workflows. Assert their unique
+text markers in browser tests instead of Docling `self_ref` values.
+
+| File | Covers |
+| --- | --- |
+| `editor-text.pdf` | Replace, merge, range-delete, discard, save/reload, and pending-draft recovery. |
+| `editor-structure.pdf` | Heading-level changes and before/after/inside-section moves. |
+| `editor-provenance.pdf` | Page navigation and PDF-overlay selection across two pages. |
+| `editor-readonly.pdf` | List and table read-only behavior. |
+
+`analyses/analysis-editor.feature` currently covers replacement, merge, explicit
+move-into-section, heading-level changes, range deletion, discard, durable
+save/reload, refreshing/restoring pending edits, and rejecting a stale draft
+after a concurrent save advances the edit sequence.
+Run it independently with:
+
+```bash
+mvn test -f e2e/ui/pom.xml -Dtest=AnalysisEditorRunner \
+  -DbaseUrl=http://localhost:3000
+```
+
+To record the visible editor walkthrough while running that suite, use
+`scripts/demo/record-analysis-editor.sh`; see `scripts/demo/README.md` for screen
+capture prerequisites and output location.
+
+For a headless walkthrough video showing text replacement, undo/redo, merge,
+range-delete, discard, move, heading-level change, and save/reload, use
+Playwright's browser-context video capture:
+
+```bash
+cd frontend && npm install
+cd ..
+uv run --directory document-parser --group ci python ../e2e/generate-test-data.py
+npm --prefix frontend run e2e:analysis-editor:video
+```
+
+Set `CHROME_PATH` if Google Chrome is not at the default macOS path, or `BASE_URL`
+if the app is served somewhere other than `http://localhost:3000`. The generated
+MP4 is `out/demo/analysis-editor-headless.mp4`; ffmpeg converts Playwright's
+captured WebM into an upload-friendly format.
+
+For separate reviewer clips covering text/range operations and structure edits,
+run `npm --prefix frontend run e2e:analysis-editor:clips`. This creates
+`out/demo/analysis-editor-text-actions.mp4` and
+`out/demo/analysis-editor-structure-actions.mp4` without screen capture.
 
 ## Tags in CI
 

@@ -190,6 +190,7 @@ class TestSettingsFromEnv:
         monkeypatch.setenv("UPLOAD_DIR", "/data/uploads")
         monkeypatch.setenv("DB_PATH", "/data/test.db")
         monkeypatch.setenv("CORS_ORIGINS", "http://a.com, http://b.com")
+        monkeypatch.setenv("ANALYSIS_EDITOR_ENABLED", "false")
 
         s = Settings.from_env()
 
@@ -208,6 +209,7 @@ class TestSettingsFromEnv:
         assert s.upload_dir == "/data/uploads"
         assert s.db_path == "/data/test.db"
         assert s.cors_origins == ["http://a.com", "http://b.com"]
+        assert s.analysis_editor_enabled is False
 
     def test_defaults_when_env_empty(self, monkeypatch):
         """When no env vars set, from_env returns sensible defaults."""
@@ -222,6 +224,7 @@ class TestSettingsFromEnv:
             "UPLOAD_DIR",
             "DB_PATH",
             "CORS_ORIGINS",
+            "ANALYSIS_EDITOR_ENABLED",
         ):
             monkeypatch.delenv(key, raising=False)
 

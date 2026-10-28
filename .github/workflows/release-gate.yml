@@ -511,6 +511,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
+
       - uses: actions/setup-java@v4
         with:
           java-version: "17"
@@ -519,8 +524,7 @@ jobs:
 
       - name: Generate test PDFs
         run: |
-          pip install fpdf2 pypdfium2
-          python e2e/generate-test-data.py
+          uv run --directory document-parser --group ci python ../e2e/generate-test-data.py
 
       - name: Start stack
         run: docker compose --profile remote up -d --wait --build
@@ -584,6 +588,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
+
       - uses: actions/setup-java@v4
         with:
           java-version: "17"
@@ -597,8 +606,7 @@ jobs:
 
       - name: Generate test PDFs
         run: |
-          pip install fpdf2 pypdfium2
-          python e2e/generate-test-data.py
+          uv run --directory document-parser --group ci python ../e2e/generate-test-data.py
 
       - name: Start stack
         run: docker compose --profile remote up -d --wait --build
