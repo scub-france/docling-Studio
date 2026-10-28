@@ -223,6 +223,27 @@ describe('useFeatureFlagStore', () => {
     expect(store.isEnabled('linkedMode')).toBe(true)
   })
 
+  it('exposes the independent analysis editor flag from /api/health', async () => {
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      ragPipelineEnabled: false,
+      analysisEditorEnabled: false,
+    })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('analysisEditor')).toBe(false)
+
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      ragPipelineEnabled: false,
+      analysisEditorEnabled: true,
+    })
+    await store.reload()
+    expect(store.isEnabled('analysisEditor')).toBe(true)
+  })
+
   it('falls back to all-modes-enabled when /api/health omits the new fields', async () => {
     mockApiFetch.mockResolvedValue({ status: 'ok', engine: 'local' })
     const store = useFeatureFlagStore()

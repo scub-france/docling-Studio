@@ -103,6 +103,10 @@ class TestHealthEndpoint:
         assert data["inspectModeEnabled"] is True
         assert data["linkedModeEnabled"] is True
 
+    def test_health_exposes_analysis_editor_flag(self, client):
+        data = client.get("/api/health").json()
+        assert data["analysisEditorEnabled"] is True
+
 
 class TestDocumentEndpoints:
     def test_list_documents(self, client, mock_document_service):

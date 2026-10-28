@@ -143,4 +143,5 @@ async def health() -> HealthResponse:
         # 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257).
         inspect_mode_enabled=settings.inspect_mode_enabled,
         linked_mode_enabled=settings.linked_mode_enabled,
+        analysis_editor_enabled=settings.analysis_editor_enabled,
     )

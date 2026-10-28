@@ -70,6 +70,8 @@ class HealthResponse(_CamelModel):
     # so frontends pointed at an older backend keep every mode visible.
     inspect_mode_enabled: bool = True
     linked_mode_enabled: bool = True
+    # Independent UI rollout flag for the analysis editor.
+    analysis_editor_enabled: bool = True
 
 
 class DocStoreLinkResponse(_CamelModel):
