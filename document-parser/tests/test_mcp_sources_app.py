@@ -165,6 +165,21 @@ class TestCard:
         assert passage["deep_link"].startswith(f"http://localhost:3000/analyses/{JOB_ID}?ref=")
         assert f"cited #/texts/4 — \u201c{quote}\u201d (verified)" in result.content[0].text
 
+    async def test_quotes_sharing_an_anchor_each_keep_their_own_words(self):
+        """Rows of one table: one anchor, several quotes. The card carries each,
+        and the text tree lists each once, with its own words."""
+        quotes = ["Le préavis est de trois mois", "trois mois à compter de la notification"]
+        async with _client(make_document_tools()) as client:
+            result = await _show(client, cited=[{"uri": PREAVIS_URI, "quote": q} for q in quotes])
+        card = _payload(result)
+        assert [(p["quote"], p["status"]) for p in card["passages"]] == [
+            (q, "verified") for q in quotes
+        ]
+        assert card["hops"][1]["cited"] == [PREAVIS_URI]
+        text = result.content[0].text
+        for quote in quotes:
+            assert text.count(f"\u201c{quote}\u201d") == 1, quote
+
     async def test_a_bare_anchor_is_still_taken_as_cited_unchecked(self):
         async with _client(make_document_tools()) as client:
             card = _payload(await _show(client, cited=[PREAVIS_URI]))
@@ -300,7 +315,9 @@ class TestTemplate:
 
     def test_the_quote_is_highlighted_line_by_line_on_its_page(self):
         """The lines the server found, multiplied over the ink; the passage's
-        block when no line was found; the other quotes on the page fainter."""
+        block when no line was found. Every quote on the page is lit alike:
+        three rows quoted from one table are three rows lit."""
+        assert ".hl.other" not in SOURCES_APP_HTML
         for marker in (
             "onPage(entry.p.marks, page)",
             '`<span class="hl${look}"',
@@ -324,7 +341,14 @@ class TestTemplate:
     def test_the_page_is_a_window_onto_the_quote(self):
         """Drawn at the width that sets the column across the window, capped,
         the quote centred, the edges faded; fetched at that width."""
-        for marker in ("ZOOM_CAP = 1.5", "mask-image", "data-leaf", "Math.min(1600", "state.want"):
+        for marker in (
+            "ZOOM_CAP = 1.5",
+            "mask-image",
+            "data-leaf",
+            "Math.min(1600",
+            "state.want",
+            "(both[1] - both[0]) * tall <= height - 68",
+        ):
             assert marker in SOURCES_APP_HTML, marker
 
     def test_a_host_that_relays_no_tool_call_still_shows_the_quote(self):

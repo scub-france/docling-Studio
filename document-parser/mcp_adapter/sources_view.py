@@ -340,17 +340,21 @@ def sources_text(card: SourcesCard) -> str:
     lines = [f"Sources — {card.question}", f"{card.filename}: {card.summary}", ""]
     lines.append("Rounds:")
     cap = card.totals.max_rounds
-    quotes = {p.uri: p for p in card.passages}
     for hop in card.hops:
         page = f", p.{hop.page}" if hop.page else ""
         why = f" — {hop.why}" if hop.why else ""
         lines.append(f"{hop.ordinal}/{cap}. {hop.title}{page} (~{hop.est_tokens:,} t){why}")
         if hop.found:
             lines.append(f"   found: {hop.found}")
-        for uri in hop.cited:
-            lines.append(f"   cited {DocumentAnchor.parse(uri).ref}{_said(quotes.get(uri))}")
+        # Every quote, each with its own words: several can share one anchor.
+        for passage in (p for p in card.passages if p.hop_id == hop.hop_id):
+            lines.append(f"   cited {passage.ref}{_said(passage)}")
         if hop.deep_link:
             lines.append(f"   open in Studio: {hop.deep_link}")
+    outside = [p for p in card.passages if not p.hop_id]
+    if outside:
+        lines += ["", "Cited outside the rounds:"]
+        lines += [f"- {p.ref}{_said(p)}" for p in outside]
     lines += ["", "On the map:"]
     lines += [f"{'  ' * max(0, n.level - 1)}- {n.title} [{n.status}]" for n in card.map]
     if card.unknown:
@@ -358,8 +362,8 @@ def sources_text(card: SourcesCard) -> str:
     return "\n".join(lines)
 
 
-def _said(passage: PassageOut | None) -> str:
+def _said(passage: PassageOut) -> str:
     """A cited quote, and the server's word on it, for the text tree."""
-    if passage is None or not passage.quote:
+    if not passage.quote:
         return ""
     return f" — \u201c{passage.quote}\u201d ({passage.status or 'not checked'})"

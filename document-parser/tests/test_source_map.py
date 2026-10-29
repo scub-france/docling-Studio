@@ -169,6 +169,19 @@ class TestReadingOrder:
         assert sources.hops[0].cited == []
         assert sources.hops[1].cited == [anchor_uri(PREAVIS_REF)]
 
+    async def test_quotes_from_one_anchor_are_each_a_passage(self):
+        """Three rows quoted out of one table share the table's anchor; each
+        is a passage of its own, and the round cites the anchor once."""
+        uri = anchor_uri(PREAVIS_REF)
+        quotes = ["Le préavis est de trois mois", "à compter de la notification"]
+        sources, _ = await project(
+            reads=[read(PREAVIS_SECTION)],
+            cited=[SourceCited(PREAVIS_REF, uri, quote) for quote in quotes]
+            + [SourceCited(PREAVIS_REF, uri, quotes[0])],
+        )
+        assert [p.quote for p in sources.passages] == quotes
+        assert sources.hops[0].cited == [uri]
+
     async def test_a_hop_carries_its_section_title_and_page(self):
         sources, _ = await project(reads=[read(PREAVIS_SECTION)])
         hop = sources.hops[0]

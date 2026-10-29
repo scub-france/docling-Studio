@@ -164,7 +164,6 @@
   .leaf img { display: block; width: 100%; height: 100%; }
   /* The highlighter: multiplied over the ink, so the text stays black. */
   .hl { position: absolute; background: var(--hl); mix-blend-mode: multiply; border-radius: 2px; pointer-events: none; }
-  .hl.other { background: #fce9da; }
   /* Found on the page, but the server did not find it in the parse. */
   .hl.bad { background: rgba(180, 35, 24, 0.16); }
   /* No line found for the quote: the passage's block, softly. */
@@ -592,8 +591,10 @@
     return `<span class="ph">${esc(message)}</span>${folio}`;
   }
 
-  // On the page: the quote on show, line by line; the other quotes on the
-  // same page fainter. A quote with no line found shows by its block.
+  // On the page: every quote it holds, line by line — three rows quoted out
+  // of one table are three rows lit. The quote on show is the one centred
+  // and named below. A quote with no line found shows by its block, when it
+  // is the one on show.
   function highlights(view, item) {
     const page = item.page;
     const shown = [];
@@ -603,7 +604,7 @@
         return;
       }
       const lines = onPage(entry.p.marks, page);
-      const look = other ? " other" : tone(entry.p) === "bad" ? " bad" : "";
+      const look = tone(entry.p) === "bad" ? " bad" : "";
       if (lines.length) {
         lines.forEach((r) => shown.push(`<span class="hl${look}" style="${boxStyle(r, 0.003, 0.002)}"></span>`));
       } else if (!other) {
@@ -668,11 +669,18 @@
     const own = item.kind === "passage" ? onPage(item.p.marks, page) : [];
     const blocks = onPage(item.kind === "passage" ? item.p.regions : item.h.regions, page);
     const column = reach(blocks.length ? blocks : own) || [0.08, 0.92];
-    const focus = span(own.length ? own : blocks) || [0.4, 0.6];
     const pad = Math.min(34, width * 0.06);
     const wide = Math.max(0.05, column[1] - column[0]);
     const scale = Math.min((width - 2 * pad) / wide, width * ZOOM_CAP);
     const tall = scale * aspect;
+    // Every quote on the page in view when they fit together — three rows
+    // of one table read as one answer — else the one on show.
+    let focus = span(own.length ? own : blocks) || [0.4, 0.6];
+    const all = span(state.items.filter((x) => x.page === page && x.kind === "passage").flatMap((x) => onPage(x.p.marks, page)));
+    if (all) {
+      const both = [Math.min(all[0], focus[0]), Math.max(all[1], focus[1])];
+      if ((both[1] - both[0]) * tall <= height - 68) focus = both;
+    }
     let x = (width - wide * scale) / 2 - column[0] * scale;
     x = scale >= width ? Math.min(0, Math.max(width - scale, x)) : (width - scale) / 2;
     const reachTall = (focus[1] - focus[0]) * tall;

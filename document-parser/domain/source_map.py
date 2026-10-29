@@ -170,7 +170,8 @@ class SourceMap:
     totals: SourceTotals
     # The whole document, section by section — the bar the card draws.
     segments: list[SourceSegment] = field(default_factory=list)
-    # The passages cited, in the order the agent gave them, each once.
+    # The passages cited, in the order the agent gave them: one per quote, so
+    # three rows quoted out of one table are three passages, not one.
     passages: list[SourcePassage] = field(default_factory=list)
 
 
@@ -195,15 +196,17 @@ def build_source_map(
     trail = _Trail()
     for hop in hops:
         trail.mark(hop.node_ref, STATUS_READ, hop.hop_id)
-    passages: dict[str, SourcePassage] = {}
+    passages: dict[tuple[str, str], SourcePassage] = {}
     for anchor in cited:
         hop = _hop_covering(span_start(anchor.ref), hops, covered)
-        if hop is not None:
+        if hop is not None and anchor.uri not in hop.cited:
             hop.cited.append(anchor.uri)
         node_ref = locate(anchor.ref)
         trail.mark(node_ref, STATUS_CITED, hop.hop_id if hop else None)
         node = published.get(node_ref) if node_ref else None
-        passages.setdefault(anchor.uri, _passage(anchor, index, hop, node.title if node else ""))
+        passages.setdefault(
+            (anchor.uri, anchor.quote), _passage(anchor, index, hop, node.title if node else "")
+        )
 
     return SourceMap(
         nodes=trail.nodes(flat),
