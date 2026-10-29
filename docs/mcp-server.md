@@ -166,8 +166,14 @@ The server resolves them against the one parse they all pin, then returns:
   from it. Each round carries `regions`: where its section sits, one block
   per column run on each page, as fractions of the page;
 - **the passages**: each quote cited, with the server's status for it
-  (`verified`, `quote_drift`, …, or none when no quote came), its round and
-  its blocks on the page;
+  (`verified`, `quote_drift`, …, or none when no quote came), its round, the
+  section that holds it, and its blocks on the page. Each also carries
+  `marks`: the lines the quote itself covers, found in the PDF's text layer
+  (pdfium), so the card highlights the sentence rather than the paragraph.
+  The match ignores spaces, hyphens, case, ligatures and quote marks, looks
+  only inside the passage's blocks, and forgives a ligature the parse lost.
+  When the text layer cannot place the quote (a scan, a rotated page),
+  `marks` is empty and the card falls back to the blocks;
 - **the map**: the same reads placed on the outline, in document order. Each
   section is marked `cited`, `read`, or `path` (an ancestor);
 - **the segments**: every section of the document, each with the tokens of
@@ -194,18 +200,23 @@ ends on one card, the sources card.
 - the **citation card**, off by default, says one thing: *texte exact du
   document*. It shows the passage boxed on its page, then the passage itself,
   large; a long one folds to seven lines. No ids or hashes;
-- the **sources card** has two tabs, in Studio's look:
-  - **Sources**: the real page, with every round's section boxed in orange
-    and numbered in the margin, and every quoted passage boxed in green.
-    Beside it, the rounds against the cap; the one selected opens on its
-    *pourquoi*, its *trouvé* and its quote, marked *vérifiée par le serveur*
-    or *introuvable*. A click on a round turns to its page; the arrows leaf
-    through the document; *Agrandir* opens the page fullscreen, boxes
-    included.
-  - **Détails**: the share of the document read, the rounds, the tokens
-    read and the quotes verified; the whole document as a bar, one segment
-    per section, with the sections read lit; and a table of the rounds with
-    their pages and cost.
+- the **sources card** is the document's title, a *Sources | Détails*
+  switch and an *Ouvrir dans Studio* link, then:
+  - **Sources**: a strip of the document's pages, one thumbnail each:
+    unopened, read, or holding a quote, with the quote's place marked. A
+    long document folds each run of unopened pages into one bar. Below, a
+    window onto the real page, zoomed to the passage's column, the quoted
+    lines highlighted and centred, the page fading out above and below.
+    The footer names the section (*§6.4 …*) and the server's word on the
+    quote: *vérifiée*, *introuvable* (highlighted in red when the text
+    layer has it but the parse does not), or *non vérifiée*. A click on a
+    page shows its quote; a second click, the next quote on that page. An
+    answer that quotes nothing shows the sections it read instead.
+  - **Détails**: the question; the share of the document read, the rounds,
+    the tokens read and the quotes verified; the whole document as a bar,
+    one segment per section, with the sections read lit; the rounds with
+    their *pourquoi*, *trouvé*, pages and cost; and every quote with its
+    status, one click from its page.
 
 Both cards are light only, so they read the same off a projector whatever
 the host's theme. Their labels are in French.

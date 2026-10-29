@@ -11,21 +11,33 @@ parse does not hold, is reported back as `unknown` rather than dropped — the
 card must not quietly show less than the agent claimed to have used.
 
 Each cited quote is checked again here, as `verify_citation` checks it, so
-the card says "verified" on the server's word, never on the agent's.
+the card says "verified" on the server's word, never on the agent's. Then it
+is found in the PDF's text layer, so the card can mark the quoted lines
+themselves rather than the whole paragraph around them.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+import logging
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from domain.anchors import AnchorParseError, DocumentAnchor
-from domain.element_reader import resolve
+from domain.element_reader import element_text, resolve
+from domain.parse_index import label_of
+from domain.quote_marks import quote_marks
 from domain.source_map import SourceCited, SourceRead, build_source_map
 from services.navigation_errors import InvalidArgumentError, NavigationServiceError
 
 if TYPE_CHECKING:
-    from domain.source_map import SourceMap
+    from collections.abc import Callable
+
+    from domain.page_regions import PageRegion
+    from domain.parse_index import DocumentIndex
+    from domain.ports import PageTextReader
+    from domain.quote_marks import Glyph
+    from domain.source_map import SourceMap, SourcePassage
     from services.citation_service import CitationService
     from services.navigation_config import NavigationConfig
     from services.navigation_service import NavigationService
@@ -34,6 +46,12 @@ if TYPE_CHECKING:
 # The whole map: a source is wherever the agent read, however deep, and the
 # card's tree folds what the reader does not open.
 _MAP_DEPTH = 6
+
+logger = logging.getLogger(__name__)
+
+# Running headers and footers come first in reading order on many pages; the
+# document's title is never one of them.
+_FURNITURE = frozenset({"page_header", "page_footer"})
 
 
 @dataclass(frozen=True)
@@ -50,6 +68,8 @@ class SourceReport:
     max_rounds: int
     # The parse's pages, so a viewer can leaf through before any is fetched.
     page_count: int | None = None
+    # The document's own title, when the parse found one; else the filename.
+    title: str = ""
 
 
 class SourceService:
@@ -60,11 +80,13 @@ class SourceService:
         navigation: NavigationService,
         citations: CitationService,
         config: NavigationConfig,
+        page_text: PageTextReader | None = None,
     ) -> None:
         self._parses = parses
         self._navigation = navigation
         self._citations = citations
         self._config = config
+        self._page_text = page_text
 
     async def show(
         self,
@@ -101,6 +123,7 @@ class SourceService:
                 if a.uri in known
             ],
         )
+        sources = await self._marked(parse, sources)
         return SourceReport(
             document_id=document_id,
             version_id=version_id,
@@ -111,7 +134,37 @@ class SourceService:
             unknown=unknown,
             max_rounds=self._config.max_rounds,
             page_count=parse.index.page_count or None,
+            title=_title(parse.index) or parse.document.filename,
         )
+
+    async def _marked(self, parse: LoadedParse, sources: SourceMap) -> SourceMap:
+        """Each quoted passage with the lines its quote covers.
+
+        Off the event loop: pdfium is blocking. Best effort: a page it cannot
+        read leaves the passage drawn by its blocks, never fails the card.
+        """
+        storage_path = parse.document.storage_path
+        if self._page_text is None or not storage_path:
+            return sources
+        if not any(p.quote and p.regions for p in sources.passages):
+            return sources
+        reader = self._page_text
+
+        def mark_all() -> list[SourcePassage]:
+            pages: dict[int, list[Glyph]] = {}
+
+            def glyphs(page: int) -> list[Glyph]:
+                if page not in pages:
+                    try:
+                        pages[page] = reader.glyphs(storage_path, page=page)
+                    except Exception:
+                        logger.warning("No text layer for page %s of %s", page, storage_path)
+                        pages[page] = []
+                return pages[page]
+
+            return [replace(p, marks=_marks(p, glyphs)) if p.quote else p for p in sources.passages]
+
+        return replace(sources, passages=await asyncio.to_thread(mark_all))
 
     async def _check(self, uri: str, quote: str) -> tuple[str, str, str | None]:
         """The anchor to show for one citation, and the server's word on its quote.
@@ -166,6 +219,40 @@ class SourceService:
             if link:
                 links[ref] = link
         return links
+
+
+def _marks(passage: SourcePassage, glyphs: Callable[[int], list[Glyph]]) -> list[PageRegion]:
+    """The quote's lines on the first of its pages that holds it."""
+    for page in sorted({r.page for r in passage.regions}):
+        blocks = [r for r in passage.regions if r.page == page]
+        marks = quote_marks(glyphs(page), passage.quote, page=page, within=blocks)
+        if marks:
+            return marks
+    return []
+
+
+def _title(index: DocumentIndex) -> str:
+    """The document's own title, as the parse found it.
+
+    Its `title` element when it has one. Docling often labels a paper's title
+    a section header instead, so the first heading is taken too when it opens
+    the document on page 1 and is not numbered like a section ("1
+    Introduction" names a section, not the document). Else nothing.
+    """
+
+    def text(ref: str) -> str:
+        return " ".join(element_text(index, ref).split())
+
+    for ref in index.order:
+        if label_of(index.by_ref.get(ref) or {}) == "title":
+            return text(ref)
+    for ref in index.order:
+        label = label_of(index.by_ref.get(ref) or {})
+        if label in _FURNITURE or not text(ref):
+            continue
+        opens = label == "section_header" and index.page_of.get(ref) == 1
+        return text(ref) if opens and not text(ref)[:1].isdigit() else ""
+    return ""
 
 
 def _anchor(uri: str, unknown: list[str]) -> DocumentAnchor | None:

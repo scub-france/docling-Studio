@@ -427,6 +427,7 @@ def make_document_tools(
     jobs=None,
     config=None,
     rasterizer=None,
+    page_text=None,
 ):
     """The four document-agent services over in-memory repositories.
 
@@ -470,7 +471,11 @@ def make_document_tools(
             parses=parses, rasterizer=rasterizer or FakeRasterizer(), config=settings
         ),
         sources=SourceService(
-            parses=parses, navigation=navigation, citations=citations, config=settings
+            parses=parses,
+            navigation=navigation,
+            citations=citations,
+            config=settings,
+            page_text=page_text,
         ),
     )
 

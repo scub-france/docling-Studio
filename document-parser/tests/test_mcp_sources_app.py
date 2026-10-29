@@ -181,6 +181,43 @@ class TestCard:
         assert 0 <= left < right <= 1 and 0 <= top < bottom <= 1
         assert card["passages"][0]["regions"][0]["page"] == 1
 
+    async def test_it_names_the_document_and_the_section_each_quote_is_in(self):
+        async with _client(make_document_tools()) as client:
+            card = _payload(await _show(client))
+        assert card["title"] == "Contrat de prestation"
+        assert card["filename"] == "contrat.pdf"
+        assert card["passages"][0]["section"] == "12.2 Préavis"
+
+    async def test_a_quote_carries_the_lines_it_covers(self):
+        """Found in the PDF's text layer; rounded like every other box."""
+        from dataclasses import replace
+
+        from domain.quote_marks import Glyph
+        from tests.navigation_fixtures import make_document
+
+        class Reader:
+            def glyphs(self, storage_path, *, page):
+                text = "Le préavis est de trois mois à compter de la notification."
+                return [
+                    Glyph(c, (0.12 + n * 0.01, 0.38, 0.13 + n * 0.01, 0.395))
+                    for n, c in enumerate(text)
+                ]
+
+        tools = make_document_tools(
+            documents=[replace(make_document(), storage_path="/uploads/contrat.pdf")],
+            page_text=Reader(),
+        )
+        quote = "trois mois à compter de la notification"
+        async with _client(tools) as client:
+            card = _payload(await _show(client, cited=[{"uri": PREAVIS_URI, "quote": quote}]))
+        [mark] = card["passages"][0]["marks"]
+        assert mark == {"page": 1, "box": [0.3, 0.38, 0.69, 0.395]}
+
+    async def test_without_a_text_layer_a_quote_has_no_lines(self):
+        async with _client(make_document_tools()) as client:
+            card = _payload(await _show(client))
+        assert card["passages"][0]["marks"] == []
+
     async def test_unknown_anchors_are_shown_not_dropped(self):
         async with _client(make_document_tools()) as client:
             result = await _show(client, cited=[PREAVIS_URI, "not-an-anchor"])
@@ -232,18 +269,23 @@ class TestTemplate:
             "view.question",
             "view.filename",
             "view.version_id",
+            "name",
+            "loc",
             "s.title",
             "s.status",
             "hop.title",
             "hop.why",
             "hop.found",
-            "hop.hop_id",
-            "hop.deep_link",
             "passage.quote",
+            "passage.section",
+            "item.p.quote",
+            "item.h.found",
+            "verdict(item.p)",
+            "shortVerdict(item.p)",
             "link",
-            "cached.image.data_uri",
             "image.data_uri",
             "message",
+            "note",
         ):
             assert f"esc({field}" in SOURCES_APP_HTML, field
 
@@ -256,16 +298,38 @@ class TestTemplate:
         assert 'tab("sources", "Sources")' in SOURCES_APP_HTML
         assert 'tab("details", "Détails")' in SOURCES_APP_HTML
 
-    def test_the_page_carries_every_round_and_every_passage_boxed(self):
-        """Boxes from the server's fractions, the selected round strong."""
+    def test_the_quote_is_highlighted_line_by_line_on_its_page(self):
+        """The lines the server found, multiplied over the ink; the passage's
+        block when no line was found; the other quotes on the page fainter."""
         for marker in (
-            "regionsOn(hop.regions, page)",
-            "regionsOn(passage.regions, page)",
-            'hop.hop_id === state.selected ? "sel" : "dim"',
-            "mark cite ${look}",
-            "data-pin=",
+            "onPage(entry.p.marks, page)",
+            '`<span class="hl${look}"',
+            "mix-blend-mode: multiply",
+            "block(r, tone(entry.p))",
         ):
             assert marker in SOURCES_APP_HTML, marker
+
+    def test_a_strip_of_pages_marks_where_each_quote_is(self):
+        """A thumbnail per page: unopened, read, or holding a quote with its
+        place marked; a long document folds its unopened runs."""
+        for marker in (
+            '"pg read"',
+            "data-pick=",
+            'aria-pressed="${pressed}"',
+            'class="mk${bad}"',
+            "fold = last > 24",
+        ):
+            assert marker in SOURCES_APP_HTML, marker
+
+    def test_the_page_is_a_window_onto_the_quote(self):
+        """Drawn at the width that sets the column across the window, capped,
+        the quote centred, the edges faded; fetched at that width."""
+        for marker in ("ZOOM_CAP = 1.5", "mask-image", "data-leaf", "Math.min(1600", "state.want"):
+            assert marker in SOURCES_APP_HTML, marker
+
+    def test_a_host_that_relays_no_tool_call_still_shows_the_quote(self):
+        assert "noServerTools" in SOURCES_APP_HTML
+        assert "textOnly(item" in SOURCES_APP_HTML
 
     def test_a_citation_says_verified_only_on_the_servers_word(self):
         assert 'new Set(["verified", "stale_version"])' in SOURCES_APP_HTML
@@ -273,6 +337,7 @@ class TestTemplate:
             "mot pour mot · vérifiée par le serveur",
             "introuvable à cet endroit",
             "non vérifiée",
+            'return "vérifiée"',
         ):
             assert label in SOURCES_APP_HTML, label
 
@@ -301,24 +366,3 @@ class TestTemplate:
         assert '"ui/notifications/initialized"' in SOURCES_APP_HTML
         assert 'name: "get_source_page"' in SOURCES_APP_HTML
         assert SOURCES_APP_HTML.count('"tools/call"') == 1
-
-    def test_a_page_enlarges_with_its_boxes(self):
-        """The lens: fullscreen requested (never assumed), the stage's page
-        standing in until the readable render lands, Escape to leave, zoom
-        out to the whole page, and leafing through the document."""
-        for marker in (
-            '"ui/request-display-mode"',
-            "LENS_WIDTH = 1400",
-            'role", "dialog',
-            "provisional",
-            '"Escape"',
-            "data-zoom",
-            "data-lens-out",
-            "data-lens-in",
-            "data-lens-fit",
-            "data-lens-prev",
-            "data-lens-next",
-            '"ArrowRight"',
-            "overlays(state.view, lensPage, false)",
-        ):
-            assert marker in SOURCES_APP_HTML, marker

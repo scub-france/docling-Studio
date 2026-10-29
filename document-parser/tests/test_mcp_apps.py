@@ -553,7 +553,9 @@ class TestHostContract:
     def test_every_display_mode_it_requests_is_declared(self, html):
         declared = re.search(r"availableDisplayModes: \[([^\]]*)\]", html).group(1)
         requested = set(re.findall(r'"ui/request-display-mode", \{ mode: "(\w+)" \}', html))
-        assert requested == {"inline", "fullscreen"}
+        # The sources card stays inline and asks for nothing; whatever a card
+        # does ask for, it declared first.
+        assert '"inline"' in declared
         assert all(f'"{mode}"' in declared for mode in requested)
 
     def test_a_failed_or_cancelled_call_does_not_leave_it_waiting(self, html):

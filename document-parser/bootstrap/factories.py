@@ -264,9 +264,19 @@ def build_document_tools(document_repo, analysis_repo) -> DocumentTools:
         citations=citations,
         images=CitationImageService(parses=parses, rasterizer=_build_rasterizer(), config=config),
         sources=SourceService(
-            parses=parses, navigation=navigation, citations=citations, config=config
+            parses=parses,
+            navigation=navigation,
+            citations=citations,
+            config=config,
+            page_text=_build_page_text(),
         ),
     )
+
+
+def _build_page_text():
+    from infra.page_text import PdfPageTextReader
+
+    return PdfPageTextReader()
 
 
 def _build_rasterizer():

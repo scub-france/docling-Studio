@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         Store,
     )
     from domain.navigation import RasterCrop
+    from domain.quote_marks import Glyph
     from domain.value_objects import (
         ChunkingOptions,
         ChunkResult,
@@ -436,6 +437,21 @@ class PageRasterizer(Protocol):
     ) -> RasterCrop:
         """Crop a PNG to `box` (left, top, right, bottom in pixels), clamped
         to the image, and re-encode it as `fmt` (`"PNG"` or `"WEBP"`)."""
+        ...
+
+
+@runtime_checkable
+class PageTextReader(Protocol):
+    """Port for reading a stored PDF's text layer, character by character.
+
+    Where each character sits is infrastructure — pdfium, a file on disk —
+    while finding a quote among them is domain logic (`domain.quote_marks`).
+    """
+
+    def glyphs(self, storage_path: str, *, page: int) -> list[Glyph]:
+        """Every character of `page`, in the text layer's order, each with its
+        box as fractions of the page from the top-left corner. Empty for a
+        page it cannot place characters on (a rotated page, a scan)."""
         ...
 
 

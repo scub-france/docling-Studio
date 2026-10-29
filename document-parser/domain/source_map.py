@@ -104,7 +104,10 @@ class SourcePassage:
     """One cited passage: its quote, the server's word on it, where it sits.
 
     `hop_id` is the round whose read covered it, or None when no read did:
-    the passage still shows, on its own page.
+    the passage still shows, on its own page. `section` is the title of the
+    deepest section on the map that holds it. `marks` are the lines the quote
+    itself covers, found in the PDF's text layer by the service; empty when
+    it could not be placed there, and the passage is drawn by its `regions`.
     """
 
     uri: str
@@ -114,6 +117,8 @@ class SourcePassage:
     regions: list[PageRegion]
     hop_id: str | None = None
     page: int | None = None
+    section: str = ""
+    marks: list[PageRegion] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -195,8 +200,10 @@ def build_source_map(
         hop = _hop_covering(span_start(anchor.ref), hops, covered)
         if hop is not None:
             hop.cited.append(anchor.uri)
-        trail.mark(locate(anchor.ref), STATUS_CITED, hop.hop_id if hop else None)
-        passages.setdefault(anchor.uri, _passage(anchor, index, hop))
+        node_ref = locate(anchor.ref)
+        trail.mark(node_ref, STATUS_CITED, hop.hop_id if hop else None)
+        node = published.get(node_ref) if node_ref else None
+        passages.setdefault(anchor.uri, _passage(anchor, index, hop, node.title if node else ""))
 
     return SourceMap(
         nodes=trail.nodes(flat),
@@ -207,7 +214,9 @@ def build_source_map(
     )
 
 
-def _passage(anchor: SourceCited, index: DocumentIndex, hop: SourceHop | None) -> SourcePassage:
+def _passage(
+    anchor: SourceCited, index: DocumentIndex, hop: SourceHop | None, section: str
+) -> SourcePassage:
     start = span_start(anchor.ref)
     return SourcePassage(
         uri=anchor.uri,
@@ -217,6 +226,7 @@ def _passage(anchor: SourceCited, index: DocumentIndex, hop: SourceHop | None) -
         regions=regions_of(index, section_refs(index, anchor.ref) or [start]),
         hop_id=hop.hop_id if hop else None,
         page=index.page_of.get(start),
+        section=section,
     )
 
 

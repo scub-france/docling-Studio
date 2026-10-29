@@ -51,7 +51,9 @@ class RegionOut:
 @dataclass(frozen=True)
 class PassageOut:
     """One cited passage. `status` is the server's word on `quote` (a
-    `verify_citation` status), absent when no quote came with the anchor."""
+    `verify_citation` status), absent when no quote came with the anchor.
+    `marks` are the lines the quote covers, found in the PDF's text layer;
+    `regions` the blocks of its element, drawn when `marks` is empty."""
 
     uri: str
     ref: str
@@ -61,6 +63,8 @@ class PassageOut:
     hop_id: str | None = None
     page: int | None = None
     deep_link: str | None = None
+    section: str = ""
+    marks: list[RegionOut] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -143,6 +147,8 @@ class SourcesCard:
     page_count: int | None = None
     unknown: list[str] = field(default_factory=list)
     next_step: str = ""
+    # The document's title as the parse found it, else its filename.
+    title: str = ""
 
 
 _CARD = TypeAdapter(SourcesCard)
@@ -260,6 +266,7 @@ def sources_card(report: SourceReport) -> SourcesCard:
         ],
         passages=[_passage(p, links) for p in sources.passages],
         page_count=report.page_count,
+        title=neutralise(report.title or report.filename),
         unknown=list(report.unknown),
         next_step=(
             "If no card appeared, relay this tree and each `deep_link`, which opens the "
@@ -297,6 +304,8 @@ def _passage(passage: SourcePassage, links: dict[str, str]) -> PassageOut:
         hop_id=passage.hop_id,
         page=passage.page,
         deep_link=links.get(passage.ref),
+        section=neutralise(passage.section),
+        marks=_regions(passage.marks),
     )
 
 

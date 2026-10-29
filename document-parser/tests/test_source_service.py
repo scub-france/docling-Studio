@@ -155,6 +155,154 @@ class TestQuotes:
         assert report.page_count == 2
 
 
+class TestMarks:
+    """The quoted lines, found in the PDF's text layer: best effort, never a
+    reason for the card to fail."""
+
+    QUOTE = "trois mois à compter de la notification"
+
+    @staticmethod
+    def stored():
+        from dataclasses import replace
+
+        from tests.navigation_fixtures import make_document
+
+        return [replace(make_document(), storage_path="/uploads/contrat.pdf")]
+
+    class Reader:
+        """The préavis sentence, set on one line inside its block on page 1."""
+
+        def __init__(self, *, fails=False):
+            self.fails = fails
+            self.asked: list[tuple[str, int]] = []
+
+        def glyphs(self, storage_path, *, page):
+            from domain.quote_marks import Glyph
+
+            self.asked.append((storage_path, page))
+            if self.fails:
+                raise OSError("unreadable")
+            text = "Le préavis est de trois mois à compter de la notification."
+            return [
+                Glyph(c, None if c == " " else (0.12 + n * 0.01, 0.38, 0.13 + n * 0.01, 0.395))
+                for n, c in enumerate(text)
+            ]
+
+    async def test_a_quote_found_on_its_page_carries_its_lines(self):
+        reader = self.Reader()
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_REF), self.QUOTE)],
+            documents=self.stored(),
+            page_text=reader,
+        )
+        [passage] = report.sources.passages
+        [mark] = passage.marks
+        assert mark.page == 1
+        # "trois" is the 19th character of the sentence.
+        assert mark.left == pytest.approx(0.12 + 18 * 0.01)
+        assert reader.asked == [("/uploads/contrat.pdf", 1)]
+
+    async def test_an_unreadable_page_leaves_the_passage_drawn_by_its_block(self):
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_REF), self.QUOTE)],
+            documents=self.stored(),
+            page_text=self.Reader(fails=True),
+        )
+        [passage] = report.sources.passages
+        assert passage.marks == []
+        assert passage.regions
+
+    async def test_without_a_stored_file_nothing_is_read(self):
+        reader = self.Reader()
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_REF), self.QUOTE)],
+            page_text=reader,
+        )
+        assert report.sources.passages[0].marks == []
+        assert reader.asked == []
+
+    async def test_a_citation_without_a_quote_is_not_looked_for(self):
+        reader = self.Reader()
+        await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_REF), "")],
+            documents=self.stored(),
+            page_text=reader,
+        )
+        assert reader.asked == []
+
+
+class TestWhereItSits:
+    async def test_the_report_carries_the_documents_own_title(self):
+        report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "", "")])
+        assert report.title == "Contrat de prestation"
+
+    async def test_a_passage_carries_the_section_that_holds_it(self):
+        report = await show(
+            reads=[(anchor_uri(PREAVIS_SECTION), "", "")],
+            cited=[(anchor_uri(PREAVIS_REF), "trois mois à compter de la notification")],
+        )
+        assert report.sources.passages[0].section == "12.2 Préavis"
+
+
+class TestTitle:
+    """The document's own title, read off the parse — Docling often labels a
+    paper's title a section header."""
+
+    @staticmethod
+    def title_of(*items):
+        from domain.parse_index import build_index
+        from infra.docling_tree import DoclingTreeReader
+        from services.source_service import _title
+
+        texts = [
+            {
+                "self_ref": f"#/texts/{n}",
+                "label": label,
+                "text": text,
+                "prov": [
+                    {
+                        "page_no": page,
+                        "bbox": {"l": 72, "t": 80 + 40 * n, "r": 520, "b": 100 + 40 * n},
+                        "charspan": [0, len(text)],
+                    }
+                ],
+            }
+            for n, (label, text, page) in enumerate(items)
+        ]
+        doc = {
+            "schema_name": "DoclingDocument",
+            "version": "1.0.0",
+            "name": "doc",
+            "pages": {
+                str(n): {"page_no": n, "size": {"width": 612, "height": 792}} for n in (1, 2)
+            },
+            "body": {"self_ref": "#/body", "children": [{"$ref": t["self_ref"]} for t in texts]},
+            "texts": texts,
+        }
+        return _title(build_index(doc, DoclingTreeReader()))
+
+    def test_a_title_element_is_the_title(self):
+        assert self.title_of(("text", "Intro", 1), ("title", "Le contrat", 1)) == "Le contrat"
+
+    def test_a_heading_opening_the_document_on_page_one_is_taken(self):
+        title = self.title_of(
+            ("page_header", "arXiv preprint", 1),
+            ("section_header", "Tetra: Serving LLMs", 1),
+            ("text", "Abstract text", 1),
+        )
+        assert title == "Tetra: Serving LLMs"
+
+    def test_a_numbered_heading_names_a_section_not_the_document(self):
+        assert self.title_of(("section_header", "1 Introduction", 1)) == ""
+
+    def test_a_document_opening_on_text_has_no_title(self):
+        assert self.title_of(("text", "Some prose", 1), ("section_header", "Later", 1)) == ""
+
+
 class TestDeepLinks:
     async def test_cited_elements_and_map_nodes_get_a_studio_link(self):
         report = await show(
