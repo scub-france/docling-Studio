@@ -143,7 +143,6 @@
           v-model="store.form.studioBaseUrl"
           class="setting-input"
           type="text"
-          placeholder="http://localhost:3000"
           :disabled="store.view.readOnly"
           data-e2e="mcp-config-base-url"
           spellcheck="false"

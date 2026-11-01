@@ -47,6 +47,9 @@ class _FakeRepo:
         self.rows.clear()
         return removed
 
+    async def replace_namespace(self, namespace: str, values: dict[str, str]) -> None:
+        self.rows = dict(values)
+
 
 def _client(
     *, rows: dict[str, str] | None = None, read_only: bool = False
@@ -97,6 +100,18 @@ class TestPutConfig:
         assert set(response.json()["sources"].values()) == {"db"}
         assert applied == [McpRuntimeConfig(3, 1500, "http://localhost:3000")]
         assert repo.rows["max_rounds"] == "3"
+
+    def test_saving_one_field_leaves_the_others_on_env(self):
+        client, _, repo = _client()
+        body = {"maxRounds": 5, "maxReadTokens": 1500, "studioBaseUrl": ""}
+        response = client.put("/api/config/mcp", json=body)
+        assert response.status_code == 200
+        assert response.json()["sources"] == {
+            "maxRounds": "env",
+            "maxReadTokens": "db",
+            "studioBaseUrl": "env",
+        }
+        assert repo.rows == {"max_read_tokens": "1500"}
 
     def test_invalid_values_are_400(self):
         client, applied, _ = _client()

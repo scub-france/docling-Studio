@@ -113,7 +113,12 @@ class McpConfigService:
         return self._view(config, sources)
 
     async def update_config(self, config: McpRuntimeConfig) -> McpRuntimeConfigView:
-        """Validate, persist the full override set, rebuild the services in place.
+        """Validate, persist what differs from env, rebuild the services in place.
+
+        The panel submits the whole form, but only a value that differs from
+        its env default becomes an override. Saving one field therefore leaves
+        the others following the environment, and setting a field back to its
+        env value drops its override.
 
         Raises:
             AppConfigReadOnlyError: writes refused on this deployment (403).
@@ -123,15 +128,19 @@ class McpConfigService:
         errors = validate_mcp_config(config)
         if errors:
             raise AppConfigValidationError("; ".join(errors))
-        await self._repo.set_many(
-            _NAMESPACE,
-            {
-                _KEY_MAX_ROUNDS: str(config.max_rounds),
-                _KEY_MAX_READ_TOKENS: str(config.max_read_tokens),
-                _KEY_BASE_URL: config.studio_base_url.strip(),
-            },
-        )
+        await self._repo.replace_namespace(_NAMESPACE, self._overrides(config))
         return await self._apply_and_view()
+
+    def _overrides(self, config: McpRuntimeConfig) -> dict[str, str]:
+        """The rows `config` needs: one per value that differs from env."""
+        env = self._env_defaults
+        base_url = config.studio_base_url.strip()
+        candidates = {
+            _KEY_MAX_ROUNDS: (config.max_rounds, env.max_rounds),
+            _KEY_MAX_READ_TOKENS: (config.max_read_tokens, env.max_read_tokens),
+            _KEY_BASE_URL: (base_url, env.studio_base_url),
+        }
+        return {key: str(value) for key, (value, default) in candidates.items() if value != default}
 
     async def reset_config(self) -> McpRuntimeConfigView:
         """Drop every override — env defaults become effective again."""

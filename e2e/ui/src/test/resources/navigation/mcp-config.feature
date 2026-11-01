@@ -20,11 +20,13 @@ Feature: UI — MCP section of the settings panel (#364)
     * waitFor('[data-e2e=mcp-config-restart-only]')
     * match karate.sizeOf(locateAll('[data-e2e=mcp-config-source-max-read-tokens]')) == 0
 
-    # Save a new ceiling: the field now reports a db override.
+    # Save a new ceiling: that field, and only that one, reports a db override.
     * clear('[data-e2e=mcp-config-max-read-tokens]')
     * input('[data-e2e=mcp-config-max-read-tokens]', '1500')
     * click('[data-e2e=mcp-config-save]')
     * waitFor('[data-e2e=mcp-config-source-max-read-tokens]')
+    * match karate.sizeOf(locateAll('[data-e2e=mcp-config-source-max-rounds]')) == 0
+    * match karate.sizeOf(locateAll('[data-e2e=mcp-config-source-base-url]')) == 0
 
     # The backend serves it from now on.
     Given url baseUrl
@@ -32,7 +34,7 @@ Feature: UI — MCP section of the settings panel (#364)
     When method GET
     Then status 200
     And match response.maxReadTokens == 1500
-    And match response.sources.maxReadTokens == 'db'
+    And match response.sources == { maxRounds: 'env', maxReadTokens: 'db', studioBaseUrl: 'env' }
 
     # Reset: the badge goes, the environment value comes back.
     * click('[data-e2e=mcp-config-reset]')

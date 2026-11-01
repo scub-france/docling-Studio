@@ -50,6 +50,10 @@ class _FakeRepo:
         self.rows.clear()
         return removed
 
+    async def replace_namespace(self, namespace: str, values: dict[str, str]) -> None:
+        self.namespaces.append(namespace)
+        self.rows = dict(values)
+
 
 def _service(
     *, rows: dict[str, str] | None = None, read_only: bool = False
@@ -148,6 +152,32 @@ class TestUpdate:
         assert applied == [McpRuntimeConfig(3, 1500, "http://h:3000")]
         assert view.config == applied[0]
         assert set(view.sources.values()) == {"db"}
+
+    async def test_only_values_that_differ_from_env_become_overrides(self):
+        service, repo, applied = _service()
+
+        view = await service.update_config(McpRuntimeConfig(5, 1500, ""))
+
+        assert repo.rows == {"max_read_tokens": "1500"}
+        assert applied == [McpRuntimeConfig(5, 1500, "")]
+        assert view.sources == {
+            "max_rounds": "env",
+            "max_read_tokens": "db",
+            "studio_base_url": "env",
+        }
+
+    async def test_a_value_set_back_to_env_drops_its_override(self):
+        service, repo, _ = _service(rows={"max_rounds": "3", "max_read_tokens": "1500"})
+
+        view = await service.update_config(McpRuntimeConfig(5, 1500, ""))
+
+        assert repo.rows == {"max_read_tokens": "1500"}
+        assert view.sources["max_rounds"] == "env"
+
+    async def test_the_base_url_is_compared_trimmed(self):
+        service, repo, _ = _service()
+        await service.update_config(McpRuntimeConfig(5, 4000, "  "))
+        assert repo.rows == {}
 
     async def test_invalid_values_are_refused_before_any_write(self):
         service, repo, applied = _service()

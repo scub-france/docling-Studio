@@ -68,7 +68,7 @@ New `domain/mcp_config.py`:
 - `validate_mcp_config(config) -> list[str]` (write path only; reads are tolerant).
 
 ### 5.2 Persistence
-None. Namespace `mcp` in `app_settings`, keys `max_rounds`, `max_read_tokens`, `studio_base_url`.
+No schema change. Namespace `mcp` in `app_settings`, keys `max_rounds`, `max_read_tokens`, `studio_base_url`. The port gains `replace_namespace(namespace, values)`: delete the namespace and insert `values` in one transaction.
 
 ### 5.3 Infra adapters
 `Settings.mcp_max_rounds` / `MCP_MAX_ROUNDS` (default 5, bounds 1–20 checked at boot). The constant `MAX_ROUNDS` stays as the default.
@@ -76,6 +76,7 @@ None. Namespace `mcp` in `app_settings`, keys `max_rounds`, `max_read_tokens`, `
 ### 5.4 Services
 - `services/config_overrides.py`: the tolerant `pick` + parsers, moved out of `app_config_service.py` so both config services share them.
 - `services/mcp_config_service.py::McpConfigService` (`get_config`, `update_config`, `reset_config`, `apply_effective`, `server_status`) with injected `repo`, `env_defaults`, `read_only`, `apply_config`, `status_provider`. Same precedence as #317: db over env, per-field source, unparseable row → env.
+- The PUT carries the whole form, but `update_config` stores only the values that differ from their env default, through `AppSettingsRepository.replace_namespace` (one transaction). Saving one field leaves the others on env; setting a field back to its default drops its row. (#317 stores every field on save, so one edit pins all four; left as is there.)
 - `load_effective_mcp_config(repo, env)`: the resolution alone, for `mcp_stdio.py`.
 - `NavigationConfig.from_runtime(config)` maps the knobs onto the budgets; `DocumentTools` carries the `config` it was built with.
 
@@ -83,7 +84,7 @@ Hot apply (`bootstrap/builder.py::_wire_mcp`):
 
 ```
 PUT /api/config/mcp → McpConfigService.update_config
-  → validate_mcp_config → repo.set_many("mcp", …)
+  → validate_mcp_config → repo.replace_namespace("mcp", values ≠ env)
   → apply_config(cfg) → build_document_tools(parses, cfg)   # same ParseLoader: cache kept
   → builder._update(document_tools=…)                        # one atomic rebind
 next tool call → _tools_from(app) → container.document_tools  # new budgets

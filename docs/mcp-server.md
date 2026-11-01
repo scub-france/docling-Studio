@@ -49,10 +49,12 @@ with no restart.
 - **Published by the server**: the tools, cards and prompts the running server
   publishes, read from the server itself.
 - **Live settings**: `MCP_MAX_ROUNDS`, `MCP_MAX_READ_TOKENS` and
-  `MCP_STUDIO_BASE_URL`. The environment gives the defaults; a saved value is
-  stored in Studio's database, marked `db`, and used from the next tool call.
-  *Reset to environment* drops the saved values. The stdio server reads them
-  at its next launch.
+  `MCP_STUDIO_BASE_URL`. The environment gives the defaults. On save, a value
+  that differs from its default is stored in Studio's database, marked `db`,
+  and used from the next tool call; the others keep following the
+  environment, and setting a field back to its default drops its override.
+  *Reset to environment* drops them all. The stdio server reads them at its
+  next launch.
 - **Restart-only settings**: `MCP_ENABLED`, `MCP_ALLOWED_HOSTS`,
   `MCP_APPS_ENABLED` and `MCP_CITATION_CARD`, shown with their values.
 

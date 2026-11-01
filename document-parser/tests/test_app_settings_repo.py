@@ -63,3 +63,17 @@ class TestAppSettingsRepo:
 
     async def test_delete_empty_namespace_returns_zero(self, repo):
         assert await repo.delete_namespace("reasoning") == 0
+
+    async def test_replace_namespace_drops_absent_keys_and_spares_others(self, repo):
+        await repo.set_many("mcp", {"max_rounds": "3", "max_read_tokens": "1500"})
+        await repo.set_many("other", {"c": "3"})
+
+        await repo.replace_namespace("mcp", {"max_read_tokens": "2000"})
+
+        assert await repo.get_namespace("mcp") == {"max_read_tokens": "2000"}
+        assert await repo.get_namespace("other") == {"c": "3"}
+
+    async def test_replace_namespace_with_nothing_empties_it(self, repo):
+        await repo.set_many("mcp", {"max_rounds": "3"})
+        await repo.replace_namespace("mcp", {})
+        assert await repo.get_namespace("mcp") == {}
