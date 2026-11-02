@@ -57,6 +57,12 @@ class Settings:
     # other reasoning vars this is a bootstrap default — the admin panel can
     # override it at runtime via the `app_settings` store.
     reasoning_max_iterations: int = 5
+    # Whether the UI shows Ask: "hidden" (default) or "visible". Hidden, the
+    # Parse view has no Ask tab and Settings has no Reasoning section, even
+    # when a value saved there turned reasoning on. It hides, it does not
+    # turn off: the reasoning routes still follow REASONING_ENABLED and the
+    # saved settings.
+    ask_mode: str = "hidden"
     opensearch_default_limit: int = 1000  # max chunks returned by get_chunks
     embedding_dimension: int = 384  # Granite Embedding 30M / all-MiniLM-L6-v2
     upload_dir: str = "./uploads"
@@ -158,6 +164,8 @@ class Settings:
             errors.append(
                 f"default_table_mode must be 'accurate' or 'fast' (got '{self.default_table_mode}')"
             )
+        if self.ask_mode not in ("hidden", "visible"):
+            errors.append(f"ask_mode must be 'hidden' or 'visible' (got '{self.ask_mode}')")
         # Timeout cascade: document_timeout < lock_timeout < conversion_timeout
         if self.document_timeout > 0 and self.lock_timeout > 0 and self.conversion_timeout > 0:
             if self.document_timeout >= self.lock_timeout:
@@ -212,6 +220,8 @@ class Settings:
             ollama_host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
             reasoning_model_id=os.environ.get("REASONING_MODEL_ID", "gpt-oss:20b"),
             reasoning_max_iterations=int(os.environ.get("REASONING_MAX_ITERATIONS", "5")),
+            # Empty counts as unset: compose passes `${ASK_MODE:-hidden}` through.
+            ask_mode=(os.environ.get("ASK_MODE") or "hidden").strip().lower(),
             opensearch_default_limit=int(os.environ.get("OPENSEARCH_DEFAULT_LIMIT", "1000")),
             embedding_dimension=int(os.environ.get("EMBEDDING_DIMENSION", "384")),
             upload_dir=os.environ.get("UPLOAD_DIR", "./uploads"),

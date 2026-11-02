@@ -85,7 +85,7 @@ OpenSearch and Neo4j serve ingestion, which is deprecated and goes away in 0.8.0
 
 ## Enable Ask
 
-Ask answers questions about a document with a local model. It needs three things:
+Ask answers questions about a document with a local model. It is hidden by default: start the backend with `ASK_MODE=visible` to show it. It also needs three things:
 
 1. **The reasoning packages.** They are in `latest-local`. When you build the image yourself, add `WITH_REASONING=true`.
 2. **[Ollama](https://ollama.com)** running on your machine, with a model downloaded: `ollama pull gpt-oss:20b`.
@@ -99,7 +99,7 @@ Inside a container, `localhost` is the container itself. Use `http://host.docker
 With the Docker image, set everything at start:
 
 ```bash
-docker run -p 3000:3000 -e REASONING_ENABLED=true -e OLLAMA_HOST=http://host.docker.internal:11434 -e REASONING_MODEL_ID=gpt-oss:20b ghcr.io/scub-france/docling-studio:latest-local
+docker run -p 3000:3000 -e ASK_MODE=visible -e REASONING_ENABLED=true -e OLLAMA_HOST=http://host.docker.internal:11434 -e REASONING_MODEL_ID=gpt-oss:20b ghcr.io/scub-france/docling-studio:latest-local
 ```
 
 With Docker Compose, build with the packages:

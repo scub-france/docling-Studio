@@ -15,6 +15,9 @@ interface HealthResponse {
   maxFileSizeMb?: number
   ingestionAvailable?: boolean
   reasoningAvailable?: boolean
+  // ASK_MODE. Missing on an older backend, which always showed Ask: read as
+  // 'visible'.
+  askMode?: 'hidden' | 'visible'
   // 0.6.1 — Surface master flags (#257). Optional for backward compat:
   // studio defaults to false (production target), rag pipeline to true.
   studioModeEnabled?: boolean
@@ -30,6 +33,7 @@ export type FeatureFlag =
   | 'disclaimer'
   | 'ingestion'
   | 'reasoning'
+  | 'ask'
   | 'studioMode'
   | 'ragPipeline'
   | 'inspectMode'
@@ -45,6 +49,7 @@ interface FeatureFlagContext {
   deploymentMode: DeploymentMode | null
   ingestionAvailable: boolean
   reasoningAvailable: boolean
+  askVisible: boolean
   studioModeEnabled: boolean
   ragPipelineEnabled: boolean
   inspectModeEnabled: boolean
@@ -67,10 +72,16 @@ const featureRegistry: Record<FeatureFlag, FeatureFlagDef> = {
   reasoning: {
     // Backend-gated: `reasoningAvailable` is true on `/api/health` only when
     // `REASONING_ENABLED=true` AND docling-agent + mellea are importable.
-    // Hides the sidebar entry when the runner isn't wired, instead of
-    // letting the user click through to a 503.
-    description: 'Reasoning trace tunnel (docling-agent ReasoningResult viewer)',
-    isEnabled: (ctx) => ctx.reasoningAvailable,
+    // Hides the Ask tab when the runner isn't wired, instead of letting the
+    // user click through to a 503, and whenever ASK_MODE hides Ask.
+    description: 'Ask tab and its reasoning trace (docling-agent runner wired)',
+    isEnabled: (ctx) => ctx.askVisible && ctx.reasoningAvailable,
+  },
+  ask: {
+    // ASK_MODE=visible on the backend. Gates every Ask surface, including
+    // Settings › Reasoning, where reasoning would otherwise be turned on.
+    description: 'Ask shown in the UI at all (ASK_MODE, hidden by default)',
+    isEnabled: (ctx) => ctx.askVisible,
   },
   // 0.6.1 — Surface master flags (#257). Select which UI surface(s) are
   // exposed; at least one must be on (validated server-side too).
@@ -103,6 +114,7 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
   const maxFileSizeMb = ref<number>(0)
   const ingestionAvailable = ref(false)
   const reasoningAvailable = ref(false)
+  const askVisible = ref(false)
   // 0.6.1 — Surface master flags (#257). Defaults match production target:
   // legacy Studio off, new RAG pipeline on.
   const studioModeEnabled = ref(false)
@@ -120,6 +132,7 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
     deploymentMode: deploymentMode.value,
     ingestionAvailable: ingestionAvailable.value,
     reasoningAvailable: reasoningAvailable.value,
+    askVisible: askVisible.value,
     studioModeEnabled: studioModeEnabled.value,
     ragPipelineEnabled: ragPipelineEnabled.value,
     inspectModeEnabled: inspectModeEnabled.value,
@@ -150,6 +163,7 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
         maxFileSizeMb.value = data.maxFileSizeMb ?? 0
         ingestionAvailable.value = data.ingestionAvailable ?? false
         reasoningAvailable.value = data.reasoningAvailable ?? false
+        askVisible.value = (data.askMode ?? 'visible') === 'visible'
         // 0.6.1 — surface flags. Backward compat: missing studio → false
         // (production target), missing rag pipeline → true (legacy behaviour).
         studioModeEnabled.value = data.studioModeEnabled ?? false
@@ -212,6 +226,7 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
     maxFileSizeMb,
     ingestionAvailable,
     reasoningAvailable,
+    askVisible,
     studioModeEnabled,
     ragPipelineEnabled,
     inspectModeEnabled,

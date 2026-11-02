@@ -62,8 +62,9 @@
       </a>
     </div>
 
-    <!-- #317 — server-backed runtime config; the section loads itself. -->
-    <ReasoningConfigSection />
+    <!-- #317 — server-backed runtime config; the section loads itself.
+         Hidden with Ask (ASK_MODE), so it is not where Ask gets turned on. -->
+    <ReasoningConfigSection v-if="askShown" />
   </div>
 </template>
 
@@ -77,6 +78,7 @@ import { useI18n } from '../../../shared/i18n'
 const store = useSettingsStore()
 const featureStore = useFeatureFlagStore()
 const version = computed(() => featureStore.appVersion)
+const askShown = computed(() => featureStore.isEnabled('ask'))
 const { t } = useI18n()
 </script>
 

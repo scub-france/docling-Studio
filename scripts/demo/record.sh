@@ -65,6 +65,8 @@ echo "jdk          $(jdk_major "$JAVA_HOME") — $JAVA_HOME"
 health=$(curl -sf http://localhost:8000/api/health) || { echo "backend down on :8000 — you start it, see README" >&2; exit 1; }
 echo "$health" | jq -e '.reasoningAvailable == true' >/dev/null \
   || { echo "reasoningAvailable=false — backend is not running from .venv/bin/uvicorn with REASONING_ENABLED=true" >&2; exit 1; }
+echo "$health" | jq -e '.askMode == "visible"' >/dev/null \
+  || { echo "askMode is not visible — start the backend with ASK_MODE=visible" >&2; exit 1; }
 curl -sfI http://localhost:3000 >/dev/null || { echo "frontend down on :3000" >&2; exit 1; }
 echo "backend ok (reasoning wired) · frontend ok"
 

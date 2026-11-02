@@ -149,6 +149,7 @@ async def health() -> HealthResponse:
         # Ollama reachability is checked lazily at call time so health checks
         # never block on the LLM host. Follows #317 runtime rebuilds.
         reasoning_available=runner is not None and runner.is_available,
+        ask_mode=settings.ask_mode,
         # 0.6.1 — Surface flags (#257).
         studio_mode_enabled=settings.studio_mode_enabled,
         rag_pipeline_enabled=settings.rag_pipeline_enabled,

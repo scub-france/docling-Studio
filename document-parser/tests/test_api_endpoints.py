@@ -1,5 +1,6 @@
 """Tests for FastAPI API endpoints using TestClient."""
 
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -92,6 +93,17 @@ class TestHealthEndpoint:
         # Defaults: studio off, rag pipeline on (production target).
         assert data["studioModeEnabled"] is False
         assert data["ragPipelineEnabled"] is True
+
+    def test_health_says_ask_is_hidden_by_default(self, client):
+        data = client.get("/api/health").json()
+        assert data["askMode"] == "hidden"
+
+    def test_health_says_ask_is_visible_when_asked_for(self, client, monkeypatch):
+        import main
+
+        monkeypatch.setattr(main, "settings", replace(main.settings, ask_mode="visible"))
+        data = client.get("/api/health").json()
+        assert data["askMode"] == "visible"
 
     def test_health_exposes_doc_mode_flags(self, client):
         """0.6.0 (#210, renamed in #257): /api/health surfaces inspect/linked sub-flags."""

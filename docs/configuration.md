@@ -32,10 +32,13 @@ Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT`
 
 ## Ask
 
-These are starting values. **Settings** › **Reasoning** in the app can change them while the server runs. After a **Save** there, the four values come from the database until you click **Reset to environment**.
+Ask is hidden by default. `ASK_MODE=visible` shows it: the Ask tab in the Parse view and **Settings** › **Reasoning**. Hidden, neither shows, even when reasoning was turned on in **Settings**. `ASK_MODE` only hides Ask: the reasoning API still answers as the values below say.
+
+The other values are starting values. **Settings** › **Reasoning** in the app can change them while the server runs. After a **Save** there, the four values come from the database until you click **Reset to environment**.
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
+| `ASK_MODE` | `hidden` | `visible` shows Ask in the app, `hidden` hides it. |
 | `REASONING_ENABLED` | `false` | Turns Ask on. The reasoning packages must be in the image. |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama address, as seen from the backend. In a container, use `http://host.docker.internal:11434`. |
 | `REASONING_MODEL_ID` | `gpt-oss:20b` | Default model. It must be pulled in Ollama. |

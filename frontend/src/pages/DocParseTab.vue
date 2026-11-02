@@ -205,8 +205,9 @@ const chunksStore = useChunksStore()
 const reasoningStore = useReasoningStore()
 const featureFlags = useFeatureFlagStore()
 
-// Reasoning is backend-gated (REASONING_ENABLED + docling-agent importable).
-// When off, the Parse view is pixel-identical to before: no Ask tab, no dock.
+// Reasoning is backend-gated (REASONING_ENABLED + docling-agent importable),
+// and ASK_MODE hides it unless set to visible. When off, the Parse view is
+// pixel-identical to before: no Ask tab, no dock.
 const reasoningAvailable = computed(() => featureFlags.isEnabled('reasoning'))
 // Right panel defaults to Properties; Ask is opt-in (#303 design decision).
 const rightTab = ref<'props' | 'ask'>('props')

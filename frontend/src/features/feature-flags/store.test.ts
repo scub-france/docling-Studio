@@ -146,6 +146,59 @@ describe('useFeatureFlagStore', () => {
     expect(store.isEnabled('reasoning')).toBe(false)
   })
 
+  it('hides Ask when askMode is hidden, even with the runner wired', async () => {
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      reasoningAvailable: true,
+      askMode: 'hidden',
+    })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.askVisible).toBe(false)
+    expect(store.isEnabled('ask')).toBe(false)
+    expect(store.isEnabled('reasoning')).toBe(false)
+  })
+
+  it('shows Ask when askMode is visible', async () => {
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      reasoningAvailable: true,
+      askMode: 'visible',
+    })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('ask')).toBe(true)
+    expect(store.isEnabled('reasoning')).toBe(true)
+  })
+
+  it('keeps Settings › Reasoning reachable when visible but the runner is off', async () => {
+    mockApiFetch.mockResolvedValue({
+      status: 'ok',
+      engine: 'local',
+      reasoningAvailable: false,
+      askMode: 'visible',
+    })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.isEnabled('ask')).toBe(true)
+    expect(store.isEnabled('reasoning')).toBe(false)
+  })
+
+  it('reads a missing askMode as visible, as an older backend behaved', async () => {
+    mockApiFetch.mockResolvedValue({ status: 'ok', engine: 'local', reasoningAvailable: true })
+    const store = useFeatureFlagStore()
+    await store.load()
+    expect(store.askVisible).toBe(true)
+    expect(store.isEnabled('ask')).toBe(true)
+  })
+
+  it('keeps Ask hidden until health has loaded', () => {
+    const store = useFeatureFlagStore()
+    expect(store.isEnabled('ask')).toBe(false)
+  })
+
   it('reload re-fetches health and updates reasoningAvailable (#317)', async () => {
     mockApiFetch.mockResolvedValue({ status: 'ok', engine: 'local', reasoningAvailable: false })
     const store = useFeatureFlagStore()

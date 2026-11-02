@@ -70,7 +70,7 @@ ffmpeg -f avfoundation -list_devices true -i ""   # → [2] Capture screen 0
 # backend — .venv/bin/uvicorn, NOT bare uvicorn (that resolves to the conda base
 # and its docling-agent 0.1.0, and the Ask panel silently vanishes)
 cd document-parser
-REASONING_ENABLED=true OLLAMA_HOST=http://localhost:11434 \
+ASK_MODE=visible REASONING_ENABLED=true OLLAMA_HOST=http://localhost:11434 \
 REASONING_MODEL_ID=granite4.1:3b \
 .venv/bin/uvicorn main:app --port 8000
 

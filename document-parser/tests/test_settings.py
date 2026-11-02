@@ -183,6 +183,29 @@ class TestReasoningMaxIterations:
             Settings(reasoning_max_iterations=21)
 
 
+class TestAskMode:
+    """ASK_MODE — whether the UI shows Ask; hidden unless asked for."""
+
+    def test_hidden_by_default(self, monkeypatch):
+        assert Settings().ask_mode == "hidden"
+        monkeypatch.delenv("ASK_MODE", raising=False)
+        assert Settings.from_env().ask_mode == "hidden"
+
+    def test_visible_from_env(self, monkeypatch):
+        monkeypatch.setenv("ASK_MODE", " Visible ")
+        assert Settings.from_env().ask_mode == "visible"
+
+    def test_an_empty_value_keeps_it_hidden(self, monkeypatch):
+        monkeypatch.setenv("ASK_MODE", "")
+        assert Settings.from_env().ask_mode == "hidden"
+
+    def test_an_unknown_value_is_rejected(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="ask_mode must be 'hidden' or 'visible'"):
+            Settings(ask_mode="shown")
+
+
 class TestSettingsFromEnv:
     def test_reads_env_vars(self, monkeypatch):
         monkeypatch.setenv("APP_VERSION", "1.2.3")

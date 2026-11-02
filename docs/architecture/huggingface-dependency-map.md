@@ -41,7 +41,7 @@ The chunker always runs in the backend, whatever the engine (`build_chunker()` i
 
 Downloads are cached under `~/.cache` inside the container. Mount a volume there to keep them when the container is recreated.
 
-Ask (`POST /api/documents/{id}/reasoning`) uses no HuggingFace model. The LLM runs in Ollama, `gpt-oss:20b` by default. Ask needs the reasoning packages, which the published `-local` image has included since 0.7.1 (`WITH_REASONING=true` in `release.yml`). It is off by default. Turn it on with `REASONING_ENABLED=true` or in **Settings**. A value saved in **Settings** wins.
+Ask (`POST /api/documents/{id}/reasoning`) uses no HuggingFace model. The LLM runs in Ollama, `gpt-oss:20b` by default. Ask needs the reasoning packages, which the published `-local` image has included since 0.7.1 (`WITH_REASONING=true` in `release.yml`). It is off and hidden by default. Show it with `ASK_MODE=visible`, then turn it on with `REASONING_ENABLED=true` or in **Settings**. A value saved in **Settings** wins.
 
 ### In tests
 
