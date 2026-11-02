@@ -407,7 +407,8 @@ const hostOk = computed(() => !store.server || hostAllowed(host, store.server.al
 const desktopJson = computed(() => claudeDesktopConfig(clientUrl.value))
 const codeCmd = computed(() => claudeCodeCommand(clientUrl.value))
 
-/** Only loopback hosts are allowed: the server is out of reach of other machines. */
+/** Only loopback hosts are allowed. A browser guard (DNS rebinding), not network isolation:
+ * a client that reaches the port can still send an allowed Host header. */
 const localOnly = computed(() =>
   (store.server?.allowedHosts ?? []).every((allowed) =>
     /^(127\.0\.0\.1|localhost|\[::1\])(:|$)/.test(allowed),
