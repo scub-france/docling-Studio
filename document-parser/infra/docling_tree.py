@@ -296,3 +296,12 @@ class DoclingTreeReader:
         self, doc_data: dict[str, Any]
     ) -> tuple[set[str], dict[str, dict[str, Any]]]:
         return build_collapse_index(doc_data)
+
+    def dfs_order(self, doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
+        return dfs_order(doc_data, skip_refs)
+
+    def iter_provs(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        return iter_provs(item)
+
+    def iter_pages(self, doc_data: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        return iter_pages(doc_data)

@@ -20,6 +20,7 @@ from services.document_service import DocumentService
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.ingestion_service import IngestionService
+from services.mcp_config_service import McpConfigService
 from services.reasoning_service import ReasoningService
 from services.store_service import StoreService
 from services.version_service import VersionService
@@ -116,3 +117,10 @@ def get_app_config_service(state: AppStateDep) -> AppConfigService:
 
 
 AppConfigServiceDep = Annotated[AppConfigService, Depends(get_app_config_service)]
+
+
+def get_mcp_config_service(state: AppStateDep) -> McpConfigService:
+    return require(state.mcp_config_service, detail="MCP config service not available")
+
+
+McpConfigServiceDep = Annotated[McpConfigService, Depends(get_mcp_config_service)]

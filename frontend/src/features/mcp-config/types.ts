@@ -1,0 +1,62 @@
+import type { ConfigSource } from '@/features/admin-config'
+
+export type McpConfigField = 'maxRounds' | 'maxReadTokens' | 'studioBaseUrl' | 'enabled'
+
+/** Wire shape of GET/PUT/DELETE `/api/config/mcp` (#364). */
+export interface McpConfigView {
+  maxRounds: number
+  maxReadTokens: number
+  studioBaseUrl: string
+  /** Whether the mounted server answers. Off, `/mcp` answers 503. */
+  enabled: boolean
+  sources: Record<McpConfigField, ConfigSource>
+  readOnly: boolean
+  /** The environment's values: what each field returns to on a reset. */
+  defaults: McpConfigDefaults
+}
+
+export interface McpConfigDefaults {
+  maxRounds: number
+  maxReadTokens: number
+  studioBaseUrl: string
+  enabled: boolean
+}
+
+/** The budget fields the form edits. */
+export type McpBudgetField = 'maxRounds' | 'maxReadTokens' | 'studioBaseUrl'
+
+/** Body of PUT `/api/config/mcp` — full-state replace, like reasoning. */
+export interface McpConfigUpdate {
+  maxRounds: number
+  maxReadTokens: number
+  studioBaseUrl: string
+  enabled: boolean
+}
+
+/** Who may call a tool: the model, a card's own fetch (`app`), or both. */
+export type McpVisibility = 'model' | 'app'
+
+export interface McpTool {
+  name: string
+  visibility: McpVisibility[]
+  /** True when the tool renders an MCP Apps card. */
+  card: boolean
+}
+
+/** Wire shape of GET `/api/mcp/server` — the transport as mounted at boot. */
+export interface McpServerView {
+  /** MCP_ENABLED at boot: whether `/mcp` exists at all. */
+  enabled: boolean
+  path: string
+  allowedHosts: string[]
+  appsEnabled: boolean
+  citationCard: boolean
+  tools: McpTool[]
+  prompts: string[]
+}
+
+/** Bounds mirrored from the backend contract (`domain/mcp_config.py`). */
+export const MAX_ROUNDS_MIN = 1
+export const MAX_ROUNDS_MAX = 20
+export const READ_TOKENS_MIN = 100
+export const READ_TOKENS_MAX = 32000

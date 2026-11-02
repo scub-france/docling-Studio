@@ -7,7 +7,8 @@ import com.intuit.karate.junit5.Karate;
  * recording and asserts almost nothing. UIRunner must never pick it up, which
  * is why it lives outside the classpath roots UIRunner scans and carries @demo.
  *
- * Needs a running backend (REASONING_ENABLED=true + warm Ollama) and frontend.
+ * Needs a running backend (ASK_MODE=visible, REASONING_ENABLED=true, warm Ollama)
+ * and frontend.
  * See scripts/demo/README.md — this is normally invoked by scripts/demo/record.sh,
  * not by hand.
  */

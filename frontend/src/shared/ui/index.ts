@@ -1,2 +1,5 @@
 export { default as AppSidebar } from './AppSidebar.vue'
 export { default as PaginationBar } from './PaginationBar.vue'
+export { default as AccordionSection } from './AccordionSection.vue'
+export { default as AccordionRow } from './AccordionRow.vue'
+export { ACCORDION_KEY, createAccordion, type Accordion } from './accordion'

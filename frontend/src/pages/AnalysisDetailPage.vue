@@ -23,7 +23,12 @@
           <DownloadDropdown :doc-id="analysis.documentId" :analysis-id="analysis.id" />
         </div>
       </header>
-      <DocParseTab :doc-id="analysis.documentId" :analysis="analysis" />
+      <DocParseTab
+        :doc-id="analysis.documentId"
+        :analysis="analysis"
+        :focus-ref="focusRef"
+        :page="page"
+      />
     </template>
   </section>
 </template>
@@ -38,7 +43,7 @@ import { ROUTES } from '../shared/routing/names'
 import DocParseTab from './DocParseTab.vue'
 import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
 
-const props = defineProps<{ id: string }>()
+const props = defineProps<{ id: string; focusRef?: string; page?: number }>()
 const { t } = useI18n()
 const analysis = ref<Analysis | null>(null)
 const loading = ref(true)

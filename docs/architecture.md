@@ -126,7 +126,7 @@ An analysis waits in `PENDING` until one of the `MAX_CONCURRENT_ANALYSES` slots 
 
 A feature uses another feature only through its `index.ts`. ESLint enforces it (`no-restricted-imports`).
 
-On start, the app reads `/api/health`. The answer decides which pages exist (`STUDIO_MODE_ENABLED`, `RAG_PIPELINE_ENABLED`) and whether the Ask tab shows up.
+On start, the app reads `/api/health`. The answer decides which pages exist (`STUDIO_MODE_ENABLED`, `RAG_PIPELINE_ENABLED`) and whether the Ask tab shows up (`ASK_MODE`, and a wired reasoning runner).
 
 ## Going further
 

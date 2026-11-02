@@ -29,7 +29,7 @@ flowchart LR
 | **Docs** | Your PDFs: import, open, analyze several at once, download, delete. |
 | **Analyses** | Every analysis: open the result, delete. |
 | **Runs** | Nothing yet. The page says "Coming soon". |
-| **Settings** | Theme, language, and the setup for **Ask**. |
+| **Settings** | Foldable sections: theme and language, the setup for **Ask** when Ask is shown (`ASK_MODE=visible`), and the [MCP server](mcp-server.md#configure-from-studio). |
 
 ## Import a PDF
 
@@ -77,7 +77,7 @@ Click **Show all**, at the right end of the LAYERS bar, to see every box again.
 
 ## Ask a question
 
-**Ask** sends a question about the document to a local model (through [Ollama](https://ollama.com)) and shows how the answer was built, step by step. It is off by default: see [Enable Ask](getting-started.md#enable-ask).
+**Ask** sends a question about the document to a local model (through [Ollama](https://ollama.com)) and shows how the answer was built, step by step. It is hidden and off by default: see [Enable Ask](getting-started.md#enable-ask).
 
 1. Open a result from **Analyses**.
 2. In the right panel, click the **Ask** tab.

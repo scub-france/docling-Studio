@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,11 +28,13 @@ from api.document_versions import router as document_versions_router
 from api.documents import router as documents_router
 from api.graph import router as graph_router
 from api.ingestion import router as ingestion_router
+from api.mcp import router as mcp_router
 from api.reasoning import router as reasoning_router
 from api.schemas import HealthResponse
 from api.state import AppState
 from api.stores import router as stores_router
 from bootstrap import AppStateBuilder
+from bootstrap.mcp_mount import mount_mcp_server
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.database import get_connection
@@ -46,7 +48,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    builder = AppStateBuilder(publish=lambda state: setattr(app.state, "container", state))
+    builder = AppStateBuilder(
+        publish=lambda state: setattr(app.state, "container", state),
+        mcp_server=_mcp,
+    )
     state = await builder.build()
 
     # Mounted conditionally: without an ingestion service every route would
@@ -55,17 +60,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.include_router(ingestion_router)
         logger.info("Ingestion router mounted")
 
-    try:
-        yield
-    finally:
-        # Drain both backend pools (#279). `close_driver` drains the Neo4j
-        # pool (every (uri, user) entry, not just the env-based one); the
-        # OpenSearch pool is drained explicitly.
-        from infra.neo4j import close_driver
-        from infra.opensearch_pool import get_pool as get_opensearch_pool
+    async with AsyncExitStack() as stack:
+        # The MCP streamable-HTTP transport needs its session manager running
+        # for the lifetime of the app. It is created at import time (see the
+        # `mount_mcp_server` call below) because the ASGI route must exist
+        # before the first request; entering it here is what starts it.
+        if _mcp is not None:
+            await stack.enter_async_context(_mcp.session)
+        try:
+            yield
+        finally:
+            # Drain both backend pools (#279). `close_driver` drains the Neo4j
+            # pool (every (uri, user) entry, not just the env-based one); the
+            # OpenSearch pool is drained explicitly.
+            from infra.neo4j import close_driver
+            from infra.opensearch_pool import get_pool as get_opensearch_pool
 
-        await close_driver()
-        await get_opensearch_pool().close_all()
+            await close_driver()
+            await get_opensearch_pool().close_all()
 
 
 app = FastAPI(
@@ -99,8 +111,18 @@ app.include_router(graph_router)
 # Live reasoning (#303). Mounted unconditionally so the route is
 # introspectable in OpenAPI; the handler 503s when reasoning is off.
 app.include_router(reasoning_router)
-# Runtime config (#317) — admin panel read/write over the reasoning knobs.
+# Runtime config (#317, #364) — admin panel read/write over the reasoning and
+# MCP knobs.
 app.include_router(config_router)
+# What the MCP transport publishes (#364) — answers even when it is off.
+app.include_router(mcp_router)
+
+# MCP document server (read-only agent surface) — mounted at import time so
+# the ASGI route and its session manager exist before the first request; the
+# lifespan above enters its session and hands the server to the builder, which
+# describes it to the admin panel. `None` when MCP_ENABLED is off, in which
+# case nothing is mounted at all.
+_mcp = mount_mcp_server(app)
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -135,6 +157,7 @@ async def health() -> HealthResponse:
         # Ollama reachability is checked lazily at call time so health checks
         # never block on the LLM host. Follows #317 runtime rebuilds.
         reasoning_available=runner is not None and runner.is_available,
+        ask_mode=settings.ask_mode,
         # 0.6.1 — Surface flags (#257).
         studio_mode_enabled=settings.studio_mode_enabled,
         rag_pipeline_enabled=settings.rag_pipeline_enabled,

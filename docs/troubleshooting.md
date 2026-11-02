@@ -4,7 +4,9 @@
 
 The Ask tab is only on result pages (**Analyses**, then a row), in the right panel.
 
-If it is missing there, open **Settings** › **Reasoning**:
+Ask is hidden unless the backend runs with `ASK_MODE=visible`. Hidden, there is no Ask tab and no **Settings** › **Reasoning** either.
+
+If it is still missing, open **Settings** › **Reasoning**:
 
 - **Status** is **Disabled**: set it to **Enabled** and click **Save**.
 - **Diagnostics** says **Reasoning unavailable** while Status is enabled: the reasoning packages are not in the image. Use `latest-local`, or build with `WITH_REASONING=true`. The `-remote` images never have them.
