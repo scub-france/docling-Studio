@@ -174,7 +174,10 @@ class AnalysisService:
 
         if not self._docling_importer:
             raise RuntimeError("Docling document importer is not configured")
-        result = self._docling_importer.deserialize(document)
+        # Validation and the three exports are CPU-bound and grow with the
+        # document: run them in a worker thread so one import does not stall
+        # every other request on the event loop.
+        result = await asyncio.to_thread(self._docling_importer.deserialize, document)
 
         job = AnalysisJob(document_id=document_id)
         job.document_filename = doc.filename
