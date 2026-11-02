@@ -140,7 +140,9 @@ jobs:
           data = json.load(open('/tmp/pip-audit.json'))
           print(sum(len(d.get('vulns', [])) for d in data.get('dependencies', [])))
           " 2>/dev/null || echo 0)
-          if [ "$COUNT" -gt 0 ]; then
+          if [ ! -s /tmp/pip-audit.json ]; then
+            echo "::warning::pip-audit produced no report: the Python dependencies were not audited"
+          elif [ "$COUNT" -gt 0 ]; then
             echo "::warning::pip-audit: $COUNT known vulnerabilities in Python dependencies, see the dep-audit-results artifact"
           fi
 
@@ -334,6 +336,9 @@ jobs:
     needs: [docker-build]
     runs-on: ubuntu-latest
     strategy:
+      # Scan both images even when one fails: fail-fast hid the local
+      # scan's results behind a red remote scan in the 0.7.0 and 0.7.3 gates.
+      fail-fast: false
       matrix:
         target: [remote, local]
 
@@ -766,7 +771,7 @@ jobs:
           |-------|--------|----------|
           | Lint & type-check | $(status_icon "$LINT") | Yes |
           | Unit tests | $(status_icon "$TESTS") | Yes |
-          | Dependency audit | $(status_icon "$DEP") | Yes (CRITICAL) |
+          | Dependency audit | $(status_icon "$DEP") | npm CRITICAL only |
           | Audit checks | $(status_icon "$AUDIT") | Yes |
           | Docker build | $(status_icon "$BUILD") | Yes |
           | Docker smoke test | $(status_icon "$SMOKE") | Yes |
