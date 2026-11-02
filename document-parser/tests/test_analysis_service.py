@@ -221,6 +221,30 @@ class TestDoclingDocumentImport:
 
         analysis_repo.insert.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_import_deserializes_off_the_event_loop(self):
+        """Validating and exporting a large document must not block the loop."""
+        loop_seen_by_importer: list[bool] = []
+
+        def deserialize(_document: dict) -> ConversionResult:
+            try:
+                asyncio.get_running_loop()
+                loop_seen_by_importer.append(True)
+            except RuntimeError:
+                loop_seen_by_importer.append(False)
+            raise ValueError("Invalid Docling document: stop here")
+
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
+        importer = MagicMock()
+        importer.deserialize.side_effect = deserialize
+        service = _make_service(document_repo=document_repo, docling_importer=importer)
+
+        with pytest.raises(ValueError, match="stop here"):
+            await service.import_docling_document("d1", {})
+
+        assert loop_seen_by_importer == [False]
+
 
 class TestAnalysisServiceConcurrency:
     """Verify that the semaphore limits concurrent analysis jobs."""

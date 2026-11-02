@@ -130,18 +130,18 @@ jobs:
         run: |
           cd document-parser
           uv run pip-audit --format=json --output=/tmp/pip-audit.json 2>&1 || true
-          uv run pip-audit 2>&1 | tee /tmp/pip-audit.txt
-          # Check for critical vulnerabilities
-          if uv run pip-audit --format=json 2>/dev/null | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          vulns = data.get('dependencies', [])
-          crits = [v for dep in vulns for v in dep.get('vulns', []) if 'CRITICAL' in v.get('fix_versions', [''])]
-          sys.exit(1 if crits else 0)
-          " 2>/dev/null; then
-            echo "critical=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "critical=true" >> "$GITHUB_OUTPUT"
+          uv run pip-audit 2>&1 | tee /tmp/pip-audit.txt || true
+          # pip-audit gives no severity, so it cannot single out CRITICALs (the
+          # old check looked for "CRITICAL" among fix versions and never fired).
+          # CRITICAL Python packages are blocked by the Trivy image scan
+          # (python-pkg) below; this step reports, as a warning, what is known.
+          COUNT=$(python3 -c "
+          import json
+          data = json.load(open('/tmp/pip-audit.json'))
+          print(sum(len(d.get('vulns', [])) for d in data.get('dependencies', [])))
+          " 2>/dev/null || echo 0)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::pip-audit: $COUNT known vulnerabilities in Python dependencies, see the dep-audit-results artifact"
           fi
 
       - name: Node audit
@@ -173,9 +173,9 @@ jobs:
           path: /tmp/*-audit.*
 
       - name: Fail on critical vulnerabilities
-        if: steps.pip_audit.outputs.critical == 'true' || steps.npm_audit.outputs.critical == 'true'
+        if: steps.npm_audit.outputs.critical == 'true'
         run: |
-          echo "::error::Critical vulnerabilities found in dependencies"
+          echo "::error::Critical vulnerabilities found in npm dependencies"
           exit 1
 
   audit-checks:

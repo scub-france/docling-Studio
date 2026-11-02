@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir uv==0.11.6
+RUN pip install --no-cache-dir uv==0.13.6
 
 WORKDIR /app
 

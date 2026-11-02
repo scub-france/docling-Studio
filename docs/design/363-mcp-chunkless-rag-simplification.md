@@ -4,7 +4,7 @@
 - **Title on issue:** [ENHANCEMENT] MCP — reduce the server to the Chunkless RAG loop
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-10-26
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.7.3)
 - **Target milestone:** 0.8.0 — Production ready · demo at BDX I/O on **2026-10-29**
 - **Impacted layers:** backend: domain | services | persistence | infra (settings) | `mcp_adapter` · frontend: none (deep link already shipped) · infra/CI: `.env.example`, compose
 - **Audit dimensions likely touched:** KISS · Performance · Decoupling · DRY · Tests · Documentation · Security

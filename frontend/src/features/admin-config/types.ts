@@ -1,5 +1,4 @@
-/** Where an effective config value comes from: env bootstrap default or DB override. */
-export type ConfigSource = 'env' | 'db'
+import type { ConfigSource } from '@/shared/types'
 
 export type ReasoningConfigField = 'enabled' | 'ollamaHost' | 'modelId' | 'maxIterations'
 

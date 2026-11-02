@@ -89,10 +89,11 @@ class Settings:
     linked_mode_enabled: bool = True
     # MCP document server — on by default, except on the Hugging Face Space.
     # It publishes a read-only tool surface over the parsed documents and
-    # carries NO authentication of its own: `mcp_allowed_hosts` below, which
-    # only trusts localhost by default, is what keeps it off a backend
-    # reachable from elsewhere. `MCP_ENABLED=false` mounts nothing at all;
-    # with it on, Settings can still turn the server off and on at runtime.
+    # carries NO authentication of its own. `mcp_allowed_hosts` below only
+    # guards against DNS rebinding from a browser: any client that reaches
+    # the port can send an allowed Host header, so network exposure is the
+    # deployment's job. `MCP_ENABLED=false` mounts nothing at all; with it
+    # on, Settings can still turn the server off and on at runtime.
     mcp_enabled: bool = True
     # Host/Origin allow-list for the streamable-HTTP transport (DNS-rebinding
     # protection). "*" disables the check — only correct behind a proxy that

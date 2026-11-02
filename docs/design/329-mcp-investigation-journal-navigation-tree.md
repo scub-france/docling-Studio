@@ -30,7 +30,7 @@ the linked issue. Everything else is on the author.
 - **Title on issue:** [FEATURE] MCP investigation journal — recorded reasoning chain and the navigation tree it leaves behind
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-08-30
-- **Status:** Accepted (amended after build)
+- **Status:** Superseded by #363 (the journal was removed before release)
 - **Target milestone:** 0.8.0 — Production ready
 - **Impacted layers:** backend: domain · services · persistence · infra (settings) · mcp_adapter — no api, no frontend, no e2e
 - **Audit dimensions likely touched:** Hexagonal Architecture · DDD · Clean Code · Security · Tests · Performance · Documentation

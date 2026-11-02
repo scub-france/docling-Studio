@@ -4,7 +4,7 @@
 - **Title on issue:** [FEATURE] MCP — an admin panel section: connect a client, tune the read budgets live
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-10-27
-- **Status:** In review
+- **Status:** Implemented (shipped in 0.7.3)
 - **Target milestone:** 0.8.0 — Production ready
 - **Impacted layers:** backend: domain | api | services | infra (settings) | bootstrap · frontend: features/mcp-config, features/settings · e2e
 - **Audit dimensions likely touched:** Hexagonal Architecture · DRY · Security · Tests · Documentation
