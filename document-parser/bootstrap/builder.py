@@ -29,11 +29,14 @@ from bootstrap.factories import (
     build_document_service,
     build_document_tools,
     build_ingestion_service,
+    build_parse_loader,
     build_reasoning_runner,
     check_store_secret_key,
+    env_mcp_config,
     env_reasoning_config,
     init_neo4j,
 )
+from bootstrap.mcp_mount import describe_mcp_server
 from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import deps_present, deps_provenance
 from infra.llm.ollama_probe import OllamaProbe
@@ -50,12 +53,16 @@ from persistence.store_repo import SqliteStoreRepository
 from services.app_config_service import AppConfigService
 from services.export_service import ExportService
 from services.graph_service import GraphService
+from services.mcp_config_service import McpConfigService
 from services.reasoning_service import ReasoningService
 from services.store_service import StoreService
 from services.version_service import VersionService
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from bootstrap.mcp_mount import MountedMcpServer
+    from domain.mcp_config import McpRuntimeConfig, McpServerStatus
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +75,14 @@ class AppStateBuilder:
     container through `_update()`.
     """
 
-    def __init__(self, *, publish: Callable[[AppState], None]) -> None:
+    def __init__(
+        self,
+        *,
+        publish: Callable[[AppState], None],
+        mcp_server: MountedMcpServer | None = None,
+    ) -> None:
         self._publish = publish
+        self._mcp_server = mcp_server
         self._state = AppState()
 
     @property
@@ -146,10 +159,10 @@ class AppStateBuilder:
             graph_service=GraphService(graph_reader=graph_reader),
             version_service=version_service,
             ingestion_service=ingestion_service,
-            document_tools=build_document_tools(document_repo, analysis_repo),
         )
 
         await self._wire_reasoning(analysis_repo)
+        await self._wire_mcp(document_repo, analysis_repo)
         logger.info("Docling Studio backend ready (engine=%s)", settings.conversion_engine)
         return self._state
 
@@ -211,3 +224,33 @@ class AppStateBuilder:
         # Applies persisted overrides on top of the env defaults — this is what
         # actually builds the runner and the ReasoningService.
         await self._state.app_config_service.apply_effective()
+
+    async def _wire_mcp(self, document_repo, analysis_repo) -> None:
+        """MCP runtime config (#364) + the document-agent services it budgets.
+
+        Same shape as `_wire_reasoning`: env vars are bootstrap defaults,
+        `app_settings` rows override them, and a write rebuilds the services in
+        place. The MCP tools resolve `document_tools` on every call, so the
+        next call runs on the new budgets. The parse index is built once, here,
+        and survives every rebuild.
+        """
+        parses = build_parse_loader(document_repo, analysis_repo)
+        mounted = self._mcp_server
+
+        def apply_config(config: McpRuntimeConfig) -> None:
+            self._update(document_tools=build_document_tools(parses, config))
+
+        async def server_status() -> McpServerStatus:
+            return await describe_mcp_server(mounted)
+
+        self._update(
+            mcp_config_service=McpConfigService(
+                repo=SqliteAppSettingsRepository(),
+                env_defaults=env_mcp_config(),
+                read_only=settings.deployment_mode == "huggingface",
+                apply_config=apply_config,
+                status_provider=server_status,
+            )
+        )
+        # Builds the first DocumentTools, with persisted overrides applied.
+        await self._state.mcp_config_service.apply_effective()

@@ -26,6 +26,16 @@ from domain.app_config import (
     validate_host_url,
     validate_reasoning_config,
 )
+from services.config_overrides import (
+    AppConfigError,
+    AppConfigReadOnlyError,
+    AppConfigValidationError,
+    parse_bool,
+    parse_int_between,
+    parse_text,
+    pick,
+    require_writable,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -41,50 +51,15 @@ _KEY_HOST = "ollama_host"
 _KEY_MODEL = "model_id"
 _KEY_MAX_ITERATIONS = "max_iterations"
 
-_TRUE_VALUES = ("1", "true", "yes", "on")
-_FALSE_VALUES = ("0", "false", "no", "off")
+_parse_iterations = parse_int_between(MAX_ITERATIONS_MIN, MAX_ITERATIONS_MAX)
 
-
-class AppConfigError(Exception):
-    """Base error for app-config rejections, carrying an HTTP-status hint."""
-
-    http_status: int = 500
-
-
-class AppConfigValidationError(AppConfigError):
-    """Raised on an invalid write-path value (maps to 400)."""
-
-    http_status = 400
-
-
-class AppConfigReadOnlyError(AppConfigError):
-    """Raised when writes are refused on this deployment (maps to 403)."""
-
-    http_status = 403
-
-
-def _parse_bool(raw: str) -> bool | None:
-    lowered = raw.strip().lower()
-    if lowered in _TRUE_VALUES:
-        return True
-    if lowered in _FALSE_VALUES:
-        return False
-    return None
-
-
-def _parse_text(raw: str) -> str | None:
-    stripped = raw.strip()
-    return stripped or None
-
-
-def _parse_iterations(raw: str) -> int | None:
-    try:
-        value = int(raw.strip())
-    except ValueError:
-        return None
-    if not (MAX_ITERATIONS_MIN <= value <= MAX_ITERATIONS_MAX):
-        return None
-    return value
+# Re-exported: the API layer and the tests import the errors from here.
+__all__ = [
+    "AppConfigError",
+    "AppConfigReadOnlyError",
+    "AppConfigService",
+    "AppConfigValidationError",
+]
 
 
 class AppConfigService:
@@ -167,10 +142,7 @@ class AppConfigService:
     # ------------------------------------------------------------------
 
     def _require_writable(self) -> None:
-        if self._read_only:
-            raise AppConfigReadOnlyError(
-                "Runtime configuration is read-only on this deployment (huggingface)"
-            )
+        require_writable(self._read_only)
 
     async def _apply_and_view(self) -> ReasoningConfigView:
         config, sources = await self._resolve()
@@ -187,10 +159,13 @@ class AppConfigService:
     async def _resolve(self) -> tuple[ReasoningConfig, dict[str, ConfigSource]]:
         rows = await self._repo.get_namespace(_NAMESPACE)
         env = self._env_defaults
-        enabled, enabled_src = _pick(rows, _KEY_ENABLED, env.enabled, _parse_bool)
-        host, host_src = _pick(rows, _KEY_HOST, env.ollama_host, _parse_text)
-        model, model_src = _pick(rows, _KEY_MODEL, env.model_id, _parse_text)
-        iters, iters_src = _pick(rows, _KEY_MAX_ITERATIONS, env.max_iterations, _parse_iterations)
+        ns = _NAMESPACE
+        enabled, enabled_src = pick(rows, _KEY_ENABLED, env.enabled, parse_bool, namespace=ns)
+        host, host_src = pick(rows, _KEY_HOST, env.ollama_host, parse_text, namespace=ns)
+        model, model_src = pick(rows, _KEY_MODEL, env.model_id, parse_text, namespace=ns)
+        iters, iters_src = pick(
+            rows, _KEY_MAX_ITERATIONS, env.max_iterations, _parse_iterations, namespace=ns
+        )
         config = ReasoningConfig(
             enabled=enabled, ollama_host=host, model_id=model, max_iterations=iters
         )
@@ -212,21 +187,3 @@ class AppConfigService:
             read_only=self._read_only,
             diagnostics=self._diagnostics_provider(),
         )
-
-
-def _pick(rows, key, env_value, parse):
-    """One field's effective (value, source). Tolerant: a missing row means
-    env; an unparseable row logs a warning and falls back to env too."""
-    raw = rows.get(key)
-    if raw is None:
-        return env_value, "env"
-    parsed = parse(raw)
-    if parsed is None:
-        logger.warning(
-            "Ignoring unparseable app_settings row %s.%s=%r — falling back to env",
-            _NAMESPACE,
-            key,
-            raw,
-        )
-        return env_value, "env"
-    return parsed, "db"

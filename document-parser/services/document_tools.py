@@ -7,13 +7,17 @@ use case does not change every signature between the composition root and the
 tools.
 
 Not an aggregate service: it holds no logic and forwards nothing. Each field
-is the use case that owns its question.
+is the use case that owns its question. `config` is the budgets the four were
+built with: a runtime change (#364) builds a new set rather than mutating
+this one, so a call in flight finishes on the budgets it started with.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from services.navigation_config import NavigationConfig
 
 if TYPE_CHECKING:
     from services.citation_image_service import CitationImageService
@@ -28,3 +32,4 @@ class DocumentTools:
     citations: CitationService
     images: CitationImageService
     sources: SourceService
+    config: NavigationConfig = field(default_factory=NavigationConfig)

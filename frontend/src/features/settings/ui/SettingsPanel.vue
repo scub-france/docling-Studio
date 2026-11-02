@@ -65,6 +65,8 @@
     <!-- #317 — server-backed runtime config; the section loads itself.
          Hidden with Ask (ASK_MODE), so it is not where Ask gets turned on. -->
     <ReasoningConfigSection v-if="askShown" />
+    <!-- #364 — MCP server: connect a client, live budgets, restart-only facts. -->
+    <McpConfigSection />
   </div>
 </template>
 
@@ -73,6 +75,7 @@ import { computed } from 'vue'
 import { useSettingsStore } from '../store'
 import { useFeatureFlagStore } from '@/features/feature-flags'
 import { ReasoningConfigSection } from '@/features/admin-config'
+import { McpConfigSection } from '@/features/mcp-config'
 import { useI18n } from '../../../shared/i18n'
 
 const store = useSettingsStore()

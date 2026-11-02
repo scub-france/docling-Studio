@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from services.export_service import ExportService
     from services.graph_service import GraphService
     from services.ingestion_service import IngestionService
+    from services.mcp_config_service import McpConfigService
     from services.reasoning_service import ReasoningService
     from services.store_service import StoreService
     from services.version_service import VersionService
@@ -74,6 +75,8 @@ class AppState:
     document_tools: DocumentTools | None = None
     reasoning_service: ReasoningService | None = None
     app_config_service: AppConfigService | None = None
+    # MCP runtime config (#364) — owns the `document_tools` rebuild.
+    mcp_config_service: McpConfigService | None = None
 
     # Reasoning runner — read by `/api/health` and swapped by the runtime
     # config service (#317); kept beside the service it backs.

@@ -100,3 +100,33 @@ class TestLoop:
         text = await _render(ARGS, apps=False)
         assert "show_" not in text
         assert "deep_link" in text
+
+
+class TestLiveRoundCap:
+    """#364 — the prompt states the cap of the services a call would use now."""
+
+    async def test_follows_the_cap_of_the_resolved_services(self):
+        from services.navigation_config import NavigationConfig
+
+        tools = make_document_tools(config=NavigationConfig(max_rounds=3))
+        server = build_mcp_server(lambda: tools, version="test")
+        async with Client(server) as client:
+            result = await client.get_prompt("chunkless_rag", ARGS)
+        text = result.messages[0].content.text
+        assert "at most 3 rounds" in text
+        assert "If 3 rounds did not find the answer" in text
+
+    async def test_falls_back_to_the_boot_cap_while_the_app_starts(self):
+        from services.navigation_errors import NavigationUnavailableError
+
+        def not_yet():
+            raise NavigationUnavailableError("starting")
+
+        server = build_mcp_server(not_yet, version="test", max_rounds=7)
+        async with Client(server) as client:
+            result = await client.get_prompt("chunkless_rag", ARGS)
+        assert "at most 7 rounds" in result.messages[0].content.text
+
+    async def test_the_instructions_state_the_boot_cap(self):
+        server = build_mcp_server(lambda: make_document_tools(), version="test", max_rounds=4)
+        assert "4 rounds at most" in server.instructions

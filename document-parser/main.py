@@ -28,6 +28,7 @@ from api.document_versions import router as document_versions_router
 from api.documents import router as documents_router
 from api.graph import router as graph_router
 from api.ingestion import router as ingestion_router
+from api.mcp import router as mcp_router
 from api.reasoning import router as reasoning_router
 from api.schemas import HealthResponse
 from api.state import AppState
@@ -47,7 +48,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    builder = AppStateBuilder(publish=lambda state: setattr(app.state, "container", state))
+    builder = AppStateBuilder(
+        publish=lambda state: setattr(app.state, "container", state),
+        mcp_server=_mcp,
+    )
     state = await builder.build()
 
     # Mounted conditionally: without an ingestion service every route would
@@ -61,8 +65,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # for the lifetime of the app. It is created at import time (see the
         # `mount_mcp_server` call below) because the ASGI route must exist
         # before the first request; entering it here is what starts it.
-        if _mcp_session is not None:
-            await stack.enter_async_context(_mcp_session)
+        if _mcp is not None:
+            await stack.enter_async_context(_mcp.session)
         try:
             yield
         finally:
@@ -107,14 +111,18 @@ app.include_router(graph_router)
 # Live reasoning (#303). Mounted unconditionally so the route is
 # introspectable in OpenAPI; the handler 503s when reasoning is off.
 app.include_router(reasoning_router)
-# Runtime config (#317) — admin panel read/write over the reasoning knobs.
+# Runtime config (#317, #364) — admin panel read/write over the reasoning and
+# MCP knobs.
 app.include_router(config_router)
+# What the MCP transport publishes (#364) — answers even when it is off.
+app.include_router(mcp_router)
 
 # MCP document server (read-only agent surface) — mounted at import time so
 # the ASGI route and its session manager exist before the first request; the
-# lifespan above enters the returned context. `None` when MCP_ENABLED is off
-# or the optional SDK is absent, in which case nothing is mounted at all.
-_mcp_session = mount_mcp_server(app)
+# lifespan above enters its session and hands the server to the builder, which
+# describes it to the admin panel. `None` when MCP_ENABLED is off, in which
+# case nothing is mounted at all.
+_mcp = mount_mcp_server(app)
 
 
 @app.get("/api/health", response_model=HealthResponse)

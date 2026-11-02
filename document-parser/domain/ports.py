@@ -323,6 +323,11 @@ class AppSettingsRepository(Protocol):
         """Drop every override in `namespace`. Returns the number of rows removed."""
         ...
 
+    async def replace_namespace(self, namespace: str, values: dict[str, str]) -> None:
+        """Make `values` the whole override set of `namespace`, in one
+        transaction: keys absent from `values` lose their row (#364)."""
+        ...
+
 
 @runtime_checkable
 class LLMHostProbe(Protocol):

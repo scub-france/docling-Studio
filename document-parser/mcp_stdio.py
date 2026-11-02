@@ -18,6 +18,8 @@ ambient interpreter, which does not carry the project's dependencies.
 The database is Studio's own: `DB_PATH` read as the backend reads it, relative
 to this directory rather than to wherever the client spawned the process. A
 missing file stops the server with a message instead of serving an empty one.
+The budgets set in Studio's admin panel live there too (#364), so they apply
+here from the next launch: the client spawns this process per session.
 
 **Nothing may be written to stdout** — stdout is the JSON-RPC channel. Logging
 is pinned to stderr below; a stray `print()` anywhere in the call path
@@ -46,25 +48,31 @@ def db_path() -> Path:
 async def _serve() -> None:
     # Imported once DB_PATH is pinned: `persistence` and `settings` read it at
     # import time.
-    from bootstrap.factories import build_document_tools
+    from bootstrap.factories import build_document_tools, build_parse_loader, env_mcp_config
     from infra.settings import settings
     from mcp_adapter import build_mcp_server
     from persistence.analysis_repo import SqliteAnalysisRepository
+    from persistence.app_settings_repo import SqliteAppSettingsRepository
     from persistence.database import init_db
     from persistence.document_repo import SqliteDocumentRepository
+    from services.mcp_config_service import load_effective_mcp_config
 
     # Applies pending migrations; idempotent against an up-to-date database.
     await init_db()
 
+    config = await load_effective_mcp_config(SqliteAppSettingsRepository(), env_mcp_config())
     tools = build_document_tools(
-        SqliteDocumentRepository(),
-        SqliteAnalysisRepository(),
+        build_parse_loader(SqliteDocumentRepository(), SqliteAnalysisRepository()),
+        config,
     )
     server = build_mcp_server(
         lambda: tools,
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         citation_card=settings.mcp_citation_card,
+        # The database is open before the server is built, so here the
+        # instructions state the effective cap, not the env one.
+        max_rounds=config.max_rounds,
     )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()

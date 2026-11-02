@@ -42,6 +42,7 @@ from mcp_adapter.wire_mapping import (
     verification_result,
 )
 from services.navigation_config import MAX_ROUNDS
+from services.navigation_errors import NavigationUnavailableError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -52,13 +53,13 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "docling-studio"
 
-_LOOP = f"""\
+_LOOP = """\
 Docling Studio serves parsed documents: structure, text, page positions.
 1. find_documents: the document_id.
 2. get_outline(document_id): the map. Each entry has a ref and est_tokens, its reading \
 cost: choose there before reading any text.
 3. read_element(document_id, ref): the text, with one citation per element. One section \
-per round, with a reason; {MAX_ROUNDS} rounds at most.
+per round, with a reason; {max_rounds} rounds at most.
 4. verify_citation(uri, quote) before publishing a quote.
 """
 
@@ -77,9 +78,13 @@ or edit one.
 """
 
 
-def instructions(*, apps: bool) -> str:
-    """The server instructions, read by the client on every connection."""
-    return _LOOP + (_CARDS if apps else "") + _RULES
+def instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
+    """The server instructions, read by the client on every connection.
+
+    Fixed when the server is built: a client reads them once, at `initialize`,
+    so the round cap stated here is the boot-time one (#364).
+    """
+    return _LOOP.format(max_rounds=max_rounds) + (_CARDS if apps else "") + _RULES
 
 
 INSTRUCTIONS = instructions(apps=False)
@@ -94,6 +99,7 @@ def build_mcp_server(
     version: str = "",
     apps: bool = True,
     citation_card: bool = False,
+    max_rounds: int = MAX_ROUNDS,
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -102,16 +108,20 @@ def build_mcp_server(
     wired anything, so the server is constructed at import time and reaches
     for the container on each tool call. `tools` raises when the app is not
     wired yet, which surfaces as a tool error rather than an import crash.
+
+    `max_rounds` is the cap the instructions state. The prompt reads the
+    effective cap from the resolved services on every render, falling back to
+    this one while the app is still starting.
     """
     server = MCPServer(
         name=name,
         version=version,
-        instructions=instructions(apps=apps),
+        instructions=instructions(apps=apps, max_rounds=max_rounds),
         extensions=[build_apps_extension(tools, citation_card=citation_card)] if apps else None,
     )
     # The slash command: the whole loop, invoked by the user rather than
     # inflicted on every call (see mcp_adapter/prompts.py).
-    register_prompts(server, apps=apps)
+    register_prompts(server, apps=apps, rounds=_effective_rounds(tools, max_rounds))
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -190,3 +200,15 @@ def build_mcp_server(
         return compact(verification_result(check))
 
     return server
+
+
+def _effective_rounds(tools: Callable[[], DocumentTools], fallback: int) -> Callable[[], int]:
+    """The round cap of the services a call would use now (#364)."""
+
+    def rounds() -> int:
+        try:
+            return tools().config.max_rounds
+        except NavigationUnavailableError:
+            return fallback
+
+    return rounds

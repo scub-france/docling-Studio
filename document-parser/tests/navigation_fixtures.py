@@ -477,6 +477,7 @@ def make_document_tools(
             config=settings,
             page_text=page_text,
         ),
+        config=settings,
     )
 
 

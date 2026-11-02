@@ -36,6 +36,19 @@ class SqliteAppSettingsRepository:
             )
             await db.commit()
 
+    async def replace_namespace(self, namespace: str, values: dict[str, str]) -> None:
+        # One connection, one commit: a reader never sees the namespace half
+        # rewritten.
+        async with get_connection() as db:
+            await db.execute("DELETE FROM app_settings WHERE namespace = ?", (namespace,))
+            if values:
+                await db.executemany(
+                    """INSERT INTO app_settings (namespace, key, value, updated_at)
+                       VALUES (?, ?, ?, datetime('now'))""",
+                    [(namespace, key, value) for key, value in values.items()],
+                )
+            await db.commit()
+
     async def delete_namespace(self, namespace: str) -> int:
         async with get_connection() as db:
             cursor = await db.execute(

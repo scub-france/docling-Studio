@@ -15,9 +15,12 @@ Two ordering constraints drive the shape of this module:
    navigation service per call through `_navigation_from`, which raises a
    clear error if a request somehow lands before boot finished.
 
-The returned context is single-use, like the SDK's own session manager: one
+The returned session is single-use, like the SDK's own session manager: one
 mount, one lifespan, which is how uvicorn runs an app. A test (or anything
-else) that enters the same app's lifespan twice must mount again.
+else) that enters the same app's lifespan twice must mount again. The server
+comes back with it so the admin panel can say what it publishes (#364):
+`describe_mcp_server` maps it onto a domain value object, which keeps the SDK
+out of the service that reports it.
 
 The route is appended to the app's own router rather than `app.mount()`ed:
 mounting a sub-app at `/mcp` makes Starlette redirect `POST /mcp` to
@@ -27,8 +30,10 @@ mounting a sub-app at `/mcp` makes Starlette redirect `POST /mcp` to
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from domain.mcp_config import McpServerStatus, McpToolInfo
 from infra.settings import settings
 from mcp_adapter import build_mcp_server
 from services.navigation_errors import NavigationUnavailableError
@@ -37,6 +42,8 @@ if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
 
     from fastapi import FastAPI
+    from mcp.server.mcpserver import MCPServer
+    from mcp.types import Tool
 
     from api.state import AppState
     from services.document_tools import DocumentTools
@@ -45,9 +52,21 @@ logger = logging.getLogger(__name__)
 
 MCP_PATH = "/mcp"
 
+# MCP Apps: a tool with no `visibility` is offered to both the model and the
+# card it belongs to.
+_DEFAULT_VISIBILITY = ("model", "app")
 
-def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
-    """Attach `POST /mcp` to `app`; return the context its lifespan must enter.
+
+@dataclass(frozen=True)
+class MountedMcpServer:
+    """What a mount leaves behind: the server, and the session its lifespan enters."""
+
+    server: MCPServer
+    session: AbstractAsyncContextManager[None]
+
+
+def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
+    """Attach `POST /mcp` to `app`; return the server and the session to enter.
 
     Returns `None` — and mounts nothing — when the surface is disabled.
     """
@@ -60,6 +79,10 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         citation_card=settings.mcp_citation_card,
+        # The instructions are built once, here, before the database is open:
+        # they state the env cap. The prompt and the sources card read the
+        # effective one on every call (#364).
+        max_rounds=settings.mcp_max_rounds,
     )
     mcp_app = server.streamable_http_app(
         streamable_http_path=MCP_PATH,
@@ -83,7 +106,30 @@ def mount_mcp_server(app: FastAPI) -> AbstractAsyncContextManager[None] | None:
         "Keep it on localhost or behind an authenticating proxy.",
         MCP_PATH,
     )
-    return server.session_manager.run()
+    return MountedMcpServer(server=server, session=server.session_manager.run())
+
+
+async def describe_mcp_server(mounted: MountedMcpServer | None) -> McpServerStatus:
+    """The mounted surface as the admin panel shows it — read from the built
+    server, so a tool the flags would predict but the server lacks never shows."""
+    status = McpServerStatus(
+        enabled=mounted is not None,
+        path=MCP_PATH,
+        allowed_hosts=tuple(settings.mcp_allowed_hosts),
+        apps_enabled=settings.mcp_apps_enabled,
+        citation_card=settings.mcp_citation_card,
+    )
+    if mounted is None:
+        return status
+    tools = tuple(_tool_info(tool) for tool in await mounted.server.list_tools())
+    prompts = tuple(prompt.name for prompt in await mounted.server.list_prompts())
+    return replace(status, tools=tools, prompts=prompts)
+
+
+def _tool_info(tool: Tool) -> McpToolInfo:
+    ui = (tool.meta or {}).get("ui") or {}
+    visibility = tuple(ui.get("visibility") or _DEFAULT_VISIBILITY)
+    return McpToolInfo(name=tool.name, visibility=visibility, card="resourceUri" in ui)
 
 
 def _tools_from(app: FastAPI) -> DocumentTools:
