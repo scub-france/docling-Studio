@@ -21,7 +21,8 @@ dependencies = [
   # The MCP document server (mcp_adapter/). Always installed — small and pure
   # Python — so MCP_ENABLED is the only switch. 2.x is where FastMCP became
   # `mcp.server.mcpserver.MCPServer`, the surface the adapter binds to.
-  "mcp>=2.1.1,<3.0.0",
+  # 2.2.0 fixes CVE-2026-59951, -116684, -116685 and -116686.
+  "mcp>=2.2.0,<3.0.0",
 ]
 
 [dependency-groups]

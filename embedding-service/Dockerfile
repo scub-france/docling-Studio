@@ -6,7 +6,7 @@ ENV UV_PROJECT_ENVIRONMENT=/usr/local
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir uv==0.11.6
+RUN pip install --no-cache-dir uv==0.13.6
 
 # Install dependencies first (cache layer)
 COPY pyproject.toml uv.lock ./
