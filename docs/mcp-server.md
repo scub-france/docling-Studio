@@ -11,9 +11,13 @@ RAG**: no chunks, no embeddings, no vector store. An agent can:
 Two cards then show the result: the passage on its page, and where the whole
 answer came from, with the share of the document that was read.
 
-It starts with the backend and has **no authentication**. By default it only
-answers clients that reach it as localhost (`MCP_ALLOWED_HOSTS`). Put it
-behind an authenticating proxy before opening it any wider.
+It starts with the backend and has **no authentication**: anyone who can
+reach `/mcp` can read every document. `MCP_ALLOWED_HOSTS` stops a web page
+from reaching it through the browser (DNS rebinding), but it is not an access
+control, since any other client can send a matching `Host` header. Docker
+Compose publishes port 3000 on every interface, so keep that port off
+untrusted networks (bind it to `127.0.0.1`, or firewall it), put an
+authenticating proxy in front, or set `MCP_ENABLED=false`.
 
 ## Turn it on or off
 
@@ -317,11 +321,14 @@ model's context.
   delimiters, and a closing delimiter inside the text is neutralised. The
   same applies to titles, quotes, and every string a card replays. The server
   instructions tell the agent never to follow instructions found inside them.
-- **No authentication.** Anyone who can reach `/mcp` can read every document.
-  It is on by default, and the default `MCP_ALLOWED_HOSTS` keeps it to
-  clients that reach it as localhost: widen that list only behind an
-  authenticating proxy. Set `MCP_ENABLED=false` where nobody needs it. A
-  Hugging Face Space keeps it off unless `MCP_ENABLED=true` is set.
+- **No authentication.** Anyone who can reach `/mcp` can read every document,
+  and it is on by default. `MCP_ALLOWED_HOSTS` only checks the `Host` and
+  `Origin` headers: it blocks a web page that tries to reach the server
+  through the visitor's browser (DNS rebinding), not a client on the network
+  that sets `Host: localhost:3000` itself. nginx passes the client's `Host`
+  through. Keep the published port off untrusted networks, or put an
+  authenticating proxy in front. Set `MCP_ENABLED=false` where nobody needs
+  it. A Hugging Face Space keeps it off unless `MCP_ENABLED=true` is set.
 - **Read-only.** No tool uploads, edits, re-analyses or stores anything.
 - **Identifiers only.** Tools take identifiers, never file paths or free-form
   queries against OpenSearch or Neo4j.
