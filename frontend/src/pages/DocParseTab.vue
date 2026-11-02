@@ -8,15 +8,13 @@
       <template #action>
         <button
           type="button"
-          class="tab-action-cta"
-          :disabled="analysisStore.running"
-          :title="t('newAnalysis.title')"
-          data-e2e="parse-new-analysis"
-          @click="onLaunchAnalysis"
+          class="show-all-btn"
+          :disabled="!documentStore.focusedRef"
+          :title="t('parse.showAllHint')"
+          data-e2e="parse-show-all"
+          @click="onShowAll"
         >
-          <span v-if="analysisStore.running" class="tab-action-spinner" />
-          <span v-else>+</span>
-          {{ analysisStore.running ? t('newAnalysis.running') : t('newAnalysis.title') }}
+          {{ t('parse.showAll') }}
         </button>
       </template>
     </LayersBar>
@@ -155,7 +153,7 @@
           :page-number="selectedElementData?.pageNumber ?? currentPage"
           :linked-chunk="linkedChunk"
           :saving="chunksStore.saving"
-          :editable="!analysisId"
+          :editable="!analysis"
           @save-chunk="onSaveChunk"
         />
       </aside>
@@ -175,10 +173,8 @@
  *   - Selecting a node in the tree → highlight its bbox on the preview
  *   - Clicking a bbox → select the matching node in the tree
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { Analysis, Chunk, DocChunk, DocTreeNode, PageElement } from '../shared/types'
-import { useAnalysisStore } from '../features/analysis/store'
-import { fetchAnalysis } from '../features/analysis/api'
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
@@ -194,17 +190,24 @@ import ConversationPanel from '../features/reasoning/ui/ConversationPanel.vue'
 import TraceTimeline from '../features/reasoning/ui/TraceTimeline.vue'
 import { useI18n } from '../shared/i18n'
 
-const props = defineProps<{ docId: string; analysisId?: string }>()
+const props = defineProps<{
+  docId: string
+  /** A saved analysis to show read-only, already loaded by the host page. */
+  analysis?: Analysis
+  /** From a deep link: the element to focus, the page to open. */
+  focusRef?: string
+  page?: number
+}>()
 
 const { t } = useI18n()
 const documentStore = useDocumentStore()
 const chunksStore = useChunksStore()
-const analysisStore = useAnalysisStore()
 const reasoningStore = useReasoningStore()
 const featureFlags = useFeatureFlagStore()
 
-// Reasoning is backend-gated (REASONING_ENABLED + docling-agent importable).
-// When off, the Parse view is pixel-identical to before: no Ask tab, no dock.
+// Reasoning is backend-gated (REASONING_ENABLED + docling-agent importable),
+// and ASK_MODE hides it unless set to visible. When off, the Parse view is
+// pixel-identical to before: no Ask tab, no dock.
 const reasoningAvailable = computed(() => featureFlags.isEnabled('reasoning'))
 // Right panel defaults to Properties; Ask is opt-in (#303 design decision).
 const rightTab = ref<'props' | 'ask'>('props')
@@ -233,11 +236,6 @@ function analysisChunks(analysis: Analysis): DocChunk[] {
   } catch {
     return []
   }
-}
-
-async function onLaunchAnalysis(): Promise<void> {
-  if (analysisStore.running) return
-  await analysisStore.run(props.docId)
 }
 
 const currentPage = ref(1)
@@ -302,10 +300,9 @@ const linkedChunk = computed<DocChunk | null>(() => {
   )
 })
 
-const activeChunks = computed<DocChunk[]>(() => {
-  const analysis = documentStore.workspaceActiveAnalysis
-  return props.analysisId && analysis ? analysisChunks(analysis) : chunksStore.chunks
-})
+const activeChunks = computed<DocChunk[]>(() =>
+  props.analysis ? analysisChunks(props.analysis) : chunksStore.chunks,
+)
 
 const nodeCount = computed(() => countNodes(tree.value))
 
@@ -329,7 +326,7 @@ async function loadTree(): Promise<void> {
   treeLoading.value = true
   treeError.value = null
   try {
-    tree.value = await fetchDocumentTree(props.docId, props.analysisId)
+    tree.value = await fetchDocumentTree(props.docId, props.analysis?.id)
   } catch (e) {
     treeError.value = (e as Error).message || 'Failed to load tree'
   } finally {
@@ -354,15 +351,23 @@ function onClickElement(el: PageElement, _pageNumber: number): void {
   reasoningStore.selectStepByCitation(el.self_ref)
 }
 
+// #338 — leave focus mode so every bbox is drawn at full strength again.
+// `selectStep(null)` clears the shared focus along with the trace step, so the
+// tree, the Properties panel and the timeline all drop the selection together.
+// Hidden layers are a filter, not a selection: they stay hidden.
+function onShowAll(): void {
+  reasoningStore.selectStep(null)
+}
+
 async function onSaveChunk(chunkId: string, text: string): Promise<void> {
-  if (props.analysisId) return
+  if (props.analysis) return
   await chunksStore.updateText(props.docId, chunkId, text)
 }
 
 onMounted(async () => {
   reasoningStore.reset(props.docId)
-  if (props.analysisId) {
-    documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
+  if (props.analysis) {
+    documentStore.setWorkspaceAnalysis(props.analysis)
     await loadTree()
   } else {
     await Promise.all([
@@ -373,7 +378,20 @@ onMounted(async () => {
   }
   const first = documentStore.workspacePages[0]?.page_number
   if (first) currentPage.value = first
+  // After a tick, so the preview and the tree are mounted and their
+  // `focusTick` watchers scroll to the element.
+  await nextTick()
+  openDeepLink()
 })
+
+function openDeepLink(): void {
+  if (props.page && documentStore.workspacePages.some((p) => p.page_number === props.page)) {
+    currentPage.value = props.page
+  }
+  if (props.focusRef) documentStore.focusElement(props.focusRef)
+}
+
+watch(() => [props.focusRef, props.page], openDeepLink)
 
 watch(
   () => props.docId,
@@ -382,8 +400,8 @@ watch(
     rightTab.value = 'props'
     reasoningStore.reset(id)
     documentStore.focusElement(null)
-    if (props.analysisId) {
-      documentStore.setWorkspaceAnalysis(await fetchAnalysis(props.analysisId))
+    if (props.analysis) {
+      documentStore.setWorkspaceAnalysis(props.analysis)
       await loadTree()
     } else {
       await Promise.all([documentStore.loadWorkspace(id), chunksStore.load(id), loadTree()])
@@ -416,10 +434,13 @@ watch(
 // Triggered after an in-place analysis completes or after the user
 // restores a different version from the History drawer — the tree
 // is built server-side from the active analysis's `document_json`,
-// so it has to be reloaded.
+// so it has to be reloaded. A saved analysis passed as a prop is pinned:
+// mounting it sets the active analysis and loads its tree itself, so
+// reacting here would fetch the same tree a second time.
 watch(
   () => documentStore.workspaceActiveAnalysis?.id,
   (newId, oldId) => {
+    if (props.analysis) return
     if (newId && newId !== oldId) {
       documentStore.focusElement(null)
       loadTree()
@@ -633,6 +654,29 @@ function findPageOfRef(
   stroke-linecap: round;
 }
 
+/* #338 — sits in the LAYERS bar's right-aligned action slot. */
+.show-all-btn {
+  padding: 3px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.show-all-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.show-all-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .parse-structure-filter {
   margin: 8px 14px;
   padding: 6px 10px;
@@ -731,38 +775,6 @@ function findPageOfRef(
 .parse-state--empty {
   flex-direction: column;
   gap: 12px;
-}
-
-.tab-action-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  color: white;
-  font-size: 12px;
-  cursor: pointer;
-  transition: filter var(--transition);
-}
-
-.tab-action-cta:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
-.tab-action-cta:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.tab-action-spinner {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
 }
 
 .spinner {

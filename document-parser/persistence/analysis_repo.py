@@ -21,9 +21,9 @@ def _row_to_job(row) -> AnalysisJob:
         id=row["id"],
         document_id=row["document_id"],
         status=AnalysisStatus(row["status"]),
-        content_markdown=row["content_markdown"],
-        content_html=row["content_html"],
-        pages_json=row["pages_json"],
+        content_markdown=row["content_markdown"] if "content_markdown" in keys else None,
+        content_html=row["content_html"] if "content_html" in keys else None,
+        pages_json=row["pages_json"] if "pages_json" in keys else None,
         document_json=row["document_json"] if "document_json" in keys else None,
         chunks_json=row["chunks_json"] if "chunks_json" in keys else None,
         error_message=row["error_message"],
@@ -38,6 +38,15 @@ def _row_to_job(row) -> AnalysisJob:
 
 _SELECT_WITH_DOC = """
     SELECT aj.*, d.filename
+    FROM analysis_jobs aj
+    JOIN documents d ON d.id = aj.document_id
+"""
+
+# Everything but the content (markdown, HTML, pages, chunks, Docling document):
+# what following the statuses of many analyses needs (#354).
+_SELECT_SUMMARY = """
+    SELECT aj.id, aj.document_id, aj.status, aj.error_message, aj.progress_current,
+           aj.progress_total, aj.started_at, aj.completed_at, aj.created_at, d.filename
     FROM analysis_jobs aj
     JOIN documents d ON d.id = aj.document_id
 """
@@ -61,6 +70,16 @@ class SqliteAnalysisRepository:
         async with get_connection() as db:
             cursor = await db.execute(
                 f"{_SELECT_WITH_DOC} ORDER BY aj.created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+            rows = await cursor.fetchall()
+            return [_row_to_job(r) for r in rows]
+
+    async def find_all_summaries(self, *, limit: int = 200, offset: int = 0) -> list[AnalysisJob]:
+        """Return analysis jobs without their content, newest first (#354)."""
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"{_SELECT_SUMMARY} ORDER BY aj.created_at DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             )
             rows = await cursor.fetchall()
@@ -114,6 +133,44 @@ class SqliteAnalysisRepository:
             )
             row = await cursor.fetchone()
             return _row_to_job(row) if row else None
+
+    async def latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]:
+        """For each document, the id of its latest completed analysis with a parse."""
+        if not document_ids:
+            return {}
+        placeholders = ",".join("?" for _ in document_ids)
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"""SELECT document_id, id FROM (
+                        SELECT document_id, id, ROW_NUMBER() OVER (
+                            PARTITION BY document_id ORDER BY completed_at DESC
+                        ) AS rank
+                        FROM analysis_jobs
+                        WHERE document_id IN ({placeholders})
+                          AND status = 'COMPLETED' AND document_json IS NOT NULL
+                    ) WHERE rank = 1""",
+                tuple(document_ids),
+            )
+            return {row["document_id"]: row["id"] for row in await cursor.fetchall()}
+
+    async def parsed_document_id(self, job_id: str) -> str | None:
+        """The document an analysis with a parse belongs to, or None."""
+        async with get_connection() as db:
+            cursor = await db.execute(
+                "SELECT document_id FROM analysis_jobs WHERE id = ? AND document_json IS NOT NULL",
+                (job_id,),
+            )
+            row = await cursor.fetchone()
+            return row["document_id"] if row else None
+
+    async def parse_json(self, job_id: str) -> str | None:
+        """The stored docling JSON of an analysis — the one heavy column, alone."""
+        async with get_connection() as db:
+            cursor = await db.execute(
+                "SELECT document_json FROM analysis_jobs WHERE id = ?", (job_id,)
+            )
+            row = await cursor.fetchone()
+            return row["document_json"] if row else None
 
     async def update_status(self, job: AnalysisJob) -> None:
         """Persist all mutable fields of an analysis job (status, results, timestamps)."""

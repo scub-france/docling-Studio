@@ -4,7 +4,9 @@ version = "0.0.0"
 description = "Docling Studio FastAPI backend"
 requires-python = ">=3.12"
 dependencies = [
-  "docling-core[chunking]>=2.0.0,<3.0.0",
+  # 2.65.2: `DoclingDocument.concatenate` (2.45) shifts the page numbers of
+  # every item, which the batch merge relies on (#344).
+  "docling-core[chunking]>=2.65.2,<3.0.0",
   "fastapi>=0.115.0,<1.0.0",
   "uvicorn[standard]>=0.32.0,<1.0.0",
   "python-multipart>=0.0.12,<1.0.0",
@@ -16,6 +18,11 @@ dependencies = [
   "opensearch-py[async]>=2.6.0,<3.0.0",
   "neo4j>=5.15.0,<6.0.0",
   "cryptography>=43.0.0,<46.0.0",
+  # The MCP document server (mcp_adapter/). Always installed — small and pure
+  # Python — so MCP_ENABLED is the only switch. 2.x is where FastMCP became
+  # `mcp.server.mcpserver.MCPServer`, the surface the adapter binds to.
+  # 2.2.0 fixes CVE-2026-59951, -116684, -116685 and -116686.
+  "mcp>=2.2.0,<3.0.0",
 ]
 
 [dependency-groups]
@@ -90,7 +97,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["api", "domain", "persistence", "services"]
+known-first-party = ["api", "domain", "mcp_adapter", "persistence", "services"]
 
 [tool.ruff.format]
 quote-style = "double"

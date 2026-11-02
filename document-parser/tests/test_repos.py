@@ -122,6 +122,66 @@ class TestDocumentRepo:
             assert found is not None
             assert found.lifecycle_state == value
 
+    async def test_find_all_filters_on_the_filename_case_insensitively(self, document_repo):
+        for i, name in enumerate(["Contrat.PDF", "facture.pdf", "contrat-annexe.pdf"]):
+            await document_repo.insert(Document(id=f"doc-{i}", filename=name, storage_path="/x"))
+        found = await document_repo.find_all(filename_like="CONTRAT")
+        assert sorted(d.filename for d in found) == ["Contrat.PDF", "contrat-annexe.pdf"]
+
+    async def test_find_all_matches_like_wildcards_literally(self, document_repo):
+        for i, name in enumerate(
+            ["taux_2024.pdf", "taux-2024.pdf", "remise 50%.pdf", "remise 505.pdf"]
+        ):
+            await document_repo.insert(Document(id=f"doc-{i}", filename=name, storage_path="/x"))
+        assert [d.filename for d in await document_repo.find_all(filename_like="_2024")] == [
+            "taux_2024.pdf"
+        ]
+        assert [d.filename for d in await document_repo.find_all(filename_like="50%")] == [
+            "remise 50%.pdf"
+        ]
+
+
+class TestParseLookups:
+    """The reads that never load a whole analysis row."""
+
+    async def _parsed(self, analysis_repo, job_id: str, doc_id: str, *, json: str | None):
+        job = AnalysisJob(id=job_id, document_id=doc_id)
+        await analysis_repo.insert(job)
+        job.mark_running()
+        job.mark_completed(markdown="", html="", pages_json="[]", document_json=json)
+        await analysis_repo.update_status(job)
+
+    async def _docs(self, document_repo, *ids: str):
+        for doc_id in ids:
+            await document_repo.insert(
+                Document(id=doc_id, filename=f"{doc_id}.pdf", storage_path="/x")
+            )
+
+    async def test_latest_parsed_ids_takes_each_documents_newest_parse(
+        self, document_repo, analysis_repo
+    ):
+        await self._docs(document_repo, "doc-1", "doc-2", "doc-3")
+        await self._parsed(analysis_repo, "a-old", "doc-1", json="{}")
+        await self._parsed(analysis_repo, "a-new", "doc-1", json="{}")
+        await self._parsed(analysis_repo, "b-only", "doc-2", json="{}")
+        await self._parsed(analysis_repo, "c-empty", "doc-3", json=None)
+        latest = await analysis_repo.latest_parsed_ids(["doc-1", "doc-2", "doc-3"])
+        assert latest == {"doc-1": "a-new", "doc-2": "b-only"}
+
+    async def test_parsed_document_id_is_none_without_a_parse(self, document_repo, analysis_repo):
+        await self._docs(document_repo, "doc-1")
+        await self._parsed(analysis_repo, "parsed", "doc-1", json="{}")
+        await self._parsed(analysis_repo, "empty", "doc-1", json=None)
+        assert await analysis_repo.parsed_document_id("parsed") == "doc-1"
+        assert await analysis_repo.parsed_document_id("empty") is None
+        assert await analysis_repo.parsed_document_id("missing") is None
+
+    async def test_parse_json_reads_the_stored_parse(self, document_repo, analysis_repo):
+        await self._docs(document_repo, "doc-1")
+        await self._parsed(analysis_repo, "parsed", "doc-1", json='{"texts": []}')
+        assert await analysis_repo.parse_json("parsed") == '{"texts": []}'
+        assert await analysis_repo.parse_json("missing") is None
+
 
 class TestAnalysisRepo:
     async def _insert_doc(self, document_repo):
@@ -153,6 +213,29 @@ class TestAnalysisRepo:
 
         all_jobs = await analysis_repo.find_all()
         assert len(all_jobs) == 3
+
+    async def test_find_all_summaries_leaves_the_content_out(self, document_repo, analysis_repo):
+        # #354 — light enough to poll while a batch runs.
+        await self._insert_doc(document_repo)
+        job = AnalysisJob(id="job-1", document_id="doc-1")
+        await analysis_repo.insert(job)
+        job.mark_running()
+        job.mark_completed(markdown="# Test", html="<h1>Test</h1>", pages_json="[]")
+        await analysis_repo.update_status(job)
+        await analysis_repo.insert(AnalysisJob(id="job-2", document_id="doc-1"))
+
+        summaries = await analysis_repo.find_all_summaries()
+
+        by_id = {s.id: s for s in summaries}
+        assert set(by_id) == {"job-1", "job-2"}
+        completed = by_id["job-1"]
+        assert completed.status == AnalysisStatus.COMPLETED
+        assert completed.document_filename == "test.pdf"
+        assert isinstance(completed.completed_at, datetime)
+        assert completed.content_markdown is None
+        assert completed.content_html is None
+        assert completed.pages_json is None
+        assert by_id["job-2"].status == AnalysisStatus.PENDING
 
     async def test_update_status(self, document_repo, analysis_repo):
         await self._insert_doc(document_repo)

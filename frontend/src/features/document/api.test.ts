@@ -5,8 +5,10 @@ import {
   uploadDocument,
   deleteDocument,
   getPreviewUrl,
+  getExportUrl,
   rechunkDocument,
   fetchDocumentTree,
+  fetchDocumentPages,
 } from './api'
 
 vi.mock('../../shared/api/http', () => ({
@@ -40,6 +42,21 @@ describe('document API', () => {
     expect(result).toEqual(doc)
   })
 
+  it('fetchDocumentPages maps the page sizes to pages without elements (#352)', async () => {
+    apiFetch.mockResolvedValue([
+      { pageNumber: 1, width: 612, height: 792 },
+      { pageNumber: 2, width: 842, height: 595 },
+    ])
+
+    const result = await fetchDocumentPages('42')
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/documents/42/pages')
+    expect(result).toEqual([
+      { page_number: 1, width: 612, height: 792, elements: [] },
+      { page_number: 2, width: 842, height: 595, elements: [] },
+    ])
+  })
+
   it('uploadDocument sends file via FormData with skipContentType', async () => {
     const file = new File(['content'], 'test.pdf', { type: 'application/pdf' })
     const response = { id: '1', filename: 'test.pdf' }
@@ -69,6 +86,16 @@ describe('document API', () => {
 
   it('getPreviewUrl accepts custom page and dpi', () => {
     expect(getPreviewUrl('abc', 3, 300)).toBe('/api/documents/abc/preview?page=3&dpi=300')
+  })
+
+  it('getExportUrl exports the latest analysis by default', () => {
+    expect(getExportUrl('abc', 'md')).toBe('/api/documents/abc/export?format=md')
+  })
+
+  it('getExportUrl scopes the export to an analysis when provided', () => {
+    expect(getExportUrl('abc', 'json', 'analysis 1')).toBe(
+      '/api/documents/abc/export?format=json&analysisId=analysis%201',
+    )
   })
 
   it('rechunkDocument calls POST /api/documents/:id/rechunk and returns chunks', async () => {

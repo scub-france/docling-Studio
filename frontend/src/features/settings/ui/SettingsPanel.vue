@@ -1,184 +1,240 @@
 <template>
   <div class="settings-panel" data-e2e="settings-panel">
-    <div class="setting-group">
-      <label class="setting-label">{{ t('settings.theme') }}</label>
-      <div class="setting-toggle">
-        <button :class="{ active: store.theme === 'dark' }" @click="store.setTheme('dark')">
-          {{ t('settings.themeDark') }}
-        </button>
-        <button :class="{ active: store.theme === 'light' }" @click="store.setTheme('light')">
-          {{ t('settings.themeLight') }}
-        </button>
-      </div>
-    </div>
-
-    <div class="setting-group">
-      <label class="setting-label">{{ t('settings.language') }}</label>
-      <div class="setting-toggle">
-        <button
-          :class="{ active: store.locale === 'fr' }"
-          data-e2e="lang-fr"
-          @click="store.setLocale('fr')"
-        >
-          FR
-        </button>
-        <button
-          :class="{ active: store.locale === 'en' }"
-          data-e2e="lang-en"
-          @click="store.setLocale('en')"
-        >
-          EN
-        </button>
-      </div>
-    </div>
-
-    <div class="setting-group">
-      <label class="setting-label">{{ t('settings.version') }}</label>
-      <span class="setting-value">{{ version }}</span>
-    </div>
-
-    <div class="setting-group">
-      <label class="setting-label">{{ t('settings.about') }}</label>
-      <a
-        href="https://dzone.com/articles/designing-docling-studio"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="about-link"
+    <div class="settings-toolbar">
+      <button
+        type="button"
+        class="toggle-all"
+        data-e2e="settings-toggle-all"
+        @click="accordion.toggleAll()"
       >
-        <svg viewBox="0 0 20 20" fill="currentColor" class="about-link-icon">
-          <path
-            d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"
-          />
+        <svg
+          aria-hidden="true"
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="m7 15 5 5 5-5" />
+          <path d="m7 9 5-5 5 5" />
         </svg>
-        {{ t('settings.designArticle') }}
-        <svg viewBox="0 0 20 20" fill="currentColor" class="about-link-external">
-          <path
-            d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"
-          />
-          <path
-            d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"
-          />
-        </svg>
-      </a>
+        {{ accordion.allClosed.value ? t('settings.expandAll') : t('settings.collapseAll') }}
+      </button>
     </div>
 
-    <!-- #317 — server-backed runtime config; the section loads itself. -->
-    <ReasoningConfigSection />
+    <AccordionSection id="general" :title="t('settings.general')" :summary="generalSummary">
+      <AccordionRow :label="t('settings.theme')">
+        <div class="segmented">
+          <button
+            type="button"
+            :class="{ active: store.theme === 'dark' }"
+            :aria-pressed="store.theme === 'dark'"
+            @click="store.setTheme('dark')"
+          >
+            {{ t('settings.themeDark') }}
+          </button>
+          <button
+            type="button"
+            :class="{ active: store.theme === 'light' }"
+            :aria-pressed="store.theme === 'light'"
+            @click="store.setTheme('light')"
+          >
+            {{ t('settings.themeLight') }}
+          </button>
+        </div>
+      </AccordionRow>
+      <AccordionRow :label="t('settings.language')">
+        <div class="segmented">
+          <button
+            type="button"
+            :class="{ active: store.locale === 'fr' }"
+            :aria-pressed="store.locale === 'fr'"
+            data-e2e="lang-fr"
+            @click="store.setLocale('fr')"
+          >
+            Français
+          </button>
+          <button
+            type="button"
+            :class="{ active: store.locale === 'en' }"
+            :aria-pressed="store.locale === 'en'"
+            data-e2e="lang-en"
+            @click="store.setLocale('en')"
+          >
+            English
+          </button>
+        </div>
+      </AccordionRow>
+      <AccordionRow :label="t('settings.version')">
+        <span class="mono-value">{{ version }}</span>
+      </AccordionRow>
+      <AccordionRow :label="t('settings.about')">
+        <a
+          href="https://dzone.com/articles/designing-docling-studio"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="about-link"
+        >
+          {{ t('settings.designArticle') }} ↗
+        </a>
+      </AccordionRow>
+    </AccordionSection>
+
+    <AccordionSection id="ask" :title="t('settings.ask.title')">
+      <template #status>
+        <span class="pill">{{
+          askShown ? t('settings.ask.shown') : t('settings.ask.hidden')
+        }}</span>
+      </template>
+      <!-- #317 — server-backed runtime config; the section loads itself.
+           Hidden with Ask (ASK_MODE), so it is not where Ask gets turned on. -->
+      <ReasoningConfigSection v-if="askShown" />
+      <AccordionRow
+        v-else
+        :label="t('settings.ask.rowLabel')"
+        :hint="t('settings.ask.hiddenHint')"
+        data-e2e="settings-ask-hidden"
+      />
+    </AccordionSection>
+
+    <!-- #364 — MCP server: its switch, connecting a client, live budgets,
+         restart-only facts. Contributes its own sections. -->
+    <McpConfigSection />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, provide } from 'vue'
 import { useSettingsStore } from '../store'
 import { useFeatureFlagStore } from '@/features/feature-flags'
 import { ReasoningConfigSection } from '@/features/admin-config'
+import { McpConfigSection } from '@/features/mcp-config'
+import { ACCORDION_KEY, AccordionRow, AccordionSection, createAccordion } from '@/shared/ui'
+import { STORAGE_KEYS } from '@/shared/storage/keys'
 import { useI18n } from '../../../shared/i18n'
 
 const store = useSettingsStore()
 const featureStore = useFeatureFlagStore()
 const version = computed(() => featureStore.appVersion)
+const askShown = computed(() => featureStore.isEnabled('ask'))
 const { t } = useI18n()
+
+// Every section starts open but the environment table; what the viewer folds
+// is remembered in this browser.
+const accordion = createAccordion({
+  storageKey: STORAGE_KEYS.settingsCollapsed,
+  defaultClosed: ['mcp-advanced'],
+})
+provide(ACCORDION_KEY, accordion)
+
+const generalSummary = computed(() =>
+  [
+    store.theme === 'dark' ? t('settings.themeDark') : t('settings.themeLight'),
+    store.locale === 'fr' ? 'Français' : 'English',
+    version.value,
+  ].join(' · '),
+)
 </script>
 
 <style scoped>
 .settings-panel {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  max-width: 320px;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0 auto;
 }
 
-.setting-group {
+.settings-toolbar {
   display: flex;
-  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.toggle-all {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  cursor: pointer;
 }
 
-.setting-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.toggle-all:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
-.setting-toggle {
+.segmented {
+  height: 36px;
+  box-sizing: border-box;
   display: inline-flex;
   gap: 2px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   padding: 3px;
-  width: fit-content;
 }
 
-.setting-toggle button {
-  padding: 6px 16px;
+.segmented button {
+  min-width: 88px;
+  height: 28px;
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
-  border-radius: calc(var(--radius-sm) - 2px);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 200ms ease;
 }
 
-.setting-toggle button:hover {
-  color: var(--text-secondary);
+.segmented button:hover {
   background: var(--bg-hover);
 }
 
-.setting-toggle button.active {
+.segmented button.active {
   background: var(--accent-muted);
   color: var(--accent);
   font-weight: 600;
 }
 
-.setting-input {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  color: var(--text);
+.mono-value {
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 13px;
-  font-family: 'IBM Plex Mono', monospace;
-}
-
-.setting-value {
-  font-size: 14px;
-  color: var(--text);
-  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-secondary);
 }
 
 .about-link {
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.about-link:hover {
+  text-decoration: underline;
+}
+
+.pill {
+  height: 22px;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-secondary);
-  text-decoration: none;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
-  transition: all var(--transition);
-  width: fit-content;
-}
-.about-link:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-muted);
-}
-.about-link-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-.about-link-external {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  opacity: 0.4;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
 }
 </style>

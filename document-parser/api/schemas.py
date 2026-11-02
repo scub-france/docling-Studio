@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
 
@@ -24,6 +25,11 @@ from domain.value_objects import (
     ReasoningStepPayload,
     ReasoningTrace,
 )
+
+if TYPE_CHECKING:
+    # Only the `from_*` constructors name these — no model field does, so
+    # Pydantic never resolves them.
+    from domain.mcp_config import McpRuntimeConfigView, McpServerStatus
 
 # Document lifecycle status — currently single-state (uploaded). Kept as a
 # constant so future statuses (e.g. "archived", "deleted") can extend the
@@ -61,6 +67,9 @@ class HealthResponse(_CamelModel):
     # available: REASONING_ENABLED=true AND deps importable. Doesn't imply
     # Ollama itself is reachable — that's checked per-call.
     reasoning_available: bool = False
+    # ASK_MODE: "hidden" or "visible". Whether the UI shows Ask at all, apart
+    # from whether the runner is wired (`reasoning_available`).
+    ask_mode: str = "hidden"
     # 0.6.1 — Surface flags (#257). Master flags select which surface(s)
     # the frontend exposes. Defaults match the production target (RAG only).
     studio_mode_enabled: bool = False
@@ -107,6 +116,14 @@ class DocumentResponse(_CamelModel):
     store_links: list[DocStoreLinkResponse] | None = None
 
 
+class PageSizeResponse(_CamelModel):
+    """Size of one page of a document's PDF, in points (#352)."""
+
+    page_number: int
+    width: float
+    height: float
+
+
 class AnalysisResponse(_CamelModel):
     id: str
     document_id: str = ""
@@ -117,6 +134,21 @@ class AnalysisResponse(_CamelModel):
     pages_json: str | None = None
     chunks_json: str | None = None
     has_document_json: bool = False
+    error_message: str | None = None
+    progress_current: int | None = None
+    progress_total: int | None = None
+    started_at: str | datetime | None = None
+    completed_at: str | datetime | None = None
+    created_at: str | datetime
+
+
+class AnalysisSummaryResponse(_CamelModel):
+    """An analysis without its content, to follow many statuses at once (#354)."""
+
+    id: str
+    document_id: str
+    document_filename: str | None = None
+    status: str
     error_message: str | None = None
     progress_current: int | None = None
     progress_total: int | None = None
@@ -235,6 +267,13 @@ class CreateAnalysisRequest(BaseModel):
     chunkingOptions: ChunkingOptionsRequest | None = Field(
         default=None, validation_alias=AliasChoices("chunkingOptions", "chunking_options")
     )
+
+
+class ImportAnalysisRequest(BaseModel):
+    """A completed analysis supplied as a serialized DoclingDocument."""
+
+    documentId: str = Field(validation_alias=AliasChoices("documentId", "document_id"))
+    document: dict
 
 
 class RechunkRequest(BaseModel):
@@ -705,3 +744,106 @@ class ReasoningProbeResponse(_CamelModel):
     @classmethod
     def from_result(cls, result: LLMHostProbeResult) -> ReasoningProbeResponse:
         return cls(**asdict(result))
+
+
+# ---------------------------------------------------------------------------
+# MCP (#364) — runtime config + the running server, for the admin panel.
+# ---------------------------------------------------------------------------
+
+
+class McpConfigSourcesResponse(_CamelModel):
+    """Where each effective MCP value comes from — `env` or `db`."""
+
+    max_rounds: ConfigSource
+    max_read_tokens: ConfigSource
+    studio_base_url: ConfigSource
+    enabled: ConfigSource
+
+
+class McpConfigDefaultsResponse(_CamelModel):
+    """The environment's values: what each field returns to on a reset."""
+
+    max_rounds: int
+    max_read_tokens: int
+    studio_base_url: str
+    enabled: bool
+
+
+class McpConfigResponse(_CamelModel):
+    """Effective MCP runtime config (#364). No bounds on the fields: an env
+    value outside the panel's bounds is still the effective one."""
+
+    max_rounds: int = Field(description="Round cap (count, not a duration)")
+    max_read_tokens: int = Field(description="Ceiling on one read, in tokens")
+    studio_base_url: str
+    # Whether the mounted server answers; off, `/mcp` answers 503.
+    enabled: bool
+    sources: McpConfigSourcesResponse
+    read_only: bool
+    defaults: McpConfigDefaultsResponse
+
+    @classmethod
+    def from_view(cls, view: McpRuntimeConfigView) -> McpConfigResponse:
+        return cls(
+            max_rounds=view.config.max_rounds,
+            max_read_tokens=view.config.max_read_tokens,
+            studio_base_url=view.config.studio_base_url,
+            enabled=view.config.enabled,
+            sources=McpConfigSourcesResponse(**view.sources),
+            read_only=view.read_only,
+            defaults=McpConfigDefaultsResponse(
+                max_rounds=view.defaults.max_rounds,
+                max_read_tokens=view.defaults.max_read_tokens,
+                studio_base_url=view.defaults.studio_base_url,
+                enabled=view.defaults.enabled,
+            ),
+        )
+
+
+class McpConfigUpdateRequest(_CamelModel):
+    """Body for `PUT /api/config/mcp` — full-state replace, like reasoning.
+
+    Every field is required: an omitted base URL must not silently clear the
+    deep links, an omitted switch must not turn the server back on. Send `""`
+    to clear the links.
+    """
+
+    max_rounds: int
+    max_read_tokens: int
+    studio_base_url: str
+    enabled: bool
+
+
+class McpToolResponse(_CamelModel):
+    name: str
+    visibility: list[str]
+    card: bool
+
+
+class McpServerResponse(_CamelModel):
+    """The MCP HTTP transport as mounted at boot (#364) — restart-only facts."""
+
+    # MCP_ENABLED at boot: whether `/mcp` exists. Whether it answers is the
+    # runtime config's `enabled`.
+    enabled: bool
+    path: str
+    allowed_hosts: list[str]
+    apps_enabled: bool
+    citation_card: bool
+    tools: list[McpToolResponse]
+    prompts: list[str]
+
+    @classmethod
+    def from_status(cls, status: McpServerStatus) -> McpServerResponse:
+        return cls(
+            enabled=status.enabled,
+            path=status.path,
+            allowed_hosts=list(status.allowed_hosts),
+            apps_enabled=status.apps_enabled,
+            citation_card=status.citation_card,
+            tools=[
+                McpToolResponse(name=t.name, visibility=list(t.visibility), card=t.card)
+                for t in status.tools
+            ],
+            prompts=list(status.prompts),
+        )

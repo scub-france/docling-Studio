@@ -139,6 +139,7 @@ import BboxCanvas from './BboxCanvas.vue'
 import { clampPageInput, pageInputWidthCh } from './PagePreviewWithOverlay.logic'
 import {
   centeredScrollPosition,
+  isFocusScrollRequest,
   isRectVisible,
   mostVisiblePage,
   pageFrameGeometry,
@@ -285,6 +286,10 @@ function onPageChange(page: number): void {
  * in-flight smooth scroll.
  */
 function requestScroll(intent: ScrollIntent): void {
+  // A cleared focus leaves the reader where they are (#338) — dropped here
+  // rather than in `runPendingScroll`, so a page change in the same flush
+  // still gets its scroll.
+  if (intent === 'focus' && !isFocusScrollRequest(props.highlightedRefs)) return
   if (intent === 'focus' || pendingIntent === null) pendingIntent = intent
   if (scrollScheduled) return
   scrollScheduled = true

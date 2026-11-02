@@ -1,4 +1,4 @@
-import type { DocChunk, Document, DocTreeNode, DocumentVersion } from '../../shared/types'
+import type { DocChunk, Document, DocTreeNode, DocumentVersion, Page } from '../../shared/types'
 import type { RechunkOptions } from '@/shared/types'
 import { apiFetch } from '@/shared/api/http'
 
@@ -32,8 +32,28 @@ export function getPreviewUrl(id: string, page = 1, dpi = PREVIEW_DPI): string {
   return `/api/documents/${id}/preview?page=${page}&dpi=${dpi}`
 }
 
-export function getExportUrl(id: string, format: 'pdf' | 'md' | 'json'): string {
-  return `/api/documents/${id}/export?format=${format}`
+/** The PDF's pages, sized but without elements, for the preview of a
+ * document that may have no analysis yet (#352). */
+export async function fetchDocumentPages(id: string): Promise<Page[]> {
+  const sizes = await apiFetch<{ pageNumber: number; width: number; height: number }[]>(
+    `/api/documents/${id}/pages`,
+  )
+  return sizes.map((size) => ({
+    page_number: size.pageNumber,
+    width: size.width,
+    height: size.height,
+    elements: [],
+  }))
+}
+
+/** Markdown / JSON come from `analysisId` when given, else from the latest analysis. */
+export function getExportUrl(
+  id: string,
+  format: 'pdf' | 'md' | 'json',
+  analysisId?: string,
+): string {
+  const analysis = analysisId ? `&analysisId=${encodeURIComponent(analysisId)}` : ''
+  return `/api/documents/${id}/export?format=${format}${analysis}`
 }
 
 /** Rechunk the canonical chunkset. Backend runs synchronously and returns

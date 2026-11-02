@@ -32,3 +32,11 @@ Feature: UI — Reasoning feature flag
     # the page through normal navigation when the runner is disabled.
     * waitFor('[data-e2e=sidebar]')
     * match karate.sizeOf(locateAll('[data-e2e=nav-reasoning]')) == 0
+
+  # ASK_MODE is unset on the CI backend, so Ask is hidden: Settings must not
+  # offer the Reasoning section, where Ask would otherwise be turned on.
+  @ask-hidden
+  Scenario: Settings has no Reasoning section while ASK_MODE hides Ask
+    * driver uiBaseUrl + '/settings'
+    * waitFor('[data-e2e=settings-panel]')
+    * match karate.sizeOf(locateAll('[data-e2e=reasoning-config-section]')) == 0

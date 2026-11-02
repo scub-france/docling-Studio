@@ -21,6 +21,7 @@ from pathlib import Path
 import httpx
 from docling_core.types.doc.base import BoundingBox, CoordOrigin
 
+from domain.services import merge_results
 from domain.value_objects import (
     DEFAULT_PAGE_HEIGHT,
     DEFAULT_PAGE_WIDTH,
@@ -90,6 +91,11 @@ class ServeConverter:
         if self._api_key:
             headers["X-Api-Key"] = self._api_key
         return headers
+
+    async def merge_batches(self, results: list[ConversionResult]) -> ConversionResult:
+        """Not reached while `supports_page_batching` is False: Docling Serve
+        converts the whole document in one call."""
+        return merge_results(results)
 
     async def convert(
         self,
@@ -336,7 +342,7 @@ def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
     Carries `self_ref` ("#/texts/0", "#/tables/3", ...) through so the
     Linked-view canvas can correlate chunks (whose `docItems[].selfRef`
     is the same ref) with the element bboxes drawn on the page preview.
-    Local-mode parity: `LocalConverter._process_content_item` already
+    Local-mode parity: `docling_pages.extract_pages_detail` already
     populates `self_ref`; the remote path was silently dropping it,
     leaving the overlay empty on every doc converted through Docling Serve.
     """

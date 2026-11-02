@@ -1,7 +1,5 @@
 <template>
   <div class="reasoning-config" data-e2e="reasoning-config-section">
-    <div class="section-title">{{ t('settings.reasoning.title') }}</div>
-
     <div v-if="store.loadError" class="config-error" data-e2e="reasoning-config-load-error">
       {{ store.loadError }}
     </div>
@@ -184,20 +182,12 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* Sits inside the Ask section of the settings accordion, which titles it. */
 .reasoning-config {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
-}
-
-.section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  padding: 16px;
 }
 
 .setting-group {

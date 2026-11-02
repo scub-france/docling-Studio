@@ -164,6 +164,16 @@ class TestReasoningMaxIterations:
         monkeypatch.setenv("REASONING_MAX_ITERATIONS", "9")
         assert Settings.from_env().reasoning_max_iterations == 9
 
+    def test_an_empty_mcp_allowed_hosts_keeps_the_localhost_default(self, monkeypatch):
+        monkeypatch.setenv("MCP_ALLOWED_HOSTS", "")
+        assert Settings.from_env().mcp_allowed_hosts == ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+
+    def test_the_citation_card_is_off_unless_asked_for(self, monkeypatch):
+        monkeypatch.delenv("MCP_CITATION_CARD", raising=False)
+        assert Settings.from_env().mcp_citation_card is False
+        monkeypatch.setenv("MCP_CITATION_CARD", "true")
+        assert Settings.from_env().mcp_citation_card is True
+
     def test_out_of_bounds_rejected(self):
         import pytest
 
@@ -171,6 +181,72 @@ class TestReasoningMaxIterations:
             Settings(reasoning_max_iterations=0)
         with pytest.raises(ValueError, match="reasoning_max_iterations"):
             Settings(reasoning_max_iterations=21)
+
+
+class TestMcpEnabled:
+    """MCP starts with the backend, except on the Hugging Face Space."""
+
+    def test_on_by_default(self, monkeypatch):
+        assert Settings().mcp_enabled is True
+        monkeypatch.delenv("MCP_ENABLED", raising=False)
+        monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
+        assert Settings.from_env().mcp_enabled is True
+
+    def test_off_when_set_off(self, monkeypatch):
+        monkeypatch.setenv("MCP_ENABLED", "false")
+        assert Settings.from_env().mcp_enabled is False
+
+    def test_off_by_default_on_the_hugging_face_space(self, monkeypatch):
+        monkeypatch.delenv("MCP_ENABLED", raising=False)
+        monkeypatch.setenv("DEPLOYMENT_MODE", "huggingface")
+        assert Settings.from_env().mcp_enabled is False
+
+    def test_the_space_can_still_set_it_on(self, monkeypatch):
+        monkeypatch.setenv("DEPLOYMENT_MODE", "huggingface")
+        monkeypatch.setenv("MCP_ENABLED", "true")
+        assert Settings.from_env().mcp_enabled is True
+
+
+class TestAskMode:
+    """ASK_MODE — whether the UI shows Ask; hidden unless asked for."""
+
+    def test_hidden_by_default(self, monkeypatch):
+        assert Settings().ask_mode == "hidden"
+        monkeypatch.delenv("ASK_MODE", raising=False)
+        assert Settings.from_env().ask_mode == "hidden"
+
+    def test_visible_from_env(self, monkeypatch):
+        monkeypatch.setenv("ASK_MODE", " Visible ")
+        assert Settings.from_env().ask_mode == "visible"
+
+    def test_an_empty_value_keeps_it_hidden(self, monkeypatch):
+        monkeypatch.setenv("ASK_MODE", "")
+        assert Settings.from_env().ask_mode == "hidden"
+
+    def test_an_unknown_value_is_rejected(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="ask_mode must be 'hidden' or 'visible'"):
+            Settings(ask_mode="shown")
+
+
+class TestMcpMaxRounds:
+    """#364 — the round cap is a bounded bootstrap default."""
+
+    def test_default_is_five(self):
+        assert Settings().mcp_max_rounds == 5
+
+    def test_from_env(self, monkeypatch):
+        monkeypatch.setenv("MCP_MAX_ROUNDS", "3")
+        assert Settings.from_env().mcp_max_rounds == 3
+
+    def test_out_of_bounds_rejected(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="mcp_max_rounds"):
+            Settings(mcp_max_rounds=0)
+        with pytest.raises(ValueError, match="mcp_max_rounds"):
+            Settings(mcp_max_rounds=21)
 
 
 class TestSettingsFromEnv:

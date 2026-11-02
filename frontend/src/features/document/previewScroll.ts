@@ -92,3 +92,15 @@ export function pageTopScrollPosition(
 ): number {
   return Math.max(0, scrollTop + cardTop - viewportTop)
 }
+
+/**
+ * Whether a focus change asks the preview to scroll.
+ *
+ * Clearing the focus (the Parse view's "Show all", #338) leaves an empty
+ * highlight set: there is nothing to centre on, and the focus fallback would
+ * jump to the page top — away from where the reader is. So a cleared focus is
+ * not a scroll request at all; a focus whose element cannot be placed still is.
+ */
+export function isFocusScrollRequest(highlightedRefs: ReadonlySet<string> | undefined): boolean {
+  return (highlightedRefs?.size ?? 0) > 0
+}

@@ -31,7 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir uv==0.11.6
+# 0.13.x drops the bundled `zip` crate (CVE-2026-115905) and the emSign root
+# from its CA store (GHSA-hq85-5cpj-mr62); both failed the release gate on 0.11.6.
+RUN pip install --no-cache-dir uv==0.13.6
 
 # Python deps (common)
 WORKDIR /app

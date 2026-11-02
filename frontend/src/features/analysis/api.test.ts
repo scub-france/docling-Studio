@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   createAnalysis,
+  importAnalysis,
   fetchAnalyses,
   fetchAnalysis,
   deleteAnalysis,
@@ -43,6 +44,20 @@ describe('analysis API', () => {
       body: JSON.stringify({ documentId: 'doc-1', pipelineOptions: options }),
     })
     expect(result).toEqual(job)
+  })
+
+  it('importAnalysis sends the Docling document for the selected document', async () => {
+    const analysis = { id: 'imported', documentId: 'doc-1', status: 'COMPLETED' }
+    const document = { schema_name: 'DoclingDocument' }
+    apiFetch.mockResolvedValue(analysis)
+
+    const result = await importAnalysis('doc-1', document)
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/analyses/import', {
+      method: 'POST',
+      body: JSON.stringify({ documentId: 'doc-1', document }),
+    })
+    expect(result).toEqual(analysis)
   })
 
   it('fetchAnalyses calls GET /api/analyses', async () => {

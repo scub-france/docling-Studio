@@ -109,7 +109,7 @@ services:
   # when they front Docling with their own Serve cluster.
   docling-serve:
     profiles: ["remote"]
-    image: quay.io/docling-project/docling-serve-cpu:v1.21.0
+    image: quay.io/docling-project/docling-serve-cpu:v1.37.0
     expose:
       - "5001"
     # docling-serve registers `/v1/convert/*` decorators at import time
@@ -186,6 +186,13 @@ services:
       # tests until they're rewritten against /docs/:id (0.7.0).
       STUDIO_MODE_ENABLED: ${STUDIO_MODE_ENABLED:-false}
       RAG_PIPELINE_ENABLED: ${RAG_PIPELINE_ENABLED:-true}
+      # Ask in the UI: hidden unless ASK_MODE=visible (docs/configuration.md).
+      ASK_MODE: ${ASK_MODE:-hidden}
+      # MCP document server at /mcp (docs/mcp-server.md): on unless
+      # MCP_ENABLED=false; Settings can turn it off and on at runtime.
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
+      MCP_STUDIO_BASE_URL: ${MCP_STUDIO_BASE_URL:-http://localhost:3000}
     deploy:
       resources:
         limits:

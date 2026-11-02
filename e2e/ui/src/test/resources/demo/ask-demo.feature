@@ -20,7 +20,8 @@ Feature: DEMO — Ask panel walkthrough, driven for video capture (#303)
   # @demo so it can never leak into @ui / @critical runs.
   #
   # ── Requires (the runtime is yours to start) ──────────────────────────────
-  #   backend  .venv/bin/uvicorn with REASONING_ENABLED=true + a warm Ollama
+  #   backend  .venv/bin/uvicorn with ASK_MODE=visible, REASONING_ENABLED=true
+  #            and a warm Ollama
   #   frontend vite on :3000
   #   -Ddemo=true                  → non-headless Chrome at a fixed geometry
   #   -DdemoDocId=<uuid>           → a document with a COMPLETED analysis AND
@@ -45,6 +46,7 @@ Feature: DEMO — Ask panel walkthrough, driven for video capture (#303)
     When method GET
     Then status 200
     And match response.reasoningAvailable == true
+    And match response.askMode == 'visible'
 
     Given path '/api/documents', docId
     When method GET

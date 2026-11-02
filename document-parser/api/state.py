@@ -37,9 +37,11 @@ if TYPE_CHECKING:
     from services.app_config_service import AppConfigService
     from services.chunk_service import ChunkService
     from services.document_service import DocumentService
+    from services.document_tools import DocumentTools
     from services.export_service import ExportService
     from services.graph_service import GraphService
     from services.ingestion_service import IngestionService
+    from services.mcp_config_service import McpConfigService
     from services.reasoning_service import ReasoningService
     from services.store_service import StoreService
     from services.version_service import VersionService
@@ -68,8 +70,16 @@ class AppState:
     graph_service: GraphService | None = None
     version_service: VersionService | None = None
     ingestion_service: IngestionService | None = None
+    # Document navigation (map / read / cite / show) — consumed by the MCP
+    # adapter, and by the HTTP layer the day it grows an outline route.
+    document_tools: DocumentTools | None = None
     reasoning_service: ReasoningService | None = None
     app_config_service: AppConfigService | None = None
+    # MCP runtime config (#364) — owns the `document_tools` rebuild.
+    mcp_config_service: McpConfigService | None = None
+    # Whether the mounted `/mcp` answers. Turned off in Settings, it answers
+    # 503; True until the MCP config is wired, so boot order changes nothing.
+    mcp_serving: bool = True
 
     # Reasoning runner — read by `/api/health` and swapped by the runtime
     # config service (#317); kept beside the service it backs.

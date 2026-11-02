@@ -1,70 +1,9 @@
 vulnerabilities:
-  - id: CVE-2026-40393
-    # No `paths:` constraint — Trivy reports OS-package CVEs against the
-    # package name (libgbm1, libgl1-mesa-dri, libglx-mesa0, mesa-libgallium),
-    # not against installed file paths. A `paths:` filter would silently
-    # fail to match and the ignore would be a no-op (which it was).
-    statement: >-
-      Mesa OOB read (fix: Mesa 25.3.6 / 26.0.1). No Debian 13 backport available
-      as of 2026-08-24. Pulled transitively by libgl1 (required by OpenCV/RapidOCR),
-      not reachable from application code. Tracked in #189 (drop libgl1 via
-      opencv-python-headless) — the real fix. Expiry extended from 2026-06-30 to
-      keep the 0.7.0 release unblocked while #189 lands.
-    expired_at: 2026-11-30
-  - id: CVE-2026-7598
-    # libssh2 1.11.1-1 (Debian 13 trixie). Pulled transitively by git/libcurl
-    # in the python:3.12-slim base image. Not invoked from application code —
-    # backend has no SSH client surface (no ssh://, no SCP/SFTP). The integer
-    # overflow only fires on attacker-controlled username/password passed to
-    # libssh2_userauth_*; that call site does not exist in our paths.
-    statement: >-
-      libssh2 integer overflow via username/password arguments (no upstream fix
-      yet, no Debian 13 backport). Pulled transitively into the python:3.12-slim
-      base image. Not reachable from the backend (no SSH client code path).
-      Re-evaluate when Debian publishes a backport or when we move off slim.
-    expired_at: 2026-08-31
-  - id: CVE-2026-42496
-    # perl-base 5.40.1-6 (Debian 13 trixie). Perl ships with the
-    # python:3.12-slim base for dpkg/apt tooling, NOT for application use.
-    # Backend code does not execute Perl at runtime: no perl scripts, no
-    # IPC::Open* / Archive::Tar / Encode invocations from FastAPI handlers,
-    # and image layers only use Python + uv. The Archive::Tar path-traversal
-    # vector requires a crafted tarball to be unpacked by perl — we unpack
-    # via Python (zipfile / tarfile) or docling-core, not via the Perl tool.
-    statement: >-
-      perl-archive-tar path traversal via crafted symlinks. perl-base is
-      pulled by dpkg/apt in python:3.12-slim and is never invoked from
-      application code (no Perl handlers, no Archive::Tar usage). No
-      upstream fix yet, no Debian 13 backport. Re-evaluate when Debian
-      publishes a backport or when we move off slim.
-    expired_at: 2026-09-30
-  - id: CVE-2026-8376
-    # perl-base 5.40.1-6 (Debian 13 trixie). Same reachability argument as
-    # CVE-2026-42496: heap buffer overflow triggers when perl compiles a
-    # malicious regex, but we never execute perl at runtime — only dpkg
-    # and apt use it during image build, and they don't process untrusted
-    # regex sources.
-    statement: >-
-      perl heap buffer overflow during regex compile (no upstream fix yet,
-      no Debian 13 backport). perl-base is build-tooling in python:3.12-slim;
-      no Perl interpreter is reached from the application surface and no
-      untrusted regex is fed to perl. Re-evaluate alongside CVE-2026-42496.
-    expired_at: 2026-09-30
-  - id: CVE-2026-58016
-    # libglib2.0-0t64 2.84.4-3~deb13u3 (Debian 13 trixie), `local` image only.
-    # Installed explicitly by the Dockerfile (`libgl1` + `libglib2.0-0`) because
-    # `rapidocr` pulls `opencv-python` (full) instead of `opencv-python-headless`.
-    # Verified not reachable: the vulnerable path is GDBus introspection-XML
-    # parsing, and the backend has no D-Bus surface at all (grep for
-    # dbus/gi.repository/pygobject across document-parser returns nothing) —
-    # glib is only present as a shared-object dependency of the OpenCV stack.
-    statement: >-
-      glib integer underflow in gio/gdbusintrospection.c (no upstream fix, no
-      Debian 13 backport as of 2026-08-24). Present only in the `local` image
-      via libglib2.0-0, itself required by the full opencv-python that rapidocr
-      pulls. No D-Bus code path exists in the application. The real fix is #189
-      (force opencv-python-headless and drop libgl1 + libglib2.0-0).
-    expired_at: 2026-10-31
+  # Removed on 2026-11-02 (release 0.7.3 audit): CVE-2026-40393 (mesa),
+  # CVE-2026-7598 (libssh2), CVE-2026-42496, CVE-2026-8376 and CVE-2026-13221
+  # (perl), CVE-2026-58016 (glib). Debian 13 now ships fixes. The four that had
+  # expired no longer show up in the release-gate scan, and the security
+  # tracker lists perl 5.40.1-6+deb13u1 and mesa 25.0.7-2+deb13u1 as fixed.
   - id: CVE-2026-6653
     # libxml2 2.12.7+dfsg (Debian 13 trixie), `local` image only.
     # Note the distinction: the application's XML parsing goes through the
@@ -72,22 +11,46 @@ vulnerabilities:
     # this Debian system package. The system libxml2 is dpkg/apt + OpenCV
     # tooling and is not fed untrusted input by the backend.
     statement: >-
-      libxml2 denial of service (no upstream fix, no Debian 13 backport as of
-      2026-08-24). The Debian system libxml2 is build/OS tooling; application
-      XML parsing uses the lxml wheel's own bundled libxml2. Impact is DoS
-      only, on a deployment whose trust model already requires network-level
-      protection (see SECURITY.md). Re-evaluate at expiry or when Debian
-      publishes a backport.
-    expired_at: 2026-10-31
-  - id: CVE-2026-13221
-    # perl-base 5.40.1-6 (Debian 13 trixie). Same class + reachability
-    # argument as CVE-2026-42496 / CVE-2026-8376: incorrect regex processing
-    # in perl, but perl-base is dpkg/apt build-tooling in python:3.12-slim and
-    # is never invoked from application code (no Perl handlers, no untrusted
-    # regex fed to perl). Surfaced in Trivy's DB after the 0.7.0 build.
+      libxml2 denial of service. Still no fix: the Debian security tracker
+      lists trixie and trixie-security as vulnerable on 2026-11-02. The Debian
+      system libxml2 is build/OS tooling; application XML parsing uses the
+      lxml wheel's own bundled libxml2. Impact is DoS only, on a deployment
+      whose trust model already requires network-level protection (see
+      SECURITY.md). Re-evaluate at expiry or when Debian publishes a fix.
+    expired_at: 2026-12-31
+  # Pillow 10.4.0, both images. These four are fixed only in Pillow 13.0.0.
+  # Studio's own pyproject caps Pillow below 11, and the docling packages the
+  # lock pins cap it below 13 (docling-core
+  # 2.104, docling-parse 7.22.4, docling-ibm-models 4.0.4 and docling-slim 2.142
+  # are the first to allow it, all from October 2026). Upgrading docling is
+  # planned for 0.8.0; until then the risk is ACCEPTED, not ruled out.
+  # What was checked (release 0.7.3 audit, 2026-11-02): Studio's own code
+  # opens with Pillow only the PNG pages it renders itself and saves only PNG
+  # and WebP; uploads are PDFs only; the Docling import keeps embedded images
+  # as data and its exports use placeholders, so nothing decodes them; no
+  # Ghostscript is installed. Not checked: every path inside docling during a
+  # conversion.
+  - id: CVE-2026-112393
     statement: >-
-      perl incorrect regular-expression processing (no upstream fix / Debian 13
-      backport yet). perl-base ships as build tooling in python:3.12-slim; no
-      Perl interpreter is reached from the application surface. Re-evaluate
-      alongside CVE-2026-42496 / CVE-2026-8376.
-    expired_at: 2026-11-30
+      Pillow heap overflow in _tiffWriteProc when saving TIFF to BytesIO.
+      Studio never writes TIFF (PNG and WebP only). Accepted until the docling
+      upgrade in 0.8.0 brings Pillow 13.
+    expired_at: 2026-12-31
+  - id: CVE-2026-112398
+    statement: >-
+      Pillow heap overflow decoding FlashPix (FPX) JPEG. Studio only accepts
+      PDFs and never opens an uploaded image with Pillow. Accepted until the
+      docling upgrade in 0.8.0 brings Pillow 13.
+    expired_at: 2026-12-31
+  - id: CVE-2026-112403
+    statement: >-
+      Pillow heap overflow in ImagingJpegDecode. Studio's code decodes no JPEG
+      with Pillow; paths inside docling are not verified. Risk accepted until
+      the docling upgrade in 0.8.0 brings Pillow 13.
+    expired_at: 2026-12-31
+  - id: CVE-2026-112900
+    statement: >-
+      Pillow argument injection in its Ghostscript call (EPS). No Ghostscript
+      binary is installed in either image, so the call cannot run. Accepted
+      until the docling upgrade in 0.8.0 brings Pillow 13.
+    expired_at: 2026-12-31

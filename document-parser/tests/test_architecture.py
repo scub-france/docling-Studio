@@ -8,15 +8,17 @@ Rules enforced:
 - services -> no import from api, infra, persistence
 - api      -> no import from infra, persistence
 - infra    -> no import from api, services
+- mcp_adapter -> no import from api, infra, persistence
 - persistence -> no import from api, services, infra
 - domain   -> no import of fastapi, sqlalchemy, httpx, opensearchpy
-- services -> no import of fastapi
+- services -> no import of API or infrastructure adapter packages
 """
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -173,6 +175,105 @@ class TestInfraLayerIsolation:
         rule.assert_applies(_evaluable)
 
 
+class TestMcpAdapterLayerIsolation:
+    """mcp_adapter is a driving adapter: it may reach services + domain only.
+
+    Same contract as `api/`. The MCP surface is allowed to *shape* responses
+    for an agent (budgets, anchors, content delimiters); it is not allowed to
+    reach past the services layer to do it.
+
+    Asserted with the ast scanner rather than a pytestarch rule on purpose.
+    The pytestarch rules above resolve import *targets* against graph nodes
+    named `document-parser.<layer>.<module>`, while the source says
+    `from persistence.database import …` — the project root is a hyphenated
+    directory, not an importable package, so those targets match no node and
+    the rules never see an edge. Verified by hand: adding
+    `from persistence.database import get_connection` to a `services/` module
+    leaves every rule green. Fixing that machinery is a change of its own
+    (it will surface whatever the rules have been missing); until then, a new
+    package gets an assertion that actually bites.
+    """
+
+    @pytest.mark.parametrize("forbidden", ["api", "infra", "persistence"])
+    def test_mcp_adapter_does_not_import(self, forbidden: str):
+        imports = _collect_imports("mcp_adapter")
+        assert forbidden not in imports, (
+            f"mcp_adapter imports forbidden layer '{forbidden}' — a driving adapter "
+            "reaches the services layer, never past it"
+        )
+
+
+class TestDocumentAgentServicesAreFrameworkFree:
+    """The document-agent services reach infrastructure through ports only.
+
+    Rasterising a page was inlined in `NavigationService` — PIL, a filesystem
+    read and an import of another service, in the middle of a use case. The
+    `PageRasterizer` port moved all three behind `infra/page_raster.py`; this
+    is what stops them coming back. Scoped to these four modules rather than
+    all of `services/` because `document_service.py` rasterises directly and
+    predates the port.
+    """
+
+    MODULES = (
+        "navigation_service",
+        "citation_service",
+        "citation_image_service",
+        "parse_loader",
+        "source_service",
+    )
+
+    # Per-module, not one shared set. `show_sources` (#363) legitimately
+    # composes the reading and citing services (the composition root injects
+    # them, exactly as `NavigationService` already takes a `CitationService`),
+    # and widening a single allow-list to let it would have stopped the rule
+    # biting for the four modules that came first.
+    PEERS: ClassVar[dict[str, set[str]]] = {
+        "navigation_service": {
+            "citation_service",
+            "navigation_config",
+            "navigation_errors",
+            "parse_loader",
+        },
+        "citation_service": {"navigation_config", "navigation_errors", "parse_loader"},
+        "citation_image_service": {"navigation_config", "navigation_errors", "parse_loader"},
+        "parse_loader": {"navigation_config", "navigation_errors"},
+        "source_service": {
+            "citation_service",
+            "navigation_config",
+            "navigation_errors",
+            "navigation_service",
+            "parse_loader",
+        },
+    }
+
+    @pytest.mark.parametrize("lib", ["PIL", "pdf2image", "fastapi"])
+    def test_no_imaging_or_web_framework(self, lib: str):
+        for module in self.MODULES:
+            source = (Path(_PROJECT_ROOT) / "services" / f"{module}.py").read_text()
+            tree = ast.parse(source)
+            imported: set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name.split(".")[0] for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported.add(node.module.split(".")[0])
+            assert lib not in imported, f"services/{module}.py imports '{lib}'"
+
+    @pytest.mark.parametrize("module", MODULES)
+    def test_they_do_not_import_an_unexpected_peer_service(self, module: str):
+        """A service reaching into another service is a missing port —
+        unless the composition root injects it, which the allow-list records."""
+        allowed = self.PEERS[module]
+        source = (Path(_PROJECT_ROOT) / "services" / f"{module}.py").read_text()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("services."):
+                peer = node.module.split(".")[1]
+                assert peer in allowed, (
+                    f"services/{module}.py imports peer service '{peer}' — add a port, or "
+                    "record the injection in PEERS with a reason"
+                )
+
+
 class TestPersistenceLayerIsolation:
     """persistence may import domain, but not api, services, or infra."""
 
@@ -194,7 +295,23 @@ class TestPersistenceLayerIsolation:
 # ---------------------------------------------------------------------------
 
 _DOMAIN_FORBIDDEN_EXTERNALS = {"fastapi", "sqlalchemy", "httpx", "opensearchpy"}
-_SERVICES_FORBIDDEN_EXTERNALS = {"fastapi"}
+# Packages whose application imports belong exclusively in `infra/`. Adding
+# one here prevents services from bypassing the corresponding domain port.
+_SERVICES_FORBIDDEN_EXTERNALS = {
+    "cryptography",
+    "docling",
+    "docling_core",
+    "fastapi",
+    "httpx",
+    "neo4j",
+    "opensearchpy",
+    "starlette",
+}
+
+# Service imports that should move behind ports before joining the denylist.
+# Keep this list explicit: deleting a candidate means its migration must also
+# add the package to `_SERVICES_FORBIDDEN_EXTERNALS`.
+_SERVICES_EXTERNAL_MIGRATION_CANDIDATES = {"pdf2image", "pypdfium2"}
 
 
 class TestDomainExternalDependencies:
@@ -207,12 +324,20 @@ class TestDomainExternalDependencies:
 
 
 class TestServicesExternalDependencies:
-    """services must not import web-framework libraries."""
+    """services must not import API or adapter implementation packages."""
 
     @pytest.mark.parametrize("lib", sorted(_SERVICES_FORBIDDEN_EXTERNALS))
     def test_services_does_not_import_external(self, lib: str):
         imports = _collect_imports("services")
         assert lib not in imports, f"services imports forbidden external library '{lib}'"
+
+    def test_service_adapter_candidates_remain_explicit(self):
+        """Migration candidates cannot silently disappear from the inventory."""
+        imports = _collect_imports("services")
+        assert imports >= _SERVICES_EXTERNAL_MIGRATION_CANDIDATES, (
+            "A service adapter candidate was removed; add it to "
+            "_SERVICES_FORBIDDEN_EXTERNALS or update the inventory."
+        )
 
 
 # ---------------------------------------------------------------------------

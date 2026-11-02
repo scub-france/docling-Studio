@@ -8,11 +8,14 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pypdfium2 as pdfium
 from pdf2image import convert_from_bytes, pdfinfo_from_bytes
 
 from domain.models import Document
+from domain.value_objects import PageDetail
 
 if TYPE_CHECKING:
     from domain.ports import AnalysisRepository, DocumentRepository
@@ -113,6 +116,20 @@ class DocumentService:
         """Find a document by its ID, or return None."""
         return await self._document_repo.find_by_id(doc_id)
 
+    def resolve_storage_path(self, storage_path: str) -> Path:
+        """Resolve a persisted upload path in either Docker or host development.
+
+        Docker records `/app/uploads/...`, while a worktree started directly
+        on the host stores the copied files under its configured upload dir.
+        Keep the original path when it exists; otherwise only fall back to its
+        basename inside that directory.
+        """
+        path = Path(storage_path)
+        if path.is_file():
+            return path
+        fallback = Path(self._upload_dir).resolve() / path.name
+        return fallback if fallback.is_file() else path
+
     async def delete(self, doc_id: str) -> bool:
         """Delete document file, associated analyses, and database record."""
         doc = await self._document_repo.find_by_id(doc_id)
@@ -149,6 +166,26 @@ class DocumentService:
         buf = io.BytesIO()
         images[0].save(buf, format="PNG")
         return buf.getvalue()
+
+    @staticmethod
+    def page_sizes(file_content: bytes) -> list[PageDetail]:
+        """Size of each page of a PDF, in points, without its elements (#352).
+
+        Lets the page preview reserve each page's box before any analysis.
+        """
+        pdf = pdfium.PdfDocument(file_content)
+        try:
+            sizes: list[PageDetail] = []
+            for index in range(len(pdf)):
+                page = pdf[index]
+                try:
+                    width, height = page.get_size()
+                finally:
+                    page.close()
+                sizes.append(PageDetail(page_number=index + 1, width=width, height=height))
+            return sizes
+        finally:
+            pdf.close()
 
 
 def _persist_and_count(upload_dir: str, file_path: str, file_content: bytes) -> int | None:

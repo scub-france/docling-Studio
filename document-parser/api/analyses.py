@@ -9,9 +9,11 @@ from fastapi import APIRouter, HTTPException, Query
 from api import deps  # noqa: TC001
 from api.schemas import (
     AnalysisResponse,
+    AnalysisSummaryResponse,
     ChunkBboxResponse,
     ChunkResponse,
     CreateAnalysisRequest,
+    ImportAnalysisRequest,
     RechunkRequest,
     UpdateChunkTextRequest,
 )
@@ -68,6 +70,23 @@ async def create_analysis(
     return _to_response(job)
 
 
+@router.post("/import", response_model=AnalysisResponse)
+async def import_analysis(
+    body: ImportAnalysisRequest, service: deps.AnalysisServiceDep
+) -> AnalysisResponse:
+    """Import a completed analysis from a serialized DoclingDocument."""
+    if not body.documentId or not body.documentId.strip():
+        raise HTTPException(status_code=400, detail="documentId is required")
+
+    try:
+        job = await service.import_docling_document(body.documentId, body.document)
+    except ValueError as e:
+        status_code = 404 if str(e).startswith("Document not found:") else 400
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
+
+    return _to_response(job)
+
+
 @router.get("", response_model=list[AnalysisResponse])
 async def list_analyses(
     service: deps.AnalysisServiceDep,
@@ -79,6 +98,33 @@ async def list_analyses(
     else:
         jobs = await service.find_all()
     return [_to_response(j) for j in jobs]
+
+
+# Declared before `/{analysis_id}`, which would otherwise take "summaries" for an id.
+@router.get("/summaries", response_model=list[AnalysisSummaryResponse])
+async def list_analysis_summaries(
+    service: deps.AnalysisServiceDep,
+) -> list[AnalysisSummaryResponse]:
+    """List analysis jobs without their content, to follow their statuses (#354).
+
+    The full list carries every analysis's markdown, HTML, pages and chunks,
+    far too heavy to poll while a batch runs.
+    """
+    return [
+        AnalysisSummaryResponse(
+            id=job.id,
+            document_id=job.document_id,
+            document_filename=job.document_filename,
+            status=job.status.value,
+            error_message=job.error_message,
+            progress_current=job.progress_current,
+            progress_total=job.progress_total,
+            started_at=str(job.started_at) if job.started_at else None,
+            completed_at=str(job.completed_at) if job.completed_at else None,
+            created_at=str(job.created_at),
+        )
+        for job in await service.find_all_summaries()
+    ]
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)

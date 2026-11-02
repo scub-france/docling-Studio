@@ -9,6 +9,8 @@
 export const STORAGE_KEYS = {
   theme: 'docling-theme',
   locale: 'docling-locale',
+  // Settings sections the viewer folded (a JSON list of section ids).
+  settingsCollapsed: 'docling-settings-collapsed',
 } as const
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS]

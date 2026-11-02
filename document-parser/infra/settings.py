@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 from domain.app_config import MAX_ITERATIONS_MAX as _MAX_ITERATIONS_MAX
 from domain.app_config import MAX_ITERATIONS_MIN as _MAX_ITERATIONS_MIN
+from domain.mcp_config import MAX_ROUNDS_MAX as _MCP_ROUNDS_MAX
+from domain.mcp_config import MAX_ROUNDS_MIN as _MCP_ROUNDS_MIN
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,12 @@ class Settings:
     # other reasoning vars this is a bootstrap default — the admin panel can
     # override it at runtime via the `app_settings` store.
     reasoning_max_iterations: int = 5
+    # Whether the UI shows Ask: "hidden" (default) or "visible". Hidden, the
+    # Parse view has no Ask tab and Settings has no Reasoning section, even
+    # when a value saved there turned reasoning on. It hides, it does not
+    # turn off: the reasoning routes still follow REASONING_ENABLED and the
+    # saved settings.
+    ask_mode: str = "hidden"
     opensearch_default_limit: int = 1000  # max chunks returned by get_chunks
     embedding_dimension: int = 384  # Granite Embedding 30M / all-MiniLM-L6-v2
     upload_dir: str = "./uploads"
@@ -79,6 +87,40 @@ class Settings:
     # Sub-flags effective only when rag_pipeline_enabled is true.
     inspect_mode_enabled: bool = True
     linked_mode_enabled: bool = True
+    # MCP document server — on by default, except on the Hugging Face Space.
+    # It publishes a read-only tool surface over the parsed documents and
+    # carries NO authentication of its own. `mcp_allowed_hosts` below only
+    # guards against DNS rebinding from a browser: any client that reaches
+    # the port can send an allowed Host header, so network exposure is the
+    # deployment's job. `MCP_ENABLED=false` mounts nothing at all; with it
+    # on, Settings can still turn the server off and on at runtime.
+    mcp_enabled: bool = True
+    # Host/Origin allow-list for the streamable-HTTP transport (DNS-rebinding
+    # protection). "*" disables the check — only correct behind a proxy that
+    # already validates the Host header.
+    mcp_allowed_hosts: list[str] = field(
+        default_factory=lambda: ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    )
+    # Hard server-side ceiling on a single read. A client argument may lower
+    # it, never raise it. Like the round cap and the deep-link base below, a
+    # bootstrap default: the admin panel overrides it at runtime (#364).
+    mcp_max_read_tokens: int = 4000
+    # The Chunkless RAG round cap the prompt states and the sources card counts
+    # against. Nothing enforces it server-side: the client model drives the loop.
+    mcp_max_rounds: int = 5
+    # MCP Apps (SEP-1865) — the citation and sources cards rendered inline by
+    # hosts that negotiate `io.modelcontextprotocol/ui`. On by default because it
+    # degrades to text on hosts that do not: a client that never advertises
+    # the extension never fetches the template, and the tool answers as text.
+    mcp_apps_enabled: bool = True
+    # The citation card (`show_citation`), off by default: offered to a model,
+    # it was called on its own before every sources card, which already shows
+    # each cited passage boxed on its page. Only with MCP Apps on.
+    mcp_citation_card: bool = False
+    # Absolute base for citation deep links (e.g. http://localhost:3000).
+    # Empty: citations carry no deep link — a bare path is no link for a
+    # reader outside Studio.
+    mcp_studio_base_url: str = ""
 
     def __post_init__(self) -> None:
         errors: list[str] = []
@@ -114,6 +156,15 @@ class Settings:
             )
         if self.embedding_dimension < 1:
             errors.append(f"embedding_dimension must be >= 1 (got {self.embedding_dimension})")
+        if self.mcp_max_read_tokens < 1:
+            errors.append(f"mcp_max_read_tokens must be >= 1 (got {self.mcp_max_read_tokens})")
+        if not (_MCP_ROUNDS_MIN <= self.mcp_max_rounds <= _MCP_ROUNDS_MAX):
+            errors.append(
+                f"mcp_max_rounds must be between {_MCP_ROUNDS_MIN} and {_MCP_ROUNDS_MAX} "
+                f"(got {self.mcp_max_rounds})"
+            )
+        if self.mcp_enabled and not self.mcp_allowed_hosts:
+            errors.append("mcp_allowed_hosts must not be empty when MCP_ENABLED is true")
         if not (self.studio_mode_enabled or self.rag_pipeline_enabled):
             errors.append("at least one of STUDIO_MODE_ENABLED / RAG_PIPELINE_ENABLED must be true")
         if not (_MAX_ITERATIONS_MIN <= self.reasoning_max_iterations <= _MAX_ITERATIONS_MAX):
@@ -125,6 +176,8 @@ class Settings:
             errors.append(
                 f"default_table_mode must be 'accurate' or 'fast' (got '{self.default_table_mode}')"
             )
+        if self.ask_mode not in ("hidden", "visible"):
+            errors.append(f"ask_mode must be 'hidden' or 'visible' (got '{self.ask_mode}')")
         # Timeout cascade: document_timeout < lock_timeout < conversion_timeout
         if self.document_timeout > 0 and self.lock_timeout > 0 and self.conversion_timeout > 0:
             if self.document_timeout >= self.lock_timeout:
@@ -163,9 +216,9 @@ class Settings:
             max_file_size_mb=int(os.environ.get("MAX_FILE_SIZE_MB", "50")),
             rate_limit_rpm=int(os.environ.get("RATE_LIMIT_RPM", "100")),
             # 0 = batching disabled (matches dataclass default). Batching
-            # preserves memory on very large docs but `merge_results` drops
-            # `document_json`, which breaks the reasoning tunnel. Enable
-            # explicitly (e.g. 50+) for memory-bound deploys.
+            # preserves memory on very large docs and reports progress after
+            # each batch; the local converter merges the batch documents back
+            # into one (#344). Enable explicitly for memory-bound deploys.
             batch_page_size=int(os.environ.get("BATCH_PAGE_SIZE", "0")),
             opensearch_url=os.environ.get("OPENSEARCH_URL", ""),
             embedding_url=os.environ.get("EMBEDDING_URL", ""),
@@ -179,6 +232,8 @@ class Settings:
             ollama_host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
             reasoning_model_id=os.environ.get("REASONING_MODEL_ID", "gpt-oss:20b"),
             reasoning_max_iterations=int(os.environ.get("REASONING_MAX_ITERATIONS", "5")),
+            # Empty counts as unset: compose passes `${ASK_MODE:-hidden}` through.
+            ask_mode=(os.environ.get("ASK_MODE") or "hidden").strip().lower(),
             opensearch_default_limit=int(os.environ.get("OPENSEARCH_DEFAULT_LIMIT", "1000")),
             embedding_dimension=int(os.environ.get("EMBEDDING_DIMENSION", "384")),
             upload_dir=os.environ.get("UPLOAD_DIR", "./uploads"),
@@ -196,6 +251,28 @@ class Settings:
             in ("1", "true", "yes", "on"),
             linked_mode_enabled=os.environ.get("LINKED_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
+            # MCP document server (read-only agent surface).
+            # On unless set off; the Hugging Face Space keeps it off by default.
+            mcp_enabled=os.environ.get(
+                "MCP_ENABLED",
+                "false" if os.environ.get("DEPLOYMENT_MODE") == "huggingface" else "true",
+            ).lower()
+            in ("1", "true", "yes", "on"),
+            # Empty counts as unset: compose passes `${MCP_ALLOWED_HOSTS:-}` through.
+            mcp_allowed_hosts=[
+                h.strip()
+                for h in (
+                    os.environ.get("MCP_ALLOWED_HOSTS") or "127.0.0.1:*,localhost:*,[::1]:*"
+                ).split(",")
+                if h.strip()
+            ],
+            mcp_apps_enabled=os.environ.get("MCP_APPS_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_citation_card=os.environ.get("MCP_CITATION_CARD", "false").lower()
+            in ("1", "true", "yes", "on"),
+            mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
+            mcp_max_rounds=int(os.environ.get("MCP_MAX_ROUNDS", "5")),
+            mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
         )
 
 

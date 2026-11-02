@@ -4,7 +4,7 @@
     <div v-else-if="error || !analysis" class="state state--error">{{ t('analyses.failed') }}</div>
     <template v-else>
       <header class="detail-header">
-        <RouterLink :to="{ name: ROUTES.ANALYSES }" class="back-link">
+        <RouterLink :to="{ name: ROUTES.ANALYSIS_LIBRARY }" class="back-link">
           ← {{ t('analyses.title') }}
         </RouterLink>
         <div>
@@ -13,10 +13,22 @@
           <p class="meta">{{ analysis.id }} · {{ formatDate(analysis.createdAt) }}</p>
         </div>
         <div class="detail-actions">
-          <DownloadDropdown :doc-id="analysis.documentId" />
+          <RouterLink
+            :to="{ name: ROUTES.DOC_WORKSPACE, params: { id: analysis.documentId } }"
+            class="open-document-link"
+            data-e2e="analysis-open-document"
+          >
+            {{ t('analyses.openDocument') }}
+          </RouterLink>
+          <DownloadDropdown :doc-id="analysis.documentId" :analysis-id="analysis.id" />
         </div>
       </header>
-      <DocParseTab :doc-id="analysis.documentId" :analysis-id="analysis.id" />
+      <DocParseTab
+        :doc-id="analysis.documentId"
+        :analysis="analysis"
+        :focus-ref="focusRef"
+        :page="page"
+      />
     </template>
   </section>
 </template>
@@ -31,7 +43,7 @@ import { ROUTES } from '../shared/routing/names'
 import DocParseTab from './DocParseTab.vue'
 import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
 
-const props = defineProps<{ id: string }>()
+const props = defineProps<{ id: string; focusRef?: string; page?: number }>()
 const { t } = useI18n()
 const analysis = ref<Analysis | null>(null)
 const loading = ref(true)
@@ -97,6 +109,23 @@ h1 {
 }
 .detail-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.open-document-link {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all var(--transition);
+}
+.open-document-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .analysis-detail :deep(.parse-tab) {
   min-height: 0;

@@ -19,6 +19,10 @@
         <img src="/logo.png" alt="Docling Studio" class="topbar-logo-icon" />
         <span class="topbar-logo-text">Docling Studio</span>
       </div>
+      <div v-if="isDev" class="dev-route-indicator" data-e2e="dev-route-indicator">
+        <span class="dev-route-indicator-tag">DEV</span>
+        {{ routeLabel(route) }}
+      </div>
       <div class="topbar-spacer" />
     </header>
 
@@ -41,7 +45,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 import { AppSidebar } from '@/shared/ui'
 import AppBreadcrumb from '../shared/breadcrumb/AppBreadcrumb.vue'
 import { useBreadcrumbStore } from '../shared/breadcrumb/store'
@@ -49,11 +53,14 @@ import { useSettingsStore } from '../features/settings/store'
 import { useFeatureFlag } from '../features/feature-flags'
 import { useFeatureFlagStore } from '../features/feature-flags/store'
 import { useI18n } from '../shared/i18n'
+import { routeLabel } from '../shared/routing/routeLabel'
 
 useSettingsStore()
 const flagStore = useFeatureFlagStore()
 const breadcrumbStore = useBreadcrumbStore()
 const { t } = useI18n()
+const route = useRoute()
+const isDev = import.meta.env.DEV
 
 const sidebarOpen = ref(true)
 const disclaimerEnabled = useFeatureFlag('disclaimer')
@@ -188,6 +195,29 @@ body {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
+}
+.dev-route-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 12px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font:
+    10px 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 0.04em;
+}
+/* Dark text on the amber fill, like the disclaimer banner: `--warning` as a
+   text colour is too faint on the light theme's white topbar. */
+.dev-route-indicator-tag {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--warning);
+  color: #1a1a1d;
+  font-weight: 500;
 }
 
 .burger-btn {

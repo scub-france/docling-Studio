@@ -32,14 +32,20 @@ export const routes: RouteRecordRaw[] = [
   },
   {
     path: '/analyses',
-    name: ROUTES.ANALYSES,
-    component: () => import('../../pages/AnalysesPage.vue'),
+    name: ROUTES.ANALYSIS_LIBRARY,
+    component: () => import('../../pages/AnalysisLibraryPage.vue'),
   },
   {
+    // Also where the MCP server's citation deep links land: `?ref=` focuses an
+    // element of this parse, `?page=` opens one of its pages.
     path: '/analyses/:id',
     name: ROUTES.ANALYSIS_DETAIL,
     component: () => import('../../pages/AnalysisDetailPage.vue'),
-    props: true,
+    props: (route: RouteLocationNormalized) => ({
+      id: String(route.params.id),
+      focusRef: typeof route.query.ref === 'string' ? route.query.ref : undefined,
+      page: Number(route.query.page) || undefined,
+    }),
   },
   {
     path: '/documents',

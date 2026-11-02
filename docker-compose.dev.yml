@@ -101,7 +101,7 @@ services:
   # --profile remote up` plus `CONVERSION_MODE=remote`.
   docling-serve:
     profiles: ["remote"]
-    image: quay.io/docling-project/docling-serve-cpu:v1.21.0
+    image: quay.io/docling-project/docling-serve-cpu:v1.37.0
     ports:
       - "5001:5001"
     # Same race-safe healthcheck as docker-compose.yml — actually invoke
@@ -152,6 +152,13 @@ services:
       # for the one-liner to generate a key. No default on purpose: a dev
       # who creates a sealed store must persist the key in their own .env.
       STORE_SECRET_KEY: ${STORE_SECRET_KEY:-}
+      # Ask in the UI: hidden unless ASK_MODE=visible (docs/configuration.md).
+      ASK_MODE: ${ASK_MODE:-hidden}
+      # MCP document server at /mcp (docs/mcp-server.md): on unless
+      # MCP_ENABLED=false; Settings can turn it off and on at runtime.
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
+      MCP_STUDIO_BASE_URL: ${MCP_STUDIO_BASE_URL:-http://localhost:3000}
     profiles: ["default", "graph", "ingestion", "remote"]
     command:
       ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

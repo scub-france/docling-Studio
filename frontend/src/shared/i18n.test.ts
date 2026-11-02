@@ -64,6 +64,68 @@ describe('useI18n', () => {
     expect(t('history.emptyDocs')).toBe('No documents yet. Upload a document from the library.')
   })
 
+  it('has the analysis progress keys in French', () => {
+    const { t } = useI18n()
+    expect(t('analyses.progressPages', { percent: 40, done: 10, total: 25 })).toBe(
+      '40 % · page 10 / 25',
+    )
+    expect(t('analyses.progressElapsed', { elapsed: '1:23' })).toBe('Analyse en cours · 1:23')
+  })
+
+  it('has the analysis progress keys in English', () => {
+    appLocale.value = 'en'
+
+    const { t } = useI18n()
+    expect(t('analyses.progressPages', { percent: 40, done: 10, total: 25 })).toBe(
+      '40% · page 10 / 25',
+    )
+    expect(t('analyses.progressElapsed', { elapsed: '1:23' })).toBe('Analyzing · 1:23')
+  })
+
+  it('has the document preview error in French and English (#352)', () => {
+    const { t } = useI18n()
+    expect(t('workspace.previewUnavailable')).toBe(
+      'Aperçu indisponible : le PDF ne peut pas être lu.',
+    )
+
+    appLocale.value = 'en'
+    expect(t('workspace.previewUnavailable')).toBe('Preview unavailable: the PDF cannot be read.')
+  })
+
+  it('has the Parse view show-all keys in French', () => {
+    const { t } = useI18n()
+    expect(t('parse.showAll')).toBe('Tout afficher')
+    expect(t('parse.showAllHint')).toBe(
+      'Désélectionne l’élément et remet toutes les bbox en surbrillance',
+    )
+  })
+
+  it('has the Parse view show-all keys in English', () => {
+    appLocale.value = 'en'
+
+    const { t } = useI18n()
+    expect(t('parse.showAll')).toBe('Show all')
+    expect(t('parse.showAllHint')).toBe('Clear the selection and highlight every bbox again')
+  })
+
+  it('has the New analysis failure keys in French', () => {
+    const { t } = useI18n()
+    expect(t('newAnalysis.failed')).toBe("L'analyse a échoué.")
+    expect(t('newAnalysis.failedWithReason', { reason: 'Out of memory' })).toBe(
+      "L'analyse a échoué : Out of memory",
+    )
+  })
+
+  it('has the New analysis failure keys in English', () => {
+    appLocale.value = 'en'
+
+    const { t } = useI18n()
+    expect(t('newAnalysis.failed')).toBe('The analysis failed.')
+    expect(t('newAnalysis.failedWithReason', { reason: 'Out of memory' })).toBe(
+      'The analysis failed: Out of memory',
+    )
+  })
+
   it('has detailed pipeline option hints in French', () => {
     const { t } = useI18n()
     expect(t('config.ocrHint').length).toBeGreaterThan(40)
@@ -88,5 +150,43 @@ describe('useI18n', () => {
     expect(t('config.pictureDescriptionHint').length).toBeGreaterThan(40)
     expect(t('config.generatePictureImagesHint').length).toBeGreaterThan(40)
     expect(t('config.generatePageImagesHint').length).toBeGreaterThan(40)
+  })
+
+  it('has the LAYERS bar hide / show boxes keys in French', () => {
+    const { t } = useI18n()
+    expect(t('layers.hideBoxes')).toBe('Masquer les boîtes')
+    expect(t('layers.showBoxes')).toBe('Afficher les boîtes')
+    expect(t('layers.hideBoxesHint')).toBe('Masque toutes les bbox pour voir la page seule')
+    expect(t('layers.showBoxesHint')).toBe('Réaffiche toutes les bbox')
+  })
+
+  it('has the LAYERS bar hide / show boxes keys in English', () => {
+    appLocale.value = 'en'
+
+    const { t } = useI18n()
+    expect(t('layers.hideBoxes')).toBe('Hide boxes')
+    expect(t('layers.showBoxes')).toBe('Show boxes')
+    expect(t('layers.hideBoxesHint')).toBe('Hide every bbox to see the bare page')
+    expect(t('layers.showBoxesHint')).toBe('Show every bbox again')
+  })
+
+  it('has the batch analysis keys in French (#354)', () => {
+    const { t } = useI18n()
+    expect(t('docs.selectRow', { name: 'a.pdf' })).toBe('Sélectionner a.pdf')
+    expect(t('docs.selectedCount', { n: 2 })).toBe('2 sélectionné(s)')
+    expect(t('docs.analyzeSelected')).toBe('Analyser')
+    expect(t('docs.batchFailed')).toBe("Ces analyses n'ont pas pu démarrer :")
+    expect(t('analyses.statusPercent', { percent: 40 })).toBe('40 %')
+  })
+
+  it('has the batch analysis keys in English (#354)', () => {
+    appLocale.value = 'en'
+
+    const { t } = useI18n()
+    expect(t('docs.selectRow', { name: 'a.pdf' })).toBe('Select a.pdf')
+    expect(t('docs.selectedCount', { n: 2 })).toBe('2 selected')
+    expect(t('docs.analyzeSelected')).toBe('Analyze')
+    expect(t('docs.batchFailed')).toBe('These analyses could not start:')
+    expect(t('analyses.statusPercent', { percent: 40 })).toBe('40%')
   })
 })

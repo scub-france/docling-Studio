@@ -3,6 +3,7 @@
     <button
       :ref="(el) => registerRow?.(node.ref, el as HTMLElement | null)"
       class="tree-node-row"
+      data-e2e="tree-node-row"
       :class="{
         'tree-node-row--selected': selected === node.ref,
         'tree-node-row--highlight': highlight === node.ref,

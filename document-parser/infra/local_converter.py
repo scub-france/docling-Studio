@@ -8,7 +8,6 @@ non-blocking execution.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import threading
@@ -21,29 +20,17 @@ from docling.datamodel.pipeline_options import (
 )
 from docling.document_converter import DocumentConverter as DoclingConverter
 from docling.document_converter import PdfFormatOption
-from docling_core.types.doc import (
-    CodeItem,
-    DocItem,
-    FloatingItem,
-    FormulaItem,
-    GroupItem,
-    ListItem,
-    PictureItem,
-    SectionHeaderItem,
-    TableItem,
-    TextItem,
-    TitleItem,
-)
+from docling_core.types.doc import DoclingDocument
 
+from domain.services import merge_results
 from domain.value_objects import (
     DEFAULT_PAGE_HEIGHT,
     DEFAULT_PAGE_WIDTH,
     ConversionOptions,
     ConversionResult,
     PageDetail,
-    PageElement,
 )
-from infra.bbox import to_topleft_list
+from infra.docling_pages import extract_pages_detail
 from infra.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -54,30 +41,6 @@ _converter_lock = threading.Lock()
 
 # Default converter (lazy-init on first request)
 _default_converter: DoclingConverter | None = None
-
-
-# ---------------------------------------------------------------------------
-# Element type detection
-# ---------------------------------------------------------------------------
-
-_ELEMENT_TYPE_MAP: list[tuple[type, str]] = [
-    (TableItem, "table"),
-    (PictureItem, "picture"),
-    (TitleItem, "title"),
-    (SectionHeaderItem, "section_header"),
-    (ListItem, "list"),
-    (FormulaItem, "formula"),
-    (CodeItem, "code"),
-    (FloatingItem, "floating"),
-    (TextItem, "text"),
-]
-
-
-def _get_element_type(item: DocItem) -> str:
-    for cls, type_name in _ELEMENT_TYPE_MAP:
-        if isinstance(item, cls):
-            return type_name
-    return "text"
 
 
 # ---------------------------------------------------------------------------
@@ -129,92 +92,6 @@ def _select_converter(options: ConversionOptions) -> DoclingConverter:
 
 
 # ---------------------------------------------------------------------------
-# Page extraction
-# ---------------------------------------------------------------------------
-
-
-def _extract_pages_detail(doc_result) -> tuple[list[PageDetail], int]:
-    pages: dict[int, PageDetail] = {}
-    document = doc_result.document
-    skipped = 0
-
-    for page_key, page_obj in document.pages.items():
-        page_no = int(page_key) if isinstance(page_key, str) else page_key
-        pages[page_no] = PageDetail(
-            page_number=page_no,
-            width=page_obj.size.width,
-            height=page_obj.size.height,
-        )
-
-    for item, level in document.iterate_items():
-        ok = _process_content_item(item, level, pages)
-        if not ok:
-            skipped += 1
-
-    sorted_pages = sorted(pages.values(), key=lambda p: p.page_number)
-    return sorted_pages, skipped
-
-
-def _process_content_item(
-    item: DocItem | GroupItem,
-    level: int,
-    pages: dict[int, PageDetail],
-) -> bool:
-    if isinstance(item, GroupItem):
-        return True
-
-    if not isinstance(item, DocItem) or not item.prov:
-        return False
-
-    for prov in item.prov:
-        try:
-            page_no = prov.page_no
-            if page_no not in pages:
-                logger.warning(
-                    "Page %d not found in document metadata — using US Letter fallback (%sx%s pt)",
-                    page_no,
-                    DEFAULT_PAGE_WIDTH,
-                    DEFAULT_PAGE_HEIGHT,
-                )
-                pages[page_no] = PageDetail(
-                    page_number=page_no, width=DEFAULT_PAGE_WIDTH, height=DEFAULT_PAGE_HEIGHT
-                )
-
-            page_height = pages[page_no].height
-
-            bbox = [0.0, 0.0, 0.0, 0.0]
-            if prov.bbox:
-                bbox = to_topleft_list(prov.bbox, page_height)
-
-            element_type = _get_element_type(item)
-
-            content = getattr(item, "text", "") or ""
-            if isinstance(item, TableItem):
-                with contextlib.suppress(AttributeError, ValueError):
-                    content = item.export_to_markdown()
-
-            pages[page_no].elements.append(
-                PageElement(
-                    type=element_type,
-                    bbox=bbox,
-                    content=content,
-                    level=level,
-                    self_ref=getattr(item, "self_ref", "") or "",
-                )
-            )
-        except (AttributeError, KeyError, TypeError, ValueError):
-            logger.warning(
-                "Skipping item %s on page %s",
-                type(item).__name__,
-                getattr(prov, "page_no", "?"),
-                exc_info=True,
-            )
-            return False
-
-    return True
-
-
-# ---------------------------------------------------------------------------
 # Synchronous conversion (called via asyncio.to_thread)
 # ---------------------------------------------------------------------------
 
@@ -244,9 +121,13 @@ def _convert_sync(
     finally:
         _converter_lock.release()
 
-    doc = result.document
+    return _to_conversion_result(result.document)
+
+
+def _to_conversion_result(doc: DoclingDocument) -> ConversionResult:
+    """Everything the app stores about a conversion, derived from its document."""
     page_count = len(doc.pages)
-    pages_detail, skipped = _extract_pages_detail(result)
+    pages_detail, skipped = extract_pages_detail(doc)
 
     if not pages_detail and page_count > 0:
         pages_detail = [
@@ -273,6 +154,31 @@ def _convert_sync(
     )
 
 
+def _merge_batches_sync(results: list[ConversionResult]) -> ConversionResult:
+    """Merge page batches into the result a single pass would have produced.
+
+    The batch documents are concatenated, then everything is derived from the
+    merged document again, page details included: concatenation renumbers the
+    refs of the second batch onwards (`#/texts/0` becomes `#/texts/<n>`), so
+    page details kept per batch would point at the wrong items of the tree.
+    When a batch has no document, or the concatenation fails, the merge falls
+    back to `merge_results`, which keeps no document.
+    """
+    document_jsons = [r.document_json for r in results]
+    if not all(document_jsons):
+        if results:
+            logger.warning("A batch has no Docling document, the merged analysis keeps none")
+        return merge_results(results)
+    try:
+        documents = [DoclingDocument.model_validate_json(j) for j in document_jsons if j]
+        return _to_conversion_result(DoclingDocument.concatenate(documents))
+    except Exception:
+        # Any failure of the third-party merge must not fail an analysis
+        # whose batches all converted: keep the merge without a document.
+        logger.warning("Could not merge the batch documents, keeping none", exc_info=True)
+        return merge_results(results)
+
+
 # ---------------------------------------------------------------------------
 # Public adapter class
 # ---------------------------------------------------------------------------
@@ -293,3 +199,6 @@ class LocalConverter:
         page_range: tuple[int, int] | None = None,
     ) -> ConversionResult:
         return await asyncio.to_thread(_convert_sync, file_path, options, page_range=page_range)
+
+    async def merge_batches(self, results: list[ConversionResult]) -> ConversionResult:
+        return await asyncio.to_thread(_merge_batches_sync, results)

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from domain.models import AnalysisStatus
+from domain.models import AnalysisJob, AnalysisStatus, Document
 from domain.services import extract_html_body, merge_results
 from domain.value_objects import ConversionResult, PageDetail
 from services.analysis_service import AnalysisConfig, AnalysisService, _count_pdf_pages
@@ -157,6 +157,93 @@ class TestAnalysisServiceCancellation:
         await asyncio.gather(task)
 
         assert "j1" not in service._running_tasks
+
+
+class TestDoclingDocumentImport:
+    @pytest.mark.asyncio
+    async def test_import_persists_completed_analysis(self):
+        from docling_core.types.doc import DoclingDocument
+
+        stored: dict[str, AnalysisJob] = {}
+        analysis_repo = MagicMock()
+
+        async def insert(job: AnalysisJob) -> None:
+            stored[job.id] = job
+
+        analysis_repo.insert = AsyncMock(side_effect=insert)
+        analysis_repo.find_by_id = AsyncMock(side_effect=lambda job_id: stored.get(job_id))
+        analysis_repo.update_status = AsyncMock()
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
+        document_repo.update_page_count = AsyncMock()
+        document_repo.update_lifecycle = AsyncMock()
+        importer = MagicMock()
+        importer.deserialize.return_value = ConversionResult(
+            page_count=0,
+            content_markdown="",
+            content_html="",
+            pages=[],
+            document_json="{}",
+        )
+        service = _make_service(
+            analysis_repo=analysis_repo,
+            document_repo=document_repo,
+            docling_importer=importer,
+        )
+
+        job = await service.import_docling_document(
+            "d1", DoclingDocument(name="source").export_to_dict()
+        )
+
+        assert job.status is AnalysisStatus.COMPLETED
+        assert job.content_markdown == ""
+        assert job.content_html is not None
+        assert job.document_json is not None
+        document_repo.update_lifecycle.assert_awaited_once()
+        importer.deserialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_import_rejects_invalid_docling_document(self):
+        analysis_repo = MagicMock()
+        analysis_repo.insert = AsyncMock()
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
+        importer = MagicMock()
+        importer.deserialize.side_effect = ValueError("Invalid Docling document: invalid payload")
+        service = _make_service(
+            analysis_repo=analysis_repo,
+            document_repo=document_repo,
+            docling_importer=importer,
+        )
+
+        with pytest.raises(ValueError, match="Invalid Docling document"):
+            await service.import_docling_document("d1", {})
+
+        analysis_repo.insert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_import_deserializes_off_the_event_loop(self):
+        """Validating and exporting a large document must not block the loop."""
+        loop_seen_by_importer: list[bool] = []
+
+        def deserialize(_document: dict) -> ConversionResult:
+            try:
+                asyncio.get_running_loop()
+                loop_seen_by_importer.append(True)
+            except RuntimeError:
+                loop_seen_by_importer.append(False)
+            raise ValueError("Invalid Docling document: stop here")
+
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
+        importer = MagicMock()
+        importer.deserialize.side_effect = deserialize
+        service = _make_service(document_repo=document_repo, docling_importer=importer)
+
+        with pytest.raises(ValueError, match="stop here"):
+            await service.import_docling_document("d1", {})
+
+        assert loop_seen_by_importer == [False]
 
 
 class TestAnalysisServiceConcurrency:
@@ -314,8 +401,10 @@ class TestMergeResults:
 class TestBatchedConversion:
     @pytest.mark.asyncio
     async def test_batched_conversion_produces_merged_result(self):
-        """When batch_page_size is set and document exceeds it, results are merged."""
+        """When batch_page_size is set and document exceeds it, the converter
+        merges the batch results, in page order (#344)."""
         converter = AsyncMock()
+        converter.merge_batches.side_effect = merge_results
 
         # Simulate 2 batches: pages 1-5 and 6-8
         converter.convert.side_effect = [
@@ -354,8 +443,10 @@ class TestBatchedConversion:
         assert result is not None
         assert result.page_count == 8
         assert len(result.pages) == 8
-        assert result.document_json is None
         assert converter.convert.call_count == 2
+        converter.merge_batches.assert_awaited_once()
+        batches = converter.merge_batches.await_args.args[0]
+        assert [b.content_markdown for b in batches] == ["# Batch 1", "# Batch 2"]
 
         # Verify page_range was passed correctly
         call1_kwargs = converter.convert.call_args_list[0].kwargs
@@ -408,6 +499,7 @@ class TestBatchedConversion:
         from domain.models import AnalysisJob, AnalysisStatus
 
         converter = AsyncMock()
+        converter.merge_batches.side_effect = merge_results
         converter.convert.side_effect = [
             ConversionResult(
                 page_count=5,
@@ -655,3 +747,14 @@ class TestDeleteChunk:
 
         with pytest.raises(ValueError, match="No chunks available"):
             await service.delete_chunk("j1", 0)
+
+
+class TestFindAllSummaries:
+    async def test_reads_the_light_listing(self):
+        # #354 — polled while a batch runs, so it must not load the content.
+        analysis_repo = MagicMock()
+        analysis_repo.find_all_summaries = AsyncMock(return_value=["summary"])
+        service = _make_service(analysis_repo=analysis_repo)
+
+        assert await service.find_all_summaries() == ["summary"]
+        analysis_repo.find_all_summaries.assert_awaited_once()

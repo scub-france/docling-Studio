@@ -46,9 +46,33 @@ WORKTREE_PATH="${WORKTREE_PATH:-$PWD}"
 
 mkdir -p "$WORKTREE_PATH/document-parser/data" "$WORKTREE_PATH/document-parser/uploads"
 
-if [[ -f "$SOURCE_CHECKOUT_PATH/document-parser/data/docling_studio.db" ]]; then
-  cp "$SOURCE_CHECKOUT_PATH/document-parser/data/docling_studio.db" \
-    "$WORKTREE_PATH/document-parser/data/docling_studio.db"
+source_container=""
+if command -v docker >/dev/null 2>&1; then
+  while IFS= read -r container; do
+    source_container="$container"
+    break
+  done < <(
+    docker ps -aq \
+      --filter "label=com.docker.compose.project.working_dir=$SOURCE_CHECKOUT_PATH" \
+      --filter "label=com.docker.compose.service=document-parser"
+  )
+fi
+
+if [[ -n "$source_container" ]] \
+  && docker cp "$source_container:/app/data/docling_studio.db" \
+    "$WORKTREE_PATH/document-parser/data/docling_studio.db" \
+  && docker cp "$source_container:/app/uploads/." "$WORKTREE_PATH/document-parser/uploads/"; then
+  : # Docker owns the source state; copy its database and uploads as a pair.
+else
+  if [[ -f "$SOURCE_CHECKOUT_PATH/document-parser/data/docling_studio.db" ]]; then
+    cp "$SOURCE_CHECKOUT_PATH/document-parser/data/docling_studio.db" \
+      "$WORKTREE_PATH/document-parser/data/docling_studio.db"
+  fi
+
+  if [[ -d "$SOURCE_CHECKOUT_PATH/document-parser/uploads" ]]; then
+    cp -a "$SOURCE_CHECKOUT_PATH/document-parser/uploads/." \
+      "$WORKTREE_PATH/document-parser/uploads/"
+  fi
 fi
 
 if [[ -f "$SOURCE_CHECKOUT_PATH/.env" ]]; then
