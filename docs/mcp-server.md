@@ -47,29 +47,34 @@ itself, and that spawn is the authorisation.
 
 ## Configure from Studio
 
-**Settings → MCP server** turns the HTTP transport on and off and edits three
-budgets, with no restart.
+**Settings** is a list of foldable sections. Three are the MCP server's, and
+they turn the HTTP transport on and off and edit three budgets, with no
+restart. *Collapse all* folds every section; the browser remembers what you
+fold.
 
-- **Status**: an **On / Off** switch, whether `/mcp` answers now, the URL a
-  client should use, and a warning when the browser's host is not in
-  `MCP_ALLOWED_HOSTS` (a client on that URL would get a 421). The switch
-  applies at once. Off is stored in Studio's database, marked `db`, and kept
-  across restarts; *Reset to environment* turns it back on. Without
-  `MCP_ENABLED`, the switch is not shown.
-- **Connect a client**: the Claude Desktop config (through `mcp-remote`) and
-  the Claude Code command, ready to copy.
-- **Published by the server**: the tools, cards and prompts the running server
-  publishes, read from the server itself.
-- **Live settings**: `MCP_MAX_ROUNDS`, `MCP_MAX_READ_TOKENS` and
+- **MCP server**: its state in the header (*On*, *Off* or *Not mounted*), an
+  **On / Off** switch, the URL a client should use, and a warning when the
+  browser's host is not in `MCP_ALLOWED_HOSTS` (a client on that URL would
+  get a 421). The switch applies at once. Off is stored in Studio's database,
+  marked *changed*, and kept across restarts; *Reset all* turns it back on.
+  Without `MCP_ENABLED`, the switch is not shown. Below, three rows unfold:
+  - **Connect Claude Desktop**: the config block (through `mcp-remote`) to
+    copy, and the restart to do;
+  - **Connect Claude Code**: the command to copy;
+  - **Published by the server**: the tools, cards and prompts the running
+    server publishes, read from the server itself.
+- **Read budgets**: `MCP_MAX_ROUNDS`, `MCP_MAX_READ_TOKENS` and
   `MCP_STUDIO_BASE_URL`. The environment gives the defaults. On save, a value
-  that differs from its default is stored in Studio's database, marked `db`,
-  and used from the next tool call; the others keep following the
-  environment, and setting a field back to its default drops its override.
-  *Reset to environment* drops them all. The stdio server reads them at its
-  next launch.
-- **Restart-only settings**: `MCP_ENABLED`, `MCP_ALLOWED_HOSTS`,
-  `MCP_APPS_ENABLED` and `MCP_CITATION_CARD`, shown with their values.
-  `MCP_ENABLED` decides whether there is a server to switch.
+  that differs from its default is stored in Studio's database, marked
+  *changed*, and used from the next tool call; the others keep following the
+  environment, and setting a field back to its default drops its override. A
+  field that departs from its default shows the environment's value and a
+  button that puts it back. *Reset all* drops every override. The stdio
+  server reads them at its next launch.
+- **Advanced** (folded at first): the restart-only settings `MCP_ENABLED`,
+  `MCP_ALLOWED_HOSTS`, `MCP_APPS_ENABLED` and `MCP_CITATION_CARD`, with
+  their values and what each decides. `MCP_ENABLED` decides whether there is
+  a server to switch.
 
 Two limits:
 

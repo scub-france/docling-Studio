@@ -258,6 +258,14 @@ class TestWiring:
         assert after.config.max_rounds == 3
 
 
+class TestDefaults:
+    async def test_the_view_carries_the_environment_values(self):
+        service, _, _ = _service(rows={"max_read_tokens": "1500"})
+        view = await service.get_config()
+        assert view.config.max_read_tokens == 1500
+        assert view.defaults == ENV
+
+
 class TestServerSwitch:
     """Turning the mounted server off and on from Settings."""
 

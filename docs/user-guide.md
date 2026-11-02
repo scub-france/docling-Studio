@@ -29,7 +29,7 @@ flowchart LR
 | **Docs** | Your PDFs: import, open, analyze several at once, download, delete. |
 | **Analyses** | Every analysis: open the result, delete. |
 | **Runs** | Nothing yet. The page says "Coming soon". |
-| **Settings** | Theme, language, and the setup for **Ask** when Ask is shown (`ASK_MODE=visible`). |
+| **Settings** | Foldable sections: theme and language, the setup for **Ask** when Ask is shown (`ASK_MODE=visible`), and the [MCP server](mcp-server.md#configure-from-studio). |
 
 ## Import a PDF
 

@@ -11,7 +11,19 @@ export interface McpConfigView {
   enabled: boolean
   sources: Record<McpConfigField, ConfigSource>
   readOnly: boolean
+  /** The environment's values: what each field returns to on a reset. */
+  defaults: McpConfigDefaults
 }
+
+export interface McpConfigDefaults {
+  maxRounds: number
+  maxReadTokens: number
+  studioBaseUrl: string
+  enabled: boolean
+}
+
+/** The budget fields the form edits. */
+export type McpBudgetField = 'maxRounds' | 'maxReadTokens' | 'studioBaseUrl'
 
 /** Body of PUT `/api/config/mcp` — full-state replace, like reasoning. */
 export interface McpConfigUpdate {

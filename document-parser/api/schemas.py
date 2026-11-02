@@ -760,6 +760,15 @@ class McpConfigSourcesResponse(_CamelModel):
     enabled: ConfigSource
 
 
+class McpConfigDefaultsResponse(_CamelModel):
+    """The environment's values: what each field returns to on a reset."""
+
+    max_rounds: int
+    max_read_tokens: int
+    studio_base_url: str
+    enabled: bool
+
+
 class McpConfigResponse(_CamelModel):
     """Effective MCP runtime config (#364). No bounds on the fields: an env
     value outside the panel's bounds is still the effective one."""
@@ -771,6 +780,7 @@ class McpConfigResponse(_CamelModel):
     enabled: bool
     sources: McpConfigSourcesResponse
     read_only: bool
+    defaults: McpConfigDefaultsResponse
 
     @classmethod
     def from_view(cls, view: McpRuntimeConfigView) -> McpConfigResponse:
@@ -781,6 +791,12 @@ class McpConfigResponse(_CamelModel):
             enabled=view.config.enabled,
             sources=McpConfigSourcesResponse(**view.sources),
             read_only=view.read_only,
+            defaults=McpConfigDefaultsResponse(
+                max_rounds=view.defaults.max_rounds,
+                max_read_tokens=view.defaults.max_read_tokens,
+                studio_base_url=view.defaults.studio_base_url,
+                enabled=view.defaults.enabled,
+            ),
         )
 
 

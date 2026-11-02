@@ -22,6 +22,7 @@ function makeView(overrides: Partial<McpConfigView> = {}): McpConfigView {
     enabled: true,
     sources: { maxRounds: 'env', maxReadTokens: 'env', studioBaseUrl: 'env', enabled: 'env' },
     readOnly: false,
+    defaults: { maxRounds: 5, maxReadTokens: 4000, studioBaseUrl: '', enabled: true },
     ...overrides,
   }
 }
@@ -193,6 +194,59 @@ describe('useMcpConfigStore', () => {
       await store.load()
 
       expect(store.serving).toBe(false)
+    })
+  })
+
+  describe('revert', () => {
+    it('puts the environment value back in the form, unsaved', async () => {
+      mockGet.mockResolvedValue(
+        makeView({
+          maxReadTokens: 1500,
+          studioBaseUrl: 'http://h',
+          sources: { maxRounds: 'env', maxReadTokens: 'db', studioBaseUrl: 'db', enabled: 'env' },
+        }),
+      )
+      const store = useMcpConfigStore()
+      await store.load()
+
+      store.revert('maxReadTokens')
+      store.revert('studioBaseUrl')
+
+      expect(store.form.maxReadTokens).toBe(4000)
+      expect(store.form.studioBaseUrl).toBe('')
+      expect(store.dirty).toBe(true)
+      expect(mockPut).not.toHaveBeenCalled()
+    })
+
+    it('does nothing before the config has loaded', () => {
+      const store = useMcpConfigStore()
+      store.form.maxRounds = 9
+      store.revert('maxRounds')
+      expect(store.form.maxRounds).toBe(9)
+    })
+  })
+
+  describe('stepRounds', () => {
+    it('steps within the allowed range', async () => {
+      mockGet.mockResolvedValue(makeView({ maxRounds: 2 }))
+      const store = useMcpConfigStore()
+      await store.load()
+
+      store.stepRounds(-1)
+      expect(store.form.maxRounds).toBe(1)
+      store.stepRounds(-1)
+      expect(store.form.maxRounds).toBe(1)
+
+      store.form.maxRounds = 20
+      store.stepRounds(1)
+      expect(store.form.maxRounds).toBe(20)
+    })
+
+    it('starts from the minimum when the field is empty', () => {
+      const store = useMcpConfigStore()
+      store.form.maxRounds = Number.NaN
+      store.stepRounds(1)
+      expect(store.form.maxRounds).toBe(2)
     })
   })
 

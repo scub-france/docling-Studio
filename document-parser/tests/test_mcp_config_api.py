@@ -100,6 +100,12 @@ class TestGetConfig:
                 "enabled": "env",
             },
             "readOnly": False,
+            "defaults": {
+                "maxRounds": 5,
+                "maxReadTokens": 4000,
+                "studioBaseUrl": "",
+                "enabled": True,
+            },
         }
 
 

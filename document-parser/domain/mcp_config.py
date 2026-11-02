@@ -52,11 +52,13 @@ class McpRuntimeConfig:
 
 @dataclass(frozen=True)
 class McpRuntimeConfigView:
-    """Effective config + where each value comes from (`env` or `db`)."""
+    """Effective config + where each value comes from (`env` or `db`), and
+    the environment's values, which an override replaces and a reset restores."""
 
     config: McpRuntimeConfig
     sources: dict[str, ConfigSource]
     read_only: bool
+    defaults: McpRuntimeConfig
 
 
 @dataclass(frozen=True)

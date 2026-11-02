@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import { getMcpConfig, getMcpServer, putMcpConfig, resetMcpConfig } from './api'
-import type { McpConfigView, McpServerView } from './types'
+import { MAX_ROUNDS_MAX, MAX_ROUNDS_MIN } from './types'
+import type { McpBudgetField, McpConfigView, McpServerView } from './types'
 
 /**
  * MCP admin store (#364). Chains the two reads the section needs — the
@@ -110,6 +111,20 @@ export const useMcpConfigStore = defineStore('mcp-config', () => {
     }
   }
 
+  /** Put the environment's value back in the form; it applies on save. */
+  function revert(field: McpBudgetField): void {
+    const defaults = view.value?.defaults
+    if (!defaults) return
+    if (field === 'studioBaseUrl') form.studioBaseUrl = defaults.studioBaseUrl
+    else form[field] = defaults[field]
+  }
+
+  /** One round more or fewer in the form, within the allowed range. */
+  function stepRounds(delta: number): void {
+    const next = (Number(form.maxRounds) || MAX_ROUNDS_MIN) + delta
+    form.maxRounds = Math.min(MAX_ROUNDS_MAX, Math.max(MAX_ROUNDS_MIN, next))
+  }
+
   function reset(): Promise<boolean> {
     return write(resetMcpConfig, 'Failed to reset MCP config')
   }
@@ -128,6 +143,8 @@ export const useMcpConfigStore = defineStore('mcp-config', () => {
     load,
     save,
     setEnabled,
+    revert,
+    stepRounds,
     reset,
   }
 })

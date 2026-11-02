@@ -67,7 +67,8 @@ Feature: UI — MCP section of the settings panel (#364)
     * match karate.sizeOf(locateAll('[data-e2e=mcp-config-source-enabled]')) == 0
 
     # Off: the switch is stored, and /mcp answers 503 before reaching the server.
-    * click('[data-e2e=mcp-config-off]')
+    * match attribute('[data-e2e=mcp-config-switch]', 'aria-checked') == 'true'
+    * click('[data-e2e=mcp-config-switch]')
     * waitFor('[data-e2e=mcp-config-source-enabled]')
 
     Given url baseUrl
@@ -79,7 +80,7 @@ Feature: UI — MCP section of the settings panel (#364)
     And match response.error.message contains 'turned off'
 
     # Back on: the override goes, the environment value comes back.
-    * click('[data-e2e=mcp-config-on]')
+    * click('[data-e2e=mcp-config-switch]')
     * retry().until(!exists('[data-e2e=mcp-config-source-enabled]'))
 
     Given url baseUrl

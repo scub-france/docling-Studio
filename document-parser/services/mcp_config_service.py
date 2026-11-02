@@ -202,4 +202,6 @@ class McpConfigService:
     def _view(
         self, config: McpRuntimeConfig, sources: dict[str, ConfigSource]
     ) -> McpRuntimeConfigView:
-        return McpRuntimeConfigView(config=config, sources=sources, read_only=self._read_only)
+        return McpRuntimeConfigView(
+            config=config, sources=sources, read_only=self._read_only, defaults=self._env_defaults
+        )
