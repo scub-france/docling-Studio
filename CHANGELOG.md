@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Security
 
 - **Dependencies that failed the release image scan**: PyJWT 2.15.1 (CVE-2026-102268, authentication bypass), mcp 2.2.0 (CVE-2026-59951, CVE-2026-116684, CVE-2026-116685, CVE-2026-116686), certifi 2026.10.23 (CA bundle with compromised emSign intermediates), and uv 0.13.6 in the images (bundled `zip` crate, CVE-2026-115905). Also aiohttp 3.14.5, multidict 6.9.1, opentelemetry-api 1.45.2 and urllib3 2.8.0. Six Trivy suppressions Debian has since fixed are gone.
+- **Pillow 10.4.0: four CRITICALs accepted until 0.8.0** (CVE-2026-112393, CVE-2026-112398, CVE-2026-112403, CVE-2026-112900). They are fixed only in Pillow 13, which the pinned docling packages do not allow yet; the docling upgrade that brings it is planned for 0.8.0. Studio's own code opens with Pillow only the PNG pages it renders, accepts only PDFs, and no Ghostscript is installed, but the paths inside docling are not verified. The suppressions in `.trivyignore.yaml` expire on 2026-12-31.
 
 ### BREAKING CHANGES
 

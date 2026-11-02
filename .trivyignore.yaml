@@ -18,3 +18,38 @@ vulnerabilities:
       whose trust model already requires network-level protection (see
       SECURITY.md). Re-evaluate at expiry or when Debian publishes a fix.
     expired_at: 2026-12-31
+  # Pillow 10.4.0, both images. These four are fixed only in Pillow 13.0.0,
+  # and the docling packages the lock pins cap Pillow below 13 (docling-core
+  # 2.104, docling-parse 7.22.4, docling-ibm-models 4.0.4 and docling-slim 2.142
+  # are the first to allow it, all from October 2026). Upgrading docling is
+  # planned for 0.8.0; until then the risk is ACCEPTED, not ruled out.
+  # What was checked (release 0.7.3 audit, 2026-11-02): Studio's own code
+  # opens with Pillow only the PNG pages it renders itself and saves only PNG
+  # and WebP; uploads are PDFs only; the Docling import keeps embedded images
+  # as data and its exports use placeholders, so nothing decodes them; no
+  # Ghostscript is installed. Not checked: every path inside docling during a
+  # conversion.
+  - id: CVE-2026-112393
+    statement: >-
+      Pillow heap overflow in _tiffWriteProc when saving TIFF to BytesIO.
+      Studio never writes TIFF (PNG and WebP only). Accepted until the docling
+      upgrade in 0.8.0 brings Pillow 13.
+    expired_at: 2026-12-31
+  - id: CVE-2026-112398
+    statement: >-
+      Pillow heap overflow decoding FlashPix (FPX) JPEG. Studio only accepts
+      PDFs and never opens an uploaded image with Pillow. Accepted until the
+      docling upgrade in 0.8.0 brings Pillow 13.
+    expired_at: 2026-12-31
+  - id: CVE-2026-112403
+    statement: >-
+      Pillow heap overflow in ImagingJpegDecode. Studio's code decodes no JPEG
+      with Pillow; paths inside docling are not verified. Risk accepted until
+      the docling upgrade in 0.8.0 brings Pillow 13.
+    expired_at: 2026-12-31
+  - id: CVE-2026-112900
+    statement: >-
+      Pillow argument injection in its Ghostscript call (EPS). No Ghostscript
+      binary is installed in either image, so the call cannot run. Accepted
+      until the docling upgrade in 0.8.0 brings Pillow 13.
+    expired_at: 2026-12-31

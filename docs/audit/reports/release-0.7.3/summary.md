@@ -126,6 +126,8 @@ Le master bloque au-delà de 3 MAJ non résolus. Avec 24 MAJ, la grande majorit�
    - (b) accepter le risque jusqu'en 0.8.0, avec une suppression courte et justifiée honnêtement. Ces CVE ne peuvent pas être déclarées inatteignables : l'import #359 accepte un JSON Docling non fiable, qui peut embarquer des images.
 
    Dans les deux cas, il faut relancer le gate pour voir le résultat du scan `local`.
+
+   **Décision du mainteneur (2026-11-02) : (b).** Les 4 CVE Pillow sont supprimées jusqu'au 2026-12-31 dans `.trivyignore.yaml`, avec une justification qui dit ce qui a été vérifié et ce qui ne l'a pas été. La montée docling vers Pillow 13 est prévue pour la 0.8.0.
 2. **Exposition par défaut de la MCP.** Trois options :
    - corriger d'abord la doc et le commentaire, qui promettent une restriction à localhost que le code ne fournit pas ;
    - et/ou changer le défaut : publier le port compose sur `127.0.0.1`, ou mettre `MCP_ENABLED=false` en compose ;
