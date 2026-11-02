@@ -1,4 +1,4 @@
-import type { ConfigSource } from '@/features/admin-config'
+import type { ConfigSource } from '@/shared/types'
 
 export type McpConfigField = 'maxRounds' | 'maxReadTokens' | 'studioBaseUrl' | 'enabled'
 

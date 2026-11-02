@@ -1,4 +1,10 @@
 /**
+ * Where an effective config value comes from: env bootstrap default or DB
+ * override. Shared by the admin-config and mcp-config features.
+ */
+export type ConfigSource = 'env' | 'db'
+
+/**
  * Canonical document lifecycle state — mirrors the backend enum
  * `DocumentLifecycleState` (see `domain/value_objects.py`).
  *
