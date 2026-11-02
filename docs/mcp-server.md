@@ -69,7 +69,7 @@ fold.
   *changed*, and used from the next tool call; the others keep following the
   environment, and setting a field back to its default drops its override. A
   field that departs from its default shows the environment's value and a
-  button that puts it back. *Reset all* drops every override. The stdio
+  *reset* link that puts it back in the form. *Reset all* drops every override. The stdio
   server reads them at its next launch.
 - **Advanced** (folded at first): the restart-only settings `MCP_ENABLED`,
   `MCP_ALLOWED_HOSTS`, `MCP_APPS_ENABLED` and `MCP_CITATION_CARD`, with

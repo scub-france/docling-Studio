@@ -1,7 +1,7 @@
 <template>
   <AccordionSection id="mcp" :title="t('settings.mcp.title')" data-e2e="mcp-config-section">
     <template #status>
-      <span v-if="state" class="state-badge" :class="state">
+      <span v-if="state" class="pill" :class="state">
         <span class="dot" aria-hidden="true" />{{ stateLabel }}
       </span>
     </template>
@@ -18,7 +18,7 @@
       <AccordionRow data-e2e="mcp-config-status">
         <template #label>
           <span class="label-line">
-            <span class="row-label">{{ t('settings.mcp.title') }}</span>
+            <span class="row-label">{{ t('settings.mcp.serverOn') }}</span>
             <span
               v-if="store.view.sources.enabled === 'db'"
               class="changed-badge"
@@ -53,7 +53,7 @@
         <AccordionRow :label="t('settings.mcp.address')">
           <template #hint>
             <span class="with-icon" :class="{ warn: !localOnly }">
-              <svg v-bind="icon(14)">
+              <svg v-bind="icon(13)">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
               {{ localOnly ? t('settings.mcp.localOnly') : t('settings.mcp.unauthenticated') }}
@@ -62,41 +62,42 @@
               {{ t('settings.mcp.hostWarning', { host }) }}
             </span>
           </template>
-          <code class="url" data-e2e="mcp-config-url">{{ clientUrl }}</code>
-          <button
-            type="button"
-            class="icon-btn"
-            :aria-label="t('settings.mcp.copyUrl')"
-            :title="copyLabel('url')"
-            data-e2e="mcp-config-copy-url"
-            @click="copy('url', clientUrl)"
-          >
-            <svg v-if="copied === 'url'" v-bind="icon(15)"><path d="M20 6 9 17l-5-5" /></svg>
-            <svg v-else v-bind="icon(15)">
-              <rect x="9" y="9" width="13" height="13" rx="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-          </button>
+          <div class="input-group">
+            <code class="url" data-e2e="mcp-config-url">{{ clientUrl }}</code>
+            <button
+              type="button"
+              class="group-btn"
+              data-e2e="mcp-config-copy-url"
+              @click="copy('url', clientUrl)"
+            >
+              <svg v-bind="icon(14)">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              {{ copyLabel('url') }}
+            </button>
+          </div>
         </AccordionRow>
 
         <details class="sub">
           <summary class="sub-summary">
-            <span class="row-label">{{ t('settings.mcp.connectDesktop') }}</span>
+            <span class="sub-label">{{ t('settings.mcp.connectDesktop') }}</span>
             <svg class="sub-chevron" v-bind="icon(16)"><path d="m9 18 6-6-6-6" /></svg>
           </summary>
           <div class="sub-body">
-            <p class="step">
-              1. {{ t('settings.mcp.desktopStep') }} <code>claude_desktop_config.json</code>
-            </p>
-            <div class="code-wrap">
-              <button
-                type="button"
-                class="copy-btn"
-                data-e2e="mcp-config-copy-desktop"
-                @click="copy('desktop', desktopJson)"
-              >
-                {{ copyLabel('desktop') }}
-              </button>
+            <p class="step">1. {{ t('settings.mcp.desktopStep') }}</p>
+            <div class="code-box">
+              <div class="code-bar">
+                <span class="code-name">claude_desktop_config.json</span>
+                <button
+                  type="button"
+                  class="bar-btn"
+                  data-e2e="mcp-config-copy-desktop"
+                  @click="copy('desktop', desktopJson)"
+                >
+                  {{ copyLabel('desktop') }}
+                </button>
+              </div>
               <pre class="code-block" data-e2e="mcp-config-desktop-json">{{ desktopJson }}</pre>
             </div>
             <p class="step">2. {{ t('settings.mcp.desktopHint') }}</p>
@@ -105,20 +106,23 @@
 
         <details class="sub">
           <summary class="sub-summary">
-            <span class="row-label">{{ t('settings.mcp.connectCode') }}</span>
+            <span class="sub-label">{{ t('settings.mcp.connectCode') }}</span>
             <svg class="sub-chevron" v-bind="icon(16)"><path d="m9 18 6-6-6-6" /></svg>
           </summary>
           <div class="sub-body">
             <p class="step">{{ t('settings.mcp.codeStep') }}</p>
-            <div class="code-wrap">
-              <button
-                type="button"
-                class="copy-btn"
-                data-e2e="mcp-config-copy-code"
-                @click="copy('code', codeCmd)"
-              >
-                {{ copyLabel('code') }}
-              </button>
+            <div class="code-box">
+              <div class="code-bar">
+                <span class="code-name">{{ t('settings.mcp.terminal') }}</span>
+                <button
+                  type="button"
+                  class="bar-btn"
+                  data-e2e="mcp-config-copy-code"
+                  @click="copy('code', codeCmd)"
+                >
+                  {{ copyLabel('code') }}
+                </button>
+              </div>
               <pre class="code-block" data-e2e="mcp-config-code-cmd">{{ codeCmd }}</pre>
             </div>
           </div>
@@ -126,17 +130,17 @@
 
         <details class="sub">
           <summary class="sub-summary">
-            <span class="row-label">{{ t('settings.mcp.published') }}</span>
-            <span class="sub-meta">
-              {{ publishedSummary }}
-              <svg class="sub-chevron" v-bind="icon(16)"><path d="m9 18 6-6-6-6" /></svg>
-            </span>
+            <span class="sub-label">{{ t('settings.mcp.published') }}</span>
+            <span class="sub-meta">{{ publishedSummary }}</span>
+            <svg class="sub-chevron" v-bind="icon(16)"><path d="m9 18 6-6-6-6" /></svg>
           </summary>
-          <div class="sub-body" data-e2e="mcp-config-tools">
-            <div v-for="group in toolGroups" :key="group.key" class="tool-row">
+          <div class="sub-body tool-grid" data-e2e="mcp-config-tools">
+            <template v-for="group in toolGroups" :key="group.key">
               <span class="tool-kind">{{ t(group.label) }}</span>
-              <span v-for="name in group.names" :key="name" class="tool-chip">{{ name }}</span>
-            </div>
+              <span class="tool-chips">
+                <span v-for="name in group.names" :key="name" class="tool-chip">{{ name }}</span>
+              </span>
+            </template>
           </div>
         </details>
       </template>
@@ -161,12 +165,29 @@
           >
         </span>
       </template>
-      <template #hint>{{ budgetHint('maxRounds', t('settings.mcp.maxRoundsShort')) }}</template>
+      <template #hint>
+        {{ t('settings.mcp.maxRoundsShort') }}
+        <template v-if="store.view.sources.maxRounds === 'db'">
+          {{ t('settings.mcp.maxRoundsHint') }}
+        </template>
+        <template v-if="differs('maxRounds')">
+          {{ envNote('maxRounds') }} ·
+          <button
+            type="button"
+            class="link-btn"
+            :disabled="store.view.readOnly"
+            data-e2e="mcp-config-revert-max-rounds"
+            @click="store.revert('maxRounds')"
+          >
+            {{ t('settings.mcp.revertLink') }}
+          </button>
+        </template>
+      </template>
       <div class="stepper">
         <button
           type="button"
           :aria-label="t('settings.mcp.fewerRounds')"
-          :disabled="store.view.readOnly"
+          :disabled="store.view.readOnly || store.form.maxRounds <= MAX_ROUNDS_MIN"
           @click="store.stepRounds(-1)"
         >
           −
@@ -183,27 +204,12 @@
         <button
           type="button"
           :aria-label="t('settings.mcp.moreRounds')"
-          :disabled="store.view.readOnly"
+          :disabled="store.view.readOnly || store.form.maxRounds >= MAX_ROUNDS_MAX"
           @click="store.stepRounds(1)"
         >
           +
         </button>
       </div>
-      <button
-        v-if="differs('maxRounds')"
-        type="button"
-        class="icon-btn revert"
-        :aria-label="t('settings.mcp.revert')"
-        :title="t('settings.mcp.revert')"
-        :disabled="store.view.readOnly"
-        data-e2e="mcp-config-revert-max-rounds"
-        @click="store.revert('maxRounds')"
-      >
-        <svg v-bind="icon(15)">
-          <path d="M3 12a9 9 0 1 0 3-6.7" />
-          <path d="M3 4v5h5" />
-        </svg>
-      </button>
     </AccordionRow>
 
     <AccordionRow>
@@ -221,7 +227,19 @@
         </span>
       </template>
       <template #hint>
-        {{ budgetHint('maxReadTokens', t('settings.mcp.maxReadTokensHint')) }}
+        {{ t('settings.mcp.maxReadTokensHint') }}
+        <template v-if="differs('maxReadTokens')">
+          {{ envNote('maxReadTokens') }} ·
+          <button
+            type="button"
+            class="link-btn"
+            :disabled="store.view.readOnly"
+            data-e2e="mcp-config-revert-max-read-tokens"
+            @click="store.revert('maxReadTokens')"
+          >
+            {{ t('settings.mcp.revertLink') }}
+          </button>
+        </template>
       </template>
       <span class="unit-input">
         <input
@@ -230,26 +248,12 @@
           type="number"
           :min="READ_TOKENS_MIN"
           :max="READ_TOKENS_MAX"
+          step="100"
           :disabled="store.view.readOnly"
           data-e2e="mcp-config-max-read-tokens"
         />
         <span class="unit">{{ t('settings.mcp.tokensUnit') }}</span>
       </span>
-      <button
-        v-if="differs('maxReadTokens')"
-        type="button"
-        class="icon-btn revert"
-        :aria-label="t('settings.mcp.revert')"
-        :title="t('settings.mcp.revert')"
-        :disabled="store.view.readOnly"
-        data-e2e="mcp-config-revert-max-read-tokens"
-        @click="store.revert('maxReadTokens')"
-      >
-        <svg v-bind="icon(15)">
-          <path d="M3 12a9 9 0 1 0 3-6.7" />
-          <path d="M3 4v5h5" />
-        </svg>
-      </button>
     </AccordionRow>
 
     <AccordionRow>
@@ -264,7 +268,21 @@
           >
         </span>
       </template>
-      <template #hint>{{ budgetHint('studioBaseUrl', t('settings.mcp.baseUrlHint')) }}</template>
+      <template #hint>
+        {{ t('settings.mcp.baseUrlHint') }}
+        <template v-if="differs('studioBaseUrl')">
+          {{ envNote('studioBaseUrl') }} ·
+          <button
+            type="button"
+            class="link-btn"
+            :disabled="store.view.readOnly"
+            data-e2e="mcp-config-revert-base-url"
+            @click="store.revert('studioBaseUrl')"
+          >
+            {{ t('settings.mcp.revertLink') }}
+          </button>
+        </template>
+      </template>
       <input
         id="mcp-base-url"
         v-model="store.form.studioBaseUrl"
@@ -274,21 +292,6 @@
         data-e2e="mcp-config-base-url"
         spellcheck="false"
       />
-      <button
-        v-if="differs('studioBaseUrl')"
-        type="button"
-        class="icon-btn revert"
-        :aria-label="t('settings.mcp.revert')"
-        :title="t('settings.mcp.revert')"
-        :disabled="store.view.readOnly"
-        data-e2e="mcp-config-revert-base-url"
-        @click="store.revert('studioBaseUrl')"
-      >
-        <svg v-bind="icon(15)">
-          <path d="M3 12a9 9 0 1 0 3-6.7" />
-          <path d="M3 4v5h5" />
-        </svg>
-      </button>
     </AccordionRow>
 
     <div v-if="store.saveError" class="notice error" data-e2e="mcp-config-save-error">
@@ -296,8 +299,8 @@
     </div>
 
     <div class="budget-footer">
-      <span class="footer-note">
-        {{ t('settings.mcp.liveHint') }} {{ t('settings.mcp.maxRoundsHint') }}
+      <span class="footer-note" :class="{ dirty: store.dirty }">
+        {{ store.dirty ? t('settings.mcp.unsaved') : t('settings.mcp.liveHint') }}
       </span>
       <div class="footer-actions">
         <button
@@ -323,15 +326,22 @@
     </div>
   </AccordionSection>
 
-  <AccordionSection v-if="store.server" id="mcp-advanced" :title="t('settings.mcp.advanced')">
-    <template #status>
-      <span class="header-note">
-        {{ t('settings.mcp.advancedSummary', { n: restartOnly.length }) }}
-      </span>
-    </template>
+  <AccordionSection
+    v-if="store.server"
+    id="mcp-advanced"
+    :title="t('settings.mcp.advanced')"
+    :summary="t('settings.mcp.advancedSummary', { n: restartOnly.length })"
+  >
     <div class="advanced-body">
       <div class="env-wrap">
         <table class="env-table" data-e2e="mcp-config-restart-only">
+          <thead>
+            <tr>
+              <th scope="col">{{ t('settings.mcp.envVariable') }}</th>
+              <th scope="col">{{ t('settings.mcp.envValueColumn') }}</th>
+              <th scope="col">{{ t('settings.mcp.envRole') }}</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="row in restartOnly" :key="row.name">
               <td class="mono">{{ row.name }}</td>
@@ -341,11 +351,7 @@
           </tbody>
         </table>
       </div>
-      <ol class="procedure">
-        <li>{{ t('settings.mcp.restartStep1') }}</li>
-        <li>{{ t('settings.mcp.restartStep2') }}</li>
-        <li>{{ t('settings.mcp.restartStep3') }}</li>
-      </ol>
+      <p class="procedure">{{ t('settings.mcp.restartHow') }}</p>
     </div>
   </AccordionSection>
 </template>
@@ -467,12 +473,11 @@ function differs(field: McpBudgetField): boolean {
   return defaults !== undefined && formValue(field) !== defaults[field]
 }
 
-/** The row's hint, plus the environment's value while the field departs from it. */
-function budgetHint(field: McpBudgetField, hint: string): string {
-  const defaults = store.view?.defaults
-  if (!defaults || !differs(field)) return hint
-  const value = defaults[field] === '' ? t('settings.mcp.envNone') : String(defaults[field])
-  return `${hint} · ${t('settings.mcp.envValue', { value })}`
+/** "Environment: 4000", the value a field returns to. */
+function envNote(field: McpBudgetField): string {
+  const value = store.view?.defaults[field]
+  const shown = value === '' || value === undefined ? t('settings.mcp.envNone') : String(value)
+  return t('settings.mcp.envValue', { value: shown })
 }
 
 const restartOnly = computed(() => {
@@ -524,11 +529,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* One grid for every row: controls 36 px high, 8 px corners, right-aligned. */
+
 .notice {
-  margin: 12px 16px 0;
+  margin: 12px 20px 0;
   font-size: 13px;
   padding: 8px 12px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text-secondary);
@@ -539,42 +546,42 @@ onMounted(() => {
   color: var(--error);
 }
 
-.error-text {
-  font-size: 13px;
+.notice.error {
+  margin-bottom: 12px;
 }
 
-.state-badge {
+.pill {
+  height: 22px;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  padding: 0 10px;
+  font-size: 12px;
   font-weight: 500;
+  border-radius: 999px;
   color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
 }
 
-.state-badge .dot {
-  width: 7px;
-  height: 7px;
+.pill .dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--text-secondary);
+  background: currentColor;
 }
 
-.state-badge.on {
+.pill.on {
   color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  border-color: transparent;
 }
 
-.state-badge.on .dot {
-  background: var(--success);
-}
-
-.state-badge.off .dot {
-  background: var(--error);
-}
-
-.header-note {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--text-secondary);
+.pill.off {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+  border-color: transparent;
 }
 
 .label-line {
@@ -587,23 +594,49 @@ onMounted(() => {
 .row-label {
   font-size: 14px;
   font-weight: 500;
+  line-height: 20px;
   color: var(--text);
 }
 
 .changed-badge {
+  height: 18px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
   font-size: 11px;
   font-weight: 600;
   color: var(--accent);
   background: var(--accent-muted);
   border-radius: 999px;
-  padding: 1px 8px;
+}
+
+.link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .switch {
-  width: 48px;
-  height: 28px;
+  width: 44px;
+  height: 24px;
+  box-sizing: border-box;
   padding: 3px;
   display: flex;
+  align-items: center;
   justify-content: flex-start;
   border: none;
   border-radius: 999px;
@@ -622,19 +655,22 @@ onMounted(() => {
   opacity: 0.5;
 }
 
-.switch:focus-visible,
-.icon-btn:focus-visible,
-.btn:focus-visible,
-.copy-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .knob {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #ffffff;
+}
+
+.switch:focus-visible,
+.group-btn:focus-visible,
+.bar-btn:focus-visible,
+.btn:focus-visible,
+.link-btn:focus-visible,
+.stepper button:focus-visible,
+.sub-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .with-icon {
@@ -647,40 +683,49 @@ onMounted(() => {
   color: var(--warning);
 }
 
+.input-group {
+  height: 36px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
 .url {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 13px;
   color: var(--text);
-  word-break: break-all;
+  background: var(--bg);
 }
 
-.icon-btn {
-  width: 36px;
-  height: 36px;
+.group-btn {
+  flex: none;
+  width: 96px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  color: var(--text);
+  gap: 6px;
+  border: none;
+  border-left: 1px solid var(--border-light);
   background: var(--bg-elevated);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
 
-.icon-btn:hover:not(:disabled) {
+.group-btn:hover {
   color: var(--accent);
-  border-color: var(--accent);
-}
-
-.icon-btn.revert {
-  color: var(--accent);
-  background: transparent;
-}
-
-.icon-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 
 .sub {
@@ -688,11 +733,12 @@ onMounted(() => {
 }
 
 .sub-summary {
+  min-height: 60px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 0 20px;
   cursor: pointer;
   list-style: none;
 }
@@ -705,10 +751,15 @@ onMounted(() => {
   background: var(--bg-hover);
 }
 
+.sub-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
 .sub-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
   font-size: 13px;
   color: var(--text-secondary);
 }
@@ -724,7 +775,7 @@ onMounted(() => {
 }
 
 .sub-body {
-  padding: 0 16px 16px;
+  padding: 0 20px 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -736,97 +787,124 @@ onMounted(() => {
   color: var(--text-secondary);
 }
 
-.step code {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
-  color: var(--text);
-}
-
-.code-wrap {
-  position: relative;
-}
-
-.code-block {
-  margin: 0;
-  padding: 14px 96px 14px 14px;
-  overflow-x: auto;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--text);
-  background: var(--bg);
+.code-box {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  user-select: all;
+  overflow: hidden;
 }
 
-.copy-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  min-height: 32px;
-  padding: 0 12px;
+.code-bar {
+  height: 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 0 14px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.code-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.bar-btn {
+  width: 84px;
+  height: 28px;
   font-size: 12px;
   font-weight: 500;
   color: var(--text);
-  background: var(--bg-elevated);
+  background: var(--bg);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
-.copy-btn:hover {
+.bar-btn:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
 
-.tool-row {
-  display: flex;
-  flex-wrap: wrap;
+.code-block {
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  user-select: all;
+}
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px 16px;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
 }
 
 .tool-kind {
+  font-size: 13px;
   color: var(--text-secondary);
-  min-width: 140px;
+}
+
+.tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .tool-chip {
+  height: 26px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
   font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
   color: var(--text);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 2px 8px;
 }
 
 .stepper {
-  display: inline-flex;
-  align-items: stretch;
+  width: 140px;
+  height: 36px;
+  box-sizing: border-box;
+  display: flex;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
 .stepper button {
-  width: 40px;
-  height: 38px;
+  width: 36px;
+  flex: none;
   border: none;
   background: var(--bg-elevated);
   color: var(--text);
   font-size: 16px;
+  font-weight: 500;
   cursor: pointer;
+}
+
+.stepper button:hover:not(:disabled) {
+  color: var(--accent);
 }
 
 .stepper button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.35;
 }
 
 .stepper input {
-  width: 56px;
+  flex: 1;
+  min-width: 0;
   border: none;
   border-left: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light);
@@ -839,19 +917,21 @@ onMounted(() => {
 }
 
 .unit-input {
-  display: inline-flex;
-  align-items: center;
-  height: 38px;
+  width: 140px;
+  height: 36px;
   box-sizing: border-box;
+  display: flex;
+  align-items: center;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--bg);
-  padding-right: 12px;
+  overflow: hidden;
 }
 
 .unit-input input {
-  width: 80px;
-  height: 36px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   border: none;
   background: transparent;
   color: var(--text);
@@ -863,23 +943,43 @@ onMounted(() => {
 }
 
 .unit {
+  padding-right: 12px;
   font-size: 13px;
   color: var(--text-secondary);
 }
 
 .text-input {
-  width: 240px;
+  width: 260px;
   max-width: 100%;
-  height: 38px;
+  height: 36px;
   box-sizing: border-box;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--bg);
   color: var(--text);
   font:
     13px 'IBM Plex Mono',
     monospace;
   padding: 0 12px;
+}
+
+/* No spinner arrows: the stepper and the unit say what the number is. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.stepper input:focus-visible,
+.unit-input:focus-within,
+.text-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .stepper input:disabled,
@@ -890,21 +990,26 @@ onMounted(() => {
 }
 
 .budget-footer {
+  min-height: 60px;
+  box-sizing: border-box;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 8px 24px;
+  padding: 12px 20px;
   border-top: 1px solid var(--border);
   background: var(--bg-elevated);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 .footer-note {
-  flex: 1 1 280px;
-  font-size: 12.5px;
+  flex: 1 1 260px;
+  font-size: 13px;
   color: var(--text-secondary);
+}
+
+.footer-note.dirty {
+  color: var(--accent);
 }
 
 .footer-actions {
@@ -913,15 +1018,20 @@ onMounted(() => {
 }
 
 .btn {
-  min-height: 38px;
+  height: 36px;
   padding: 0 14px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text);
   background: transparent;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .btn.primary {
@@ -932,16 +1042,18 @@ onMounted(() => {
   border-color: var(--accent);
 }
 
+.btn.primary:hover:not(:disabled) {
+  color: #0a0a0b;
+  background: var(--accent-hover);
+}
+
 .btn:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .advanced-body {
-  padding: 4px 16px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  padding: 4px 20px 16px;
 }
 
 .env-wrap {
@@ -954,12 +1066,23 @@ onMounted(() => {
   font-size: 13px;
 }
 
-.env-table td {
-  padding: 10px 12px;
+.env-table th {
+  height: 40px;
+  padding: 0 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
-  vertical-align: top;
 }
 
+.env-table td {
+  height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.env-table th:first-child,
 .env-table td:first-child {
   padding-left: 0;
 }
@@ -972,7 +1095,6 @@ onMounted(() => {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 12.5px;
   color: var(--text);
-  word-break: break-all;
 }
 
 .effect {
@@ -980,12 +1102,8 @@ onMounted(() => {
 }
 
 .procedure {
-  margin: 0;
-  padding-left: 18px;
+  margin: 12px 0 0;
   font-size: 13px;
   color: var(--text-secondary);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 </style>

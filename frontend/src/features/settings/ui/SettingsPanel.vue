@@ -92,7 +92,12 @@
       <!-- #317 — server-backed runtime config; the section loads itself.
            Hidden with Ask (ASK_MODE), so it is not where Ask gets turned on. -->
       <ReasoningConfigSection v-if="askShown" />
-      <AccordionRow v-else :hint="t('settings.ask.hiddenHint')" data-e2e="settings-ask-hidden" />
+      <AccordionRow
+        v-else
+        :label="t('settings.ask.rowLabel')"
+        :hint="t('settings.ask.hiddenHint')"
+        data-e2e="settings-ask-hidden"
+      />
     </AccordionSection>
 
     <!-- #364 — MCP server: its switch, connecting a client, live budgets,
@@ -139,7 +144,7 @@ const generalSummary = computed(() =>
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 720px;
+  max-width: 760px;
   margin: 0 auto;
 }
 
@@ -152,14 +157,14 @@ const generalSummary = computed(() =>
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
   background: var(--bg-elevated);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -169,23 +174,26 @@ const generalSummary = computed(() =>
 }
 
 .segmented {
+  height: 36px;
+  box-sizing: border-box;
   display: inline-flex;
   gap: 2px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   padding: 3px;
 }
 
 .segmented button {
-  min-height: 30px;
-  padding: 0 14px;
+  min-width: 88px;
+  height: 28px;
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
   background: transparent;
   border: none;
-  border-radius: calc(var(--radius-sm) - 2px);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 200ms ease;
 }
@@ -217,11 +225,16 @@ const generalSummary = computed(() =>
 }
 
 .pill {
+  height: 22px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-light);
   border-radius: 999px;
-  padding: 2px 10px;
 }
 </style>

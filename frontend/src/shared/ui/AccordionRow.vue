@@ -18,7 +18,8 @@
 <script setup lang="ts">
 /**
  * One line of a settings section: what it is on the left (a label and a
- * short hint), the control on the right. Wraps under the label when narrow.
+ * short hint), the control on the right, every row the same height so the
+ * controls line up. Wraps under the label when narrow.
  */
 defineProps<{
   label?: string
@@ -30,13 +31,14 @@ defineProps<{
 
 <style scoped>
 .acc-row {
+  min-height: 60px;
+  box-sizing: border-box;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  min-height: 32px;
+  gap: 8px 24px;
+  padding: 12px 20px;
 }
 
 .acc-row:not(:first-child) {
@@ -48,23 +50,25 @@ defineProps<{
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .acc-row-label {
   font-size: 14px;
   font-weight: 500;
+  line-height: 20px;
   color: var(--text);
 }
 
 .acc-row-hint {
   font-size: 13px;
+  line-height: 18px;
   color: var(--text-secondary);
 }
 
 .acc-row-control {
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
