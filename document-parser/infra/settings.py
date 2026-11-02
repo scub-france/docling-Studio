@@ -87,13 +87,13 @@ class Settings:
     # Sub-flags effective only when rag_pipeline_enabled is true.
     inspect_mode_enabled: bool = True
     linked_mode_enabled: bool = True
-    # MCP document server — off by default. It publishes a read-only tool
-    # surface over the parsed documents and carries NO authentication of its
-    # own, so enabling it on a backend reachable from anywhere hands that
-    # surface to anyone who can reach the port. Enable it for local agent
-    # work (`MCP_ENABLED=true`), and keep it behind an authenticating proxy
-    # anywhere else.
-    mcp_enabled: bool = False
+    # MCP document server — on by default, except on the Hugging Face Space.
+    # It publishes a read-only tool surface over the parsed documents and
+    # carries NO authentication of its own: `mcp_allowed_hosts` below, which
+    # only trusts localhost by default, is what keeps it off a backend
+    # reachable from elsewhere. `MCP_ENABLED=false` mounts nothing at all;
+    # with it on, Settings can still turn the server off and on at runtime.
+    mcp_enabled: bool = True
     # Host/Origin allow-list for the streamable-HTTP transport (DNS-rebinding
     # protection). "*" disables the check — only correct behind a proxy that
     # already validates the Host header.
@@ -251,7 +251,11 @@ class Settings:
             linked_mode_enabled=os.environ.get("LINKED_MODE_ENABLED", "true").lower()
             in ("1", "true", "yes", "on"),
             # MCP document server (read-only agent surface).
-            mcp_enabled=os.environ.get("MCP_ENABLED", "false").lower()
+            # On unless set off; the Hugging Face Space keeps it off by default.
+            mcp_enabled=os.environ.get(
+                "MCP_ENABLED",
+                "false" if os.environ.get("DEPLOYMENT_MODE") == "huggingface" else "true",
+            ).lower()
             in ("1", "true", "yes", "on"),
             # Empty counts as unset: compose passes `${MCP_ALLOWED_HOSTS:-}` through.
             mcp_allowed_hosts=[

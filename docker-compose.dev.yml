@@ -154,8 +154,9 @@ services:
       STORE_SECRET_KEY: ${STORE_SECRET_KEY:-}
       # Ask in the UI: hidden unless ASK_MODE=visible (docs/configuration.md).
       ASK_MODE: ${ASK_MODE:-hidden}
-      # MCP document server at /mcp (docs/mcp-server.md): off unless MCP_ENABLED.
-      MCP_ENABLED: ${MCP_ENABLED:-false}
+      # MCP document server at /mcp (docs/mcp-server.md): on unless
+      # MCP_ENABLED=false; Settings can turn it off and on at runtime.
+      MCP_ENABLED: ${MCP_ENABLED:-true}
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
       MCP_STUDIO_BASE_URL: ${MCP_STUDIO_BASE_URL:-http://localhost:3000}
     profiles: ["default", "graph", "ingestion", "remote"]

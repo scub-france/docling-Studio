@@ -9,6 +9,10 @@ It also reports what the running server publishes. That part is read-only:
 the server is built at import, and the stateless transport cannot tell a
 client its tool list changed, so the switches behind it stay in the env.
 
+The one switch that is live is whether the mounted server answers: turned off
+here, `/mcp` answers 503 until it is turned back on. It cannot mount a server
+MCP_ENABLED=false left out; that stays an environment decision.
+
 The service imports neither infra nor the MCP SDK. The env defaults come in as
 a domain value object, the rebuild as `apply_config`, the server's description
 as `status_provider` — all bound in `bootstrap/`.
@@ -31,6 +35,7 @@ from domain.mcp_config import (
 )
 from services.config_overrides import (
     AppConfigValidationError,
+    parse_bool,
     parse_int_between,
     pick,
     require_writable,
@@ -49,6 +54,7 @@ _NAMESPACE = "mcp"
 _KEY_MAX_ROUNDS = "max_rounds"
 _KEY_MAX_READ_TOKENS = "max_read_tokens"
 _KEY_BASE_URL = "studio_base_url"
+_KEY_ENABLED = "enabled"
 
 _parse_rounds = parse_int_between(MAX_ROUNDS_MIN, MAX_ROUNDS_MAX)
 _parse_read_tokens = parse_int_between(READ_TOKENS_MIN, READ_TOKENS_MAX)
@@ -58,6 +64,13 @@ def _parse_base_url(raw: str) -> str | None:
     """Empty is a value here — no deep links — not a missing one."""
     stripped = raw.strip()
     return None if validate_base_url(stripped) else stripped
+
+
+def _stored(value: object) -> str:
+    """A value as its `app_settings` row: booleans as `true`/`false`."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 async def resolve_mcp_config(
@@ -71,11 +84,15 @@ async def resolve_mcp_config(
         rows, _KEY_MAX_READ_TOKENS, env.max_read_tokens, _parse_read_tokens, namespace=ns
     )
     base, base_src = pick(rows, _KEY_BASE_URL, env.studio_base_url, _parse_base_url, namespace=ns)
-    config = McpRuntimeConfig(max_rounds=rounds, max_read_tokens=tokens, studio_base_url=base)
+    enabled, enabled_src = pick(rows, _KEY_ENABLED, env.enabled, parse_bool, namespace=ns)
+    config = McpRuntimeConfig(
+        max_rounds=rounds, max_read_tokens=tokens, studio_base_url=base, enabled=enabled
+    )
     sources: dict[str, ConfigSource] = {
         "max_rounds": rounds_src,
         "max_read_tokens": tokens_src,
         "studio_base_url": base_src,
+        "enabled": enabled_src,
     }
     return config, sources
 
@@ -100,10 +117,13 @@ class McpConfigService:
         read_only: bool,
         apply_config: Callable[[McpRuntimeConfig], None],
         status_provider: Callable[[], Awaitable[McpServerStatus]],
+        mounted: bool = True,
     ) -> None:
         self._repo = repo
         self._env_defaults = env_defaults
         self._read_only = read_only
+        # False when MCP_ENABLED left `/mcp` out: nothing here can turn it on.
+        self._mounted = mounted
         self._apply_config = apply_config
         self._status_provider = status_provider
 
@@ -126,6 +146,11 @@ class McpConfigService:
         """
         require_writable(self._read_only)
         errors = validate_mcp_config(config)
+        if config.enabled and not self._mounted:
+            errors.append(
+                "the MCP server is not mounted (MCP_ENABLED=false): "
+                "set MCP_ENABLED=true and restart the backend to turn it on"
+            )
         if errors:
             raise AppConfigValidationError("; ".join(errors))
         await self._repo.replace_namespace(_NAMESPACE, self._overrides(config))
@@ -135,12 +160,15 @@ class McpConfigService:
         """The rows `config` needs: one per value that differs from env."""
         env = self._env_defaults
         base_url = config.studio_base_url.strip()
-        candidates = {
+        candidates: dict[str, tuple[object, object]] = {
             _KEY_MAX_ROUNDS: (config.max_rounds, env.max_rounds),
             _KEY_MAX_READ_TOKENS: (config.max_read_tokens, env.max_read_tokens),
             _KEY_BASE_URL: (base_url, env.studio_base_url),
+            _KEY_ENABLED: (config.enabled, env.enabled),
         }
-        return {key: str(value) for key, (value, default) in candidates.items() if value != default}
+        return {
+            key: _stored(value) for key, (value, default) in candidates.items() if value != default
+        }
 
     async def reset_config(self) -> McpRuntimeConfigView:
         """Drop every override — env defaults become effective again."""
@@ -163,7 +191,8 @@ class McpConfigService:
         config, sources = await resolve_mcp_config(self._repo, self._env_defaults)
         self._apply_config(config)
         logger.info(
-            "MCP config applied: max_rounds=%d max_read_tokens=%d studio_base_url=%r",
+            "MCP config applied: enabled=%s max_rounds=%d max_read_tokens=%d studio_base_url=%r",
+            config.enabled,
             config.max_rounds,
             config.max_read_tokens,
             config.studio_base_url,

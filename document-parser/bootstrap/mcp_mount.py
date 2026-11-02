@@ -25,6 +25,11 @@ out of the service that reports it.
 The route is appended to the app's own router rather than `app.mount()`ed:
 mounting a sub-app at `/mcp` makes Starlette redirect `POST /mcp` to
 `/mcp/` (307), and not every MCP client follows a redirect on a POST.
+
+Each route answers through `_ServingGate`: when Settings has turned the
+server off, `/mcp` answers 503 with a JSON-RPC error saying so, and the
+server underneath is never reached. Turning it back on needs no restart,
+because the route stays mounted.
 """
 
 from __future__ import annotations
@@ -33,17 +38,22 @@ import logging
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
 from domain.mcp_config import McpServerStatus, McpToolInfo
 from infra.settings import settings
 from mcp_adapter import build_mcp_server
 from services.navigation_errors import NavigationUnavailableError
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from contextlib import AbstractAsyncContextManager
 
     from fastapi import FastAPI
     from mcp.server.mcpserver import MCPServer
     from mcp.types import Tool
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
     from api.state import AppState
     from services.document_tools import DocumentTools
@@ -55,6 +65,12 @@ MCP_PATH = "/mcp"
 # MCP Apps: a tool with no `visibility` is offered to both the model and the
 # card it belongs to.
 _DEFAULT_VISIBILITY = ("model", "app")
+
+# What a client reads while Settings has the server turned off.
+SERVER_OFF_MESSAGE = (
+    "The Docling Studio MCP server is turned off in Studio's settings. "
+    "Turn it back on there: no restart is needed."
+)
 
 
 @dataclass(frozen=True)
@@ -71,7 +87,7 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
     Returns `None` — and mounts nothing — when the surface is disabled.
     """
     if not settings.mcp_enabled:
-        logger.info("MCP document server disabled (MCP_ENABLED not set)")
+        logger.info("MCP document server not mounted (MCP_ENABLED=false)")
         return None
 
     server = build_mcp_server(
@@ -99,7 +115,7 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
         stateless_http=True,
         transport_security=_transport_security(),
     )
-    app.router.routes.extend(mcp_app.routes)
+    app.router.routes.extend(_gated(route, lambda: _serving(app)) for route in mcp_app.routes)
 
     logger.warning(
         "MCP document server mounted at %s — UNAUTHENTICATED: it reads every document. "
@@ -130,6 +146,47 @@ def _tool_info(tool: Tool) -> McpToolInfo:
     ui = (tool.meta or {}).get("ui") or {}
     visibility = tuple(ui.get("visibility") or _DEFAULT_VISIBILITY)
     return McpToolInfo(name=tool.name, visibility=visibility, card="resourceUri" in ui)
+
+
+class _ServingGate:
+    """An ASGI app that answers 503 while the server is turned off.
+
+    Off, nothing reaches the MCP server underneath: no session, no tool call.
+    The body is a JSON-RPC error, so a client shows the message instead of a
+    bare transport failure.
+    """
+
+    def __init__(self, app: ASGIApp, serving: Callable[[], bool]) -> None:
+        self._app = app
+        self._serving = serving
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and not self._serving():
+            error = {"code": -32000, "message": SERVER_OFF_MESSAGE}
+            response = JSONResponse({"jsonrpc": "2.0", "id": None, "error": error}, 503)
+            await response(scope, receive, send)
+            return
+        await self._app(scope, receive, send)
+
+
+def _gated(route, serving: Callable[[], bool]):
+    """`route` behind the serving gate. The SDK mounts one `Route` around an
+    ASGI app; anything else passes through untouched."""
+    if not isinstance(route, Route):
+        return route
+    return Route(
+        route.path,
+        endpoint=_ServingGate(route.app, serving),
+        methods=list(route.methods) if route.methods else None,
+        name=route.name,
+    )
+
+
+def _serving(app: FastAPI) -> bool:
+    """Whether `/mcp` answers now. Before the container is published the
+    gate lets requests through, and the tools say the backend is starting."""
+    container: AppState | None = getattr(app.state, "container", None)
+    return container is None or container.mcp_serving
 
 
 def _tools_from(app: FastAPI) -> DocumentTools:

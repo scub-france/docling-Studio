@@ -1,12 +1,14 @@
 import type { ConfigSource } from '@/features/admin-config'
 
-export type McpConfigField = 'maxRounds' | 'maxReadTokens' | 'studioBaseUrl'
+export type McpConfigField = 'maxRounds' | 'maxReadTokens' | 'studioBaseUrl' | 'enabled'
 
 /** Wire shape of GET/PUT/DELETE `/api/config/mcp` (#364). */
 export interface McpConfigView {
   maxRounds: number
   maxReadTokens: number
   studioBaseUrl: string
+  /** Whether the mounted server answers. Off, `/mcp` answers 503. */
+  enabled: boolean
   sources: Record<McpConfigField, ConfigSource>
   readOnly: boolean
 }
@@ -16,6 +18,7 @@ export interface McpConfigUpdate {
   maxRounds: number
   maxReadTokens: number
   studioBaseUrl: string
+  enabled: boolean
 }
 
 /** Who may call a tool: the model, a card's own fetch (`app`), or both. */
@@ -30,6 +33,7 @@ export interface McpTool {
 
 /** Wire shape of GET `/api/mcp/server` — the transport as mounted at boot. */
 export interface McpServerView {
+  /** MCP_ENABLED at boot: whether `/mcp` exists at all. */
   enabled: boolean
   path: string
   allowedHosts: string[]

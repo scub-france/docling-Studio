@@ -757,6 +757,7 @@ class McpConfigSourcesResponse(_CamelModel):
     max_rounds: ConfigSource
     max_read_tokens: ConfigSource
     studio_base_url: ConfigSource
+    enabled: ConfigSource
 
 
 class McpConfigResponse(_CamelModel):
@@ -766,6 +767,8 @@ class McpConfigResponse(_CamelModel):
     max_rounds: int = Field(description="Round cap (count, not a duration)")
     max_read_tokens: int = Field(description="Ceiling on one read, in tokens")
     studio_base_url: str
+    # Whether the mounted server answers; off, `/mcp` answers 503.
+    enabled: bool
     sources: McpConfigSourcesResponse
     read_only: bool
 
@@ -775,6 +778,7 @@ class McpConfigResponse(_CamelModel):
             max_rounds=view.config.max_rounds,
             max_read_tokens=view.config.max_read_tokens,
             studio_base_url=view.config.studio_base_url,
+            enabled=view.config.enabled,
             sources=McpConfigSourcesResponse(**view.sources),
             read_only=view.read_only,
         )
@@ -784,12 +788,14 @@ class McpConfigUpdateRequest(_CamelModel):
     """Body for `PUT /api/config/mcp` — full-state replace, like reasoning.
 
     Every field is required: an omitted base URL must not silently clear the
-    deep links. Send `""` to clear them.
+    deep links, an omitted switch must not turn the server back on. Send `""`
+    to clear the links.
     """
 
     max_rounds: int
     max_read_tokens: int
     studio_base_url: str
+    enabled: bool
 
 
 class McpToolResponse(_CamelModel):
@@ -801,6 +807,8 @@ class McpToolResponse(_CamelModel):
 class McpServerResponse(_CamelModel):
     """The MCP HTTP transport as mounted at boot (#364) — restart-only facts."""
 
+    # MCP_ENABLED at boot: whether `/mcp` exists. Whether it answers is the
+    # runtime config's `enabled`.
     enabled: bool
     path: str
     allowed_hosts: list[str]

@@ -77,6 +77,9 @@ class AppState:
     app_config_service: AppConfigService | None = None
     # MCP runtime config (#364) — owns the `document_tools` rebuild.
     mcp_config_service: McpConfigService | None = None
+    # Whether the mounted `/mcp` answers. Turned off in Settings, it answers
+    # 503; True until the MCP config is wired, so boot order changes nothing.
+    mcp_serving: bool = True
 
     # Reasoning runner — read by `/api/health` and swapped by the runtime
     # config service (#317); kept beside the service it backs.

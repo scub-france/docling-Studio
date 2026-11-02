@@ -32,7 +32,7 @@ export default defineConfig({
         target: apiProxyTarget,
         changeOrigin: true,
       },
-      // MCP document server (MCP_ENABLED=true). The Host header is kept: the
+      // MCP document server (on unless MCP_ENABLED=false). The Host header is kept: the
       // backend's MCP_ALLOWED_HOSTS check matches it.
       '/mcp': {
         target: apiProxyTarget,

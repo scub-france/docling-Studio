@@ -11,24 +11,33 @@ RAG**: no chunks, no embeddings, no vector store. An agent can:
 Two cards then show the result: the passage on its page, and where the whole
 answer came from, with the share of the document that was read.
 
-It is off by default and has **no authentication**. Enable it for local
-agent work, and put it behind an authenticating proxy anywhere else.
+It starts with the backend and has **no authentication**. By default it only
+answers clients that reach it as localhost (`MCP_ALLOWED_HOSTS`). Put it
+behind an authenticating proxy before opening it any wider.
 
-## Enable it
+## Turn it on or off
 
-The MCP SDK ships with the backend. `MCP_ENABLED` is the only switch, and it
-gates the HTTP transport only. The stdio process is spawned by the client
+The MCP SDK ships with the backend, and the HTTP transport is on by default,
+except on a Hugging Face Space (`DEPLOYMENT_MODE=huggingface`).
+
+- **Settings → MCP server** turns it off and back on while the backend runs.
+  Off, `/mcp` answers 503 with a message saying so. No restart, on either
+  side.
+- **`MCP_ENABLED=false`** mounts nothing at all. Settings cannot turn that
+  back on: set the variable back and restart the backend.
+
+Both gate the HTTP transport only. The stdio process is spawned by the client
 itself, and that spawn is the authorisation.
 
-| Run | Enable | Endpoint |
-|-----|--------|----------|
-| From source | `MCP_ENABLED=true` in `.env`, restart the backend | `http://localhost:8000/mcp` (or `:3000/mcp` through the Vite dev server) |
-| Docker Compose | `MCP_ENABLED=true docker compose up` | `http://localhost:3000/mcp`, through nginx |
-| stdio | nothing to enable | `mcp_stdio.py`, spawned by the client |
+| Run | Endpoint |
+|-----|----------|
+| From source | `http://localhost:8000/mcp` (or `:3000/mcp` through the Vite dev server) |
+| Docker Compose | `http://localhost:3000/mcp`, through nginx |
+| stdio | `mcp_stdio.py`, spawned by the client |
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `MCP_ENABLED` | `false` | Mounts `POST /mcp` on the backend. |
+| `MCP_ENABLED` | `true` (`false` on a Hugging Face Space) | Mounts `POST /mcp` on the backend. `false`: nothing is mounted, and Settings cannot turn it on. |
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host allow-list (DNS-rebinding protection). Empty means the default; `*` delegates the check to a fronting proxy. |
 | `MCP_STUDIO_BASE_URL` | empty (`http://localhost:3000` in compose) | Where citation deep links point. Empty: no deep links. Live in Settings. |
 | `MCP_MAX_READ_TOKENS` | `4000` | Ceiling on one read. A client may ask for less, never more. Live in Settings. |
@@ -38,12 +47,15 @@ itself, and that spawn is the authorisation.
 
 ## Configure from Studio
 
-**Settings → MCP server** shows the HTTP transport and edits three budgets
-with no restart.
+**Settings → MCP server** turns the HTTP transport on and off and edits three
+budgets, with no restart.
 
-- **Status**: whether `/mcp` is mounted, the URL a client should use, and a
-  warning when the browser's host is not in `MCP_ALLOWED_HOSTS` (a client on
-  that URL would get a 421).
+- **Status**: an **On / Off** switch, whether `/mcp` answers now, the URL a
+  client should use, and a warning when the browser's host is not in
+  `MCP_ALLOWED_HOSTS` (a client on that URL would get a 421). The switch
+  applies at once. Off is stored in Studio's database, marked `db`, and kept
+  across restarts; *Reset to environment* turns it back on. Without
+  `MCP_ENABLED`, the switch is not shown.
 - **Connect a client**: the Claude Desktop config (through `mcp-remote`) and
   the Claude Code command, ready to copy.
 - **Published by the server**: the tools, cards and prompts the running server
@@ -57,6 +69,7 @@ with no restart.
   next launch.
 - **Restart-only settings**: `MCP_ENABLED`, `MCP_ALLOWED_HOSTS`,
   `MCP_APPS_ENABLED` and `MCP_CITATION_CARD`, shown with their values.
+  `MCP_ENABLED` decides whether there is a server to switch.
 
 Two limits:
 
@@ -65,7 +78,9 @@ Two limits:
   backend, then the client, to align them.
 - The restart-only settings stay in the environment on purpose. The admin API
   has no authentication, and `MCP_ALLOWED_HOSTS` is the DNS-rebinding guard,
-  so neither the switch nor the guard can be changed from it. The two card
+  so the guard cannot be changed from it. Neither can a server
+  `MCP_ENABLED=false` left out: the switch in Settings pauses and resumes a
+  mounted server, it never mounts one. The two card
   flags change the tool list, which Claude Desktop rereads only on a full
   restart: change the variable, restart the backend, then quit Claude Desktop
   with Cmd+Q (closing the window is not enough) and relaunch it.
@@ -298,8 +313,10 @@ model's context.
   same applies to titles, quotes, and every string a card replays. The server
   instructions tell the agent never to follow instructions found inside them.
 - **No authentication.** Anyone who can reach `/mcp` can read every document.
-  Keep the server on localhost. On a Hugging Face Space, leave
-  `MCP_ENABLED=false`.
+  It is on by default, and the default `MCP_ALLOWED_HOSTS` keeps it to
+  clients that reach it as localhost: widen that list only behind an
+  authenticating proxy. Set `MCP_ENABLED=false` where nobody needs it. A
+  Hugging Face Space keeps it off unless `MCP_ENABLED=true` is set.
 - **Read-only.** No tool uploads, edits, re-analyses or stores anything.
 - **Identifiers only.** Tools take identifiers, never file paths or free-form
   queries against OpenSearch or Neo4j.

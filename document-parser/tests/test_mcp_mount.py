@@ -14,8 +14,9 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from bootstrap.mcp_mount import mount_mcp_server
+from bootstrap.mcp_mount import SERVER_OFF_MESSAGE, mount_mcp_server
 from infra.settings import settings as real_settings
+from tests.app_state import wire_state
 
 INITIALIZE = {
     "jsonrpc": "2.0",
@@ -55,7 +56,7 @@ def _paths(app: FastAPI) -> set[str]:
 
 
 class TestMountFlag:
-    def test_disabled_by_default_mounts_nothing(self):
+    def test_mcp_enabled_false_mounts_nothing(self):
         app, session = _app(mcp_enabled=False)
         assert session is None
         assert "/mcp" not in _paths(app)
@@ -69,6 +70,36 @@ class TestMountFlag:
         app, _ = _app(mcp_enabled=True)
         with TestClient(app) as client:
             assert "/mcp" not in client.get("/openapi.json").json()["paths"]
+
+
+class TestServingGate:
+    """The switch in Settings: off, `/mcp` answers 503 and reaches nothing."""
+
+    def test_off_answers_503_with_a_json_rpc_error(self):
+        app, _ = _app(mcp_enabled=True, mcp_allowed_hosts=["testserver"])
+        wire_state(app, mcp_serving=False)
+        with TestClient(app) as client:
+            response = client.post("/mcp", json=INITIALIZE, headers=HEADERS)
+        assert response.status_code == 503
+        body = response.json()
+        assert body["jsonrpc"] == "2.0"
+        assert body["error"]["message"] == SERVER_OFF_MESSAGE
+
+    def test_back_on_serves_again_with_no_remount(self):
+        app, _ = _app(mcp_enabled=True, mcp_allowed_hosts=["testserver"])
+        wire_state(app, mcp_serving=False)
+        with TestClient(app) as client:
+            assert client.post("/mcp", json=INITIALIZE, headers=HEADERS).status_code == 503
+            wire_state(app, mcp_serving=True)
+            response = client.post("/mcp", json=INITIALIZE, headers=HEADERS)
+        assert response.status_code == 200
+        assert "docling-studio" in response.text
+
+    def test_before_boot_the_gate_lets_requests_through(self):
+        app, _ = _app(mcp_enabled=True, mcp_allowed_hosts=["testserver"])
+        with TestClient(app) as client:
+            response = client.post("/mcp", json=INITIALIZE, headers=HEADERS)
+        assert response.status_code == 200
 
 
 class TestTransport:

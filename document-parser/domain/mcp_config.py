@@ -2,8 +2,9 @@
 
 Two kinds of facts the admin panel shows about the MCP surface:
 
-- `McpRuntimeConfig`: the knobs that change on the next tool call — the round
-  cap, the read ceiling, the deep-link base. Env vars seed them, `app_settings`
+- `McpRuntimeConfig`: the knobs that change on the next tool call — whether
+  the server answers at all, the round cap, the read ceiling, the deep-link
+  base. Env vars seed them, `app_settings`
   rows (namespace `mcp`) override them; the precedence lives in
   `services/mcp_config_service.py`.
 - `McpServerStatus`: what the running server publishes. Fixed at boot — the
@@ -44,6 +45,9 @@ class McpRuntimeConfig:
     max_read_tokens: int
     # Empty: citations carry no deep link.
     studio_base_url: str
+    # Off: `/mcp` answers 503 until it is turned back on. Only meaningful when
+    # MCP_ENABLED mounted the server; it cannot mount one that is not there.
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -70,7 +74,11 @@ class McpToolInfo:
 
 @dataclass(frozen=True)
 class McpServerStatus:
-    """The HTTP transport as it was mounted at boot. Restart-only facts."""
+    """The HTTP transport as it was mounted at boot. Restart-only facts.
+
+    `enabled` is MCP_ENABLED at boot: whether `/mcp` exists at all. Whether
+    it answers right now is the runtime config's `enabled`.
+    """
 
     enabled: bool
     path: str

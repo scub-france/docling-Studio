@@ -85,6 +85,7 @@ async def put_mcp_config(
         max_rounds=body.max_rounds,
         max_read_tokens=body.max_read_tokens,
         studio_base_url=body.studio_base_url,
+        enabled=body.enabled,
     )
     try:
         view = await service.update_config(config)

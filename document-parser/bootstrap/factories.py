@@ -248,6 +248,7 @@ def env_mcp_config() -> McpRuntimeConfig:
         max_rounds=settings.mcp_max_rounds,
         max_read_tokens=settings.mcp_max_read_tokens,
         studio_base_url=settings.mcp_studio_base_url,
+        enabled=settings.mcp_enabled,
     )
 
 

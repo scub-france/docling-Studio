@@ -394,12 +394,17 @@ const messages: Messages = {
     'settings.mcp.readOnly':
       'Configuration en lecture seule sur ce d\u00e9ploiement \u2014 les valeurs sont fournies par l\u2019environnement.',
     'settings.mcp.status': 'Transport HTTP',
-    'settings.mcp.statusOn': 'Mont\u00e9 sur {path}',
-    'settings.mcp.statusOff': 'Non mont\u00e9',
+    'settings.mcp.statusOn': 'Actif sur {path}',
+    'settings.mcp.statusOffHere': 'Coup\u00e9 ici : {path} r\u00e9pond 503',
+    'settings.mcp.statusOff': 'Non mont\u00e9 (MCP_ENABLED=false)',
+    'settings.mcp.switchOn': 'Activ\u00e9',
+    'settings.mcp.switchOff': 'D\u00e9sactiv\u00e9',
     'settings.mcp.unauthenticated':
       'Sans authentification : toute personne qui atteint ce port lit tous les documents.',
+    'settings.mcp.offHint':
+      'Les clients re\u00e7oivent une erreur jusqu\u2019\u00e0 ce que vous le r\u00e9activiez. Aucun red\u00e9marrage n\u2019est n\u00e9cessaire.',
     'settings.mcp.enableHint':
-      'D\u00e9finissez MCP_ENABLED=true puis red\u00e9marrez le backend. Les r\u00e9glages ci-dessous valent aussi pour le serveur stdio.',
+      'MCP_ENABLED=false dans l\u2019environnement : retirez-le, puis red\u00e9marrez le backend. Les r\u00e9glages ci-dessous valent aussi pour le serveur stdio.',
     'settings.mcp.url': 'URL client',
     'settings.mcp.hostWarning':
       'L\u2019h\u00f4te {host} n\u2019est pas dans MCP_ALLOWED_HOSTS : un client qui utilise cette URL recevra une erreur 421.',
@@ -1080,12 +1085,16 @@ const messages: Messages = {
     'settings.mcp.readOnly':
       'Configuration is read-only on this deployment — values come from the environment.',
     'settings.mcp.status': 'HTTP transport',
-    'settings.mcp.statusOn': 'Mounted at {path}',
-    'settings.mcp.statusOff': 'Not mounted',
+    'settings.mcp.statusOn': 'On at {path}',
+    'settings.mcp.statusOffHere': 'Turned off here: {path} answers 503',
+    'settings.mcp.statusOff': 'Not mounted (MCP_ENABLED=false)',
+    'settings.mcp.switchOn': 'On',
+    'settings.mcp.switchOff': 'Off',
     'settings.mcp.unauthenticated':
       'No authentication: anyone who can reach this port reads every document.',
+    'settings.mcp.offHint': 'Clients get an error until you turn it back on. No restart is needed.',
     'settings.mcp.enableHint':
-      'Set MCP_ENABLED=true and restart the backend. The settings below also apply to the stdio server.',
+      'MCP_ENABLED=false in the environment: remove it, then restart the backend. The settings below also apply to the stdio server.',
     'settings.mcp.url': 'Client URL',
     'settings.mcp.hostWarning':
       'Host {host} is not in MCP_ALLOWED_HOSTS: a client using this URL will get a 421 error.',

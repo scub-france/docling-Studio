@@ -1,11 +1,11 @@
 @ui @regression
 Feature: UI — MCP section of the settings panel (#364)
 
-  # Runs against the default CI backend: MCP_ENABLED unset and
-  # DEPLOYMENT_MODE self-hosted. The live budgets are editable whether or not
-  # the HTTP transport is mounted (they also reach the stdio server), so the
-  # scenario does not need /mcp. Overrides are cleared through the API before
-  # and after, so no row survives the run.
+  # Runs against the default CI backend: MCP_ENABLED unset, so /mcp is
+  # mounted (MCP is on by default), and DEPLOYMENT_MODE self-hosted. The live
+  # budgets are editable whether or not the HTTP transport is mounted (they
+  # also reach the stdio server). Overrides, the on/off switch included, are
+  # cleared through the API before each scenario, so no row survives the run.
 
   Background:
     Given url baseUrl
@@ -34,7 +34,7 @@ Feature: UI — MCP section of the settings panel (#364)
     When method GET
     Then status 200
     And match response.maxReadTokens == 1500
-    And match response.sources == { maxRounds: 'env', maxReadTokens: 'db', studioBaseUrl: 'env' }
+    And match response.sources == { maxRounds: 'env', maxReadTokens: 'db', studioBaseUrl: 'env', enabled: 'env' }
 
     # Reset: the badge goes, the environment value comes back.
     * click('[data-e2e=mcp-config-reset]')
@@ -60,3 +60,31 @@ Feature: UI — MCP section of the settings panel (#364)
     When method GET
     Then status 200
     And match response.sources.maxRounds == 'env'
+
+  Scenario: Turn the server off and back on, with no restart
+    * driver uiBaseUrl + '/settings'
+    * waitFor('[data-e2e=mcp-config-switch]')
+    * match karate.sizeOf(locateAll('[data-e2e=mcp-config-source-enabled]')) == 0
+
+    # Off: the switch is stored, and /mcp answers 503 before reaching the server.
+    * click('[data-e2e=mcp-config-off]')
+    * waitFor('[data-e2e=mcp-config-source-enabled]')
+
+    Given url baseUrl
+    And path '/mcp'
+    And header Accept = 'application/json, text/event-stream'
+    And request { jsonrpc: '2.0', id: 1, method: 'ping' }
+    When method POST
+    Then status 503
+    And match response.error.message contains 'turned off'
+
+    # Back on: the override goes, the environment value comes back.
+    * click('[data-e2e=mcp-config-on]')
+    * retry().until(!exists('[data-e2e=mcp-config-source-enabled]'))
+
+    Given url baseUrl
+    And path '/api/config/mcp'
+    When method GET
+    Then status 200
+    And match response.enabled == true
+    And match response.sources.enabled == 'env'

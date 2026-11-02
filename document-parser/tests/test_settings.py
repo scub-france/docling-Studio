@@ -183,6 +183,30 @@ class TestReasoningMaxIterations:
             Settings(reasoning_max_iterations=21)
 
 
+class TestMcpEnabled:
+    """MCP starts with the backend, except on the Hugging Face Space."""
+
+    def test_on_by_default(self, monkeypatch):
+        assert Settings().mcp_enabled is True
+        monkeypatch.delenv("MCP_ENABLED", raising=False)
+        monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
+        assert Settings.from_env().mcp_enabled is True
+
+    def test_off_when_set_off(self, monkeypatch):
+        monkeypatch.setenv("MCP_ENABLED", "false")
+        assert Settings.from_env().mcp_enabled is False
+
+    def test_off_by_default_on_the_hugging_face_space(self, monkeypatch):
+        monkeypatch.delenv("MCP_ENABLED", raising=False)
+        monkeypatch.setenv("DEPLOYMENT_MODE", "huggingface")
+        assert Settings.from_env().mcp_enabled is False
+
+    def test_the_space_can_still_set_it_on(self, monkeypatch):
+        monkeypatch.setenv("DEPLOYMENT_MODE", "huggingface")
+        monkeypatch.setenv("MCP_ENABLED", "true")
+        assert Settings.from_env().mcp_enabled is True
+
+
 class TestAskMode:
     """ASK_MODE — whether the UI shows Ask; hidden unless asked for."""
 

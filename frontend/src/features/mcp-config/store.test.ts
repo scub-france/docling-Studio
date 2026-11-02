@@ -19,7 +19,8 @@ function makeView(overrides: Partial<McpConfigView> = {}): McpConfigView {
     maxRounds: 5,
     maxReadTokens: 4000,
     studioBaseUrl: '',
-    sources: { maxRounds: 'env', maxReadTokens: 'env', studioBaseUrl: 'env' },
+    enabled: true,
+    sources: { maxRounds: 'env', maxReadTokens: 'env', studioBaseUrl: 'env', enabled: 'env' },
     readOnly: false,
     ...overrides,
   }
@@ -88,7 +89,7 @@ describe('useMcpConfigStore', () => {
       const saved = makeView({
         maxReadTokens: 1500,
         studioBaseUrl: 'http://h',
-        sources: { maxRounds: 'db', maxReadTokens: 'db', studioBaseUrl: 'db' },
+        sources: { maxRounds: 'db', maxReadTokens: 'db', studioBaseUrl: 'db', enabled: 'env' },
       })
       mockPut.mockResolvedValue(saved)
       const store = useMcpConfigStore()
@@ -102,6 +103,7 @@ describe('useMcpConfigStore', () => {
         maxRounds: 5,
         maxReadTokens: 1500,
         studioBaseUrl: 'http://h',
+        enabled: true,
       })
       expect(store.view).toEqual(saved)
       expect(store.dirty).toBe(false)
@@ -119,6 +121,78 @@ describe('useMcpConfigStore', () => {
       expect(store.saveError).toContain('max_rounds')
       expect(store.form.maxRounds).toBe(0)
       expect(store.saving).toBe(false)
+    })
+  })
+
+  describe('setEnabled', () => {
+    it('turns the server off at once, with the saved budgets', async () => {
+      mockGet.mockResolvedValue(makeView({ maxRounds: 3 }))
+      const off = makeView({
+        maxRounds: 3,
+        enabled: false,
+        sources: { maxRounds: 'db', maxReadTokens: 'env', studioBaseUrl: 'env', enabled: 'db' },
+      })
+      mockPut.mockResolvedValue(off)
+      const store = useMcpConfigStore()
+      await store.load()
+      expect(store.serving).toBe(true)
+
+      expect(await store.setEnabled(false)).toBe(true)
+
+      expect(mockPut).toHaveBeenCalledWith({
+        maxRounds: 3,
+        maxReadTokens: 4000,
+        studioBaseUrl: '',
+        enabled: false,
+      })
+      expect(store.view?.enabled).toBe(false)
+      expect(store.serving).toBe(false)
+    })
+
+    it('leaves unsaved budget edits in the form', async () => {
+      mockGet.mockResolvedValue(makeView())
+      mockPut.mockResolvedValue(makeView({ enabled: false }))
+      const store = useMcpConfigStore()
+      await store.load()
+      store.form.maxReadTokens = 1500
+
+      await store.setEnabled(false)
+
+      expect(mockPut.mock.calls[0][0].maxReadTokens).toBe(4000)
+      expect(store.form.maxReadTokens).toBe(1500)
+      expect(store.dirty).toBe(true)
+    })
+
+    it('sends nothing when the switch is already there', async () => {
+      mockGet.mockResolvedValue(makeView())
+      const store = useMcpConfigStore()
+      await store.load()
+
+      expect(await store.setEnabled(true)).toBe(true)
+
+      expect(mockPut).not.toHaveBeenCalled()
+    })
+
+    it('reports a refusal and keeps the switch as it was', async () => {
+      mockGet.mockResolvedValue(makeView())
+      mockPut.mockRejectedValue(new Error('403: read-only'))
+      const store = useMcpConfigStore()
+      await store.load()
+
+      expect(await store.setEnabled(false)).toBe(false)
+
+      expect(store.switchError).toBe('403: read-only')
+      expect(store.view?.enabled).toBe(true)
+      expect(store.saving).toBe(false)
+    })
+
+    it('is not serving when the server was not mounted at boot', async () => {
+      mockGet.mockResolvedValue(makeView({ enabled: false }))
+      mockServer.mockResolvedValue({ ...SERVER, enabled: false })
+      const store = useMcpConfigStore()
+      await store.load()
+
+      expect(store.serving).toBe(false)
     })
   })
 

@@ -52,7 +52,7 @@ class _FakeRepo:
 
 
 def _client(
-    *, rows: dict[str, str] | None = None, read_only: bool = False
+    *, rows: dict[str, str] | None = None, read_only: bool = False, mounted: bool = True
 ) -> tuple[TestClient, list[McpRuntimeConfig], _FakeRepo]:
     repo = _FakeRepo(rows)
     applied: list[McpRuntimeConfig] = []
@@ -66,6 +66,7 @@ def _client(
         read_only=read_only,
         apply_config=applied.append,
         status_provider=status,
+        mounted=mounted,
     )
     app = FastAPI()
     app.include_router(config_router)
@@ -74,7 +75,12 @@ def _client(
     return TestClient(app), applied, repo
 
 
-BODY = {"maxRounds": 3, "maxReadTokens": 1500, "studioBaseUrl": "http://localhost:3000"}
+BODY = {
+    "maxRounds": 3,
+    "maxReadTokens": 1500,
+    "studioBaseUrl": "http://localhost:3000",
+    "enabled": True,
+}
 
 
 class TestGetConfig:
@@ -86,7 +92,13 @@ class TestGetConfig:
             "maxRounds": 3,
             "maxReadTokens": 4000,
             "studioBaseUrl": "",
-            "sources": {"maxRounds": "db", "maxReadTokens": "env", "studioBaseUrl": "env"},
+            "enabled": True,
+            "sources": {
+                "maxRounds": "db",
+                "maxReadTokens": "env",
+                "studioBaseUrl": "env",
+                "enabled": "env",
+            },
             "readOnly": False,
         }
 
@@ -97,19 +109,26 @@ class TestPutConfig:
         response = client.put("/api/config/mcp", json=BODY)
         assert response.status_code == 200
         assert response.json()["maxReadTokens"] == 1500
-        assert set(response.json()["sources"].values()) == {"db"}
+        sources = response.json()["sources"]
+        assert (sources["maxRounds"], sources["maxReadTokens"], sources["studioBaseUrl"]) == (
+            "db",
+            "db",
+            "db",
+        )
+        assert sources["enabled"] == "env"
         assert applied == [McpRuntimeConfig(3, 1500, "http://localhost:3000")]
         assert repo.rows["max_rounds"] == "3"
 
     def test_saving_one_field_leaves_the_others_on_env(self):
         client, _, repo = _client()
-        body = {"maxRounds": 5, "maxReadTokens": 1500, "studioBaseUrl": ""}
+        body = {"maxRounds": 5, "maxReadTokens": 1500, "studioBaseUrl": "", "enabled": True}
         response = client.put("/api/config/mcp", json=body)
         assert response.status_code == 200
         assert response.json()["sources"] == {
             "maxRounds": "env",
             "maxReadTokens": "db",
             "studioBaseUrl": "env",
+            "enabled": "env",
         }
         assert repo.rows == {"max_read_tokens": "1500"}
 
@@ -131,6 +150,39 @@ class TestPutConfig:
         response = client.put("/api/config/mcp", json=BODY)
         assert response.status_code == 403
         assert applied == []
+
+    def test_an_omitted_switch_is_422_not_a_restart(self):
+        client, applied, _ = _client()
+        body = {key: value for key, value in BODY.items() if key != "enabled"}
+        assert client.put("/api/config/mcp", json=body).status_code == 422
+        assert applied == []
+
+
+class TestServerSwitch:
+    def test_turning_it_off_is_stored_and_applied(self):
+        client, applied, repo = _client()
+        body = {"maxRounds": 5, "maxReadTokens": 4000, "studioBaseUrl": "", "enabled": False}
+        response = client.put("/api/config/mcp", json=body)
+        assert response.status_code == 200
+        assert response.json()["enabled"] is False
+        assert response.json()["sources"]["enabled"] == "db"
+        assert repo.rows == {"enabled": "false"}
+        assert applied[-1].enabled is False
+
+    def test_turning_it_back_on_drops_the_override(self):
+        client, applied, repo = _client(rows={"enabled": "false"})
+        assert client.get("/api/config/mcp").json()["enabled"] is False
+        body = {"maxRounds": 5, "maxReadTokens": 4000, "studioBaseUrl": "", "enabled": True}
+        response = client.put("/api/config/mcp", json=body)
+        assert response.json()["enabled"] is True
+        assert repo.rows == {} and applied[-1].enabled is True
+
+    def test_it_cannot_turn_on_a_server_mcp_enabled_left_out(self):
+        client, applied, repo = _client(mounted=False)
+        response = client.put("/api/config/mcp", json=BODY)
+        assert response.status_code == 400
+        assert "MCP_ENABLED" in response.json()["detail"]
+        assert applied == [] and repo.rows == {}
 
 
 class TestResetConfig:

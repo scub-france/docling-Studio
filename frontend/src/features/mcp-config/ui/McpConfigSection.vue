@@ -12,18 +12,44 @@
       </div>
 
       <div class="setting-group" data-e2e="mcp-config-status">
-        <div class="setting-label">{{ t('settings.mcp.status') }}</div>
-        <div class="diag-row">
-          <span class="diag-dot" :class="{ on: store.server.enabled }" />
-          {{
-            store.server.enabled
-              ? t('settings.mcp.statusOn', { path: store.server.path })
-              : t('settings.mcp.statusOff')
-          }}
+        <div class="setting-label">
+          {{ t('settings.mcp.status') }}
+          <span
+            v-if="store.view.sources.enabled === 'db'"
+            class="source-badge"
+            data-e2e="mcp-config-source-enabled"
+            >db</span
+          >
         </div>
-        <div v-if="store.server.enabled" class="warn-line">
+        <div v-if="store.server.enabled" class="setting-toggle" data-e2e="mcp-config-switch">
+          <button
+            :class="{ active: store.view.enabled }"
+            :disabled="store.view.readOnly || store.saving"
+            data-e2e="mcp-config-on"
+            @click="store.setEnabled(true)"
+          >
+            {{ t('settings.mcp.switchOn') }}
+          </button>
+          <button
+            :class="{ active: !store.view.enabled }"
+            :disabled="store.view.readOnly || store.saving"
+            data-e2e="mcp-config-off"
+            @click="store.setEnabled(false)"
+          >
+            {{ t('settings.mcp.switchOff') }}
+          </button>
+        </div>
+        <div class="diag-row" data-e2e="mcp-config-state">
+          <span class="diag-dot" :class="{ on: store.serving }" />
+          {{ statusLine }}
+        </div>
+        <div v-if="store.switchError" class="config-error" data-e2e="mcp-config-switch-error">
+          {{ store.switchError }}
+        </div>
+        <div v-if="store.serving" class="warn-line">
           {{ t('settings.mcp.unauthenticated') }}
         </div>
+        <div v-else-if="store.server.enabled" class="hint">{{ t('settings.mcp.offHint') }}</div>
         <div v-else class="hint">{{ t('settings.mcp.enableHint') }}</div>
       </div>
 
@@ -212,6 +238,14 @@ const clientUrl = computed(() =>
 const hostOk = computed(() => !store.server || hostAllowed(host, store.server.allowedHosts))
 const desktopJson = computed(() => claudeDesktopConfig(clientUrl.value))
 const codeCmd = computed(() => claudeCodeCommand(clientUrl.value))
+
+const statusLine = computed(() => {
+  const server = store.server
+  if (!server) return ''
+  if (store.serving) return t('settings.mcp.statusOn', { path: server.path })
+  if (server.enabled) return t('settings.mcp.statusOffHere', { path: server.path })
+  return t('settings.mcp.statusOff')
+})
 
 const toolGroups = computed(() => {
   const groups = groupTools(store.server?.tools ?? [])
@@ -428,6 +462,44 @@ onMounted(() => {
   gap: 8px;
   font-size: 13px;
   color: var(--text);
+}
+
+.setting-toggle {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  width: fit-content;
+}
+
+.setting-toggle button {
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.setting-toggle button:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.setting-toggle button.active {
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.setting-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .diag-dot {

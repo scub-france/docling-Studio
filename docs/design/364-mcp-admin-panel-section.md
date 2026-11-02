@@ -34,7 +34,7 @@ Every MCP setting is an env var read once at startup (`infra/settings.py`), and 
 ## 3. Non-goals
 
 - **Authentication** on `/mcp` or `/api/config/*`. A separate issue; until then the admin API is as open as the rest of `/api`.
-- **Toggling `MCP_ENABLED` or `MCP_ALLOWED_HOSTS` at runtime.** The admin API has no authentication outside Hugging Face, and the allow-list is the DNS-rebinding guard: `/api` has no Host check, so a rebinding page could write `*` through the very surface the list does not cover. Opening an unauthenticated read-everything endpoint stays an operator decision taken in the environment.
+- **Toggling `MCP_ENABLED` or `MCP_ALLOWED_HOSTS` at runtime.** The admin API has no authentication outside Hugging Face, and the allow-list is the DNS-rebinding guard: `/api` has no Host check, so a rebinding page could write `*` through the very surface the list does not cover. Mounting an unauthenticated read-everything endpoint stays an operator decision taken in the environment. *Revised 2026-11-02, see §13:* MCP is now mounted by default, and the panel can pause and resume a mounted server; it still cannot mount one or widen the allow-list.
 - **A dynamic tool list** (`MCP_APPS_ENABLED`, `MCP_CITATION_CARD`). The server is built at import, before the database is open, and the stateless HTTP transport cannot send `tools/list_changed`; Claude Desktop rereads its tools only on a full restart. Shown read-only with the procedure. A "pending until next start" override can follow if asked.
 - **A live round cap in the server instructions.** The instructions are a string fixed when the server is built and read by the client once, at `initialize`. Over HTTP they keep the env cap until the backend and the client restart. Dropping the number from the instructions changes the model's behaviour and is left for after BDX I/O.
 - **A stdio config block** in the panel: it would publish absolute server paths over an unauthenticated API. The docs carry it.
@@ -208,3 +208,14 @@ One INFO line per apply: `MCP config applied: max_rounds=… max_read_tokens=…
   - Audit master: `docs/audit/master.md`
   - E2E conventions: `e2e/CONVENTIONS.md`
 - **External:** MCP Apps (SEP-1865), `mcp-remote`
+
+## 13. Revision — on by default, switchable in the panel (2026-11-02)
+
+Merged into PR #328 so the server and its panel land together. Two changes to the design above:
+
+- **`MCP_ENABLED` defaults to `true`**, except when `DEPLOYMENT_MODE=huggingface` (still `false` there). The default `MCP_ALLOWED_HOSTS` (localhost only, and nginx forwards the client's Host) keeps a default install answering local clients only.
+- **A live on/off switch.** `McpRuntimeConfig.enabled` joins the live knobs (key `enabled` in namespace `mcp`, stored only when it differs from the env default, dropped by the reset). The route stays mounted; `bootstrap/mcp_mount.py` puts it behind `_ServingGate`, which answers 503 with a JSON-RPC error while `AppState.mcp_serving` is false, and the SDK is never reached. `PUT /api/config/mcp` takes a required `enabled`; turning it on is refused (400) when `MCP_ENABLED=false` left nothing mounted.
+
+Why the §3 objection no longer holds for the switch: with the server on by default, re-enabling it from the panel opens nothing the default did not already open. Turning it off only narrows the surface. The two decisions that do widen it, mounting it where `MCP_ENABLED=false` and widening the allow-list, stay in the environment.
+
+The stdio entry point ignores the switch: the client spawns it, and that spawn is the authorisation.

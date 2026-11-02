@@ -56,7 +56,7 @@ class _FakeRepo:
 
 
 def _service(
-    *, rows: dict[str, str] | None = None, read_only: bool = False
+    *, rows: dict[str, str] | None = None, read_only: bool = False, mounted: bool = True
 ) -> tuple[McpConfigService, _FakeRepo, list[McpRuntimeConfig]]:
     repo = _FakeRepo(rows)
     applied: list[McpRuntimeConfig] = []
@@ -70,6 +70,7 @@ def _service(
         read_only=read_only,
         apply_config=applied.append,
         status_provider=status,
+        mounted=mounted,
     )
     return service, repo, applied
 
@@ -119,6 +120,7 @@ class TestGetConfig:
             "max_rounds": "db",
             "max_read_tokens": "env",
             "studio_base_url": "db",
+            "enabled": "env",
         }
 
     async def test_an_empty_base_url_row_is_a_value(self):
@@ -151,7 +153,8 @@ class TestUpdate:
         }
         assert applied == [McpRuntimeConfig(3, 1500, "http://h:3000")]
         assert view.config == applied[0]
-        assert set(view.sources.values()) == {"db"}
+        assert set(view.sources.values()) == {"db", "env"}
+        assert view.sources["enabled"] == "env"
 
     async def test_only_values_that_differ_from_env_become_overrides(self):
         service, repo, applied = _service()
@@ -164,6 +167,7 @@ class TestUpdate:
             "max_rounds": "env",
             "max_read_tokens": "db",
             "studio_base_url": "env",
+            "enabled": "env",
         }
 
     async def test_a_value_set_back_to_env_drops_its_override(self):
@@ -252,3 +256,66 @@ class TestWiring:
         assert before.navigation._parses is after.navigation._parses is parses
         assert before.config.max_rounds == 5  # a call holding `before` keeps its budgets
         assert after.config.max_rounds == 3
+
+
+class TestServerSwitch:
+    """Turning the mounted server off and on from Settings."""
+
+    async def test_on_by_default(self):
+        service, _, _ = _service()
+        view = await service.get_config()
+        assert view.config.enabled is True
+        assert view.sources["enabled"] == "env"
+
+    async def test_off_is_stored_as_false_and_applied(self):
+        service, repo, applied = _service()
+        view = await service.update_config(McpRuntimeConfig(5, 4000, "", enabled=False))
+        assert repo.rows == {"enabled": "false"}
+        assert applied == [McpRuntimeConfig(5, 4000, "", enabled=False)]
+        assert view.sources["enabled"] == "db"
+
+    async def test_back_on_drops_the_row(self):
+        service, repo, applied = _service(rows={"enabled": "false"})
+        await service.update_config(McpRuntimeConfig(5, 4000, "", enabled=True))
+        assert repo.rows == {}
+        assert applied[-1].enabled is True
+
+    async def test_a_stored_off_is_applied_at_boot(self):
+        service, _, applied = _service(rows={"enabled": "off"})
+        await service.apply_effective()
+        assert applied == [McpRuntimeConfig(5, 4000, "", enabled=False)]
+
+    async def test_an_unparseable_switch_row_falls_back_to_env(self):
+        service, _, _ = _service(rows={"enabled": "maybe"})
+        view = await service.get_config()
+        assert view.config.enabled is True
+        assert view.sources["enabled"] == "env"
+
+    async def test_reset_turns_it_back_on(self):
+        service, repo, applied = _service(rows={"enabled": "false"})
+        view = await service.reset_config()
+        assert repo.rows == {} and view.config.enabled is True
+        assert applied[-1].enabled is True
+
+    async def test_it_cannot_turn_on_a_server_that_is_not_mounted(self):
+        env_off = McpRuntimeConfig(5, 4000, "", enabled=False)
+        repo = _FakeRepo()
+        applied: list[McpRuntimeConfig] = []
+
+        async def status() -> McpServerStatus:
+            return STATUS
+
+        service = McpConfigService(
+            repo=repo,
+            env_defaults=env_off,
+            read_only=False,
+            apply_config=applied.append,
+            status_provider=status,
+            mounted=False,
+        )
+        with pytest.raises(AppConfigValidationError, match="MCP_ENABLED"):
+            await service.update_config(McpRuntimeConfig(5, 4000, "", enabled=True))
+        assert repo.rows == {} and applied == []
+        # Budgets alone still save while it stays off.
+        await service.update_config(McpRuntimeConfig(5, 1500, "", enabled=False))
+        assert repo.rows == {"max_read_tokens": "1500"}

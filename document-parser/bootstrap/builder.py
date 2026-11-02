@@ -238,7 +238,12 @@ class AppStateBuilder:
         mounted = self._mcp_server
 
         def apply_config(config: McpRuntimeConfig) -> None:
-            self._update(document_tools=build_document_tools(parses, config))
+            # One rebind: the next request sees the new budgets and the switch
+            # together.
+            self._update(
+                document_tools=build_document_tools(parses, config),
+                mcp_serving=config.enabled,
+            )
 
         async def server_status() -> McpServerStatus:
             return await describe_mcp_server(mounted)
@@ -250,6 +255,7 @@ class AppStateBuilder:
                 read_only=settings.deployment_mode == "huggingface",
                 apply_config=apply_config,
                 status_provider=server_status,
+                mounted=mounted is not None,
             )
         )
         # Builds the first DocumentTools, with persisted overrides applied.
