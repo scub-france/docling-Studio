@@ -412,7 +412,8 @@ const messages: Messages = {
     'settings.mcp.enableHint':
       'MCP_ENABLED=false dans l’environnement : retirez-le, puis redémarrez le backend. Les budgets ci-dessous valent aussi pour le serveur stdio.',
     'settings.mcp.address': 'Adresse',
-    'settings.mcp.localOnly': 'En local uniquement, sans authentification',
+    'settings.mcp.localOnly':
+      'Hôtes autorisés : localhost. Ce contrôle bloque le DNS rebinding, pas le réseau : sans authentification, gardez le port privé.',
     'settings.mcp.unauthenticated':
       'Sans authentification : toute personne qui atteint ce port lit tous les documents.',
     'settings.mcp.hostWarning':
@@ -1133,7 +1134,8 @@ const messages: Messages = {
     'settings.mcp.enableHint':
       'MCP_ENABLED=false in the environment: remove it, then restart the backend. The budgets below also apply to the stdio server.',
     'settings.mcp.address': 'Address',
-    'settings.mcp.localOnly': 'Local only, no authentication',
+    'settings.mcp.localOnly':
+      'Allowed hosts: localhost. This blocks DNS rebinding, not the network: with no authentication, keep the port private.',
     'settings.mcp.unauthenticated':
       'No authentication: anyone who can reach this port reads every document.',
     'settings.mcp.hostWarning':

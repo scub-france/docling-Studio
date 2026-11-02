@@ -18,8 +18,9 @@ vulnerabilities:
       whose trust model already requires network-level protection (see
       SECURITY.md). Re-evaluate at expiry or when Debian publishes a fix.
     expired_at: 2026-12-31
-  # Pillow 10.4.0, both images. These four are fixed only in Pillow 13.0.0,
-  # and the docling packages the lock pins cap Pillow below 13 (docling-core
+  # Pillow 10.4.0, both images. These four are fixed only in Pillow 13.0.0.
+  # Studio's own pyproject caps Pillow below 11, and the docling packages the
+  # lock pins cap it below 13 (docling-core
   # 2.104, docling-parse 7.22.4, docling-ibm-models 4.0.4 and docling-slim 2.142
   # are the first to allow it, all from October 2026). Upgrading docling is
   # planned for 0.8.0; until then the risk is ACCEPTED, not ruled out.
