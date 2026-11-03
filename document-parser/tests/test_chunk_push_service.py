@@ -570,3 +570,58 @@ class TestListPushes:
     async def test_unknown_document_raises_404(self, service_with_pushes):
         with pytest.raises(DocumentNotFoundError):
             await service_with_pushes.list_pushes("ghost-doc")
+
+    async def test_without_a_store_repo_the_store_fields_are_none(self, repos, store_repo, doc):
+        await self._seed_pushes(repos, doc_id=doc.id, store_id="s-rh", count=1)
+        service = ChunkPushService(
+            chunk_repo=repos["chunks"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+        )
+        (entry,) = (await service.list_pushes(doc.id))["items"]
+        assert entry == {
+            "id": "push-0",
+            "documentId": doc.id,
+            "storeId": "s-rh",
+            "storeSlug": None,
+            "storeName": None,
+            "storeKind": None,
+            "chunksetHash": "hash-0",
+            "chunkCount": 1,
+            "pushedAt": "2026-05-19T10:00:00+00:00",
+        }
+
+    async def test_each_store_is_read_once(self, repos, store_repo, doc):
+        from domain.models import ChunkPush
+
+        await store_repo.insert(
+            Store(id="s-2", name="Other", slug="other", kind=StoreKind.NEO4J, embedder="e")
+        )
+        for i, store_id in enumerate(["s-rh", "s-2", "s-rh"]):
+            await repos["pushes"].insert(
+                ChunkPush(
+                    id=f"p-{i}",
+                    document_id=doc.id,
+                    store_id=store_id,
+                    chunkset_hash="h",
+                    chunk_ids=[],
+                    pushed_at=datetime(2026, 5, 19, 10, i, tzinfo=UTC),
+                )
+            )
+        spy = AsyncMock(side_effect=store_repo.find_by_id)
+        store_repo.find_by_id = spy
+        service = ChunkPushService(
+            chunk_repo=repos["chunks"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            store_repo=store_repo,
+        )
+
+        result = await service.list_pushes(doc.id)
+
+        assert [(e["id"], e["storeSlug"], e["storeKind"]) for e in result["items"]] == [
+            ("p-2", "rh-corpus", "opensearch"),
+            ("p-1", "other", "neo4j"),
+            ("p-0", "rh-corpus", "opensearch"),
+        ]
+        assert [c.args for c in spy.await_args_list] == [("s-rh",), ("s-2",)]
