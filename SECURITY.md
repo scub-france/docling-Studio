@@ -48,4 +48,23 @@ The fix is prepared in the private fork attached to the advisory, so nothing is 
 - **Save** does not run that check: it only requires an http(s) URL. Anyone who can reach the settings can point Ask at any address the server can reach.
 - Loopback and private LAN addresses are allowed on purpose: that is where Ollama usually runs.
 
+## Store connections
+
+An ingestion store (OpenSearch or Neo4j, deprecated and removed in 0.8.0) is created and edited through `/api/stores`, and can carry its own connection URI. The backend connects to that URI to test the store (`POST /api/stores/{slug}/test-connection`) and to push chunks to it. These are outbound connections chosen by the caller, so:
+
+- On a HuggingFace deployment (`DEPLOYMENT_MODE=huggingface`), creating, editing and deleting a store are refused with `403`, and the connection test answers `ok: false` without connecting.
+- **Save** (create or edit) resolves the URI's host and refuses the same addresses as the Ollama test: link-local (including `169.254.169.254` and `fe80::/10`), multicast, reserved and unspecified. A refused URI is not saved (`422`).
+- **Test connection** runs the same check again before connecting, so a URI saved before the check existed, or whose name now resolves elsewhere, is caught too. A refused target gets no traffic at all.
+- A failed test answers with a generic message. The driver's error goes to the server log only, so the test cannot read back what an internal address answers.
+- Pushing chunks does not run the check again: it connects to the URI that was saved.
+- The host is resolved once, before the client connects. A name re-pointed between the two (DNS rebinding) is not caught.
+- Loopback and private LAN addresses are allowed on purpose: that is where stores usually run. A store without a URI uses `OPENSEARCH_URL` or `NEO4J_URI`, which only the operator sets.
+
+## Imported Docling documents
+
+`POST /api/analyses/import` accepts a Docling JSON built elsewhere. Two limits bound what one import costs the server:
+
+- The request body is capped at 200 MB on every `/api/analyses` route, in the backend as in the bundled nginx (`NGINX_MAX_BODY_SIZE`). A larger body is refused with `413` before it is parsed.
+- `MAX_IMPORT_TABLE_CELLS` (default `100000`) caps the table cells of one document, all tables together. A document whose tables declare more cells, or whose cells span more grid positions, is refused with `400` before any export is built. `0` lifts the limit.
+
 The app has no login. A self-hosted instance open to untrusted networks must be protected in front of it, for example by a reverse proxy with authentication.
