@@ -65,16 +65,18 @@ flowchart TB
     class Infra,Persistence teal
 ```
 
-`tests/test_architecture.py` fails when a layer imports what it must not:
+A layer never imports what this table lists. `tests/test_architecture.py` checks part of it:
 
-| Layer | Never imports |
-|-------|---------------|
-| `domain` | Any other layer, FastAPI, SQLAlchemy, httpx, the OpenSearch client |
-| `services` | `api`, `infra`, `persistence`, FastAPI |
-| `api` | `infra`, `persistence` |
-| `mcp_adapter` | `api`, `infra`, `persistence` |
-| `infra` | `api`, `services` |
-| `persistence` | `api`, `services`, `infra` |
+| Layer | Never imports | Checked |
+|-------|---------------|---------|
+| `domain` | Any other layer; FastAPI, SQLAlchemy, httpx, the OpenSearch client | The libraries only |
+| `services` | `api`, `bootstrap`, `infra`, `persistence`, even for a type hint; FastAPI, Starlette, httpx, Docling, the PDF libraries, the OpenSearch and Neo4j clients, `cryptography` | Yes |
+| `api` | `infra`, `persistence` | No |
+| `mcp_adapter` | `api`, `infra`, `persistence` | Yes |
+| `infra` | `api`, `services` | No |
+| `persistence` | `api`, `services`, `infra` | No |
+
+The test also fails when a port (`Protocol`) is defined outside `domain/ports.py`. The rows marked *No* are pytestarch rules that never match an import: the backend root, `document-parser`, is not an importable package, so they pass whatever the code imports. Until they are fixed, review keeps those directions.
 
 `main.py` creates the app and mounts the routes. `bootstrap/` builds the adapters and services from the settings, and mounts the MCP server at `/mcp` unless `MCP_ENABLED=false` (`bootstrap/mcp_mount.py`).
 
