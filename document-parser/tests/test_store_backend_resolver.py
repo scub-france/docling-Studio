@@ -505,6 +505,89 @@ class TestOpenSearchResolution:
         assert "opensearch" in msg.lower()
 
 
+class TestSsrfGuard:
+    """Every connection to a store's own URI goes through `resolve`, so the
+    guard injected there covers the push as well as the test (#audit-08)."""
+
+    @staticmethod
+    def _resolver(store_repo, neo4j_pool, opensearch_pool, blocked: bool, seen: list[str]):
+        def _target_is_blocked(uri: str) -> bool:
+            seen.append(uri)
+            return blocked
+
+        return StoreBackendResolver(
+            store_repo=store_repo,
+            neo4j_pool=neo4j_pool,
+            opensearch_pool=opensearch_pool,
+            graph_writer_factory=lambda driver: driver,
+            env_neo4j_uri="bolt://neo4j:7687",
+            env_opensearch_url="http://opensearch:9200",
+            target_is_blocked=_target_is_blocked,
+        )
+
+    @pytest.mark.parametrize(
+        ("kind", "uri"),
+        [
+            (StoreKind.OPENSEARCH, "http://169.254.169.254:9200"),
+            (StoreKind.NEO4J, "bolt://169.254.169.254:7687"),
+        ],
+    )
+    async def test_blocked_store_uri_is_refused_before_any_connection(
+        self, store_repo, neo4j_pool, opensearch_pool, kind, uri
+    ):
+        from services.store_backend_resolver import StoreTargetBlockedError
+
+        await store_repo.insert(
+            Store(
+                id="s-meta", name="meta", slug="meta", kind=kind, embedder="b", connection_uri=uri
+            ),
+            password="p",
+        )
+        store = await store_repo.find_by_id("s-meta")
+        seen: list[str] = []
+        resolver = self._resolver(store_repo, neo4j_pool, opensearch_pool, True, seen)
+
+        with pytest.raises(StoreTargetBlockedError) as excinfo:
+            await resolver.resolve(store)
+        # A StoreBackendNotConfiguredError: callers answer its message as is.
+        assert isinstance(excinfo.value, StoreBackendNotConfiguredError)
+        assert seen == [uri]
+        neo4j_pool.get.assert_not_awaited()
+        opensearch_pool.get.assert_not_awaited()
+
+    async def test_allowed_store_uri_resolves(self, store_repo, neo4j_pool, opensearch_pool):
+        await store_repo.insert(
+            Store(
+                id="s-lan",
+                name="lan",
+                slug="lan",
+                kind=StoreKind.OPENSEARCH,
+                embedder="b",
+                connection_uri="http://10.0.0.5:9200",
+            ),
+        )
+        store = await store_repo.find_by_id("s-lan")
+        seen: list[str] = []
+        resolver = self._resolver(store_repo, neo4j_pool, opensearch_pool, False, seen)
+
+        await resolver.resolve(store)
+        assert seen == ["http://10.0.0.5:9200"]
+        assert opensearch_pool.get.await_args.args[0] == "http://10.0.0.5:9200"
+
+    async def test_env_fallback_is_not_screened(self, store_repo, neo4j_pool, opensearch_pool):
+        """The env URIs are the operator's: only a store's own URI is checked."""
+        await store_repo.insert(
+            Store(id="s-env", name="env", slug="env", kind=StoreKind.OPENSEARCH, embedder="b"),
+        )
+        store = await store_repo.find_by_id("s-env")
+        seen: list[str] = []
+        resolver = self._resolver(store_repo, neo4j_pool, opensearch_pool, True, seen)
+
+        await resolver.resolve(store)
+        assert seen == []
+        assert opensearch_pool.get.await_args.args[0] == "http://opensearch:9200"
+
+
 class TestIsolationBetweenStores:
     async def test_two_neo4j_stores_resolve_to_distinct_keys(
         self, store_repo, neo4j_pool, opensearch_pool

@@ -21,6 +21,7 @@ from domain import hashing
 from domain.chunk_serialization import chunk_to_ingestion_dict
 from domain.models import ChunkPush, DocumentStoreLink
 from services.chunk_errors import ChunkServiceError, require_document
+from services.store_backend_resolver import StoreBackendNotConfiguredError
 
 if TYPE_CHECKING:
     from domain.models import Chunk, Document, Store
@@ -198,15 +199,30 @@ class ChunkPushService:
         None — the IngestionService's service-level defaults, env-based —
         when no resolver is wired or no store row was resolved. A store whose
         backends cannot be resolved marks the link Failed and answers 503.
+
+        The resolver screens the store's URI with the SSRF guard before it
+        connects (#audit-08). Its own refusals name the missing setting or
+        the refused target and are answered as such. Anything else is the
+        driver's error — the address, the port, why the connection failed —
+        and goes to the server log only, as for the connection test: the
+        push must not read back what an internal address answers.
         """
         if self._backend_resolver is None or store is None:
             return None
         try:
             return await self._backend_resolver.resolve(store)
-        except Exception as exc:
+        except StoreBackendNotConfiguredError as exc:
             await self._mark_link_failed(document_id, store_id, error=str(exc))
             raise ChunkServiceError(
                 f"Cannot resolve backend for store {store.slug!r}: {exc}",
+                http_status=503,
+            ) from exc
+        except Exception as exc:
+            logger.warning("Store %r: backend resolution failed: %r", store.slug, exc)
+            await self._mark_link_failed(document_id, store_id, error=str(exc))
+            raise ChunkServiceError(
+                f"Could not connect to the backend of store {store.slug!r} "
+                "(details in the server log)",
                 http_status=503,
             ) from exc
 

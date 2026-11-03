@@ -176,6 +176,7 @@ def build_backend_resolver(store_repo) -> StoreBackendResolver:
     from infra.neo4j.driver_pool import get_pool as get_neo4j_pool
     from infra.neo4j.graph_adapter import Neo4jGraphWriter
     from infra.opensearch_pool import get_pool as get_opensearch_pool
+    from infra.ssrf_guard import resolved_target_is_blocked
 
     return StoreBackendResolver(
         store_repo=store_repo,
@@ -188,6 +189,9 @@ def build_backend_resolver(store_repo) -> StoreBackendResolver:
         env_neo4j_user=settings.neo4j_user,
         env_neo4j_password=settings.neo4j_password,
         env_opensearch_url=settings.opensearch_url,
+        # #audit-08 — every connection to a store's own URI (test, push) is
+        # screened by the SSRF guard that also checks it on save.
+        target_is_blocked=resolved_target_is_blocked,
     )
 
 

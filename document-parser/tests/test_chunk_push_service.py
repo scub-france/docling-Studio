@@ -377,6 +377,115 @@ class TestPushToStore:
         assert link is not None
         assert link.state == DocumentStoreLinkState.FAILED
 
+    async def test_resolver_refusal_message_reaches_the_caller(
+        self, repos, store_repo, link_repo, doc, mock_ingestion
+    ):
+        """The resolver's own refusals are written by us and name the missing
+        setting: the caller sees them."""
+        from services.store_backend_resolver import StoreBackendNotConfiguredError
+
+        resolver = AsyncMock()
+        resolver.resolve = AsyncMock(side_effect=StoreBackendNotConfiguredError("no NEO4J_URI"))
+        service = ChunkPushService(
+            chunk_repo=repos["chunks"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            ingestion_service=mock_ingestion,
+            store_repo=store_repo,
+            link_repo=link_repo,
+            backend_resolver=resolver,
+        )
+        await _add_chunk(doc.id, "hello")
+
+        with pytest.raises(ChunkServiceError, match="no NEO4J_URI"):
+            await service.push_to_store(doc.id, "rh-corpus-v3")
+
+    async def test_driver_error_is_logged_not_answered(
+        self, repos, store_repo, link_repo, doc, mock_ingestion, caplog
+    ):
+        """A connection error names the address, the port and why it failed:
+        the oracle the connection test no longer offers (#audit-08). The push
+        answers a generic 503 and logs the detail."""
+        resolver = AsyncMock()
+        resolver.resolve = AsyncMock(
+            side_effect=OSError("Couldn't connect to 10.0.0.5:7687 (Connection refused)")
+        )
+        service = ChunkPushService(
+            chunk_repo=repos["chunks"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            ingestion_service=mock_ingestion,
+            store_repo=store_repo,
+            link_repo=link_repo,
+            backend_resolver=resolver,
+        )
+        await _add_chunk(doc.id, "hello")
+
+        with (
+            caplog.at_level("WARNING", logger="services.chunk_push_service"),
+            pytest.raises(ChunkServiceError) as excinfo,
+        ):
+            await service.push_to_store(doc.id, "rh-corpus-v3")
+        assert excinfo.value.http_status == 503
+        assert "10.0.0.5" not in str(excinfo.value)
+        assert "Connection refused" not in str(excinfo.value)
+        assert "server log" in str(excinfo.value)
+        assert "10.0.0.5:7687" in caplog.text
+        link = await link_repo.find_one(doc.id, "store-uuid-1")
+        assert link.state == DocumentStoreLinkState.FAILED
+        mock_ingestion.ingest.assert_not_awaited()
+
+    async def test_a_blocked_store_uri_is_refused_before_any_connection(
+        self, repos, link_repo, doc, mock_ingestion
+    ):
+        """The push goes through the resolver's SSRF guard (#audit-08): a row
+        saved before the guard, or a name re-pointed since, gets no traffic."""
+        from services.store_backend_resolver import StoreBackendResolver
+
+        stores = SqliteStoreRepository()
+        await stores.insert(
+            Store(
+                id="store-meta",
+                name="Meta",
+                slug="meta",
+                kind=StoreKind.OPENSEARCH,
+                embedder="bge-m3",
+                connection_uri="http://169.254.169.254:80",
+            )
+        )
+        pool = AsyncMock()
+        checked: list[str] = []
+
+        def _blocked(uri: str) -> bool:
+            checked.append(uri)
+            return True
+
+        resolver = StoreBackendResolver(
+            store_repo=stores,
+            neo4j_pool=AsyncMock(),
+            opensearch_pool=pool,
+            graph_writer_factory=lambda driver: driver,
+            target_is_blocked=_blocked,
+        )
+        service = ChunkPushService(
+            chunk_repo=repos["chunks"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            ingestion_service=mock_ingestion,
+            store_repo=stores,
+            link_repo=link_repo,
+            backend_resolver=resolver,
+        )
+        await _add_chunk(doc.id, "hello")
+
+        with pytest.raises(ChunkServiceError, match="resolves to an address no store can use"):
+            await service.push_to_store(doc.id, "meta")
+        assert checked == ["http://169.254.169.254:80"]
+        pool.get.assert_not_awaited()
+        mock_ingestion.ingest.assert_not_awaited()
+        link = await link_repo.find_one(doc.id, "store-meta")
+        assert link.state == DocumentStoreLinkState.FAILED
+
     async def test_push_result_and_record(self, service_with_store, repos, link_repo, doc):
         """The summary counts what the ingestion indexed and the known tokens;
         the push row lists the canonical ids in order, and the link points at

@@ -24,6 +24,10 @@ Resolution policy:
     credentials for it would hand them to any server the caller names.
     OpenSearch has no credential fallback: a store authenticates with
     its own credentials or not at all.
+  - With an injected `target_is_blocked`, a store's own URI is screened
+    by the SSRF guard before any connection. Every path that connects
+    to a store (connection test, push) goes through `resolve`, so this
+    is the one place the guard cannot be skipped.
 
 The URI fallback is a transitional convenience. Long-term every store
 will carry its own connection identity; the env vars become a default
@@ -33,6 +37,7 @@ acceptance criteria.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -109,6 +114,13 @@ class StoreBackendNotConfiguredError(RuntimeError):
     """
 
 
+class StoreTargetBlockedError(StoreBackendNotConfiguredError):
+    """The store's own URI resolves to an address the SSRF guard refuses.
+
+    Raised before any connection. The message is ours, safe to show.
+    """
+
+
 class StoreBackendResolver:
     """Turn a `Store` entity into the concrete backend(s) for ingestion."""
 
@@ -123,6 +135,7 @@ class StoreBackendResolver:
         env_neo4j_user: str = "neo4j",
         env_neo4j_password: str = "",
         env_opensearch_url: str = "",
+        target_is_blocked: Callable[[str], bool] | None = None,
     ) -> None:
         self._stores = store_repo
         self._neo4j_pool = neo4j_pool
@@ -135,14 +148,19 @@ class StoreBackendResolver:
         self._env_neo4j_user = env_neo4j_user
         self._env_neo4j_password = env_neo4j_password
         self._env_opensearch_url = env_opensearch_url
+        # `infra.ssrf_guard.resolved_target_is_blocked`, injected by the
+        # composition root (services may not import infra). None: no check.
+        self._target_is_blocked = target_is_blocked
 
     async def resolve(self, store: Store) -> IngestionTargets:
         """Return the backend pair for `store`.
 
         Raises `StoreBackendNotConfiguredError` when neither the store
         nor the env fallback supplies the connection details required
-        for `store.kind`.
+        for `store.kind`, and its `StoreTargetBlockedError` subclass when
+        the store's own URI resolves to a blocked address.
         """
+        await self._reject_blocked_target(store)
         if store.kind == StoreKind.OPENSEARCH:
             return await self._resolve_opensearch(store)
         if store.kind == StoreKind.NEO4J:
@@ -150,6 +168,24 @@ class StoreBackendResolver:
         raise StoreBackendNotConfiguredError(
             f"Unknown store kind: {store.kind!r} (store={store.slug})"
         )
+
+    async def _reject_blocked_target(self, store: Store) -> None:
+        """Refuse a store whose own URI resolves to a blocked address (#audit-08).
+
+        Only the store's own URI: the env fallbacks are set by the operator.
+        Checked on every resolution, so a row saved before the guard existed,
+        or a name re-pointed since, is caught on push as on test.
+        """
+        uri = store.connection_uri
+        if not uri or self._target_is_blocked is None:
+            return
+        # Name resolution blocks: keep it off the event loop.
+        if await asyncio.to_thread(self._target_is_blocked, uri):
+            logger.warning("Store %r: refused, blocked target address", store.slug)
+            raise StoreTargetBlockedError(
+                f"Store {store.slug!r}: connection_uri resolves to an address no store "
+                "can use (link-local or cloud metadata, multicast, reserved or unspecified)"
+            )
 
     async def _resolve_opensearch(self, store: Store) -> IngestionTargets:
         url = store.connection_uri or self._env_opensearch_url
