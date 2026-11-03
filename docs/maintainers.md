@@ -57,15 +57,20 @@ It runs on every pull request to `main` and posts a verdict: GO, GO CONDITIONAL 
 |-------|--------------|
 | Lint and type-check | Ruff, ESLint, vue-tsc |
 | Unit tests | pytest, Vitest |
-| Dependency audit | pip-audit, npm audit |
+| Dependency audit | pip-audit on every Python group the images ship (including `local` and `reasoning`), npm audit. Only a critical npm finding fails it. |
 | Audit script | `profiles/fastapi-vue/commands.sh` |
-| Docker build | Both images |
-| Smoke test | The remote image answers `/api/health` |
-| Image scan | Trivy. Critical findings block. |
-| Image size | Compared with the previous release. Warning only. |
+| Docker build | Both images, amd64. `local` includes the Ask packages, as published, but not the models. |
+| Smoke test | The remote image answers `/api/health`. The local image starts with no network, and `/api/health` reports `engine: local` and `reasoningAvailable: true`. |
+| Image scan | Trivy on both images. Critical findings block. |
+| Image size | The remote image, compared with the previous release. Warning only. |
 | End-to-end | API (`@smoke`, `@regression`, `@e2e`) and UI (`@critical`) |
 
-Known gaps in the workflow today: the unit-test steps pipe into `tee` without `pipefail`, so they cannot fail; the audit script is not in the repository; the Python audit never reports anything as critical. Lint and tests are still enforced by the CI checks required on `main`.
+Known gaps in the workflow today:
+
+- The audit script is not in the repository, so its check passes without checking anything.
+- The Python audit never reports anything as critical.
+- The gate builds neither the models of the `local` image nor the arm64 images. They are first built when the tag starts `release.yml`.
+- The UI end-to-end tests outside `@critical` run in no workflow. Run them by hand with `UIRunner#testLocal` (see `e2e/ui/README.md`).
 
 ## Hotfix
 
