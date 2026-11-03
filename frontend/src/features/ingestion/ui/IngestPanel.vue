@@ -228,7 +228,7 @@ async function runIngestion() {
 }
 
 .step.done .step-dot {
-  background: var(--success, #22c55e);
+  background: var(--success);
 }
 
 .step-label {
@@ -242,7 +242,7 @@ async function runIngestion() {
 }
 
 .step.done .step-label {
-  color: var(--success, #22c55e);
+  color: var(--success);
 }
 
 .step-line {
@@ -253,7 +253,7 @@ async function runIngestion() {
 }
 
 .step-line.done {
-  background: var(--success, #22c55e);
+  background: var(--success);
 }
 
 @keyframes pulse-dot {
@@ -287,7 +287,7 @@ async function runIngestion() {
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.3);
   border-radius: var(--radius-sm);
-  color: var(--success, #22c55e);
+  color: var(--success);
   font-size: 13px;
   font-weight: 500;
 }
@@ -308,7 +308,7 @@ async function runIngestion() {
   font-size: 14px;
   font-weight: 600;
   color: white;
-  background: var(--success, #22c55e);
+  background: var(--success);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;

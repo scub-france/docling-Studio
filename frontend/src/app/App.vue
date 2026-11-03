@@ -85,6 +85,8 @@ function dismissDisclaimer() {
   --accent: #f97316;
   --accent-hover: #fb923c;
   --accent-muted: rgba(249, 115, 22, 0.15);
+  /* Text and marks drawn on an --accent fill. */
+  --on-accent: #ffffff;
 
   --text: #ececef;
   --text-secondary: #a1a1aa;
@@ -116,6 +118,7 @@ html.light {
   --accent: #f97316;
   --accent-hover: #ea580c;
   --accent-muted: rgba(249, 115, 22, 0.1);
+  --on-accent: #ffffff;
 
   --text: #18181b;
   --text-secondary: #52525b;

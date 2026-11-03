@@ -74,19 +74,21 @@ emit('valid', indexName.value.trim().length > 0)
 }
 .field-input {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, #d1d5db);
+  border: 1px solid var(--border-light);
   border-radius: 0.375rem;
   font-size: 0.875rem;
+  color: var(--text);
+  background: var(--bg-surface);
 }
 .field-input[aria-invalid='true'] {
-  border-color: #dc2626;
+  border-color: var(--error);
 }
 .field-help {
   font-size: 0.75rem;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .field-error {
   font-size: 0.75rem;
-  color: #dc2626;
+  color: var(--error);
 }
 </style>

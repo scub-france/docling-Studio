@@ -322,11 +322,11 @@ onMounted(() => {
 }
 
 .test-result.ok {
-  color: var(--success, #4ade80);
+  color: var(--success);
 }
 
 .test-result.fail {
-  color: var(--danger, #f87171);
+  color: var(--error);
 }
 
 .test-error {
@@ -345,7 +345,7 @@ onMounted(() => {
 }
 
 .config-error {
-  color: var(--danger, #f87171);
+  color: var(--error);
 }
 
 .diagnostics {
@@ -366,12 +366,12 @@ onMounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--danger, #f87171);
+  background: var(--error);
   flex-shrink: 0;
 }
 
 .diag-dot.on {
-  background: var(--success, #4ade80);
+  background: var(--success);
 }
 
 .diag-line {

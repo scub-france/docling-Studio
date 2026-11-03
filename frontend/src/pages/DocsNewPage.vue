@@ -376,7 +376,7 @@ async function uploadOne(item: UploadItem): Promise<void> {
   padding: 7px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: white;
+  color: var(--on-accent);
   background: var(--accent);
   border: none;
   border-radius: var(--radius-sm);

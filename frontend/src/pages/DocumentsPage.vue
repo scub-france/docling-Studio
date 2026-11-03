@@ -425,7 +425,7 @@ onMounted(() => {
 }
 
 .action-btn.unindex:hover {
-  color: var(--warning, #f59e0b);
+  color: var(--warning);
   background: rgba(245, 158, 11, 0.1);
 }
 

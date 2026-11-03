@@ -42,8 +42,8 @@ const { t } = useI18n()
   max-width: 28rem;
   text-align: center;
   padding: 2.5rem 2rem;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
@@ -52,8 +52,8 @@ const { t } = useI18n()
   display: inline-block;
   margin-bottom: 1rem;
   padding: 0.25rem 0.6rem;
-  background: var(--color-accent-soft, #eff6ff);
-  color: var(--color-accent, #1d4ed8);
+  background: var(--accent-muted);
+  color: var(--accent);
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -64,28 +64,28 @@ const { t } = useI18n()
   margin: 0 0 0.5rem;
   font-size: 1.5rem;
   font-weight: 600;
-  color: var(--color-text, #111);
+  color: var(--text);
 }
 
 .coming-soon__subtitle {
   margin: 0 0 1rem;
   font-size: 1rem;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
 .coming-soon__hint {
   margin: 0 0 1.5rem;
   font-size: 0.875rem;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--text-muted);
 }
 
 .coming-soon__back {
   display: inline-block;
   padding: 0.5rem 1rem;
   background: transparent;
-  color: var(--color-accent, #1d4ed8);
-  border: 1px solid var(--color-accent, #1d4ed8);
+  color: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 6px;
   font-size: 0.875rem;
   text-decoration: none;
@@ -95,7 +95,7 @@ const { t } = useI18n()
 }
 
 .coming-soon__back:hover {
-  background: var(--color-accent, #1d4ed8);
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 </style>

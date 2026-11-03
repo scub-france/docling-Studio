@@ -660,7 +660,7 @@ onMounted(() => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--on-accent);
 }
 
 .switch:focus-visible,
@@ -1038,13 +1038,13 @@ input[type='number'] {
 .btn.primary {
   padding: 0 18px;
   font-weight: 600;
-  color: #0a0a0b;
+  color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
 }
 
 .btn.primary:hover:not(:disabled) {
-  color: #0a0a0b;
+  color: var(--on-accent);
   background: var(--accent-hover);
 }
 
