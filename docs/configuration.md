@@ -1,6 +1,6 @@
 # Configuration
 
-Docling Studio reads its settings from environment variables. This page lists the ones you are likely to change; the full list is in [`document-parser/infra/settings.py`](https://github.com/scub-france/Docling-Studio/blob/main/document-parser/infra/settings.py).
+Docling Studio reads its settings from environment variables. This page lists them, starting with the ones you are likely to change. The backend reads most of them in [`document-parser/infra/settings.py`](https://github.com/scub-france/Docling-Studio/blob/main/document-parser/infra/settings.py); nginx and the embedding service read their own.
 
 - With `docker run`, pass them with `-e NAME=value`.
 - With Docker Compose, put them in a `.env` file next to `docker-compose.yml`. Compose only forwards the variables listed under `document-parser` › `environment` in `docker-compose.yml`. To set another one, add it there or in a `docker-compose.override.yml`.
@@ -27,6 +27,7 @@ Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT`
 |----------|---------|--------------|
 | `MAX_FILE_SIZE_MB` | `50` | Largest upload, in MB. `0` means no limit. |
 | `MAX_PAGE_COUNT` | `0` | Most pages per PDF. `0` means no limit. |
+| `MAX_FILE_SIZE` | `0` | Local engine only. Largest PDF Docling converts, in bytes: Docling refuses a bigger file and the analysis fails. `0` means no limit. This is not the upload limit, `MAX_FILE_SIZE_MB`. |
 | `NGINX_MAX_BODY_SIZE` | `200M` | Upload limit in nginx, in nginx format. Keep it above `MAX_FILE_SIZE_MB`. |
 | `RATE_LIMIT_RPM` | `100` | Requests per minute per client address, as the backend sees it. Behind the bundled nginx, that address is nginx itself, so all users share the limit. `0` turns it off. `/api/health` is not counted. |
 
@@ -51,8 +52,19 @@ The other values are starting values. **Settings** › **Ask** in the app can ch
 |----------|---------|--------------|
 | `RAG_PIPELINE_ENABLED` | `true` | The Docs and Runs pages. |
 | `STUDIO_MODE_ENABLED` | `false` | The older Studio pages (`/studio`, `/history`, `/documents`, `/search`), which still hold chunking and ingestion (deprecated). |
+| `INSPECT_MODE_ENABLED` | `true` | The document page (`/docs/{id}`). `false` sends anyone who opens a document back to **Docs**, with a warning. Results under **Analyses** still open. |
 
-At least one of the two must be `true`.
+At least one of `RAG_PIPELINE_ENABLED` and `STUDIO_MODE_ENABLED` must be `true`.
+
+### Read but unused
+
+The backend still reads three more variables and returns them in `/api/health`, but no screen uses them: changing them changes nothing in the app. A negative `MAX_PASTE_IMAGE_SIZE_MB` or an empty `PASTE_ALLOWED_IMAGE_TYPES` still stops the server at start.
+
+| Variable | Default | In `/api/health` |
+|----------|---------|------------------|
+| `LINKED_MODE_ENABLED` | `true` | `linkedModeEnabled` |
+| `MAX_PASTE_IMAGE_SIZE_MB` | `10` | `maxPasteImageSizeMb` (`null` when `0`) |
+| `PASTE_ALLOWED_IMAGE_TYPES` | `image/png,image/jpeg,image/webp` | `pasteAllowedImageTypes` |
 
 ## Optional services
 
@@ -89,7 +101,9 @@ Ingestion sends chunks to OpenSearch or Neo4j. It turns on when `EMBEDDING_URL` 
 |----------|---------|--------------|
 | `EMBEDDING_URL` | empty | Embedding service address. Empty means no ingestion. |
 | `OPENSEARCH_URL` | empty | OpenSearch address. Empty means OpenSearch is not used. |
+| `OPENSEARCH_DEFAULT_LIMIT` | `1000` | Most chunks returned when a document's chunks are read back from OpenSearch. |
 | `EMBEDDING_DIMENSION` | `384` | Vector size. It must match the embedding model. |
+| `DEFAULT_EMBEDDER` | `bge-m3` | Embedder name recorded on the `default` store when the database creates it. |
 | `NEO4J_URI` | empty | Neo4j address, for example `bolt://neo4j:7687`. Empty means Neo4j is not used. |
 | `NEO4J_USER`, `NEO4J_PASSWORD` | `neo4j`, `changeme` | Neo4j login. Change the password. |
 | `STORE_SECRET_KEY` | empty | Encrypts store passwords in the database. Required as soon as a store has a password, and it must never change. |
@@ -106,7 +120,7 @@ With Docker Compose, the `ingestion` profile starts OpenSearch, the embedding se
 docker compose --profile ingestion -f docker-compose.yml -f docker-compose.ingestion.yml up --build
 ```
 
-For Neo4j, also put `NEO4J_URI=bolt://neo4j:7687` in `.env`. The embedding service reads `EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`).
+For Neo4j, also put `NEO4J_URI=bolt://neo4j:7687` in `.env`. The embedding service reads `EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`) and `EMBEDDING_BATCH_SIZE`, the number of texts it encodes per batch (default `64`).
 
 These compose settings are for a laptop: OpenSearch runs without security and Neo4j with the default password. Do not expose them.
 
