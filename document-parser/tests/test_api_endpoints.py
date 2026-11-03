@@ -829,6 +829,25 @@ class TestAnalysisEndpoints:
         assert resp.status_code == 400
         mock_analysis_service.import_docling_document.assert_awaited_once()
 
+    def test_the_import_body_cap_is_50_mb_not_nginx_200(self, client, mock_analysis_service):
+        """Importing costs ~44x the JSON in memory: 200 MB (nginx's cap) was
+        ~9 GB for a 4 GB backend (re-audit 0.7.4, 08 MAJ). The figure is
+        documented, so it is pinned here."""
+        mock_analysis_service.import_docling_document = AsyncMock()
+
+        resp = client.post(
+            "/api/analyses/import",
+            content=b"{}",
+            headers={
+                "content-type": "application/json",
+                "content-length": str(50 * 1024 * 1024 + 1),
+            },
+        )
+
+        assert resp.status_code == 413
+        assert resp.json()["detail"] == "Request body too large (max 50 MB)"
+        mock_analysis_service.import_docling_document.assert_not_awaited()
+
     def test_delete_analysis(self, client, mock_analysis_service):
         mock_analysis_service.delete = AsyncMock(return_value=True)
 

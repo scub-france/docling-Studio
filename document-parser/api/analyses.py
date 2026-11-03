@@ -28,11 +28,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# The bundled nginx's default `client_max_body_size` (NGINX_MAX_BODY_SIZE=200M),
-# enforced here too so a backend reached without that proxy is bounded as
-# well (#audit-08). The Docling import is the only route of this router with
-# a large body: a Docling JSON embeds its page images by default.
-_MAX_BODY_BYTES = 200 * 1024 * 1024
+# Cap on a request body of this router (#audit-08). The Docling import is its
+# only route with a large body, and importing costs far more memory than the
+# body: measured on Docling-shaped JSON (text items with provenance, tables),
+# the backend's RSS grows by about 44x the JSON size, and the import takes
+# about 2.4 s per MB (50 MB: +2.2 GB, 123 s; 28 MB: +1.2 GB, 65 s). With each
+# page's image embedded as a PNG, the ratio falls to about 14x. 50 MB keeps
+# the worst of these within the backend's 4 GB compose limit, which 200 MB
+# (the bundled nginx's NGINX_MAX_BODY_SIZE) did not: about 9 GB.
+# 50 MB still holds a text-only Docling JSON of some 1,800 pages (about 28 KB
+# a page), or about 400 pages with a 70 KB PNG embedded for each (300 pages
+# measured 36 MB); heavier page images leave fewer pages. Studio renders pages
+# from the uploaded PDF, so a larger document can be exported without its
+# images (`image_export_mode=placeholder`). Same figure as the default
+# MAX_FILE_SIZE_MB, the upload limit of the PDF the import attaches to.
+_MAX_BODY_BYTES = 50 * 1024 * 1024
 
 
 def _body_too_large() -> HTTPException:
