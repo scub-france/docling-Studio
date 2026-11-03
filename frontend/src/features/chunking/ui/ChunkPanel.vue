@@ -449,7 +449,7 @@ async function doRechunk() {
   left: 2px;
   width: 14px;
   height: 14px;
-  background: white;
+  background: var(--on-accent);
   border-radius: 50%;
   transition: transform 0.2s;
 }
@@ -478,7 +478,7 @@ async function doRechunk() {
 
 .chunk-btn.primary {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .chunk-btn.primary:disabled {
@@ -664,7 +664,7 @@ async function doRechunk() {
 
 .chunk-edit-btn.save {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .chunk-edit-btn.save:disabled {
@@ -787,8 +787,8 @@ async function doRechunk() {
 .spinner-sm {
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border: 2px solid color-mix(in srgb, var(--on-accent) 30%, transparent);
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }

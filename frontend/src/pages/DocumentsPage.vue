@@ -289,7 +289,7 @@ onMounted(() => {
 .filter-btn.active,
 .sort-btn.active {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .page-content {

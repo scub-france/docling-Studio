@@ -427,7 +427,7 @@ watch(
 .props-btn--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .props-btn--primary:hover:not(:disabled) {

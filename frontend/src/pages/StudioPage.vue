@@ -861,7 +861,7 @@ onBeforeUnmount(() => {
 .topbar-btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .topbar-btn.primary:hover:not(:disabled) {
@@ -881,8 +881,8 @@ onBeforeUnmount(() => {
 .spinner-sm {
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border: 2px solid color-mix(in srgb, var(--on-accent) 30%, transparent);
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
@@ -1404,7 +1404,7 @@ onBeforeUnmount(() => {
 
 .toggle-input:checked + .toggle-switch::after {
   left: 18px;
-  background: white;
+  background: var(--on-accent);
 }
 
 .toggle-text {

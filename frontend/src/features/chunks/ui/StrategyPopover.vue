@@ -350,7 +350,7 @@ function sanitize(options: Required<RechunkOptions>): RechunkOptions {
 .strategy-btn--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .strategy-btn--primary:hover:not(:disabled) {

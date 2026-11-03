@@ -632,7 +632,7 @@ defineExpose({ load })
 
 .retry-btn {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   border: none;
   padding: 6px 16px;
   border-radius: var(--radius-sm);

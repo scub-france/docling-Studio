@@ -119,7 +119,7 @@ function submit(): void {
   padding: 6px 16px;
   font-size: 12.5px;
   font-weight: 600;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
   cursor: pointer;
   transition: background var(--transition);
