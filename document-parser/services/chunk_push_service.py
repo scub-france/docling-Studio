@@ -13,13 +13,11 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from domain import hashing
 from domain.chunk_serialization import chunk_to_ingestion_dict
-from domain.models import ChunkPush, DocumentStoreLink
+from domain.models import ChunkPush, DocumentStoreLink, _new_id, _utcnow
 from services.chunk_errors import ChunkServiceError, require_document
 from services.store_backend_resolver import StoreBackendNotConfiguredError
 
@@ -36,14 +34,6 @@ if TYPE_CHECKING:
     from services.store_backend_resolver import IngestionTargets, StoreBackendResolver
 
 logger = logging.getLogger(__name__)
-
-
-def _utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
-def _new_id() -> str:
-    return str(uuid.uuid4())
 
 
 class ChunkPushService:
