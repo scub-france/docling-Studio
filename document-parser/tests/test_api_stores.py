@@ -386,3 +386,50 @@ class TestTestConnectionEndpoint:
     def test_returns_404_when_slug_unknown(self, client):
         resp = client.post("/api/stores/ghost/test-connection")
         assert resp.status_code == 404
+
+
+def _policy_service(*, read_only: bool) -> StoreService:
+    from infra.ssrf_guard import resolved_target_is_blocked
+
+    service = StoreService(
+        SqliteStoreRepository(), SqliteDocumentStoreLinkRepository(), SqliteDocumentRepository()
+    )
+    service.set_connection_policy(target_is_blocked=resolved_target_is_blocked, read_only=read_only)
+    return service
+
+
+class TestConnectionPolicyEndpoints:
+    """#audit-08 — the SSRF guard and the read-only switch, through HTTP."""
+
+    def test_create_with_the_metadata_address_is_422(self, client):
+        with state_override(app, store_service=_policy_service(read_only=False)):
+            resp = client.post(
+                "/api/stores", json={**VALID_OS, "connectionUri": "http://169.254.169.254/"}
+            )
+        assert resp.status_code == 422
+        assert "resolves to an address" in resp.json()["detail"]
+
+    def test_patch_to_the_metadata_address_is_422(self, client):
+        client.post("/api/stores", json={**VALID_OS, "connectionUri": "http://10.0.0.5:9200"})
+        with state_override(app, store_service=_policy_service(read_only=False)):
+            resp = client.patch("/api/stores/rh", json={"connectionUri": "http://[::]:9200"})
+        assert resp.status_code == 422
+
+    def test_writes_are_403_on_a_read_only_deployment(self, client):
+        client.post("/api/stores", json=VALID_OS)
+        with state_override(app, store_service=_policy_service(read_only=True)):
+            created = client.post("/api/stores", json={**VALID_OS, "slug": "rh2", "name": "rh2"})
+            patched = client.patch("/api/stores/rh", json={"name": "renamed"})
+            deleted = client.delete("/api/stores/rh")
+            listed = client.get("/api/stores")
+        assert [created.status_code, patched.status_code, deleted.status_code] == [403, 403, 403]
+        assert "read-only" in created.json()["detail"]
+        assert listed.status_code == 200
+
+    def test_connection_test_answers_ok_false_on_a_read_only_deployment(self, client):
+        client.post("/api/stores", json=VALID_OS)
+        with state_override(app, store_service=_policy_service(read_only=True)):
+            resp = client.post("/api/stores/rh/test-connection")
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is False
+        assert "read-only" in resp.json()["errorMessage"]

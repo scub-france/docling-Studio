@@ -41,6 +41,7 @@ from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import deps_present, deps_provenance
 from infra.llm.ollama_probe import OllamaProbe
 from infra.settings import settings
+from infra.ssrf_guard import resolved_target_is_blocked
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.app_settings_repo import SqliteAppSettingsRepository
 from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
@@ -139,6 +140,21 @@ class AppStateBuilder:
         analysis_service.set_version_recorder(version_service)
         chunk_service.set_version_recorder(version_service)
 
+        store_service = StoreService(
+            store_repo=store_repo,
+            link_repo=link_repo,
+            document_repo=document_repo,
+            backend_resolver=backend_resolver,
+        )
+        # #audit-08 — a store's connection URI is screened by the Ollama
+        # probe's SSRF guard, on save and before each connection test; on the
+        # Hugging Face Space, store configuration is read-only like the
+        # reasoning and MCP settings.
+        store_service.set_connection_policy(
+            target_is_blocked=resolved_target_is_blocked,
+            read_only=settings.deployment_mode == "huggingface",
+        )
+
         self._update(
             analysis_repo=analysis_repo,
             store_repo=store_repo,
@@ -148,12 +164,7 @@ class AppStateBuilder:
             ),
             analysis_service=analysis_service,
             export_service=ExportService(document_repo=document_repo, analysis_repo=analysis_repo),
-            store_service=StoreService(
-                store_repo=store_repo,
-                link_repo=link_repo,
-                document_repo=document_repo,
-                backend_resolver=backend_resolver,
-            ),
+            store_service=store_service,
             chunk_service=chunk_service,
             # 0.6.1 (#audit-01) — GraphService serves /graph so api/graph.py
             # stops reaching into infra. Reader is None without Neo4j (503).

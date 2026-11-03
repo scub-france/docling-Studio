@@ -576,3 +576,167 @@ class TestConnectionFieldsRoundTrip:
         # The plaintext is unsealable from the repo with the right key.
         plaintext = await SqliteStoreRepository().get_connection_password(updated.id)
         assert plaintext == "rotated"
+
+
+class TestConnectionPolicy:
+    """#audit-08 — `connection_uri` is a target the caller picks, and the
+    backend connects to it. The composition root wires the Ollama probe's
+    SSRF guard and the Hugging Face read-only switch through
+    `set_connection_policy`.
+    """
+
+    @pytest.fixture
+    def resolver(self):
+        from unittest.mock import AsyncMock
+
+        return AsyncMock()
+
+    @pytest.fixture
+    def guarded(self, resolver):
+        from infra.ssrf_guard import resolved_target_is_blocked
+
+        service = StoreService(
+            store_repo=SqliteStoreRepository(),
+            link_repo=SqliteDocumentStoreLinkRepository(),
+            backend_resolver=resolver,
+        )
+        service.set_connection_policy(target_is_blocked=resolved_target_is_blocked, read_only=False)
+        return service
+
+    async def _create(self, service, uri=None, slug="os"):
+        return await service.create_store(
+            name=slug,
+            slug=slug,
+            kind=StoreKind.OPENSEARCH,
+            embedder="b",
+            config=VALID_OS_CONFIG,
+            connection_uri=uri,
+        )
+
+    async def test_create_refuses_the_metadata_address(self, guarded):
+        with pytest.raises(StoreValidationError, match="resolves to an address") as caught:
+            await self._create(guarded, "http://169.254.169.254/")
+        assert caught.value.http_status == 422
+        assert await SqliteStoreRepository().find_by_slug("os") is None
+
+    async def test_create_refuses_a_neo4j_uri_on_a_link_local_address(self, guarded):
+        with pytest.raises(StoreValidationError):
+            await guarded.create_store(
+                name="neo",
+                slug="neo",
+                kind=StoreKind.NEO4J,
+                embedder="b",
+                config={"index_name": "x"},
+                connection_uri="bolt://[fe80::1]:7687",
+            )
+
+    async def test_create_accepts_loopback_and_lan_addresses(self, guarded):
+        await self._create(guarded, "http://127.0.0.1:9200", slug="local")
+        await self._create(guarded, "http://10.0.0.5:9200", slug="lan")
+
+    async def test_update_refuses_the_metadata_address_and_keeps_the_old_uri(self, guarded):
+        await self._create(guarded, "http://10.0.0.5:9200")
+
+        with pytest.raises(StoreValidationError):
+            await guarded.update_store("os", connection_uri="http://169.254.169.254:80")
+
+        stored = await SqliteStoreRepository().find_by_slug("os")
+        assert stored.connection_uri == "http://10.0.0.5:9200"
+
+    async def test_update_without_a_uri_does_not_resolve_anything(self, resolver):
+        calls: list[str] = []
+        service = StoreService(
+            SqliteStoreRepository(), SqliteDocumentStoreLinkRepository(), None, resolver
+        )
+        await self._create(service, "http://10.0.0.5:9200")
+        service.set_connection_policy(target_is_blocked=calls.append, read_only=False)
+
+        await service.update_store("os", name="renamed")
+
+        assert calls == []
+
+    async def test_connection_test_refuses_a_blocked_uri_saved_before_the_guard(
+        self, guarded, resolver
+    ):
+        """A row written before the check (or a name re-pointed since) is
+        screened again before the probe, and nothing is resolved or sent."""
+        unguarded = StoreService(SqliteStoreRepository(), SqliteDocumentStoreLinkRepository())
+        await self._create(unguarded, "http://169.254.169.254/")
+
+        ok, err = await guarded.test_connection("os")
+
+        assert ok is False
+        assert "resolves to an address" in (err or "")
+        resolver.resolve.assert_not_awaited()
+
+    async def test_connection_errors_reach_the_log_not_the_client(self, guarded, resolver, caplog):
+        resolver.resolve.side_effect = RuntimeError("SSH-2.0-OpenSSH_9.6 internal banner")
+        await self._create(guarded, "http://10.0.0.5:22")
+
+        with caplog.at_level("WARNING", logger="services.store_service"):
+            ok, err = await guarded.test_connection("os")
+
+        assert ok is False
+        assert "banner" not in (err or "")
+        assert "server log" in (err or "")
+        assert "internal banner" in caplog.text
+
+    async def test_a_ping_that_raises_gets_the_generic_message(self, guarded, resolver):
+        from unittest.mock import AsyncMock
+
+        from services.store_backend_resolver import IngestionTargets
+
+        client = AsyncMock()
+        client.ping = AsyncMock(side_effect=OSError("connection refused by 10.0.0.5:9200"))
+        resolver.resolve.return_value = IngestionTargets(vector_store=client)
+        await self._create(guarded, "http://10.0.0.5:9200")
+
+        ok, err = await guarded.test_connection("os")
+
+        assert ok is False
+        assert "10.0.0.5" not in (err or "")
+
+
+class TestReadOnlyDeployment:
+    """On the Hugging Face Space, store configuration is read-only, as the
+    reasoning and MCP settings are (`bootstrap/builder.py`)."""
+
+    @pytest.fixture
+    def resolver(self):
+        from unittest.mock import AsyncMock
+
+        return AsyncMock()
+
+    @pytest.fixture
+    def read_only(self, resolver):
+        service = StoreService(
+            SqliteStoreRepository(), SqliteDocumentStoreLinkRepository(), None, resolver
+        )
+        service.set_connection_policy(target_is_blocked=lambda _uri: False, read_only=True)
+        return service
+
+    async def test_create_update_and_delete_are_refused_with_403(self, read_only):
+        from services.store_service import StoreServiceError
+
+        writes = [
+            lambda: read_only.create_store(
+                name="x", slug="x", kind=StoreKind.OPENSEARCH, embedder="b", config={}
+            ),
+            lambda: read_only.update_store("default", name="renamed"),
+            lambda: read_only.delete_store("default"),
+        ]
+        for write in writes:
+            with pytest.raises(StoreServiceError, match="read-only") as caught:
+                await write()
+            assert caught.value.http_status == 403
+        assert (await read_only.get_by_slug("default")).name != "renamed"
+
+    async def test_connection_test_is_refused_without_connecting(self, read_only, resolver):
+        ok, err = await read_only.test_connection("default")
+
+        assert ok is False
+        assert "read-only" in (err or "")
+        resolver.resolve.assert_not_awaited()
+
+    async def test_reads_still_work(self, read_only):
+        assert [s.slug for s in await read_only.list_stores()] == ["default"]

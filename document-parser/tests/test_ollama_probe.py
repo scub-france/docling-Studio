@@ -84,7 +84,7 @@ async def test_resolution_failure_returns_unreachable_without_raising() -> None:
         raise httpx.ConnectError("connection refused")
 
     with (
-        patch("infra.llm.ollama_probe.socket.getaddrinfo", _boom),
+        patch("infra.ssrf_guard.socket.getaddrinfo", _boom),
         patch.object(_FakeAsyncClient, "get", _connect_error),
         patch("infra.llm.ollama_probe.httpx.AsyncClient", _FakeAsyncClient),
     ):

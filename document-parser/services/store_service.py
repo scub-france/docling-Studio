@@ -10,15 +10,18 @@ Sits between the API layer and the SQLite repositories. Owns:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from domain.models import Store
 from domain.value_objects import StoreKind
 from services.errors import ServiceError
+from services.store_backend_resolver import StoreBackendNotConfiguredError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -138,6 +141,14 @@ def _validate_config_for_kind(kind: StoreKind, config: dict) -> None:
             raise StoreValidationError("Neo4j config requires a non-empty 'index_name'")
 
 
+_READ_ONLY_MESSAGE = "Store configuration is read-only on this deployment (huggingface)"
+_BLOCKED_URI_MESSAGE = (
+    "connection_uri resolves to an address no store can use "
+    "(link-local or cloud metadata, multicast, reserved or unspecified)"
+)
+_PROBE_FAILED_MESSAGE = "Could not connect to the store backend (details in the server log)"
+
+
 class StoreService:
     """Orchestrates store CRUD on top of SQLite repositories."""
 
@@ -194,6 +205,7 @@ class StoreService:
         connection_username: str | None = None,
         connection_password: str | None = None,
     ) -> Store:
+        self._require_writable()
         name = (name or "").strip()
         slug = (slug or "").strip().lower()
         embedder = (embedder or "").strip()
@@ -205,6 +217,7 @@ class StoreService:
         _validate_slug(slug)
         _validate_config_for_kind(kind, config)
         connection_uri = _normalise_uri_for_kind(kind, connection_uri)
+        await self._reject_blocked_uri(connection_uri)
         connection_username = _normalise_optional(connection_username)
 
         if await self._stores.find_by_slug(slug) is not None:
@@ -246,6 +259,7 @@ class StoreService:
         connection_username: str | None = None,
         connection_password: str | None = None,
     ) -> Store:
+        self._require_writable()
         store = await self.get_by_slug(slug)
 
         if name is not None:
@@ -284,6 +298,7 @@ class StoreService:
 
         if connection_uri is not None:
             store.connection_uri = _normalise_uri_for_kind(store.kind, connection_uri)
+            await self._reject_blocked_uri(store.connection_uri)
         if connection_username is not None:
             store.connection_username = _normalise_optional(connection_username)
 
@@ -305,26 +320,75 @@ class StoreService:
         # Re-read so the response reflects the new sealed-flag state.
         return await self._stores.find_by_id(store.id) or store
 
+    # -- Connection policy (#audit-08) -----------------------------------
+    # A store's `connection_uri` is a target the caller picks, and the
+    # backend connects to it: the same SSRF class as the Ollama probe.
+    # Class-level defaults hold until the composition root calls
+    # `set_connection_policy`: scheme checks only, writable.
+    _target_is_blocked: Callable[[str], bool] | None = None
+    _read_only: bool = False
+
+    def set_connection_policy(
+        self, *, target_is_blocked: Callable[[str], bool], read_only: bool
+    ) -> None:
+        """Wire the SSRF guard and the read-only switch.
+
+        `target_is_blocked(uri)` resolves the URI's host (infra, injected:
+        services may not import it). `read_only` refuses every store
+        configuration write and connection test, as the Hugging Face Space
+        does for the reasoning and MCP settings.
+        """
+        self._target_is_blocked = target_is_blocked
+        self._read_only = read_only
+
+    def _require_writable(self) -> None:
+        if self._read_only:
+            raise StoreServiceError(_READ_ONLY_MESSAGE, http_status=403)
+
+    async def _uri_is_blocked(self, uri: str | None) -> bool:
+        if uri is None or self._target_is_blocked is None:
+            return False
+        # Name resolution blocks: keep it off the event loop.
+        return await asyncio.to_thread(self._target_is_blocked, uri)
+
+    async def _reject_blocked_uri(self, uri: str | None) -> None:
+        if await self._uri_is_blocked(uri):
+            raise StoreValidationError(_BLOCKED_URI_MESSAGE)
+
     async def test_connection(self, slug: str) -> tuple[bool, str | None]:
         """Open a probe connection to the store's backend.
 
         Returns `(ok, error_message)`. Success means the resolver
         could build a driver/client AND the underlying ping returned
         OK. Failure modes:
-          - `StoreBackendNotConfiguredError` → "no URI configured"
-          - Driver/connection error → the exception message (passwords
-            never appear in the message — we strip the password from
-            the resolver before raising).
+          - read-only deployment → refused, no connection attempted.
+          - `connection_uri` resolving to a blocked address → refused,
+            no connection attempted. Checked again here, not only on
+            save: rows written before the check, and names re-pointed
+            since, go through it too.
+          - `StoreBackendNotConfiguredError` → its message, which names
+            the missing setting.
+          - Any other driver/connection error → a generic message; the
+            exception goes to the server log, never to the client, so the
+            probe cannot read back what an internal address answers.
           - `_backend_resolver` not wired → ("connection probe not
             available", 503-shaped).
         """
         store = await self.get_by_slug(slug)
+        if self._read_only:
+            return False, _READ_ONLY_MESSAGE
+        if await self._uri_is_blocked(store.connection_uri):
+            logger.warning("Store %r: connection test refused, blocked target address", slug)
+            return False, _BLOCKED_URI_MESSAGE
         if self._backend_resolver is None:
             return False, "connection probe not available (backend resolver not configured)"
         try:
             targets = await self._backend_resolver.resolve(store)
-        except Exception as exc:
+        except StoreBackendNotConfiguredError as exc:
             return False, str(exc)
+        except Exception as exc:
+            logger.warning("Store %r: backend resolution failed: %r", slug, exc)
+            return False, _PROBE_FAILED_MESSAGE
         try:
             if targets.vector_store is not None:
                 ok = await targets.vector_store.ping()
@@ -337,7 +401,8 @@ class StoreService:
                     return False, "Graph-store ping returned not-ok"
                 return True, None
         except Exception as exc:
-            return False, str(exc)
+            logger.warning("Store %r: connection probe failed: %r", slug, exc)
+            return False, _PROBE_FAILED_MESSAGE
         return False, "no backend resolved for this store"
 
     async def list_documents(self, slug: str) -> list[StoreDocEntryView]:
@@ -378,6 +443,7 @@ class StoreService:
             raise StoreNotFoundError(f"document '{doc_id}' is not linked to store '{slug}'")
 
     async def delete_store(self, slug: str) -> None:
+        self._require_writable()
         store = await self.get_by_slug(slug)
         if store.slug == "default":
             raise StoreConflictError(
