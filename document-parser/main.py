@@ -26,6 +26,7 @@ from api.config import router as config_router
 from api.document_chunks import router as document_chunks_router
 from api.document_versions import router as document_versions_router
 from api.documents import router as documents_router
+from api.errors import register_error_handlers
 from api.graph import router as graph_router
 from api.ingestion import router as ingestion_router
 from api.mcp import router as mcp_router
@@ -85,6 +86,8 @@ app = FastAPI(
     description="Document analysis studio powered by Docling",
     lifespan=lifespan,
 )
+# Service rejections carry their HTTP status; one handler answers them all.
+register_error_handlers(app)
 
 app.add_middleware(
     CORSMiddleware,

@@ -58,15 +58,13 @@ async def create_analysis(
     if body.chunkingOptions:
         chunking_opts = body.chunkingOptions.model_dump()
 
-    try:
-        job = await service.create(
-            body.documentId,
-            pipeline_options=pipeline_opts,
-            chunking_options=chunking_opts,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
+    # An unknown document raises `DocumentNotFoundError`: the app-level
+    # handler answers it with a 404.
+    job = await service.create(
+        body.documentId,
+        pipeline_options=pipeline_opts,
+        chunking_options=chunking_opts,
+    )
     return _to_response(job)
 
 
@@ -81,8 +79,10 @@ async def import_analysis(
     try:
         job = await service.import_docling_document(body.documentId, body.document)
     except ValueError as e:
-        status_code = 404 if str(e).startswith("Document not found:") else 400
-        raise HTTPException(status_code=status_code, detail=str(e)) from e
+        # A document that does not validate. An unknown one raises
+        # `DocumentNotFoundError` instead, which the app-level handler answers
+        # with a 404 — the status no longer depends on the message's wording.
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     return _to_response(job)
 

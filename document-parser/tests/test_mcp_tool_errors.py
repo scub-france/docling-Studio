@@ -13,7 +13,8 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp_adapter.tool_errors import ToolErrors
-from services.navigation_errors import RefNotFoundError
+from services.chunk_service import ChunkServiceError
+from services.navigation_errors import DocumentNotFoundError, RefNotFoundError
 
 
 async def test_a_service_rejection_reaches_the_agent_verbatim():
@@ -33,3 +34,20 @@ async def test_cancellation_is_not_turned_into_a_tool_error():
     with pytest.raises(asyncio.CancelledError):
         async with ToolErrors():
             raise asyncio.CancelledError
+
+
+async def test_a_missing_document_reaches_the_agent_verbatim():
+    # The one `DocumentNotFoundError` is shared with the chunk and analysis
+    # services; it stays in the navigation family this adapter reports.
+    with pytest.raises(ToolError, match="Document not found: d1"):
+        async with ToolErrors():
+            raise DocumentNotFoundError("Document not found: d1")
+
+
+async def test_another_service_family_keeps_its_text_on_the_server():
+    # Every service error is a `ServiceError` now; the filter must not have
+    # widened to that base — a chunk-service rejection is not the agent's.
+    with pytest.raises(ToolError) as caught:
+        async with ToolErrors():
+            raise ChunkServiceError("Chunker not configured", http_status=503)
+    assert "Chunker" not in str(caught.value)

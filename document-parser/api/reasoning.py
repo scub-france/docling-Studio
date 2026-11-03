@@ -6,8 +6,9 @@ against the document's latest completed analysis and returns a camelCase
 
 This module has zero coupling to docling-agent / mellea / docling-core. The
 service (resolved from the typed `AppState` container) owns the runner and
-the analysis lookup; the router only maps DTOs and translates the service's
-typed errors into HTTP status codes.
+the analysis lookup; the router only maps DTOs. The service's typed errors
+reach the app-level handler (`api/errors.py`); the router answers the
+runner's own failures.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from fastapi import APIRouter, HTTPException
 from api import deps  # noqa: TC001
 from api.schemas import ReasoningRunRequest, ReasoningTraceResponse
 from domain.ports import ReasoningParseError
-from services.reasoning_service import ReasoningServiceError
+from services.errors import ServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["reasoning"])
@@ -31,10 +32,11 @@ async def run_reasoning(
 ) -> ReasoningTraceResponse:
     try:
         trace = await service.run(doc_id, body.query, body.model_id)
-    except ReasoningServiceError as exc:
-        # 503 (unavailable) / 400 (empty query) / 404 (no analysis) — the
-        # service carries the status hint.
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except ServiceError:
+        # 503 (unavailable) / 400 (empty query) / 404 (no analysis): the
+        # app-level handler answers with the status the error carries. Re-raised
+        # here only so the catch-all below does not turn it into a 500.
+        raise
     except ReasoningParseError as exc:
         # The upstream LLM couldn't produce a parseable answer after retries.
         # 502 Bad Gateway — not our fault — with guidance the UI can show.

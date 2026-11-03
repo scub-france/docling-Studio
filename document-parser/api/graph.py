@@ -4,9 +4,9 @@
 + pages + merges) requiring the Maintain step (IngestionPipeline) to have run
 for the document.
 
-The endpoint is a thin shim over `GraphService` — the router only translates
-between domain errors and HTTP status codes, and serializes the domain
-`GraphPayload` into the camelCase-friendly `GraphResponse`. No infra imports
+The endpoint is a thin shim over `GraphService` — the router serializes the
+domain `GraphPayload` into `GraphResponse`; the service's typed errors (404,
+413, 503) reach the app-level handler (`api/errors.py`). No infra imports
 (#audit-01).
 """
 
@@ -14,11 +14,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from api import deps  # noqa: TC001
-from services.graph_service import GraphServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["graph"])
@@ -64,8 +63,5 @@ def _to_response(payload) -> GraphResponse:
 
 @router.get("/{doc_id}/graph", response_model=GraphResponse)
 async def get_document_graph(doc_id: str, service: deps.GraphServiceDep) -> GraphResponse:
-    try:
-        payload = await service.fetch_document_graph(doc_id)
-    except GraphServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    payload = await service.fetch_document_graph(doc_id)
     return _to_response(payload)

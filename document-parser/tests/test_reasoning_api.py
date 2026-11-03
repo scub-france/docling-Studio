@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.errors import register_error_handlers
 from api.reasoning import router
 from domain.ports import ReasoningParseError
 from domain.value_objects import ReasoningIteration, ReasoningResult
@@ -89,6 +90,7 @@ def _make_client(
     default_model_id: str = "default:7b",
 ) -> TestClient:
     app = FastAPI()
+    register_error_handlers(app)
     app.include_router(router)
     wire_state(
         app,

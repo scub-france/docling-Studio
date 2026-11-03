@@ -14,13 +14,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import NoReturn
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from api import deps  # noqa: TC001
 from api.schemas import DocumentVersionResponse
-from services.version_service import VersionServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -47,20 +45,13 @@ def _to_response(version, chunks_snapshot_size: int) -> DocumentVersionResponse:
     )
 
 
-def _raise_for(error: VersionServiceError) -> NoReturn:
-    raise HTTPException(status_code=error.http_status, detail=str(error))
-
-
 @router.get("/{doc_id}/versions", response_model=list[DocumentVersionResponse])
 async def list_versions(
     doc_id: str, service: deps.VersionServiceDep
 ) -> list[DocumentVersionResponse]:
     """List frozen versions for a document, newest-first. The chunk counts
     come from the store: the snapshots themselves are never loaded here."""
-    try:
-        entries = await service.list_for_document(doc_id)
-    except VersionServiceError as e:
-        _raise_for(e)
+    entries = await service.list_for_document(doc_id)
     return [_to_response(e.version, e.chunk_count) for e in entries]
 
 
@@ -75,8 +66,5 @@ async def restore_version(
     version's snapshot. The active-analysis pointer is managed
     client-side (the frontend reads `analysisId` off the response).
     """
-    try:
-        version = await service.restore(doc_id, version_id)
-    except VersionServiceError as e:
-        _raise_for(e)
+    version = await service.restore(doc_id, version_id)
     return _to_response(version, _snapshot_size(version.chunks_snapshot))

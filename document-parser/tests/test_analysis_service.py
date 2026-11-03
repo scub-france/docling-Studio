@@ -15,6 +15,7 @@ from domain.services import extract_html_body, merge_results
 from domain.value_objects import ConversionResult, PageDetail
 from infra.pdf_inspector import PdfiumInspector
 from services.analysis_service import AnalysisConfig, AnalysisService
+from services.navigation_errors import DocumentNotFoundError
 
 
 def _make_service(**kwargs) -> AnalysisService:
@@ -159,6 +160,33 @@ class TestAnalysisServiceCancellation:
         await asyncio.gather(task)
 
         assert "j1" not in service._running_tasks
+
+
+class TestUnknownDocument:
+    """An unknown document is a typed error (404), not a ValueError whose
+    message the router had to read (#audit-05)."""
+
+    @pytest.mark.asyncio
+    async def test_create_raises_document_not_found(self):
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=None)
+        service = _make_service(document_repo=document_repo)
+
+        with pytest.raises(DocumentNotFoundError, match="Document not found: ghost") as caught:
+            await service.create("ghost")
+        assert caught.value.http_status == 404
+
+    @pytest.mark.asyncio
+    async def test_import_raises_document_not_found(self):
+        analysis_repo = MagicMock()
+        analysis_repo.insert = AsyncMock()
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=None)
+        service = _make_service(analysis_repo=analysis_repo, document_repo=document_repo)
+
+        with pytest.raises(DocumentNotFoundError, match="Document not found: ghost"):
+            await service.import_docling_document("ghost", {})
+        analysis_repo.insert.assert_not_awaited()
 
 
 class TestDoclingDocumentImport:

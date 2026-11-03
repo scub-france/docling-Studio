@@ -24,6 +24,7 @@ from domain.value_objects import (
     ConversionResult,
     DocumentLifecycleState,
 )
+from services.navigation_errors import DocumentNotFoundError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -133,7 +134,7 @@ class AnalysisService:
         """Create a new analysis job and launch background processing."""
         doc = await self._document_repo.find_by_id(document_id)
         if not doc:
-            raise ValueError(f"Document not found: {document_id}")
+            raise DocumentNotFoundError(f"Document not found: {document_id}")
 
         job = AnalysisJob(document_id=document_id)
         job.document_filename = doc.filename
@@ -161,7 +162,7 @@ class AnalysisService:
         """
         doc = await self._document_repo.find_by_id(document_id)
         if not doc:
-            raise ValueError(f"Document not found: {document_id}")
+            raise DocumentNotFoundError(f"Document not found: {document_id}")
 
         if not self._docling_importer:
             raise RuntimeError("Docling document importer is not configured")

@@ -2,23 +2,23 @@
 
 Shared by the parse loader and the three use-case services, so they live
 below all of them rather than inside whichever one happened to need them
-first. Each carries the HTTP status a router would map it to — the same
-convention `ReasoningService` established — and the MCP adapter turns the
-whole family into a tool error.
+first. Each carries the HTTP status a router would map it to (`ServiceError`),
+and the MCP adapter turns the whole family into a tool error.
+
+`DocumentNotFoundError` is the one "unknown document" error of the backend:
+the chunk and analysis services raise it too, so a router never tells a
+missing document from a bad request by reading a message.
 """
 
 from __future__ import annotations
 
+from services.errors import ServiceError
 
-class NavigationServiceError(Exception):
-    """Base error for document-navigation rejections, with a status hint."""
 
-    http_status: int = 500
+class NavigationServiceError(ServiceError):
+    """Base error for document-navigation rejections."""
 
-    def __init__(self, message: str, *, http_status: int | None = None) -> None:
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
+    http_status = 500
 
 
 class DocumentNotFoundError(NavigationServiceError):

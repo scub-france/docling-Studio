@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.config import router
+from api.errors import register_error_handlers
 from domain.app_config import (
     LLMHostProbeResult,
     ReasoningConfig,
@@ -75,6 +76,7 @@ def _make_client(
         ),
     )
     app = FastAPI()
+    register_error_handlers(app)
     app.include_router(router)
     wire_state(app, app_config_service=service)
     return TestClient(app), applied, repo

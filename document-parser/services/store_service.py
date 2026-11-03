@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from domain.models import Store
 from domain.value_objects import StoreKind
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -33,15 +34,10 @@ logger = logging.getLogger(__name__)
 _SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 
 
-class StoreServiceError(Exception):
-    """Base service error. Carries an `http_status` hint for the API layer."""
+class StoreServiceError(ServiceError):
+    """Base error for store-service rejections."""
 
-    http_status: int = 400
-
-    def __init__(self, message: str, *, http_status: int | None = None):
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
+    http_status = 400
 
 
 class StoreNotFoundError(StoreServiceError):

@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.errors import register_error_handlers
 from api.graph import router
 from domain.value_objects import GraphPayload
 from services.graph_service import GraphService
@@ -46,6 +47,7 @@ def _payload() -> GraphPayload:
 
 def _client(*, reader: _FakeGraphReader | None) -> TestClient:
     app = FastAPI()
+    register_error_handlers(app)
     app.include_router(router)
     wire_state(app, graph_service=GraphService(graph_reader=reader))
     return TestClient(app)

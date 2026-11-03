@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.config import router as config_router
+from api.errors import register_error_handlers
 from api.mcp import router as mcp_router
 from domain.mcp_config import McpRuntimeConfig, McpServerStatus, McpToolInfo
 from services.mcp_config_service import McpConfigService
@@ -69,6 +70,7 @@ def _client(
         mounted=mounted,
     )
     app = FastAPI()
+    register_error_handlers(app)
     app.include_router(config_router)
     app.include_router(mcp_router)
     wire_state(app, mcp_config_service=service)

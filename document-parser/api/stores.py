@@ -16,9 +16,6 @@ from api.schemas import (
     StoreUpdateRequest,
 )
 from domain.value_objects import StoreKind
-from services.store_service import (
-    StoreServiceError,
-)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/stores", tags=["stores"])
@@ -89,29 +86,23 @@ async def create_store(
     service: deps.StoreServiceDep,
 ) -> StoreResponse:
     kind = _parse_kind(payload.kind)
-    try:
-        store = await service.create_store(
-            name=payload.name,
-            slug=payload.slug,
-            kind=kind,
-            embedder=payload.embedder,
-            config=payload.config,
-            is_default=payload.is_default,
-            connection_uri=payload.connection_uri,
-            connection_username=payload.connection_username,
-            connection_password=payload.connection_password,
-        )
-    except StoreServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    store = await service.create_store(
+        name=payload.name,
+        slug=payload.slug,
+        kind=kind,
+        embedder=payload.embedder,
+        config=payload.config,
+        is_default=payload.is_default,
+        connection_uri=payload.connection_uri,
+        connection_username=payload.connection_username,
+        connection_password=payload.connection_password,
+    )
     return _store_to_response(store)
 
 
 @router.get("/{slug}", response_model=StoreResponse)
 async def get_store(slug: str, service: deps.StoreServiceDep) -> StoreResponse:
-    try:
-        store = await service.get_by_slug(slug)
-    except StoreServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    store = await service.get_by_slug(slug)
     return _store_to_response(store)
 
 
@@ -122,21 +113,18 @@ async def update_store(
     service: deps.StoreServiceDep,
 ) -> StoreResponse:
     kind = _parse_kind(payload.kind) if payload.kind is not None else None
-    try:
-        store = await service.update_store(
-            slug,
-            name=payload.name,
-            new_slug=payload.slug,
-            kind=kind,
-            embedder=payload.embedder,
-            config=payload.config,
-            is_default=payload.is_default,
-            connection_uri=payload.connection_uri,
-            connection_username=payload.connection_username,
-            connection_password=payload.connection_password,
-        )
-    except StoreServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    store = await service.update_store(
+        slug,
+        name=payload.name,
+        new_slug=payload.slug,
+        kind=kind,
+        embedder=payload.embedder,
+        config=payload.config,
+        is_default=payload.is_default,
+        connection_uri=payload.connection_uri,
+        connection_username=payload.connection_username,
+        connection_password=payload.connection_password,
+    )
     return _store_to_response(store)
 
 
@@ -154,22 +142,16 @@ async def test_store_connection(
     here (that would imply a server-side error, not a connection
     failure).
     """
-    try:
-        # Surface 404 if the slug is unknown — keeps parity with the
-        # other store endpoints.
-        await service.get_by_slug(slug)
-    except StoreServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    # Surface 404 if the slug is unknown — keeps parity with the
+    # other store endpoints.
+    await service.get_by_slug(slug)
     ok, error_message = await service.test_connection(slug)
     return StoreTestConnectionResponse(ok=ok, error_message=error_message)
 
 
 @router.delete("/{slug}", status_code=204)
 async def delete_store(slug: str, service: deps.StoreServiceDep) -> Response:
-    try:
-        await service.delete_store(slug)
-    except StoreServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    await service.delete_store(slug)
     return Response(status_code=204)
 
 
@@ -178,10 +160,7 @@ async def list_store_documents(
     slug: str,
     service: deps.StoreServiceDep,
 ) -> list[StoreDocEntryResponse]:
-    try:
-        entries = await service.list_documents(slug)
-    except StoreServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    entries = await service.list_documents(slug)
     return [_doc_entry_to_response(e) for e in entries]
 
 
@@ -191,8 +170,5 @@ async def remove_store_document(
     doc_id: str,
     service: deps.StoreServiceDep,
 ) -> Response:
-    try:
-        await service.remove_document(slug, doc_id)
-    except StoreServiceError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    await service.remove_document(slug, doc_id)
     return Response(status_code=204)

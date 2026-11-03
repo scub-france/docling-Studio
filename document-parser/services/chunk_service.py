@@ -29,6 +29,8 @@ from domain.value_objects import (
     ChunkEditAction,
     ChunkingOptions,
 )
+from services.errors import ServiceError
+from services.navigation_errors import DocumentNotFoundError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -53,24 +55,16 @@ _UNSET = object()
 
 
 # ---------------------------------------------------------------------------
-# Errors — carry an http_status hint, mirrors store_service.py convention.
+# Errors — carry the HTTP status the API layer answers with (`ServiceError`).
+# An unknown document raises the shared `DocumentNotFoundError` (404).
 # ---------------------------------------------------------------------------
 
 
-class ChunkServiceError(Exception):
-    http_status: int = 400
-
-    def __init__(self, message: str, *, http_status: int | None = None):
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
+class ChunkServiceError(ServiceError):
+    http_status = 400
 
 
 class ChunkNotFoundError(ChunkServiceError):
-    http_status = 404
-
-
-class DocumentNotFoundError(ChunkServiceError):
     http_status = 404
 
 

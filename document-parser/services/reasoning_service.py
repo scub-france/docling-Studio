@@ -18,21 +18,17 @@ import time
 from typing import TYPE_CHECKING
 
 from domain.trace_builder import build_trace
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from domain.ports import AnalysisRepository, ReasoningRunner
     from domain.value_objects import ReasoningTrace
 
 
-class ReasoningServiceError(Exception):
-    """Base error for reasoning-service rejections, carrying an HTTP-status hint."""
+class ReasoningServiceError(ServiceError):
+    """Base error for reasoning-service rejections."""
 
-    http_status: int = 500
-
-    def __init__(self, message: str, *, http_status: int | None = None) -> None:
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
+    http_status = 500
 
 
 class ReasoningUnavailableError(ReasoningServiceError):

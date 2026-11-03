@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from services.errors import ServiceError
+
 if TYPE_CHECKING:
     from domain.ports import GraphReader
     from domain.value_objects import GraphPayload
@@ -22,15 +24,10 @@ if TYPE_CHECKING:
 _DEFAULT_MAX_PAGES = 200
 
 
-class GraphServiceError(Exception):
-    """Base error for graph-service rejections, carrying an HTTP-status hint."""
+class GraphServiceError(ServiceError):
+    """Base error for graph-service rejections."""
 
-    http_status: int = 500
-
-    def __init__(self, message: str, *, http_status: int | None = None) -> None:
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
+    http_status = 500
 
 
 class GraphStoreNotConfiguredError(GraphServiceError):

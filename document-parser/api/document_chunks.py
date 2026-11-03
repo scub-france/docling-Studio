@@ -5,13 +5,13 @@ Exposes the canonical doc-centric chunkset (CRUD + tree + rechunk + diff
 ephemeral analysis runs (StudioPage / OCR Debug).
 
 All routes mount under `/api/documents/{doc_id}/...`. The router
-delegates to `ChunkService` — no direct repo / persistence access.
+delegates to `ChunkService` — no direct repo / persistence access — and
+lets its typed errors reach the app-level handler (`api/errors.py`).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import NoReturn
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -31,9 +31,6 @@ from api.schemas import (
     PushChunksResponse,
     SplitChunkRequest,
     UpdateChunkRequest,
-)
-from services.chunk_service import (
-    ChunkServiceError,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,10 +55,6 @@ def _to_response(chunk) -> DocChunkResponse:
     )
 
 
-def _raise_for(error: ChunkServiceError) -> NoReturn:
-    raise HTTPException(status_code=error.http_status, detail=str(error))
-
-
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
@@ -70,10 +63,7 @@ def _raise_for(error: ChunkServiceError) -> NoReturn:
 @router.get("/{doc_id}/chunks", response_model=list[DocChunkResponse])
 async def list_chunks(doc_id: str, service: deps.ChunkServiceDep) -> list[DocChunkResponse]:
     """List the canonical chunkset for a document, ordered by sequence."""
-    try:
-        chunks = await service.list_chunks(doc_id)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    chunks = await service.list_chunks(doc_id)
     return [_to_response(c) for c in chunks]
 
 
@@ -84,10 +74,7 @@ async def add_chunk(
     """Insert a new chunk (optionally after `afterId`)."""
     if not body.text:
         raise HTTPException(status_code=400, detail="text is required")
-    try:
-        chunk = await service.add_chunk(doc_id, text=body.text, after_id=body.after_id)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    chunk = await service.add_chunk(doc_id, text=body.text, after_id=body.after_id)
     return _to_response(chunk)
 
 
@@ -104,20 +91,14 @@ async def update_chunk(
     headings: list[str] | None = None
     if body.title is not None:
         headings = [body.title] if body.title else []
-    try:
-        chunk = await service.update_chunk(doc_id, chunk_id, text=body.text, headings=headings)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    chunk = await service.update_chunk(doc_id, chunk_id, text=body.text, headings=headings)
     return _to_response(chunk)
 
 
 @router.delete("/{doc_id}/chunks/{chunk_id}", status_code=204, response_model=None)
 async def delete_chunk(doc_id: str, chunk_id: str, service: deps.ChunkServiceDep) -> None:
     """Soft-delete a chunk."""
-    try:
-        await service.delete_chunk(doc_id, chunk_id)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    await service.delete_chunk(doc_id, chunk_id)
 
 
 @router.post("/{doc_id}/chunks/{chunk_id}/split", response_model=list[DocChunkResponse])
@@ -128,10 +109,7 @@ async def split_chunk(
     service: deps.ChunkServiceDep,
 ) -> list[DocChunkResponse]:
     """Split a chunk in two at `cursorOffset` characters."""
-    try:
-        chunks = await service.split_chunk(doc_id, chunk_id, body.cursor_offset)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    chunks = await service.split_chunk(doc_id, chunk_id, body.cursor_offset)
     return [_to_response(c) for c in chunks]
 
 
@@ -141,10 +119,7 @@ async def merge_chunks(
 ) -> DocChunkResponse:
     """Merge contiguous chunks into one. Order in `ids` is irrelevant — the
     service sorts by sequence."""
-    try:
-        merged = await service.merge_chunks(doc_id, body.ids)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    merged = await service.merge_chunks(doc_id, body.ids)
     return _to_response(merged)
 
 
@@ -161,10 +136,7 @@ async def rechunk_document(
 ) -> list[DocChunkResponse]:
     """Re-run the chunker on the latest analysis JSON; replace canonical."""
     options = body.chunking_options.model_dump() if body and body.chunking_options else None
-    try:
-        chunks = await service.rechunk_document(doc_id, options)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    chunks = await service.rechunk_document(doc_id, options)
     return [_to_response(c) for c in chunks]
 
 
@@ -178,10 +150,7 @@ async def get_tree(
 
     Returns `[]` if no analysis is available yet.
     """
-    try:
-        tree = await service.get_tree(doc_id, analysis_id)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    tree = await service.get_tree(doc_id, analysis_id)
     return [DocTreeNodeResponse(**node) for node in tree]
 
 
@@ -192,10 +161,7 @@ async def diff_against_store(
     store: str = Query(..., min_length=1),
 ) -> list[ChunkDiffResponse]:
     """Diff the canonical chunkset against the last push to `store`."""
-    try:
-        diffs = await service.diff_against_store(doc_id, store)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    diffs = await service.diff_against_store(doc_id, store)
     return [ChunkDiffResponse(**d) for d in diffs]
 
 
@@ -206,10 +172,7 @@ async def push_chunks(
     service: deps.ChunkServiceDep,
 ) -> PushChunksResponse:
     """Push the canonical chunkset to a store and record a `ChunkPush`."""
-    try:
-        result = await service.push_to_store(doc_id, body.store)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    result = await service.push_to_store(doc_id, body.store)
     return PushChunksResponse(
         push_id=result["pushId"],
         summary=result["summary"],
@@ -229,10 +192,7 @@ async def list_chunk_pushes(
     (`limit<=200`) — the UI lists 20-50 entries per page; larger pulls
     are unusual and cap the response size anyway.
     """
-    try:
-        payload = await service.list_pushes(doc_id, limit=limit, offset=offset)
-    except ChunkServiceError as e:
-        _raise_for(e)
+    payload = await service.list_pushes(doc_id, limit=limit, offset=offset)
     return ChunkPushListResponse(
         items=[ChunkPushEntryResponse(**entry) for entry in payload["items"]],
         total=payload["total"],

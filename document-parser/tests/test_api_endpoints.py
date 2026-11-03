@@ -14,6 +14,7 @@ from infra.page_raster import PdfPageRasterizer
 from infra.pdf_inspector import PdfiumInspector
 from main import app
 from services.document_service import DocumentConfig, DocumentService
+from services.navigation_errors import DocumentNotFoundError
 from tests.app_state import state_override
 
 
@@ -643,7 +644,9 @@ class TestAnalysisEndpoints:
         assert opts["do_code_enrichment"] is False
 
     def test_create_analysis_document_not_found(self, client, mock_analysis_service):
-        mock_analysis_service.create = AsyncMock(side_effect=ValueError("Document not found: d99"))
+        mock_analysis_service.create = AsyncMock(
+            side_effect=DocumentNotFoundError("Document not found: d99")
+        )
 
         resp = client.post("/api/analyses", json={"documentId": "d99"})
         assert resp.status_code == 404
@@ -680,12 +683,42 @@ class TestAnalysisEndpoints:
 
     def test_import_analysis_rejects_missing_document(self, client, mock_analysis_service):
         mock_analysis_service.import_docling_document = AsyncMock(
-            side_effect=ValueError("Document not found: missing")
+            side_effect=DocumentNotFoundError("Document not found: missing")
         )
 
         resp = client.post("/api/analyses/import", json={"documentId": "missing", "document": {}})
 
         assert resp.status_code == 404
+
+    def test_import_missing_document_body(self, client, mock_analysis_service):
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=DocumentNotFoundError("Document not found: missing")
+        )
+
+        resp = client.post("/api/analyses/import", json={"documentId": "missing", "document": {}})
+
+        assert resp.json() == {"detail": "Document not found: missing"}
+
+    def test_import_status_does_not_depend_on_the_message(self, client, mock_analysis_service):
+        # A ValueError is a document that does not validate, whatever it says:
+        # only the typed error is a 404 (#audit-05).
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=ValueError("Document not found: worded like one")
+        )
+
+        resp = client.post("/api/analyses/import", json={"documentId": "d1", "document": {}})
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Document not found: worded like one"}
+
+    def test_create_missing_document_body(self, client, mock_analysis_service):
+        mock_analysis_service.create = AsyncMock(
+            side_effect=DocumentNotFoundError("Document not found: d99")
+        )
+
+        resp = client.post("/api/analyses", json={"documentId": "d99"})
+
+        assert resp.json() == {"detail": "Document not found: d99"}
 
     def test_delete_analysis(self, client, mock_analysis_service):
         mock_analysis_service.delete = AsyncMock(return_value=True)

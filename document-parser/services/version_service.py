@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from domain.models import Chunk, ChunkEdit, DocumentVersion, DocumentVersionKind
 from domain.value_objects import ChunkEditAction
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -66,13 +67,8 @@ def _serialize_chunks(chunks: list[Chunk]) -> str:
     )
 
 
-class VersionServiceError(Exception):
-    http_status: int = 400
-
-    def __init__(self, message: str, *, http_status: int | None = None):
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
+class VersionServiceError(ServiceError):
+    http_status = 400
 
 
 class VersionNotFoundError(VersionServiceError):
