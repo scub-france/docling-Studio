@@ -44,7 +44,7 @@ itself, and that spawn is the authorisation.
 | `MCP_ENABLED` | `true` (`false` on a Hugging Face Space) | Mounts `POST /mcp` on the backend. `false`: nothing is mounted, and Settings cannot turn it on. |
 | `MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | Host allow-list (DNS-rebinding protection). Empty means the default; `*` delegates the check to a fronting proxy. |
 | `MCP_STUDIO_BASE_URL` | empty (`http://localhost:3000` in compose) | Where citation deep links point. Empty: no deep links. Live in Settings. |
-| `MCP_MAX_READ_TOKENS` | `4000` | Ceiling on one read. A client may ask for less, never more. Live in Settings. |
+| `MCP_MAX_READ_TOKENS` | `4000` | Ceiling on one read (100–32000), in tokens. A client may ask for less, never more. Live in Settings. At startup, a value outside the range is moved to the nearest bound, with a warning in the log; below 1, the backend does not start. |
 | `MCP_MAX_ROUNDS` | `5` | Round cap of the loop (1–20), stated by the `chunkless_rag` prompt and counted by the sources card. Live in Settings. |
 | `MCP_APPS_ENABLED` | `true` | Publishes the MCP Apps sources card, `show_sources`. It degrades to text on hosts without UI support. |
 | `MCP_CITATION_CARD` | `false` | Also publishes the citation card, `show_citation`. Off by default: a model offered it called it on its own before every sources card, which already shows each cited passage on its page. |
