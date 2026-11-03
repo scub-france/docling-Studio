@@ -28,9 +28,9 @@ Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT`
 | `MAX_FILE_SIZE_MB` | `50` | Largest upload, in MB. `0` means no limit. |
 | `MAX_PAGE_COUNT` | `0` | Most pages per PDF. `0` means no limit. |
 | `MAX_FILE_SIZE` | `0` | Local engine only. Largest PDF Docling converts, in bytes: Docling refuses a bigger file and the analysis fails. `0` means no limit. This is not the upload limit, `MAX_FILE_SIZE_MB`. |
-| `MAX_IMPORT_TABLE_CELLS` | `100000` | Most table cells in an imported Docling JSON, all tables together (rows × columns of each table). A larger document is refused with a 400. `0` means no limit. The import body itself is capped at 200 MB. |
+| `MAX_IMPORT_TABLE_CELLS` | `100000` | Most table cells in an imported Docling JSON, all tables and picture charts together (rows × columns of each grid; a row without columns still counts). A larger document is refused with a 400. `0` means no limit. The import body itself is capped at 50 MB by the backend. |
 | `NGINX_MAX_BODY_SIZE` | `200M` | Upload limit in nginx, in nginx format. Keep it above `MAX_FILE_SIZE_MB`. |
-| `RATE_LIMIT_RPM` | `100` | Requests per minute per client address, as the backend sees it. In the single image, that is the address that reached nginx. With Docker Compose, the backend does not trust the nginx container by default, so all users share the limit until `FORWARDED_ALLOW_IPS` names it. `0` turns it off. `/api/health` is not counted. |
+| `RATE_LIMIT_RPM` | `100` | Requests per minute per client address, as the backend sees it. In the single image, that is the address that reached nginx. With Docker Compose, the backend does not trust the nginx container by default, so all users share the limit until `FORWARDED_ALLOW_IPS` (passed through by Compose) names it. `0` turns it off. `/api/health` is not counted. |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Read by uvicorn: the proxies trusted to set `X-Forwarded-For`. The client address is the right-most one that is not trusted. Behind your own reverse proxy, add its address so the rate limit counts per client instead of per proxy. Never set it to `*`: the client would then choose its own address. |
 
 ## Ask
