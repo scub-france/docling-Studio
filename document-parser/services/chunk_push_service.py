@@ -23,6 +23,7 @@ from domain.models import ChunkPush, DocumentStoreLink
 from services.chunk_service import ChunkServiceError, require_document
 
 if TYPE_CHECKING:
+    from domain.models import Chunk, Document, Store
     from domain.ports import (
         ChunkPushRepository,
         ChunkRepository,
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
         StoreRepository,
     )
     from services.ingestion_service import IngestionService
-    from services.store_backend_resolver import StoreBackendResolver
+    from services.store_backend_resolver import IngestionTargets, StoreBackendResolver
 
 logger = logging.getLogger(__name__)
 
@@ -133,110 +134,138 @@ class ChunkPushService:
         by `store.kind` is a follow-up issue — recording the right
         store id on the `ChunkPush` row is the prerequisite, and lands
         here.
+
+        One step per concern, in this order: everything the push needs is
+        checked first (document, ingestion, store, chunks); then the store's
+        backends are resolved and the chunks ingested, either failure marking
+        the link Failed; only a successful ingestion is recorded.
         """
-        await require_document(self._documents, document_id)
+        doc = await require_document(self._documents, document_id)
+        ingestion = self._require_ingestion()
+        store = await self._resolve_store(store_id)
+        resolved_store_id = store.id if store is not None else store_id
+        chunks = await self._chunks_to_push(document_id)
+        targets = await self._resolve_backends(document_id, resolved_store_id, store)
+        indexed = await self._ingest(
+            ingestion, doc, resolved_store_id, chunks=chunks, targets=targets
+        )
+        push = await self._record_push(document_id, resolved_store_id, chunks)
+
+        token_total = sum((c.token_count or 0) for c in chunks)
+        logger.info(
+            "chunk.push docId=%s store=%s count=%d tokens=%d",
+            document_id,
+            store_id,
+            indexed,
+            token_total,
+        )
+        return {"pushId": push.id, "summary": {"embeds": indexed, "tokens": token_total}}
+
+    def _require_ingestion(self) -> IngestionService:
         if self._ingestion is None:
             raise ChunkServiceError(
                 "Ingestion not available — set EMBEDDING_URL and at least one of "
                 "OPENSEARCH_URL or NEO4J_URI on the backend",
                 http_status=503,
             )
-        # Resolve slug → store row. Refuses to push to an unknown store
-        # (catches typos before the FK insert fails with a generic
-        # IntegrityError 500).
-        resolved_store_id = store_id
-        if self._stores is not None:
-            store = await self._stores.find_by_slug(store_id)
-            if store is None:
-                # Maybe the caller already passed an id — accept that
-                # too for backwards compat with older callers.
-                store = await self._stores.find_by_id(store_id)
-            if store is None:
-                raise ChunkServiceError(
-                    f"Store not found: {store_id}",
-                    http_status=404,
-                )
-            resolved_store_id = store.id
+        return self._ingestion
 
-        doc = await self._documents.find_by_id(document_id)
-        canonical = await self._chunks.find_for_document(document_id)
-        if not canonical:
+    async def _resolve_store(self, store_ref: str) -> Store | None:
+        """The store `store_ref` names — by slug, else by id for older callers.
+
+        Refuses an unknown store (catches typos before the FK insert fails
+        with a generic IntegrityError 500). None when no store repository is
+        wired: the caller's value is then taken as the store id.
+        """
+        if self._stores is None:
+            return None
+        store = await self._stores.find_by_slug(store_ref)
+        if store is None:
+            store = await self._stores.find_by_id(store_ref)
+        if store is None:
+            raise ChunkServiceError(f"Store not found: {store_ref}", http_status=404)
+        return store
+
+    async def _chunks_to_push(self, document_id: str) -> list[Chunk]:
+        chunks = await self._chunks.find_for_document(document_id)
+        if not chunks:
             raise ChunkServiceError(
                 "No canonical chunks to push — run analysis or rechunk first",
                 http_status=409,
             )
+        return chunks
 
-        chunks_payload = [chunk_to_ingestion_dict(c) for c in canonical]
-        chunks_json_payload = json.dumps(chunks_payload)
-        chunkset_hash = hashing.chunkset_hash(canonical)
-        # Resolve the per-store backends through the pool (#279). When
-        # the resolver is not wired the call falls back to the
-        # IngestionService's service-level defaults — preserves
-        # behaviour for existing tests and for installs that still
-        # rely on env-var fallbacks.
-        targets = None
-        if self._backend_resolver is not None and store is not None:
-            try:
-                targets = await self._backend_resolver.resolve(store)
-            except Exception as exc:
-                await self._mark_link_failed(document_id, resolved_store_id, error=str(exc))
-                raise ChunkServiceError(
-                    f"Cannot resolve backend for store {store.slug!r}: {exc}",
-                    http_status=503,
-                ) from exc
+    async def _resolve_backends(
+        self, document_id: str, store_id: str, store: Store | None
+    ) -> IngestionTargets | None:
+        """The store's own backends, from the pool (#279).
+
+        None — the IngestionService's service-level defaults, env-based —
+        when no resolver is wired or no store row was resolved. A store whose
+        backends cannot be resolved marks the link Failed and answers 503.
+        """
+        if self._backend_resolver is None or store is None:
+            return None
         try:
-            ingestion_result = await self._ingestion.ingest(
-                doc_id=document_id,
-                filename=(doc.filename if doc else document_id),
-                chunks_json=chunks_json_payload,
+            return await self._backend_resolver.resolve(store)
+        except Exception as exc:
+            await self._mark_link_failed(document_id, store_id, error=str(exc))
+            raise ChunkServiceError(
+                f"Cannot resolve backend for store {store.slug!r}: {exc}",
+                http_status=503,
+            ) from exc
+
+    async def _ingest(
+        self,
+        ingestion: IngestionService,
+        doc: Document,
+        store_id: str,
+        *,
+        chunks: list[Chunk],
+        targets: IngestionTargets | None,
+    ) -> int:
+        """Embed and index `chunks`; returns how many were indexed.
+
+        A failure mid-flight marks the link Failed — so the UI shows "Failed"
+        instead of an indefinite "Pushing…" or the previous state — then
+        propagates unchanged.
+        """
+        try:
+            result = await ingestion.ingest(
+                doc_id=doc.id,
+                filename=doc.filename,
+                chunks_json=json.dumps([chunk_to_ingestion_dict(c) for c in chunks]),
                 targets=targets,
             )
         except Exception as exc:
-            # Push failed mid-flight — record the failure on the link
-            # so the UI can show "Failed" instead of an indefinite
-            # "Pushing…" or the previous state. Then re-raise.
-            await self._mark_link_failed(document_id, resolved_store_id, error=str(exc))
+            await self._mark_link_failed(doc.id, store_id, error=str(exc))
             raise
+        return result.chunks_indexed
 
-        chunk_ids = [c.id for c in canonical]
-        pushed_at = _utcnow()
+    async def _record_push(self, document_id: str, store_id: str, chunks: list[Chunk]) -> ChunkPush:
+        """Write the immutable `chunk_pushes` row, then point the live link at it.
+
+        Without the link upsert, `Document.storeLinks` (the source of truth
+        for the Ingest view badges) stays NotPushed indefinitely even though
+        the audit log records the push.
+        """
         push = ChunkPush(
             id=_new_id(),
             document_id=document_id,
-            store_id=resolved_store_id,
-            chunkset_hash=chunkset_hash,
-            chunk_ids=chunk_ids,
-            pushed_at=pushed_at,
+            store_id=store_id,
+            chunkset_hash=hashing.chunkset_hash(chunks),
+            chunk_ids=[c.id for c in chunks],
+            pushed_at=_utcnow(),
         )
         await self._pushes.insert(push)
-
-        # Upsert the live link row that the UI reads from. Without
-        # this, `Document.storeLinks` (the source of truth for the
-        # Ingest view badges) stays NotPushed indefinitely even
-        # though the audit log records the push.
         await self._upsert_link_ingested(
             document_id,
-            resolved_store_id,
-            chunkset_hash=chunkset_hash,
-            at=pushed_at,
+            store_id,
+            chunkset_hash=push.chunkset_hash,
+            at=push.pushed_at,
             run_id=push.id,
         )
-
-        token_total = sum((c.token_count or 0) for c in canonical)
-        logger.info(
-            "chunk.push docId=%s store=%s count=%d tokens=%d",
-            document_id,
-            store_id,
-            ingestion_result.chunks_indexed,
-            token_total,
-        )
-        return {
-            "pushId": push.id,
-            "summary": {
-                "embeds": ingestion_result.chunks_indexed,
-                "tokens": token_total,
-            },
-        }
+        return push
 
     async def list_pushes(
         self,

@@ -414,6 +414,27 @@ class TestPushToStore:
         assert mock_ingestion.ingest.await_args.kwargs["targets"] is None
         assert await SqliteDocumentStoreLinkRepository().find_one(doc.id, "store-uuid-1") is None
 
+    async def test_without_a_store_repo_the_resolver_is_not_asked(
+        self, repos, store_repo, doc, mock_ingestion
+    ):
+        """No store row, no per-store backends: the ingestion's defaults are
+        used. The single-block push read an unbound local here and failed."""
+        resolver = AsyncMock()
+        service = ChunkPushService(
+            chunk_repo=repos["chunks"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            ingestion_service=mock_ingestion,
+            backend_resolver=resolver,
+        )
+        await _add_chunk(doc.id, "hello")
+
+        await service.push_to_store(doc.id, "store-uuid-1")
+
+        resolver.resolve.assert_not_awaited()
+        assert mock_ingestion.ingest.await_args.kwargs["targets"] is None
+        assert (await repos["pushes"].find_latest(doc.id, "store-uuid-1")) is not None
+
     async def test_a_failing_link_write_never_hides_the_push_error(self, repos, store_repo, doc):
         """Recording Failed on the link is best effort: if that write fails
         too, the ingestion's own error is what the caller sees."""
