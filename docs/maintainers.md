@@ -21,7 +21,7 @@ flowchart LR
 1. **Audit.** Run the [quality audit](audit/master.md) on the release branch and fix what blocks.
 2. **Freeze.** On `release/x.y.z`, make one commit `chore(release): freeze [x.y.z]` that:
     - renames `[Unreleased]` to `[x.y.z] - YYYY-MM-DD` in `CHANGELOG.md`,
-    - sets `version` in `frontend/package.json`.
+    - sets `version` in `frontend/package.json` and in `plugins/docling-studio/.claude-plugin/plugin.json`. Claude Code keeps plugin users on a version until it changes.
 3. **Pull request.** Open `release/x.y.z` → `main`. The release gate runs and posts GO, GO CONDITIONAL or NO-GO as a comment. `main` needs one approval.
 4. **Merge** with **Rebase and merge**.
 5. **Tag** `main`:
