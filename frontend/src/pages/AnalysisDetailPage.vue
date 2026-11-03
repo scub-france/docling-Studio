@@ -29,7 +29,12 @@
           >
             {{ t('workspace.editAnalysis') }}
           </button>
-          <button v-else type="button" data-e2e="analysis-inspect-toggle" @click="closeEditor">
+          <button
+            v-else-if="editMode && editorEnabled"
+            type="button"
+            data-e2e="analysis-inspect-toggle"
+            @click="closeEditor"
+          >
             {{ t('workspace.inspectAnalysis') }}
           </button>
           <DownloadDropdown :doc-id="analysis.documentId" :analysis-id="analysis.id" />

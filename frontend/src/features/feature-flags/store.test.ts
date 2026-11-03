@@ -223,6 +223,7 @@ describe('useFeatureFlagStore', () => {
     expect(store.error).toBe('Network error')
     expect(store.isEnabled('chunking')).toBe(false)
     expect(store.isEnabled('disclaimer')).toBe(false)
+    expect(store.isEnabled('analysisEditor')).toBe(false)
   })
 
   // 0.6.1 — Surface master flags (#257).
@@ -297,12 +298,13 @@ describe('useFeatureFlagStore', () => {
     expect(store.isEnabled('analysisEditor')).toBe(true)
   })
 
-  it('falls back to all-modes-enabled when /api/health omits the new fields', async () => {
+  it('uses safe defaults when /api/health omits feature flags', async () => {
     mockApiFetch.mockResolvedValue({ status: 'ok', engine: 'local' })
     const store = useFeatureFlagStore()
     await store.load()
     expect(store.isEnabled('inspectMode')).toBe(true)
     expect(store.isEnabled('linkedMode')).toBe(true)
+    expect(store.isEnabled('analysisEditor')).toBe(false)
   })
 
   it('modeFlags() maps backend flags to current DocMode keys (#264 / #225)', async () => {

@@ -87,7 +87,7 @@ class AppStateBuilder:
     ) -> None:
         self._publish = publish
         self._mcp_server = mcp_server
-        self._state = AppState()
+        self._state = AppState(analysis_editor_enabled=settings.analysis_editor_enabled)
 
     @property
     def state(self) -> AppState:

@@ -66,6 +66,8 @@ class AppState:
     document_service: DocumentService | None = None
     analysis_service: AnalysisService | None = None
     analysis_edit_service: AnalysisEditService | None = None
+    # Static rollout flag for the analysis editor, copied from Settings at boot.
+    analysis_editor_enabled: bool = True
     export_service: ExportService | None = None
     store_service: StoreService | None = None
     chunk_service: ChunkService | None = None

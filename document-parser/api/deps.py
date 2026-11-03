@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 
 from api.state import AppState, get_app_state, require
 from domain.ports import DocumentStoreLinkRepository, StoreRepository
@@ -44,6 +44,8 @@ AnalysisServiceDep = Annotated[AnalysisService, Depends(get_analysis_service)]
 
 
 def get_analysis_edit_service(state: AppStateDep) -> AnalysisEditService:
+    if not state.analysis_editor_enabled:
+        raise HTTPException(status_code=404, detail="Analysis editor is disabled")
     return require(state.analysis_edit_service, detail="Analysis editor not available")
 
 

@@ -41,6 +41,7 @@ describe('AnalysisDetailPage analysis editor flag', () => {
 
     const wrapper = await render()
     expect(wrapper.find('[data-e2e="analysis-edit-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-e2e="analysis-inspect-toggle"]').exists()).toBe(false)
     expect(wrapper.find('analysis-editor-stub').exists()).toBe(false)
     wrapper.unmount()
   })

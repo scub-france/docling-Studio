@@ -21,6 +21,7 @@ class TestSettingsDefaults:
         assert s.max_paste_image_size_mb == 10
         assert s.paste_allowed_image_types == ["image/png", "image/jpeg", "image/webp"]
         assert s.batch_page_size == 0
+        assert s.analysis_editor_enabled is True
         assert s.opensearch_default_limit == 1000
         assert s.upload_dir == "./uploads"
         assert s.db_path == "./data/docling_studio.db"
@@ -163,6 +164,10 @@ class TestReasoningMaxIterations:
     def test_from_env(self, monkeypatch):
         monkeypatch.setenv("REASONING_MAX_ITERATIONS", "9")
         assert Settings.from_env().reasoning_max_iterations == 9
+
+    def test_analysis_editor_can_be_disabled_from_env(self, monkeypatch):
+        monkeypatch.setenv("ANALYSIS_EDITOR_ENABLED", "false")
+        assert Settings.from_env().analysis_editor_enabled is False
 
     def test_an_empty_mcp_allowed_hosts_keeps_the_localhost_default(self, monkeypatch):
         monkeypatch.setenv("MCP_ALLOWED_HOSTS", "")

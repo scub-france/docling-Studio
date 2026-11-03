@@ -130,7 +130,9 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
   // so a backend without these fields behaves like the legacy one.
   const inspectModeEnabled = ref(true)
   const linkedModeEnabled = ref(true)
-  const analysisEditorEnabled = ref(true)
+  // Fail closed when health is unavailable or comes from an older backend
+  // that does not advertise the editor API.
+  const analysisEditorEnabled = ref(false)
   const appVersion = ref<string>(__APP_VERSION__)
   const loaded = ref(false)
   const error = ref<string | null>(null)
@@ -181,7 +183,7 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
         // visible.
         inspectModeEnabled.value = data.inspectModeEnabled ?? true
         linkedModeEnabled.value = data.linkedModeEnabled ?? true
-        analysisEditorEnabled.value = data.analysisEditorEnabled ?? true
+        analysisEditorEnabled.value = data.analysisEditorEnabled ?? false
         appMaxFileSizeMb.value = maxFileSizeMb.value
         appMaxPageCount.value = maxPageCount.value
         if (data.version) appVersion.value = data.version
