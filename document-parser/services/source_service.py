@@ -24,8 +24,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from domain.anchors import AnchorParseError, DocumentAnchor
-from domain.element_reader import element_text, resolve
-from domain.parse_index import label_of
+from domain.element_reader import document_title, resolve
 from domain.quote_marks import quote_marks
 from domain.source_map import SourceCited, SourceRead, build_source_map
 from services.navigation_errors import InvalidArgumentError, NavigationServiceError
@@ -34,7 +33,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from domain.page_regions import PageRegion
-    from domain.parse_index import DocumentIndex
     from domain.ports import PageTextReader
     from domain.quote_marks import Glyph
     from domain.source_map import SourceMap, SourcePassage
@@ -48,10 +46,6 @@ if TYPE_CHECKING:
 _MAP_DEPTH = 6
 
 logger = logging.getLogger(__name__)
-
-# Running headers and footers come first in reading order on many pages; the
-# document's title is never one of them.
-_FURNITURE = frozenset({"page_header", "page_footer"})
 
 
 @dataclass(frozen=True)
@@ -136,7 +130,7 @@ class SourceService:
             unknown=unknown,
             max_rounds=self._config.max_rounds,
             page_count=parse.index.page_count or None,
-            title=_title(parse.index) or parse.document.filename,
+            title=document_title(parse.index) or parse.document.filename,
         )
 
     async def _marked(self, parse: LoadedParse, sources: SourceMap) -> SourceMap:
@@ -235,30 +229,6 @@ def _marks(passage: SourcePassage, glyphs: Callable[[int], list[Glyph]]) -> list
         if marks:
             return marks
     return []
-
-
-def _title(index: DocumentIndex) -> str:
-    """The document's own title, as the parse found it.
-
-    Its `title` element when it has one. Docling often labels a paper's title
-    a section header instead, so the first heading is taken too when it opens
-    the document on page 1 and is not numbered like a section ("1
-    Introduction" names a section, not the document). Else nothing.
-    """
-
-    def text(ref: str) -> str:
-        return " ".join(element_text(index, ref).split())
-
-    for ref in index.order:
-        if label_of(index.by_ref.get(ref) or {}) == "title":
-            return text(ref)
-    for ref in index.order:
-        label = label_of(index.by_ref.get(ref) or {})
-        if label in _FURNITURE or not text(ref):
-            continue
-        opens = label == "section_header" and index.page_of.get(ref) == 1
-        return text(ref) if opens and not text(ref)[:1].isdigit() else ""
-    return ""
 
 
 def _anchor(uri: str, unknown: list[str]) -> DocumentAnchor | None:

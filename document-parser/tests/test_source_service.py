@@ -254,9 +254,9 @@ class TestTitle:
 
     @staticmethod
     def title_of(*items):
+        from domain.element_reader import document_title
         from domain.parse_index import build_index
         from infra.docling_tree import DoclingTreeReader
-        from services.source_service import _title
 
         texts = [
             {
@@ -283,7 +283,7 @@ class TestTitle:
             "body": {"self_ref": "#/body", "children": [{"$ref": t["self_ref"]} for t in texts]},
             "texts": texts,
         }
-        return _title(build_index(doc, DoclingTreeReader()))
+        return document_title(build_index(doc, DoclingTreeReader()))
 
     def test_a_title_element_is_the_title(self):
         assert self.title_of(("text", "Intro", 1), ("title", "Le contrat", 1)) == "Le contrat"

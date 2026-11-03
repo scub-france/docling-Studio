@@ -1,9 +1,9 @@
 """Reading elements out of an indexed parse.
 
 Resolution (`ref` -> text, page, provenance), the span a ref covers when read
-as a section, and the markdown an excerpt is rendered as. Table payloads are
-handled here too: a table is the element most worth citing verbatim and the
-one whose shape varies most between docling versions.
+as a section, the markdown an excerpt is rendered as, and the document's own
+title. Table payloads are handled here too: a table is the element most worth
+citing verbatim and the one whose shape varies most between docling versions.
 """
 
 from __future__ import annotations
@@ -235,3 +235,29 @@ def render_markdown(elements: list[ResolvedElement]) -> str:
         else:
             blocks.append(text)
     return "\n\n".join(blocks)
+
+
+def document_title(index: DocumentIndex) -> str:
+    """The document's own title, as the parse found it.
+
+    Its `title` element when it has one. Docling often labels a paper's title
+    a section header instead, so the first heading is taken too when it opens
+    the document on page 1 and is not numbered like a section ("1
+    Introduction" names a section, not the document). Running headers and
+    footers come first in reading order on many pages and are never the
+    title. Else nothing.
+    """
+
+    def text(ref: str) -> str:
+        return " ".join(element_text(index, ref).split())
+
+    for ref in index.order:
+        if label_of(index.by_ref.get(ref) or {}) == "title":
+            return text(ref)
+    for ref in index.order:
+        label = label_of(index.by_ref.get(ref) or {})
+        if not is_readable(label) or not text(ref):
+            continue
+        opens = label == "section_header" and index.page_of.get(ref) == 1
+        return text(ref) if opens and not text(ref)[:1].isdigit() else ""
+    return ""
