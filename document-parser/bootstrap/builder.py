@@ -28,6 +28,7 @@ from bootstrap.factories import (
     build_chunk_service,
     build_document_service,
     build_document_tools,
+    build_document_tree_service,
     build_file_storage,
     build_ingestion_service,
     build_parse_loader,
@@ -174,6 +175,7 @@ class AppStateBuilder:
             ),
             store_service=store_service,
             chunk_service=chunk_service,
+            document_tree_service=build_document_tree_service(document_repo, analysis_repo),
             # 0.6.1 (#audit-01) — GraphService serves /graph so api/graph.py
             # stops reaching into infra. Reader is None without Neo4j (503).
             graph_service=GraphService(graph_reader=graph_reader),

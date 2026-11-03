@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from services.chunk_service import ChunkService
     from services.document_service import DocumentService
     from services.document_tools import DocumentTools
+    from services.document_tree_service import DocumentTreeService
     from services.export_service import ExportService
     from services.graph_service import GraphService
     from services.ingestion_service import IngestionService
@@ -60,6 +61,7 @@ class AppState:
     export_service: ExportService | None = None
     store_service: StoreService | None = None
     chunk_service: ChunkService | None = None
+    document_tree_service: DocumentTreeService | None = None
     graph_service: GraphService | None = None
     version_service: VersionService | None = None
     ingestion_service: IngestionService | None = None

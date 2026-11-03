@@ -26,7 +26,7 @@ def client():
 @pytest.fixture
 def mock_service(client):
     svc = MagicMock()
-    with state_override(app, chunk_service=svc):
+    with state_override(app, chunk_service=svc, document_tree_service=svc):
         yield svc
 
 

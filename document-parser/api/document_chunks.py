@@ -5,8 +5,9 @@ Exposes the canonical doc-centric chunkset (CRUD + tree + rechunk + diff
 ephemeral analysis runs (StudioPage / OCR Debug).
 
 All routes mount under `/api/documents/{doc_id}/...`. The router
-delegates to `ChunkService` — no direct repo / persistence access — and
-lets its typed errors reach the app-level handler (`api/errors.py`).
+delegates to `ChunkService` (the chunkset) and `DocumentTreeService` (the
+outline) — no direct repo / persistence access — and lets their typed
+errors reach the app-level handler (`api/errors.py`).
 """
 
 from __future__ import annotations
@@ -143,7 +144,7 @@ async def rechunk_document(
 @router.get("/{doc_id}/tree", response_model=list[DocTreeNodeResponse])
 async def get_tree(
     doc_id: str,
-    service: deps.ChunkServiceDep,
+    service: deps.DocumentTreeServiceDep,
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> list[DocTreeNodeResponse]:
     """Outline of the document built from a requested or latest analysis.

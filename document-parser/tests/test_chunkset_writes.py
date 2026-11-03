@@ -19,7 +19,6 @@ import pytest
 
 from domain.models import AnalysisJob, AnalysisStatus, Chunk, Document
 from domain.value_objects import ChunkResult
-from infra.docling_tree import DoclingTreeReader
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
 from persistence.chunk_repo import SqliteChunkRepository
@@ -72,7 +71,6 @@ def chunk_service(chunks, edits, chunker):
         chunk_push_repo=SqliteChunkPushRepository(),
         document_repo=SqliteDocumentRepository(),
         analysis_repo=SqliteAnalysisRepository(),
-        tree_reader=DoclingTreeReader(),
         chunker=chunker,
     )
 

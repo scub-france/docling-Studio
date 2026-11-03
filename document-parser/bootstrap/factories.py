@@ -26,6 +26,7 @@ from services.citation_image_service import CitationImageService
 from services.citation_service import CitationService
 from services.document_service import DocumentConfig, DocumentService
 from services.document_tools import DocumentTools
+from services.document_tree_service import DocumentTreeService
 from services.ingestion_service import IngestionConfig, IngestionService
 from services.navigation_config import NavigationConfig
 from services.navigation_service import NavigationService
@@ -237,11 +238,12 @@ def build_document_service(
 def build_chunk_service(**repos) -> ChunkService:
     """Doc-centric chunks (#256) on top of the chunk / chunk_edit /
     chunk_push repos introduced by #205."""
-    return ChunkService(
-        tree_reader=_build_tree_reader(),
-        chunker=build_chunker(),
-        **repos,
-    )
+    return ChunkService(chunker=build_chunker(), **repos)
+
+
+def build_document_tree_service(document_repo, analysis_repo) -> DocumentTreeService:
+    """The outline the Chunks view draws beside the chunks (#256)."""
+    return DocumentTreeService(document_repo, analysis_repo, _build_tree_reader())
 
 
 def env_mcp_config() -> McpRuntimeConfig:

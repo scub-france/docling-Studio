@@ -25,7 +25,6 @@ import pytest
 
 from domain.models import Chunk, Document, DocumentVersion, DocumentVersionKind, Store
 from domain.value_objects import ChunkBbox, ChunkDocItem, StoreKind
-from infra.docling_tree import DoclingTreeReader
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
 from persistence.chunk_repo import SqliteChunkRepository
@@ -76,7 +75,6 @@ def chunk_service(chunks):
         chunk_push_repo=SqliteChunkPushRepository(),
         document_repo=SqliteDocumentRepository(),
         analysis_repo=SqliteAnalysisRepository(),
-        tree_reader=DoclingTreeReader(),
     )
 
 
@@ -88,7 +86,6 @@ def push_service(chunks, ingestion):
         chunk_push_repo=SqliteChunkPushRepository(),
         document_repo=SqliteDocumentRepository(),
         analysis_repo=SqliteAnalysisRepository(),
-        tree_reader=DoclingTreeReader(),
         ingestion_service=ingestion,
         store_repo=SqliteStoreRepository(),
         link_repo=SqliteDocumentStoreLinkRepository(),

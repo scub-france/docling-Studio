@@ -16,6 +16,7 @@ from services.analysis_service import AnalysisService
 from services.app_config_service import AppConfigService
 from services.chunk_service import ChunkService
 from services.document_service import DocumentService
+from services.document_tree_service import DocumentTreeService
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.ingestion_service import IngestionService
@@ -53,6 +54,13 @@ def get_chunk_service(state: AppStateDep) -> ChunkService:
 
 
 ChunkServiceDep = Annotated[ChunkService, Depends(get_chunk_service)]
+
+
+def get_document_tree_service(state: AppStateDep) -> DocumentTreeService:
+    return require(state.document_tree_service, detail="Document tree service not available")
+
+
+DocumentTreeServiceDep = Annotated[DocumentTreeService, Depends(get_document_tree_service)]
 
 
 def get_version_service(state: AppStateDep) -> VersionService:
