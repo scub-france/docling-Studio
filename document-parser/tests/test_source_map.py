@@ -107,12 +107,12 @@ class TestStatus:
         sources, _ = await project(reads=[read(PREAVIS_SECTION)], cited=[cite(PREAVIS_REF)])
         assert status_of(sources)[PREAVIS_SECTION] == SourceStatus.CITED
 
-    async def test_every_hop_that_reached_a_node_is_recorded(self):
+    async def test_every_round_that_reached_a_node_is_recorded(self):
         sources, _ = await project(reads=[read(ARTICLE_12), read(PREAVIS_SECTION)])
         node = next(n for n in sources.nodes if n.ref == PREAVIS_SECTION)
-        assert node.hop_ids == ["h2"]
+        assert node.round_ids == ["h2"]
         article = next(n for n in sources.nodes if n.ref == ARTICLE_12)
-        assert article.hop_ids == ["h1"]
+        assert article.round_ids == ["h1"]
 
     async def test_nodes_come_back_in_document_order_with_their_anchor(self):
         sources, _ = await project(reads=[read(ARTICLE_13), read(PREAVIS_SECTION)])
@@ -129,15 +129,15 @@ class TestStatus:
     async def test_nothing_read_maps_to_nothing(self):
         sources, _ = await project()
         assert sources.nodes == []
-        assert sources.hops == []
+        assert sources.rounds == []
 
 
 class TestReadingOrder:
-    async def test_hops_keep_the_order_the_agent_read_in(self):
+    async def test_rounds_keep_the_order_the_agent_read_in(self):
         sources, _ = await project(
             reads=[read(ARTICLE_13, "the end"), read(PREAVIS_SECTION, "the notice")]
         )
-        assert [(h.ordinal, h.ref, h.why) for h in sources.hops] == [
+        assert [(h.ordinal, h.ref, h.why) for h in sources.rounds] == [
             (1, ARTICLE_13, "the end"),
             (2, PREAVIS_SECTION, "the notice"),
         ]
@@ -147,7 +147,7 @@ class TestReadingOrder:
         sources, _ = await project(
             reads=[read(PREAVIS_SECTION, "first"), read(PREAVIS_SECTION, "again")]
         )
-        assert [(h.ref, h.why) for h in sources.hops] == [(PREAVIS_SECTION, "first")]
+        assert [(h.ref, h.why) for h in sources.rounds] == [(PREAVIS_SECTION, "first")]
         assert sources.totals.rounds == 1
 
     async def test_a_round_keeps_what_it_found_and_a_resumed_read_updates_it(self):
@@ -158,17 +158,17 @@ class TestReadingOrder:
                 read(PREAVIS_SECTION, "", "three months"),
             ]
         )
-        assert [(h.ordinal, h.found) for h in sources.hops] == [
+        assert [(h.ordinal, h.found) for h in sources.rounds] == [
             (1, "nothing on notice"),
             (2, "three months"),
         ]
 
-    async def test_a_quote_is_attributed_to_the_hop_that_read_it(self):
+    async def test_a_quote_is_attributed_to_the_round_that_read_it(self):
         sources, _ = await project(
             reads=[read(ARTICLE_13), read(PREAVIS_SECTION)], cited=[cite(PREAVIS_REF)]
         )
-        assert sources.hops[0].cited == []
-        assert sources.hops[1].cited == [anchor_uri(PREAVIS_REF)]
+        assert sources.rounds[0].cited == []
+        assert sources.rounds[1].cited == [anchor_uri(PREAVIS_REF)]
 
     async def test_quotes_from_one_anchor_are_each_a_passage(self):
         """Three rows quoted out of one table share the table's anchor; each
@@ -181,14 +181,14 @@ class TestReadingOrder:
             + [SourceCited(PREAVIS_REF, uri, quotes[0])],
         )
         assert [p.quote for p in sources.passages] == quotes
-        assert sources.hops[0].cited == [uri]
+        assert sources.rounds[0].cited == [uri]
 
-    async def test_a_hop_carries_its_section_title_and_page(self):
+    async def test_a_round_carries_its_section_title_and_page(self):
         sources, _ = await project(reads=[read(PREAVIS_SECTION)])
-        hop = sources.hops[0]
-        assert hop.title == "12.2 Préavis"
-        assert hop.node_ref == PREAVIS_SECTION
-        assert hop.page == 1
+        round_ = sources.rounds[0]
+        assert round_.title == "12.2 Préavis"
+        assert round_.node_ref == PREAVIS_SECTION
+        assert round_.page == 1
 
 
 class TestTotals:
@@ -263,7 +263,7 @@ class TestWhereItSits:
 
     async def test_a_round_is_boxed_on_every_page_its_section_touches(self):
         sources, _ = await project(reads=[read(PREAVIS_SECTION)])
-        regions = sources.hops[0].regions
+        regions = sources.rounds[0].regions
         assert regions[0].page == 1
         assert 2 in {region.page for region in regions}
         # The heading and its paragraph, one block: 240 pt to 332 pt down a
@@ -276,7 +276,7 @@ class TestWhereItSits:
         )
         sources, _ = await project(reads=[read(PREAVIS_SECTION)], cited=[cited])
         [passage] = sources.passages
-        assert (passage.quote, passage.status, passage.hop_id) == ("trois mois", "verified", "h1")
+        assert (passage.quote, passage.status, passage.round_id) == ("trois mois", "verified", "h1")
         assert passage.page == 1
         [region] = passage.regions
         assert (round(region.top, 3), round(region.bottom, 3)) == (0.366, 0.419)
@@ -284,7 +284,7 @@ class TestWhereItSits:
     async def test_a_passage_no_round_read_still_shows_on_its_page(self):
         sources, _ = await project(reads=[read(ARTICLE_13)], cited=[cite(PREAVIS_REF)])
         [passage] = sources.passages
-        assert passage.hop_id is None
+        assert passage.round_id is None
         assert passage.status is None
         assert passage.regions
 

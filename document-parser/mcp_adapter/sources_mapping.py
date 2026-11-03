@@ -23,7 +23,7 @@ from mcp_adapter.wire import neutralise
 
 if TYPE_CHECKING:
     from domain.page_regions import PageRegion
-    from domain.source_map import SourceHop, SourceNode, SourcePassage
+    from domain.source_map import SourceNode, SourcePassage, SourceRound
     from services.source_service import SourceReport
 
 
@@ -57,7 +57,7 @@ def sources_card(report: SourceReport) -> SourcesCard:
             tokens_total=totals.tokens_total,
             percent=totals.percent,
         ),
-        hops=[_hop(hop, links) for hop in sources.hops],
+        hops=[_round(round_, links) for round_ in sources.rounds],
         map=[_node(node, links) for node in sources.nodes],
         segments=[
             SourceSegmentOut(
@@ -67,7 +67,7 @@ def sources_card(report: SourceReport) -> SourcesCard:
                 tokens=s.tokens,
                 status=s.status,
                 page=s.page,
-                hop_ids=list(s.hop_ids),
+                hop_ids=list(s.round_ids),
             )
             for s in sources.segments
         ],
@@ -82,22 +82,23 @@ def sources_card(report: SourceReport) -> SourcesCard:
     )
 
 
-def _hop(hop: SourceHop, links: dict[str, str]) -> SourceHopOut:
-    cited_link = next((links.get(DocumentAnchor.parse(u).ref) for u in hop.cited), None)
+def _round(round_: SourceRound, links: dict[str, str]) -> SourceHopOut:
+    """One round as an entry of the card's `hops`: the wire calls a round a hop."""
+    cited_link = next((links.get(DocumentAnchor.parse(u).ref) for u in round_.cited), None)
     return SourceHopOut(
-        hop_id=hop.hop_id,
-        ordinal=hop.ordinal,
-        ref=hop.ref,
-        uri=hop.uri,
-        title=neutralise(hop.title),
-        why=neutralise(hop.why),
-        est_tokens=hop.est_tokens,
-        found=neutralise(hop.found),
-        node_ref=hop.node_ref,
-        page=hop.page,
-        cited=list(hop.cited),
-        deep_link=cited_link or links.get(hop.node_ref or hop.ref),
-        regions=_regions(hop.regions),
+        hop_id=round_.round_id,
+        ordinal=round_.ordinal,
+        ref=round_.ref,
+        uri=round_.uri,
+        title=neutralise(round_.title),
+        why=neutralise(round_.why),
+        est_tokens=round_.est_tokens,
+        found=neutralise(round_.found),
+        node_ref=round_.node_ref,
+        page=round_.page,
+        cited=list(round_.cited),
+        deep_link=cited_link or links.get(round_.node_ref or round_.ref),
+        regions=_regions(round_.regions),
     )
 
 
@@ -108,7 +109,7 @@ def _passage(passage: SourcePassage, links: dict[str, str]) -> PassageOut:
         quote=neutralise(passage.quote),
         status=passage.status,
         regions=_regions(passage.regions),
-        hop_id=passage.hop_id,
+        hop_id=passage.round_id,
         page=passage.page,
         deep_link=links.get(passage.ref),
         section=neutralise(passage.section),
@@ -137,6 +138,6 @@ def _node(node: SourceNode, links: dict[str, str]) -> SourceNodeOut:
         status=node.status,
         est_tokens=node.est_tokens,
         page=node.page,
-        hop_ids=list(node.hop_ids),
+        hop_ids=list(node.round_ids),
         deep_link=links.get(node.ref),
     )

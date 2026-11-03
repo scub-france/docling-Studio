@@ -83,15 +83,18 @@ class SourceCited:
 
 
 @dataclass(frozen=True)
-class SourceHop:
-    """One round: one section read, in reading order — the unit of the path.
+class SourceRound:
+    """One round of the loop: one section read, in reading order — the unit
+    of the path.
 
-    `node_ref` is the published outline node the read landed in (None when
-    the outline does not reach it); `cited` holds the anchors quoted from what
-    this read covered.
+    `round_id` is `h1`, `h2`… — the `h` is the sources card's: its wire
+    contract calls a round a hop (`SourceHopOut.hop_id`), and the ids it
+    shows stay what they were. `node_ref` is the published outline node the
+    read landed in (None when the outline does not reach it); `cited` holds
+    the anchors quoted from what this read covered.
     """
 
-    hop_id: str
+    round_id: str
     ordinal: int
     ref: str
     uri: str
@@ -110,7 +113,7 @@ class SourceHop:
 class SourcePassage:
     """One cited passage: its quote, the server's word on it, where it sits.
 
-    `hop_id` is the round whose read covered it, or None when no read did:
+    `round_id` is the round whose read covered it, or None when no read did:
     the passage still shows, on its own page. `section` is the title of the
     deepest section on the map that holds it. `marks` are the lines the quote
     itself covers, found in the PDF's text layer by the service; empty when
@@ -122,7 +125,7 @@ class SourcePassage:
     quote: str
     status: CitationStatus | None
     regions: list[PageRegion]
-    hop_id: str | None = None
+    round_id: str | None = None
     page: int | None = None
     section: str = ""
     marks: list[PageRegion] = field(default_factory=list)
@@ -144,7 +147,7 @@ class SourceNode:
     status: SourceStatus
     est_tokens: int = 0
     page: int | None = None
-    hop_ids: list[str] = field(default_factory=list)
+    round_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -173,7 +176,7 @@ class SourceTotals:
 @dataclass(frozen=True)
 class SourceMap:
     nodes: list[SourceNode]
-    hops: list[SourceHop]
+    rounds: list[SourceRound]
     totals: SourceTotals
     # The whole document, section by section — the bar the card draws.
     segments: list[SourceSegment] = field(default_factory=list)
@@ -199,33 +202,33 @@ def build_source_map(
                 return candidate
         return None
 
-    hops, covered = _hops(reads, index, published, locate)
+    rounds, covered = _rounds(reads, index, published, locate)
     trail = _Trail()
-    for hop in hops:
-        trail.mark(hop.node_ref, SourceStatus.READ, hop.hop_id)
+    for round_ in rounds:
+        trail.mark(round_.node_ref, SourceStatus.READ, round_.round_id)
     passages: dict[tuple[str, str], SourcePassage] = {}
     for anchor in cited:
-        hop = _hop_covering(span_start(anchor.ref), hops, covered)
-        if hop is not None and anchor.uri not in hop.cited:
-            hop.cited.append(anchor.uri)
+        round_ = _round_covering(span_start(anchor.ref), rounds, covered)
+        if round_ is not None and anchor.uri not in round_.cited:
+            round_.cited.append(anchor.uri)
         node_ref = locate(anchor.ref)
-        trail.mark(node_ref, SourceStatus.CITED, hop.hop_id if hop else None)
+        trail.mark(node_ref, SourceStatus.CITED, round_.round_id if round_ else None)
         node = published.get(node_ref) if node_ref else None
         passages.setdefault(
-            (anchor.uri, anchor.quote), _passage(anchor, index, hop, node.title if node else "")
+            (anchor.uri, anchor.quote), _passage(anchor, index, round_, node.title if node else "")
         )
 
     return SourceMap(
         nodes=trail.nodes(flat),
-        hops=hops,
-        totals=_totals(outline, len(flat), hops, covered, index),
+        rounds=rounds,
+        totals=_totals(outline, len(flat), rounds, covered, index),
         segments=build_segments(flat, trail.status, trail.reached),
         passages=list(passages.values()),
     )
 
 
 def _passage(
-    anchor: SourceCited, index: DocumentIndex, hop: SourceHop | None, section: str
+    anchor: SourceCited, index: DocumentIndex, round_: SourceRound | None, section: str
 ) -> SourcePassage:
     start = span_start(anchor.ref)
     return SourcePassage(
@@ -234,7 +237,7 @@ def _passage(
         quote=anchor.quote,
         status=anchor.status,
         regions=regions_of(index, section_refs(index, anchor.ref) or [start]),
-        hop_id=hop.hop_id if hop else None,
+        round_id=round_.round_id if round_ else None,
         page=index.page_of.get(start),
         section=section,
     )
@@ -243,15 +246,15 @@ def _passage(
 def _totals(
     outline: DocumentOutline,
     sections_total: int,
-    hops: list[SourceHop],
+    rounds: list[SourceRound],
     covered: dict[str, set[str]],
     index: DocumentIndex,
 ) -> SourceTotals:
     every = set().union(*covered.values()) if covered else set()
     return SourceTotals(
         mode=outline.mode,
-        rounds=len(hops),
-        sections_read=len({hop.node_ref for hop in hops if hop.node_ref}),
+        rounds=len(rounds),
+        sections_read=len({round_.node_ref for round_ in rounds if round_.node_ref}),
         sections_total=sections_total,
         tokens_read=_cost(index, every),
         tokens_total=outline.total_est_tokens,
@@ -259,20 +262,20 @@ def _totals(
 
 
 class _Trail:
-    """The status and the hops reaching each outline node, strongest status
+    """The status and the rounds reaching each outline node, strongest status
     winning — then the nodes to draw, ancestors included."""
 
     def __init__(self) -> None:
         self.status: dict[str, SourceStatus] = {}
         self.reached: dict[str, list[str]] = {}
 
-    def mark(self, node_ref: str | None, state: SourceStatus, hop_id: str | None) -> None:
+    def mark(self, node_ref: str | None, state: SourceStatus, round_id: str | None) -> None:
         if node_ref is None:
             return
         self.status[node_ref] = _stronger(self.status.get(node_ref), state)
         ids = self.reached.setdefault(node_ref, [])
-        if hop_id and hop_id not in ids:
-            ids.append(hop_id)
+        if round_id and round_id not in ids:
+            ids.append(round_id)
 
     def nodes(self, flat: list[tuple[OutlineNode, list[str]]]) -> list[SourceNode]:
         keep = set(self.status)
@@ -289,44 +292,44 @@ class _Trail:
                 status=self.status.get(node.ref, SourceStatus.PATH),
                 est_tokens=node.est_tokens,
                 page=node.page,
-                hop_ids=self.reached.get(node.ref, []),
+                round_ids=self.reached.get(node.ref, []),
             )
             for node, _ in flat
             if node.ref in keep
         ]
 
 
-def _hops(
+def _rounds(
     reads: list[SourceRead],
     index: DocumentIndex,
     published: dict[str, OutlineNode],
     locate: Callable[[str], str | None],
-) -> tuple[list[SourceHop], dict[str, set[str]]]:
-    """One hop per distinct ref read, in the order the agent read them.
+) -> tuple[list[SourceRound], dict[str, set[str]]]:
+    """One round per distinct ref read, in the order the agent read them.
 
     A ref read twice — a cursor resuming a long section — is one round: its
     first `why` explains going there, its last `found` says what it gave.
     """
-    hops: list[SourceHop] = []
+    rounds: list[SourceRound] = []
     covered: dict[str, set[str]] = {}
     seen: dict[str, int] = {}
     for read in reads:
         if read.ref in seen:
             if read.found:
                 at = seen[read.ref]
-                hops[at] = replace(hops[at], found=read.found)
+                rounds[at] = replace(rounds[at], found=read.found)
             continue
-        seen[read.ref] = len(hops)
-        hop_id = f"h{len(hops) + 1}"
+        seen[read.ref] = len(rounds)
+        round_id = f"h{len(rounds) + 1}"
         ordered = section_refs(index, read.ref) or [read.ref]
         refs = set(ordered)
-        covered[hop_id] = refs
+        covered[round_id] = refs
         node_ref = locate(read.ref)
         node = published.get(node_ref) if node_ref else None
-        hops.append(
-            SourceHop(
-                hop_id=hop_id,
-                ordinal=len(hops) + 1,
+        rounds.append(
+            SourceRound(
+                round_id=round_id,
+                ordinal=len(rounds) + 1,
                 ref=read.ref,
                 uri=read.uri,
                 title=node.title if node else read.ref,
@@ -338,16 +341,16 @@ def _hops(
                 regions=regions_of(index, ordered),
             )
         )
-    return hops, covered
+    return rounds, covered
 
 
-def _hop_covering(
-    ref: str, hops: list[SourceHop], covered: dict[str, set[str]]
-) -> SourceHop | None:
-    """The first hop whose read covered `ref` — where the quote was read."""
-    for hop in hops:
-        if ref in covered[hop.hop_id] or ref == hop.ref:
-            return hop
+def _round_covering(
+    ref: str, rounds: list[SourceRound], covered: dict[str, set[str]]
+) -> SourceRound | None:
+    """The first round whose read covered `ref` — where the quote was read."""
+    for round_ in rounds:
+        if ref in covered[round_.round_id] or ref == round_.ref:
+            return round_
     return None
 
 

@@ -33,25 +33,25 @@ class TestResolution:
         assert (report.document_id, report.version_id) == (DOC_ID, JOB_ID)
         assert report.filename == "contrat.pdf"
         assert report.question == "Quel est le préavis ?"
-        assert [hop.why for hop in report.sources.hops] == ["le préavis"]
+        assert [round_.why for round_ in report.sources.rounds] == ["le préavis"]
         assert report.max_rounds == 5
 
     async def test_what_a_round_found_is_carried(self):
         report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "le préavis", "trois mois")])
-        assert report.sources.hops[0].found == "trois mois"
+        assert report.sources.rounds[0].found == "trois mois"
 
     async def test_a_malformed_anchor_is_reported_not_dropped(self):
         report = await show(
             reads=[(anchor_uri(PREAVIS_SECTION), "", "")], cited=[("not-an-anchor", "")]
         )
         assert report.unknown == ["not-an-anchor"]
-        assert len(report.sources.hops) == 1
+        assert len(report.sources.rounds) == 1
 
     async def test_a_ref_the_parse_does_not_hold_is_reported(self):
         missing = anchor_uri("#/texts/999")
         report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "", "")], cited=[(missing, "")])
         assert report.unknown == [missing]
-        assert report.sources.hops[0].cited == []
+        assert report.sources.rounds[0].cited == []
 
     async def test_anchors_into_two_parses_are_refused(self):
         with pytest.raises(InvalidArgumentError, match="more than one document or parse"):
@@ -123,7 +123,7 @@ class TestQuotes:
         [passage] = report.sources.passages
         assert passage.status == "verified"
         assert passage.quote == "trois mois à compter de la notification"
-        assert passage.hop_id == "h1"
+        assert passage.round_id == "h1"
 
     async def test_a_section_anchor_is_narrowed_to_the_element_holding_the_quote(self):
         report = await show(

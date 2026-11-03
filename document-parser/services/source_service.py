@@ -209,7 +209,7 @@ class SourceService:
     def _deep_links(self, parse: LoadedParse, sources: SourceMap) -> dict[str, str]:
         refs = (
             {node.ref for node in sources.nodes}
-            | {DocumentAnchor.parse(uri).ref for hop in sources.hops for uri in hop.cited}
+            | {DocumentAnchor.parse(uri).ref for round_ in sources.rounds for uri in round_.cited}
             | {passage.ref for passage in sources.passages}
         )
         links: dict[str, str] = {}

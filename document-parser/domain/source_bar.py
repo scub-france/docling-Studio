@@ -34,7 +34,7 @@ class SourceSegment:
     tokens: int
     status: SourceStatus
     page: int | None = None
-    hop_ids: list[str] = field(default_factory=list)
+    round_ids: list[str] = field(default_factory=list)
 
 
 def build_segments(
@@ -58,7 +58,7 @@ def build_segments(
                 tokens=max(0, own),
                 status=state,
                 page=node.page,
-                hop_ids=list(reached.get(node.ref, [])),
+                round_ids=list(reached.get(node.ref, [])),
             )
         )
     return segments

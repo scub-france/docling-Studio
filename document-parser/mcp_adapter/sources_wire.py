@@ -8,6 +8,12 @@ them over a page raster of any size.
 Kept apart from the mapping that fills them (`sources_mapping.py`) and the
 text a host without a UI reads (`sources_text.py`), as `wire.py` is from
 `wire_mapping.py`.
+
+The card calls a round of the loop a *hop* (`hops`, `hop_id`, `hop_ids`,
+`SourceHopOut`); the domain says round (`domain.source_map.SourceRound`).
+The wire keeps its names, class names included since they title the output
+schema, until the contract is versioned. The class docstrings are published
+too, as the schema's descriptions.
 """
 
 from __future__ import annotations
