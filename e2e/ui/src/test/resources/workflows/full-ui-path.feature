@@ -5,6 +5,11 @@ Feature: UI — Full happy path via browser
     * url baseUrl
 
   Scenario: Complete workflow — upload, analyze, verify results, rechunk, delete — all via UI
+    # The steps target the uploaded document (the selected row, and the id the
+    # upload created), never the first row: documents left in the base by an
+    # earlier run must not decide the outcome.
+    * def before = call read('classpath:common/helpers/document-ids.feature') { filename: 'medium.pdf' }
+
     # Step 1: Open Studio page
     * driver uiBaseUrl + '/studio'
     * waitFor('[data-e2e=upload-zone]')
@@ -12,13 +17,15 @@ Feature: UI — Full happy path via browser
     # Step 2: Upload a PDF via UI
     * driver.inputFile('input[type=file]', 'classpath:common/data/generated/medium.pdf')
 
-    # Step 3: Verify document appears in doc list
-    * waitFor('[data-e2e=doc-item]')
-    * match text('[data-e2e=doc-name]') contains 'medium.pdf'
-
-    # Step 4: Select the document
-    * click('[data-e2e=doc-item]')
+    # Step 3: The upload lists the document and selects it
     * waitFor('[data-e2e=doc-item].selected')
+    * match text('[data-e2e=doc-item].selected [data-e2e=doc-name]') == 'medium.pdf'
+
+    # Step 4: The upload created exactly one document
+    * def after = call read('classpath:common/helpers/document-ids.feature') { filename: 'medium.pdf' }
+    * def created = karate.filter(after.ids, function(id){ return before.ids.indexOf(id) == -1 })
+    * match karate.sizeOf(created) == 1
+    * def docId = created[0]
 
     # Step 5: Verify Configure mode is active
     * waitFor('[data-e2e~=configure-btn].active')
@@ -64,14 +71,17 @@ Feature: UI — Full happy path via browser
     * waitFor('[data-e2e=chunk-results]')
     * assert karate.sizeOf(locateAll('[data-e2e=chunk-card]')) > 0
 
-    # Step 10: Delete the document via UI
+    # Step 10: Delete the uploaded document via UI
     * click('[data-e2e~=configure-btn]')
-    * waitFor('[data-e2e=doc-item]')
+    * waitFor('[data-e2e=doc-item].selected')
+    * def rowsBefore = karate.sizeOf(locateAll('[data-e2e=doc-item]'))
 
-    # Hover and delete
-    * mouse('[data-e2e=doc-item]').go()
-    * waitFor('[data-e2e=doc-delete]')
-    * click('[data-e2e=doc-delete]')
+    # Hover its row and delete it
+    * mouse('[data-e2e=doc-item].selected').go()
+    * click('[data-e2e=doc-item].selected [data-e2e=doc-delete]')
 
-    # Verify document is gone from the list
-    * retry(10, 500).waitUntil("!document.querySelector('[data-e2e=doc-item]') || !document.querySelector('[data-e2e=doc-name]').textContent.includes('medium.pdf')")
+    # Its row leaves the list, and the API no longer knows the document
+    * retry(10, 500).waitUntil("document.querySelectorAll('[data-e2e=doc-item]').length == " + (rowsBefore - 1))
+    Given path '/api/documents', docId
+    When method GET
+    Then status 404
