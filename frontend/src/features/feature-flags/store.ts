@@ -79,7 +79,7 @@ const featureRegistry: Record<FeatureFlag, FeatureFlagDef> = {
   },
   ask: {
     // ASK_MODE=visible on the backend. Gates every Ask surface, including
-    // Settings › Reasoning, where reasoning would otherwise be turned on.
+    // Settings › Ask, where reasoning would otherwise be turned on.
     description: 'Ask shown in the UI at all (ASK_MODE, hidden by default)',
     isEnabled: (ctx) => ctx.askVisible,
   },

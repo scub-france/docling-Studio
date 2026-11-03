@@ -368,7 +368,6 @@ const messages: Messages = {
     'settings.ask.hiddenHint':
       'Lancez le backend avec ASK_MODE=visible pour afficher Ask ici et dans la vue Parse.',
     // #317 \u2014 Reasoning runtime config (admin panel).
-    'settings.reasoning.title': 'Raisonnement',
     'settings.reasoning.enabled': 'Activation',
     'settings.reasoning.enabledOn': 'Activ\u00e9',
     'settings.reasoning.enabledOff': 'D\u00e9sactiv\u00e9',
@@ -1057,7 +1056,6 @@ const messages: Messages = {
     'settings.ask.hiddenHint':
       'Start the backend with ASK_MODE=visible to show Ask here and in the Parse view.',
     // #317 — Reasoning runtime config (admin panel).
-    'settings.reasoning.title': 'Reasoning',
     'settings.reasoning.enabled': 'Status',
     'settings.reasoning.enabledOn': 'Enabled',
     'settings.reasoning.enabledOff': 'Disabled',
