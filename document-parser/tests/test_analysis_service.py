@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,7 +13,8 @@ import pytest
 from domain.models import AnalysisJob, AnalysisStatus, Document
 from domain.services import extract_html_body, merge_results
 from domain.value_objects import ConversionResult, PageDetail
-from services.analysis_service import AnalysisConfig, AnalysisService, _count_pdf_pages
+from infra.pdf_inspector import PdfiumInspector
+from services.analysis_service import AnalysisConfig, AnalysisService
 
 
 def _make_service(**kwargs) -> AnalysisService:
@@ -292,6 +294,13 @@ class TestAnalysisServiceConcurrency:
 
 
 class TestCountPdfPages:
+    """The page count that decides on batching, through the real `PdfInspector`."""
+
+    @staticmethod
+    def _count(path: str) -> int:
+        service = _make_service(pdf_inspector=PdfiumInspector())
+        return asyncio.run(service._count_pdf_pages(path))
+
     def test_valid_pdf(self, tmp_path):
         """A real (minimal) PDF should return its page count."""
         import pypdfium2 as pdfium
@@ -302,23 +311,39 @@ class TestCountPdfPages:
         pdf.save(str(path))
         pdf.close()
 
-        assert _count_pdf_pages(str(path)) == 1
+        assert self._count(str(path)) == 1
 
     def test_non_pdf_file(self, tmp_path):
         """A non-PDF file should return 0."""
         path = tmp_path / "test.docx"
         path.write_bytes(b"PK\x03\x04 not a pdf")
-        assert _count_pdf_pages(str(path)) == 0
+        assert self._count(str(path)) == 0
 
     def test_nonexistent_file(self):
         """A nonexistent file should return 0."""
-        assert _count_pdf_pages("/no/such/file.pdf") == 0
+        assert self._count("/no/such/file.pdf") == 0
 
     def test_empty_file(self, tmp_path):
         """An empty file should return 0."""
         path = tmp_path / "empty.pdf"
         path.write_bytes(b"")
-        assert _count_pdf_pages(str(path)) == 0
+        assert self._count(str(path)) == 0
+
+    def test_without_an_inspector_the_count_is_unknown(self):
+        """Not wired: no batching, the document is converted in one go."""
+        assert asyncio.run(_make_service()._count_pdf_pages("/any.pdf")) == 0
+
+    @pytest.mark.asyncio
+    async def test_counts_off_the_event_loop(self):
+        """Opening the PDF blocks, and may wait for the pdfium lock a local
+        conversion holds: it must not run on the event loop thread."""
+        threads: list[int] = []
+        inspector = MagicMock()
+        inspector.page_count.side_effect = lambda _path: threads.append(threading.get_ident()) or 7
+        service = _make_service(pdf_inspector=inspector)
+
+        assert await service._count_pdf_pages("/doc.pdf") == 7
+        assert threads and threads[0] != threading.get_ident()
 
 
 class TestExtractHtmlBody:
@@ -555,16 +580,18 @@ class TestBatchedConversion:
 
         config = AnalysisConfig(default_table_mode="accurate", batch_page_size=5)
 
+        eight_pages = MagicMock()
+        eight_pages.page_count.return_value = 8
         service = AnalysisService(
             converter=converter,
             analysis_repo=mock_analysis_repo,
             document_repo=mock_document_repo,
             conversion_timeout=60,
             config=config,
+            pdf_inspector=eight_pages,
         )
 
-        with patch("services.analysis_service._count_pdf_pages", return_value=8):
-            await service._run_analysis_inner("job-progress", "/fake.pdf", "fake.pdf")
+        await service._run_analysis_inner("job-progress", "/fake.pdf", "fake.pdf")
 
         # The last update_status call is the COMPLETED one
         completed_job = saved_jobs[-1]

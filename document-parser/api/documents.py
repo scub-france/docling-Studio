@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -11,7 +10,11 @@ from fastapi.responses import FileResponse, Response
 
 from api import deps  # noqa: TC001
 from api.schemas import DocStoreLinkResponse, DocumentResponse, PageSizeResponse
-from services.document_service import DocumentService
+from services.document_service import (
+    DocumentFileError,
+    PageNotFoundError,
+    PageOutOfRangeError,
+)
 from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
 
 if TYPE_CHECKING:
@@ -169,56 +172,38 @@ async def preview(
     dpi: int = Query(150, ge=72, le=300),
 ) -> Response:
     """Generate a PNG preview of a specific PDF page."""
-    doc = await service.find_by_id(doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    if doc.page_count and page > doc.page_count:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Page {page} out of range (document has {doc.page_count} pages)",
-        )
-
     try:
-        # File read + PDF rasterisation are both blocking; offload to a
-        # worker thread so the event loop stays free for other requests.
-        file_content = await asyncio.to_thread(
-            service.resolve_storage_path(doc.storage_path).read_bytes
-        )
-        png_bytes = await asyncio.to_thread(
-            DocumentService.generate_preview, file_content, page=page, dpi=dpi
-        )
-        return Response(content=png_bytes, media_type="image/png")
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        png_bytes = await service.render_preview(doc_id, page=page, dpi=dpi)
+    except PageOutOfRangeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
     except OSError as exc:
         logger.exception("I/O error generating preview for %s", doc_id)
         raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
-    except Exception as exc:
+    except DocumentFileError as exc:
         logger.exception("Unexpected error generating preview for %s", doc_id)
         raise HTTPException(status_code=422, detail="Failed to generate preview") from exc
+    if png_bytes is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return Response(content=png_bytes, media_type="image/png")
 
 
 @router.get("/{doc_id}/pages", response_model=list[PageSizeResponse])
 async def page_sizes(doc_id: str, service: deps.DocumentServiceDep) -> list[PageSizeResponse]:
     """Size of each page of the PDF, so the preview can lay out its pages
     before any analysis (#352)."""
-    doc = await service.find_by_id(doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
     try:
-        file_content = await asyncio.to_thread(
-            service.resolve_storage_path(doc.storage_path).read_bytes
-        )
-        pages = await asyncio.to_thread(DocumentService.page_sizes, file_content)
+        pages = await service.page_sizes(doc_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
-    except Exception as exc:
+    except (OSError, DocumentFileError) as exc:
         logger.exception("Could not read the page sizes of %s", doc_id)
         raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
+    if pages is None:
+        raise HTTPException(status_code=404, detail="Document not found")
     return [
         PageSizeResponse(page_number=p.page_number, width=p.width, height=p.height) for p in pages
     ]

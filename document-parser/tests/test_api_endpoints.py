@@ -8,7 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from domain.models import AnalysisJob, Document
+from infra.page_raster import PdfPageRasterizer
+from infra.pdf_inspector import PdfiumInspector
 from main import app
+from services.document_service import DocumentConfig, DocumentService
 from tests.app_state import state_override
 
 
@@ -34,6 +37,23 @@ def mock_document_service(client):
     mock_svc.resolve_storage_path.side_effect = lambda storage_path: Path(storage_path)
     with state_override(app, document_service=mock_svc):
         yield mock_svc
+
+
+@pytest.fixture
+def stored_documents(client, tmp_path):
+    """The document repository behind a real DocumentService, with the real
+    PDF adapters: the preview and page-size routes run end to end on the
+    files a test writes under `tmp_path`."""
+    repo = AsyncMock()
+    service = DocumentService(
+        document_repo=repo,
+        analysis_repo=AsyncMock(),
+        config=DocumentConfig(upload_dir=str(tmp_path)),
+        rasterizer=PdfPageRasterizer(),
+        pdf=PdfiumInspector(),
+    )
+    with state_override(app, document_service=service):
+        yield repo
 
 
 @pytest.fixture(autouse=True)
@@ -206,8 +226,31 @@ class TestDocumentEndpoints:
         assert "too large" in resp.json()["detail"].lower()
         mock_document_service.upload.assert_not_called()
 
-    def test_preview_page_out_of_range(self, client, mock_document_service):
-        mock_document_service.find_by_id = AsyncMock(
+    def test_preview(self, client, stored_documents, tmp_path):
+        from tests.test_document_service import pdf_with_pages
+
+        pdf = tmp_path / "test.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792), (842, 595)))
+        stored_documents.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="test.pdf", page_count=2, storage_path=str(pdf))
+        )
+
+        resp = client.get("/api/documents/d1/preview?page=2&dpi=72")
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.content.startswith(b"\x89PNG")
+
+    def test_preview_unknown_document(self, client, stored_documents):
+        stored_documents.find_by_id = AsyncMock(return_value=None)
+
+        resp = client.get("/api/documents/nope/preview")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found"}
+
+    def test_preview_page_out_of_range(self, client, stored_documents):
+        stored_documents.find_by_id = AsyncMock(
             return_value=Document(
                 id="d1",
                 filename="test.pdf",
@@ -219,13 +262,53 @@ class TestDocumentEndpoints:
         resp = client.get("/api/documents/d1/preview?page=10")
         assert resp.status_code == 400
         assert "out of range" in resp.json()["detail"]
+        assert resp.json() == {"detail": "Page 10 out of range (document has 3 pages)"}
 
-    def test_page_sizes(self, client, mock_document_service, tmp_path):
+    def test_preview_page_the_pdf_does_not_have(self, client, stored_documents, tmp_path):
+        """Page count unknown (not counted at upload): the PDF answers."""
+        from tests.test_document_service import pdf_with_pages
+
+        pdf = tmp_path / "test.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792)))
+        stored_documents.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="test.pdf", storage_path=str(pdf))
+        )
+
+        resp = client.get("/api/documents/d1/preview?page=4")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Page 4 not found"}
+
+    def test_preview_missing_file(self, client, stored_documents, tmp_path):
+        stored_documents.find_by_id = AsyncMock(
+            return_value=Document(
+                id="d1", filename="gone.pdf", storage_path=str(tmp_path / "gone.pdf")
+            )
+        )
+
+        resp = client.get("/api/documents/d1/preview")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "PDF file not found on disk"}
+
+    def test_preview_unreadable_pdf(self, client, stored_documents, tmp_path):
+        broken = tmp_path / "broken.pdf"
+        broken.write_bytes(b"%PDF-not really")
+        stored_documents.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="broken.pdf", storage_path=str(broken))
+        )
+
+        resp = client.get("/api/documents/d1/preview")
+
+        assert resp.status_code == 422
+        assert resp.json() == {"detail": "Failed to generate preview"}
+
+    def test_page_sizes(self, client, stored_documents, tmp_path):
         from tests.test_document_service import pdf_with_pages
 
         pdf = tmp_path / "test.pdf"
         pdf.write_bytes(pdf_with_pages((612, 792), (842, 595)))
-        mock_document_service.find_by_id = AsyncMock(
+        stored_documents.find_by_id = AsyncMock(
             return_value=Document(id="d1", filename="test.pdf", storage_path=str(pdf))
         )
 
@@ -237,13 +320,13 @@ class TestDocumentEndpoints:
             {"pageNumber": 2, "width": 842.0, "height": 595.0},
         ]
 
-    def test_page_sizes_unknown_document(self, client, mock_document_service):
-        mock_document_service.find_by_id = AsyncMock(return_value=None)
+    def test_page_sizes_unknown_document(self, client, stored_documents):
+        stored_documents.find_by_id = AsyncMock(return_value=None)
 
         assert client.get("/api/documents/nope/pages").status_code == 404
 
-    def test_page_sizes_missing_file(self, client, mock_document_service, tmp_path):
-        mock_document_service.find_by_id = AsyncMock(
+    def test_page_sizes_missing_file(self, client, stored_documents, tmp_path):
+        stored_documents.find_by_id = AsyncMock(
             return_value=Document(
                 id="d1", filename="gone.pdf", storage_path=str(tmp_path / "gone.pdf")
             )
@@ -254,14 +337,17 @@ class TestDocumentEndpoints:
         assert resp.status_code == 404
         assert "not found on disk" in resp.json()["detail"]
 
-    def test_page_sizes_unreadable_pdf(self, client, mock_document_service, tmp_path):
+    def test_page_sizes_unreadable_pdf(self, client, stored_documents, tmp_path):
         broken = tmp_path / "broken.pdf"
         broken.write_bytes(b"%PDF-not really")
-        mock_document_service.find_by_id = AsyncMock(
+        stored_documents.find_by_id = AsyncMock(
             return_value=Document(id="d1", filename="broken.pdf", storage_path=str(broken))
         )
 
-        assert client.get("/api/documents/d1/pages").status_code == 422
+        resp = client.get("/api/documents/d1/pages")
+
+        assert resp.status_code == 422
+        assert resp.json() == {"detail": "Failed to read PDF file"}
 
     def test_delete_document(self, client, mock_document_service):
         mock_document_service.delete = AsyncMock(return_value=True)

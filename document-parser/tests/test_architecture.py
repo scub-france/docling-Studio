@@ -253,9 +253,10 @@ class TestDocumentAgentServicesAreFrameworkFree:
     Rasterising a page was inlined in `NavigationService` — PIL, a filesystem
     read and an import of another service, in the middle of a use case. The
     `PageRasterizer` port moved all three behind `infra/page_raster.py`; this
-    is what stops them coming back. Scoped to these four modules rather than
-    all of `services/` because `document_service.py` rasterises directly and
-    predates the port.
+    is what stops them coming back. The PDF libraries are now banned from all
+    of `services/` (`_SERVICES_FORBIDDEN_EXTERNALS`); these modules keep the
+    stricter rules on top: no PIL, and no peer service the composition root
+    does not inject.
     """
 
     MODULES = (
@@ -349,13 +350,19 @@ _SERVICES_FORBIDDEN_EXTERNALS = {
     "httpx",
     "neo4j",
     "opensearchpy",
+    # PDF reading and rendering go through `PageRasterizer`, `PageTextReader`
+    # and `PdfInspector` (#audit-06): the adapters in `infra/` take the pdfium
+    # lock and open the stored file by its path.
+    "pdf2image",
+    "pypdfium2",
     "starlette",
 }
 
 # Service imports that should move behind ports before joining the denylist.
 # Keep this list explicit: deleting a candidate means its migration must also
-# add the package to `_SERVICES_FORBIDDEN_EXTERNALS`.
-_SERVICES_EXTERNAL_MIGRATION_CANDIDATES = {"pdf2image", "pypdfium2"}
+# add the package to `_SERVICES_FORBIDDEN_EXTERNALS`. None pending: pdf2image
+# and pypdfium2 moved behind ports and joined the denylist.
+_SERVICES_EXTERNAL_MIGRATION_CANDIDATES: set[str] = set()
 
 
 class TestDomainExternalDependencies:

@@ -7,13 +7,16 @@ ones a born-digital PDF carries.
 from __future__ import annotations
 
 import ctypes
+import threading
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 import pytest
 
 from domain.quote_marks import quote_marks
+from infra import page_text
 from infra.page_text import PdfPageTextReader
+from infra.pdfium_lock import pdfium_lock
 
 
 def text_pdf(path, lines, *, size=(600, 800), rotation=0) -> str:
@@ -75,3 +78,22 @@ class TestGlyphs:
         pdf.save(str(path))
         pdf.close()
         assert PdfPageTextReader().glyphs(str(path), page=1) == []
+
+    def test_waits_for_the_shared_pdfium_lock(self, notice, monkeypatch):
+        """The same lock as Docling and the geometry adapter (`infra.pdfium_lock`)."""
+        opened = threading.Event()
+        real = pdfium.PdfDocument
+
+        def spy(*args, **kwargs):
+            opened.set()
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(page_text.pdfium, "PdfDocument", spy)
+        worker = threading.Thread(
+            target=PdfPageTextReader().glyphs, args=(notice,), kwargs={"page": 1}
+        )
+        with pdfium_lock:
+            worker.start()
+            assert not opened.wait(0.2), "pdfium was opened while the lock was held"
+        worker.join(timeout=5)
+        assert opened.is_set()

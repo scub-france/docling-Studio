@@ -1,9 +1,14 @@
-"""Document service — file upload, storage, and preview orchestration."""
+"""Document service — file upload, storage, and preview orchestration.
+
+Reaches the PDF through two ports: `PageRasterizer` renders a page,
+`PdfInspector` counts pages and reads their sizes. The service decides which
+page may be asked for and what an unreadable file means; the adapters open
+the stored file by its path.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import os
 import uuid
@@ -11,14 +16,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pypdfium2 as pdfium
-from pdf2image import convert_from_bytes, pdfinfo_from_bytes
-
 from domain.models import Document
-from domain.value_objects import PageDetail
 
 if TYPE_CHECKING:
-    from domain.ports import AnalysisRepository, DocumentRepository
+    from domain.ports import (
+        AnalysisRepository,
+        DocumentRepository,
+        PageRasterizer,
+        PdfInspector,
+    )
+    from domain.value_objects import PageDetail
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +34,28 @@ logger = logging.getLogger(__name__)
 _PDF_MAGIC = b"%PDF"
 
 _UPLOAD_CHUNK_SIZE = 64 * 1024  # 64 KB chunks for streaming writes
+
+
+class PageOutOfRangeError(Exception):
+    """The page asked for is past the document's last page."""
+
+    def __init__(self, page: int, page_count: int):
+        super().__init__(f"Page {page} out of range (document has {page_count} pages)")
+
+
+class PageNotFoundError(Exception):
+    """The stored PDF has no such page (its page count was not known)."""
+
+    def __init__(self, page: int):
+        super().__init__(f"Page {page} not found")
+
+
+class DocumentFileError(Exception):
+    """The stored PDF could not be rendered or read.
+
+    A missing file stays a `FileNotFoundError` and an I/O failure an
+    `OSError`; this wraps whatever else the PDF library raised.
+    """
 
 
 @dataclass
@@ -46,10 +75,15 @@ class DocumentService:
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
         config: DocumentConfig,
+        *,
+        rasterizer: PageRasterizer,
+        pdf: PdfInspector,
     ):
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
         self._config = config
+        self._rasterizer = rasterizer
+        self._pdf = pdf
         self._upload_dir = config.upload_dir
         self._max_file_size = (
             config.max_file_size_mb * 1024 * 1024 if config.max_file_size_mb > 0 else 0
@@ -67,10 +101,11 @@ class DocumentService:
     async def upload(self, filename: str, content_type: str, file_content: bytes) -> Document:
         """Save uploaded file to disk and persist metadata.
 
-        Writes the file in fixed-size chunks to keep peak memory usage low.
-        The blocking disk write and the poppler subprocess (`pdfinfo`) are
-        offloaded to a worker thread so the FastAPI event loop stays free
-        for other requests during large uploads.
+        Writes the file in fixed-size chunks to keep peak memory usage low,
+        then counts the pages of the written file. Both are blocking and run
+        in a worker thread so the FastAPI event loop stays free for other
+        requests during large uploads. A PDF whose pages cannot be counted is
+        still accepted, with an unknown page count.
         """
         if self._max_file_size > 0 and len(file_content) > self._max_file_size:
             raise ValueError(f"File too large (max {self._config.max_file_size_mb} MB)")
@@ -82,11 +117,9 @@ class DocumentService:
         safe_name = f"{uuid.uuid4()}{ext}"
         file_path = os.path.join(self._upload_dir, safe_name)
 
-        # Disk write + poppler subprocess — both blocking. Offload together
-        # so we cross the thread boundary once instead of twice.
-        page_count = await asyncio.to_thread(
-            _persist_and_count, self._upload_dir, file_path, file_content
-        )
+        # Disk write + page count — both blocking. Offload together so we
+        # cross the thread boundary once instead of twice.
+        page_count = await asyncio.to_thread(self._persist_and_count, file_path, file_content)
 
         if (
             self._max_page_count > 0
@@ -156,60 +189,72 @@ class DocumentService:
 
         return await self._document_repo.delete(doc_id)
 
-    @staticmethod
-    def generate_preview(file_content: bytes, page: int = 1, dpi: int = 150) -> bytes:
-        """Generate a PNG preview of a specific PDF page."""
-        images = convert_from_bytes(file_content, first_page=page, last_page=page, dpi=dpi)
-        if not images:
-            raise ValueError(f"Page {page} not found")
+    async def render_preview(self, doc_id: str, *, page: int, dpi: int) -> bytes | None:
+        """PNG of one page of a document, or None for an unknown document.
 
-        buf = io.BytesIO()
-        images[0].save(buf, format="PNG")
-        return buf.getvalue()
+        Raises `PageOutOfRangeError` past the last page when the page count is
+        known, `PageNotFoundError` when the PDF has no such page,
+        `FileNotFoundError` when the file is gone, `OSError` when it cannot be
+        read, and `DocumentFileError` when it cannot be rendered.
+        """
+        doc = await self._document_repo.find_by_id(doc_id)
+        if doc is None:
+            return None
+        if doc.page_count and page > doc.page_count:
+            raise PageOutOfRangeError(page, doc.page_count)
+        try:
+            # Resolving the path stats the disk and rendering runs poppler:
+            # both off the event loop.
+            return await asyncio.to_thread(self._render, doc.storage_path, page, dpi)
+        except ValueError as exc:
+            raise PageNotFoundError(page) from exc
+        except OSError:
+            raise
+        except Exception as exc:
+            raise DocumentFileError(f"Could not render page {page} of {doc_id}") from exc
 
-    @staticmethod
-    def page_sizes(file_content: bytes) -> list[PageDetail]:
-        """Size of each page of a PDF, in points, without its elements (#352).
+    async def page_sizes(self, doc_id: str) -> list[PageDetail] | None:
+        """Size of each page of a document's PDF, in points, without its
+        elements (#352), or None for an unknown document.
 
         Lets the page preview reserve each page's box before any analysis.
+        Raises `FileNotFoundError` when the file is gone, `OSError` when it
+        cannot be read, and `DocumentFileError` when it is not a readable PDF.
         """
-        pdf = pdfium.PdfDocument(file_content)
+        doc = await self._document_repo.find_by_id(doc_id)
+        if doc is None:
+            return None
         try:
-            sizes: list[PageDetail] = []
-            for index in range(len(pdf)):
-                page = pdf[index]
-                try:
-                    width, height = page.get_size()
-                finally:
-                    page.close()
-                sizes.append(PageDetail(page_number=index + 1, width=width, height=height))
-            return sizes
-        finally:
-            pdf.close()
+            return await asyncio.to_thread(self._read_page_sizes, doc.storage_path)
+        except OSError:
+            raise
+        except Exception as exc:
+            raise DocumentFileError(f"Could not read the pages of {doc_id}") from exc
 
+    def _render(self, storage_path: str, page: int, dpi: int) -> bytes:
+        path = str(self.resolve_storage_path(storage_path))
+        return self._rasterizer.render_page(path, page=page, dpi=dpi)
 
-def _persist_and_count(upload_dir: str, file_path: str, file_content: bytes) -> int | None:
-    """Write the uploaded bytes to disk and return the page count.
+    def _read_page_sizes(self, storage_path: str) -> list[PageDetail]:
+        return self._pdf.page_sizes(str(self.resolve_storage_path(storage_path)))
 
-    Synchronous helper meant to be invoked through `asyncio.to_thread` so
-    the chunked write loop and the poppler subprocess never block the
-    FastAPI event loop.
-    """
-    os.makedirs(upload_dir, exist_ok=True)
-    with open(file_path, "wb") as f:
-        for offset in range(0, len(file_content), _UPLOAD_CHUNK_SIZE):
-            f.write(file_content[offset : offset + _UPLOAD_CHUNK_SIZE])
-    return _count_pages(file_content)
+    def _persist_and_count(self, file_path: str, file_content: bytes) -> int | None:
+        """Write the uploaded bytes to disk and return the page count.
 
+        Synchronous helper meant to be invoked through `asyncio.to_thread` so
+        the chunked write loop and the PDF read never block the FastAPI event
+        loop.
+        """
+        os.makedirs(self._upload_dir, exist_ok=True)
+        with open(file_path, "wb") as f:
+            for offset in range(0, len(file_content), _UPLOAD_CHUNK_SIZE):
+                f.write(file_content[offset : offset + _UPLOAD_CHUNK_SIZE])
+        return self._count_pages(file_path)
 
-def _count_pages(file_content: bytes) -> int | None:
-    """Count PDF pages using poppler via pdf2image."""
-    try:
-        info = pdfinfo_from_bytes(file_content)
-        return info.get("Pages")
-    except (FileNotFoundError, OSError) as exc:
-        logger.warning("Could not count pages: %s", exc)
-        return None
-    except Exception:
-        logger.warning("Unexpected error counting pages", exc_info=True)
-        return None
+    def _count_pages(self, file_path: str) -> int | None:
+        """Page count of the written file, None when the PDF cannot be read."""
+        try:
+            return self._pdf.page_count(file_path)
+        except Exception as exc:
+            logger.warning("Could not count the pages of %s: %s", file_path, exc)
+            return None

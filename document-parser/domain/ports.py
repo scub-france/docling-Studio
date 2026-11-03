@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         DocumentLifecycleState,
         GraphPayload,
         LLMProviderType,
+        PageDetail,
         ReasoningResult,
     )
     from domain.vector_schema import IndexedChunk, SearchResult
@@ -682,4 +683,24 @@ class ReasoningRunner(Protocol):
     ) -> ReasoningResult:
         """Execute the reasoning loop. `model_id` overrides the provider's
         default for this call only."""
+        ...
+
+
+@runtime_checkable
+class PdfInspector(Protocol):
+    """Port for reading a stored PDF's geometry: how many pages, how big.
+
+    Opening a PDF is infrastructure — a library, a file on disk, a lock the
+    library needs — while what to do with an unreadable one is the caller's
+    policy. Both methods raise `FileNotFoundError` when nothing is stored at
+    `storage_path`, and another exception when the file is not a readable PDF.
+    """
+
+    def page_count(self, storage_path: str) -> int:
+        """Number of pages of the PDF at `storage_path`."""
+        ...
+
+    def page_sizes(self, storage_path: str) -> list[PageDetail]:
+        """Width and height of each page, in points, numbered from 1, without
+        any element."""
         ...

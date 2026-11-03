@@ -14,8 +14,6 @@ import math
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
-import pypdfium2 as pdfium
-
 from domain.exceptions import InvalidLifecycleTransitionError
 from domain.models import AnalysisJob, AnalysisStatus
 from domain.services import classify_error
@@ -35,6 +33,7 @@ if TYPE_CHECKING:
         DocumentConverter,
         DocumentRepository,
         GraphWriter,
+        PdfInspector,
     )
 
 logger = logging.getLogger(__name__)
@@ -54,18 +53,6 @@ def _chunk_to_dict(c: ChunkResult) -> dict:
 
 # Maximum number of concurrent analysis jobs to prevent resource exhaustion.
 _DEFAULT_MAX_CONCURRENT = 3
-
-
-def _count_pdf_pages(file_path: str) -> int:
-    """Count pages in a PDF. Returns 0 if the file is not a valid PDF."""
-    try:
-        pdf = pdfium.PdfDocument(file_path)
-        count = len(pdf)
-        pdf.close()
-        return count
-    except Exception:
-        logger.debug("Cannot open %s as PDF, batching disabled", file_path)
-        return 0
 
 
 @dataclass
@@ -91,6 +78,7 @@ class AnalysisService:
         config: AnalysisConfig | None = None,
         graph_writer: GraphWriter | None = None,
         docling_importer: DoclingDocumentImporter | None = None,
+        pdf_inspector: PdfInspector | None = None,
     ):
         self._converter = converter
         self._chunker = chunker
@@ -105,6 +93,9 @@ class AnalysisService:
         # the hex-arch fix. None when no graph store is wired in.
         self._graph_writer = graph_writer
         self._docling_importer = docling_importer
+        # Counts the pages to convert, to decide on batching. None: the page
+        # count is unknown and the document is converted in one go.
+        self._pdf_inspector = pdf_inspector
         # Duck-typed callable injected at startup. Wired in main.py to
         # `ChunkService.promote_from_analysis_if_empty` so the canonical
         # chunkset (#205) is populated on the first successful analysis,
@@ -446,7 +437,7 @@ class AnalysisService:
         converter merges the batches back into one document (#344). In remote
         mode the Serve instance manages its own resources.
         """
-        total_pages = _count_pdf_pages(file_path)
+        total_pages = await self._count_pdf_pages(file_path)
         batch_size = self._config.batch_page_size
         if batch_size > 0 and total_pages > batch_size and self._converter.supports_page_batching:
             return await self._run_batched_conversion(
@@ -456,6 +447,20 @@ class AnalysisService:
             self._converter.convert(file_path, options),
             timeout=self._conversion_timeout,
         )
+
+    async def _count_pdf_pages(self, file_path: str) -> int:
+        """Pages of the PDF to convert, 0 when they cannot be counted.
+
+        Opening the PDF blocks (and waits for the pdfium lock a running local
+        conversion may hold), so it runs in a worker thread.
+        """
+        if self._pdf_inspector is None:
+            return 0
+        try:
+            return await asyncio.to_thread(self._pdf_inspector.page_count, file_path)
+        except Exception:
+            logger.debug("Cannot open %s as PDF, batching disabled", file_path)
+            return 0
 
     async def _finalize_analysis(
         self,

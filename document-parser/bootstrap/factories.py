@@ -213,6 +213,7 @@ def build_analysis_service(document_repo, analysis_repo, graph_writer) -> Analys
         ),
         graph_writer=graph_writer,
         docling_importer=DoclingDocumentImporter(),
+        pdf_inspector=_build_pdf_inspector(),
     )
 
 
@@ -225,6 +226,8 @@ def build_document_service(document_repo, analysis_repo) -> DocumentService:
             max_file_size_mb=settings.max_file_size_mb,
             max_page_count=settings.max_page_count,
         ),
+        rasterizer=_build_rasterizer(),
+        pdf=_build_pdf_inspector(),
     )
 
 
@@ -305,6 +308,12 @@ def _build_rasterizer():
     from infra.page_raster import PdfPageRasterizer
 
     return PdfPageRasterizer()
+
+
+def _build_pdf_inspector():
+    from infra.pdf_inspector import PdfiumInspector
+
+    return PdfiumInspector()
 
 
 def _build_tree_reader():
