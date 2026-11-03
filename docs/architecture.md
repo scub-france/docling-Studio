@@ -5,11 +5,12 @@
 ```mermaid
 flowchart TB
     subgraph Studio ["Docling Studio"]
-        Front("Frontend<br/>Vue 3, served by nginx") -->|/api| Back("Backend<br/>FastAPI")
+        Front("Frontend<br/>Vue 3, served by nginx") -->|/api, /mcp| Back("Backend<br/>FastAPI")
         Back --> DB[("SQLite<br/>+ uploaded PDFs")]
         Back --> Docling("Docling<br/>in the backend")
     end
     Browser(["Browser"]) --> Front
+    Agent(["AI agent<br/>MCP client"]) -->|/mcp| Front
     Back -.-> Serve("Docling Serve<br/>remote engine")
     Back -.-> Ollama("Ollama<br/>for Ask")
     Back -.-> Stores[("OpenSearch, Neo4j<br/>ingestion, deprecated")]
@@ -19,7 +20,7 @@ flowchart TB
     classDef blue fill:#2196F31F,stroke:#2196F3,stroke-width:1.5px
     classDef teal fill:#0096881F,stroke:#009688,stroke-width:1.5px
     classDef deprecated fill:#9E9E9E0D,stroke:#9E9E9E,stroke-width:1.5px,stroke-dasharray:5 4,color:#9E9E9E
-    class Browser grey
+    class Browser,Agent grey
     class Front,Back orange
     class Docling,Serve,Ollama blue
     class DB teal
@@ -28,6 +29,8 @@ flowchart TB
 ```
 
 Dotted lines are optional. Grey and dashed means deprecated: ingestion (OpenSearch, Neo4j) goes away in 0.8.0. The published image puts nginx and the backend in one container (root `Dockerfile`). Docker Compose runs them as two containers.
+
+AI agents reach the [MCP server](mcp-server.md) at `/mcp`, through nginx like the browser. A local client can instead spawn `document-parser/mcp_stdio.py`, which reads the same SQLite database.
 
 | Folder | Content |
 |--------|---------|
@@ -40,12 +43,14 @@ Dotted lines are optional. Grey and dashed means deprecated: ingestion (OpenSear
 
 ## Backend
 
-The backend follows ports and adapters. The core (`domain/`) defines what the app needs; `infra/` and `persistence/` plug real tools into it.
+The backend follows ports and adapters. The core (`domain/`) defines what the app needs; `infra/` and `persistence/` plug real tools into it. Two adapters drive the use cases: `api/` for the frontend, `mcp_adapter/` for AI agents.
 
 ```mermaid
 flowchart TB
     Bootstrap("bootstrap/<br/>builds everything at start") --> API("api/<br/>HTTP routes")
+    Bootstrap --> MCP("mcp_adapter/<br/>MCP tools and cards")
     API --> Services("services/<br/>use cases")
+    MCP --> Services
     Services --> Domain{{"domain/<br/>models, rules, ports"}}
     Infra("infra/<br/>Docling, Ollama, OpenSearch, Neo4j…") -.->|implements| Domain
     Persistence("persistence/<br/>SQLite") -.->|implements| Domain
@@ -55,7 +60,7 @@ flowchart TB
     classDef orange fill:#FF57221F,stroke:#FF5722,stroke-width:2px
     classDef teal fill:#0096881F,stroke:#009688,stroke-width:1.5px
     class Bootstrap grey
-    class API,Services blue
+    class API,MCP,Services blue
     class Domain orange
     class Infra,Persistence teal
 ```
@@ -67,10 +72,11 @@ flowchart TB
 | `domain` | Any other layer, FastAPI, SQLAlchemy, httpx, the OpenSearch client |
 | `services` | `api`, `infra`, `persistence`, FastAPI |
 | `api` | `infra`, `persistence` |
+| `mcp_adapter` | `api`, `infra`, `persistence` |
 | `infra` | `api`, `services` |
 | `persistence` | `api`, `services`, `infra` |
 
-`main.py` creates the app and mounts the routes. `bootstrap/` builds the adapters and services from the settings.
+`main.py` creates the app and mounts the routes. `bootstrap/` builds the adapters and services from the settings, and mounts the MCP server at `/mcp` unless `MCP_ENABLED=false` (`bootstrap/mcp_mount.py`).
 
 ### API rules
 
@@ -80,11 +86,13 @@ flowchart TB
 | Prefix | What it serves |
 |--------|----------------|
 | `/api/documents` | Documents, their chunks, versions, graph (Neo4j, deprecated), and Ask (`POST /api/documents/{id}/reasoning`) |
-| `/api/analyses` | Analyses: start, read, delete |
+| `/api/analyses` | Analyses: start, import a Docling JSON (`POST /api/analyses/import`), list, read, delete. `GET /api/analyses/summaries` lists them without their content, to follow their status |
 | `/api/stores` | Ingestion targets (OpenSearch, Neo4j). Deprecated, removed in 0.8.0 |
 | `/api/ingestion` | Sending chunks to stores, when ingestion is on. Deprecated, removed in 0.8.0 |
-| `/api/config` | The reasoning settings edited in **Settings** |
+| `/api/config` | The settings edited in **Settings**: Ask (`/api/config/reasoning`) and the MCP server's switch and read budgets (`/api/config/mcp`) |
+| `/api/mcp` | What the running MCP server publishes (`GET /api/mcp/server`), read-only |
 | `/api/health` | Status, engine, version, and the flags the frontend reads |
+| `/mcp` | The MCP server itself (`POST`), for AI agents. See [MCP server](mcp-server.md) |
 
 ### An analysis
 
