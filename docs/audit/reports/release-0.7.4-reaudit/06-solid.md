@@ -320,3 +320,40 @@ Le score est déjà à 100. Pour que ce score tienne au prochain gate, sans gain
 - Les deux MAJ du rapport 0.7.4 sont corrigés et vérifiés dans le code (6.1.4, 6.2.1).
 - La lecture stricte de 6.5.1, laissée au mainteneur en 0.7.4, donne désormais le même résultat que la lecture opérationnelle : il n'y a plus de risque de reclassement en CRIT.
 - Pour que le score tienne au prochain gate, le point à traiter en priorité est l'INFO 15 : vérifier par un outil que les services n'appellent que ce que leurs ports déclarent.
+
+---
+
+## Addendum — vérification post-correctifs (HEAD 3f1d1cb, 2026-11-03)
+
+Vérification dans le code de la passe `a4d9679..3f1d1cb` (commits `ad8e2ae` et `618a39a` pour cet audit). Gates du coordinateur sur `3f1d1cb` : ruff et format OK, pytest **1723 passed, 19 skipped**, dont `tests/test_architecture.py`, `tests/test_port_conformance.py` et le nouveau `tests/test_chunk_errors.py` ; vue-tsc OK, vitest 522 passed. Pas de run CI.
+
+### Écarts visés
+
+| Écart | Statut | Preuve (`3f1d1cb`) |
+|-------|--------|--------------------|
+| INFO 13 — `DocumentService` s'appuie sur un `ValueError` que le port `PageRasterizer` ne déclare pas | **Fermée** | `domain/ports.py:560-567` : `render_page` déclare `FileNotFoundError` (rien n'est stocké), `ValueError` (page absente), et toute autre exception signifie un fichier illisible. C'est exactement la distinction que fait le service (`services/document_service.py:245-246`, `except ValueError` → `PageNotFoundError`). Le port s'aligne ainsi sur `PdfInspector` et `FileStorage`. |
+| INFO 14 — `refusals_as_service_errors` associe les refus par type exact | **Fermée** | `services/chunk_errors.py:51-58` (`_refusal_error`) parcourt `type(exc).__mro__` et retombe sur `ChunkValidationError` (400) ; il est appelé par `refusals_as_service_errors` (`:61-67`). Une sous-classe nouvelle, ou un `ChunkEditingError` levé tel quel, donne désormais un 400 et non plus un `KeyError` → 500. Étendre le domaine ne demande plus de modifier le service (OCP). Test : `tests/test_chunk_errors.py:52` (base levée telle quelle). |
+
+### Autres changements de la passe, relus sous l'angle SOLID
+
+- `PageOutOfRangeError`, `PageNotFoundError`, `DocumentFileError` et `ExportNotFoundError` dérivent de `ServiceError` (`document_service.py:41`, `:50`, `:59` ; `export_service.py:115`). Le routeur documents ne connaît plus ces classes : le handler unique les traduit.
+- `StoreBackendResolver` reçoit la garde SSRF sous forme de callable injecté (`target_is_blocked`, `services/store_backend_resolver.py:138`, câblé en `bootstrap/factories.py:194`). `services/` n'importe toujours pas `infra` (6.5.1 et 6.5.3 tenus).
+- `chunk_push_service.py:20` importe `_new_id` et `_utcnow` de `domain.models`. La dépendance va vers le domaine, donc dans le bon sens ; l'emploi de noms privés est relevé à l'audit 05.
+
+**Régressions** : aucune sur un item du barème.
+
+### Score recalculé
+
+Une seule lecture au re-audit, inchangée : 15 / 15 items, 31 / 31 → **100 / 100**.
+
+| Métrique | Re-audit (`a4d9679`) | Post-correctifs (`3f1d1cb`) |
+|----------|----------------------|-----------------------------|
+| Score | 100 / 100 | **100 / 100** |
+| Écarts CRITICAL | 0 | 0 |
+| Écarts MAJOR | 0 | 0 |
+| Écarts MINOR | 0 | 0 |
+| Écarts INFO | 13 | **11** (INFO 13 et 14 fermées) |
+
+### Verdict partiel après correctifs : GO
+
+Score **100 / 100**, 0 CRITICAL, 0 MAJOR, 0 MINOR, 11 INFO. Pour que le score tienne, la priorité reste l'INFO 15 : faire vérifier par un outil (mypy ou pyright ciblé, ou le croisement AST versionné en test) que les services n'appellent que ce que leurs ports déclarent.

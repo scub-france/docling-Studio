@@ -272,3 +272,81 @@ Les MIN (#344 avec le test PDF-only, `extract_pages_detail`, commentaire `LocalC
 Score **93/100** (inchange), **0 CRITICAL**, **1 MAJOR** (sous le seuil de 3), 3 MINOR, 8 INFO. Les suites unitaires sont vertes et plus fournies : 1673 tests backend, 522 frontend. Tous les modules ajoutes par la remediation sont testes, et le MIN `document_versions` est leve.
 
 Le MAJ 9.1.3 est fortement reduit : plus aucune spec obsolete, et une premiere execution complete. L'item reste non conforme : cette execution donne 24/29, contre un faux Docling Serve, sans rapport joint, avec au moins un scenario reellement casse (`pipeline-options.feature:54`). La purge a aussi reintroduit une assertion vide (`analysis-parse-properties.feature:33`). Deux corrections de spec et un run sur la stack documentee suffiraient a atteindre 100/100. Aucun run CI n'existe encore sur la branche : ouvrir la PR vers `release/0.7.4` est un prealable pour prouver aussi `@critical` sur `a4d9679`.
+
+---
+
+## Addendum — vérification post-correctifs (HEAD 3f1d1cb, 2026-11-03)
+
+Verification dans le code de la passe `a4d9679..3f1d1cb` (commits `021d4dd`, `1ebc0e0`, `2bf799d` et `a5257e3` pour les specs, plus les tests ajoutes avec chaque correctif). Gates du coordinateur sur `3f1d1cb` : pytest **1723 passed, 19 skipped** (+50 depuis le re-audit) ; vitest **53 fichiers, 522 passed** ; ruff, eslint, prettier, vue-tsc, build OK. **Aucun run CI sur la branche.** Le rapport Karate de l'agent, hors depot, a ete lu dans le scratchpad (`karate-reports-final/`, avec les journaux `karate-*.log` et `fake_serve.log`).
+
+### Ecarts vises (defauts de specs du MAJ 9.1.3)
+
+| Ecart | Statut | Preuve (`3f1d1cb`) |
+|-------|--------|--------------------|
+| `pipeline-options.feature`, scenario 2 casse (`verify-btn` desactive sans analyse) | **Ferme** | Analyse creee par le helper `analyze.feature` (`:43`), Studio ouvert sur `/studio?analysisId=` (`:47`), ce qui selectionne le document et passe en Verify (`frontend/src/pages/StudioPage.vue:665-674`). Le scenario verifie en plus le defaut `accurate` (`:53`) et l'absence du panneau en Verify (`:59`), puis que `fast` est conserve (`:64`). Avant / apres : `karate-pipeline-before.log` echoue a `:55` (ancienne spec), `karate-pipeline-after.log` donne 2 / 2 |
+| `analysis-parse-properties.feature:33` : assertion vide | **Ferme** | L'analyse est creee avec des chunks (`chunkingOptions: { chunkerType: 'hierarchical' }`, `:22` ; aucun tokenizer HF). L'element couvert par le premier chunk (`:37`) est ouvert par lien profond `?ref=` (`:54`, `focusRef` `app/router/routes.ts:46`). La spec attend la section Linked chunk (`:55`, `ElementProperties.vue:76-78`), **puis** l'absence de `properties-edit-btn` (`:56`, `ElementProperties.vue:110-113`, `v-else-if="editable"` ; `DocParseTab.vue:156`, `:editable="!analysis"`). **Preuve que l'assertion peut echouer** : frontend mute (`dist-mutant`), `karate-props-mutant.log` echoue a `:56` (1 bouton trouve au lieu de 0). La sonde sur l'ancienne spec (`zz-local.old-parse-properties-probe`) montre que la section Linked chunk n'y etait jamais rendue : le defaut est confirme |
+| `upload.feature:18`, `full-ui-path.feature:78` dependants de la premiere ligne | **Ferme** | Nouveau helper `common/helpers/document-ids.feature` (ids par nom de fichier, avant / apres l'upload). Les specs verifient la **ligne selectionnee** (`upload.feature:23`, `:47` ; `full-ui-path.feature:22`), qu'**un seul** document a ete cree (`upload.feature:28`, `:53` ; `full-ui-path.feature:27`) et nettoient par cet id. `full-ui-path` supprime la ligne selectionnee (`:81`) puis exige un 404 de l'API sur cet id (`:85-87`). Avant / apres : l'ancienne spec echoue sur une base qui contient deja `medium.pdf` (`zz-local.old-full-ui-path-hier`), la nouvelle passe |
+| `driver.inputFile` : chemin resolu contre le dossier de la feature (« Failed to fetch ») | **Ferme** | Chemin `classpath:` passe tel quel : `common/helpers/ui-upload.feature:9`, `documents/error-states.feature:9`, `documents/upload.feature:19`, `:43`, `workflows/full-ui-path.feature:18`. Plus aucun `karate.toAbsolutePath` dans `e2e/`. Regle ecrite : `e2e/CONVENTIONS.md:225`. Avant : `karate-upload-before.log` echoue a `upload.feature:17` et `:39` |
+
+Inventaire : 21 features et 29 scenarios, inchange. Tous les selecteurs `data-e2e` des specs modifiees existent dans un composant monte.
+
+### Ce que prouve le run « 8/8 »
+
+Contenu du rapport : `karate-summary-json.txt` (Karate 1.5.0, 1 thread, 2026-11-03 15:09, 42 s) donne **5 features, 8 scenarios, 0 echec** :
+- `analyses/analysis-parse-properties` (1) ;
+- `analyses/pipeline-options` (2) ;
+- `documents/error-states` (2) ;
+- `documents/upload` (2) ;
+- `zz-local/new-full-ui-path-hier` (1).
+
+**Il prouve** :
+- que les 4 features **commitees** modifiees (7 scenarios) passent sur une stack locale ;
+- que chaque assertion reecrite peut echouer (avant / apres et mutant ci-dessus) ;
+- que le correctif `inputFile` debloque les uploads UI.
+
+**Il ne prouve pas** :
+- **les autres scenarios de la suite** : le run couvre 8 des 29 scenarios a HEAD, mais seulement 7 des specs commitees (voir le point suivant). Les 5 `@critical` ne sont pas dans le run ;
+- **la spec commitee `workflows/full-ui-path.feature`** : le 8e scenario est une variante locale, qui ajoute `select('[data-e2e=config-select]', 'hierarchical')` (« LOCAL ONLY: no Hugging Face tokenizer »). La spec commitee decoupe avec le chunker par defaut, donc avec le tokenizer HF, et n'a pas ete executee telle quelle ;
+- **la stack documentee** (`e2e/ui/README.md:20-27` : `docker compose --profile remote`, vrai Docling Serve) : Docling Serve est remplace par un faux serveur local (`fake_serve.log` : 12 `POST /v1/convert/file` servis par un uvicorn sur 127.0.0.1:5765). Les analyses portent donc sur une sortie fabriquee ;
+- **la tracabilite** : aucun rapport n'est joint au depot, et aucun job ne lance `@regression` au gate (`release-gate.yml:751` : toujours `--tags @critical`) ;
+- **le CI** : aucun run de la branche, meme `@critical`.
+
+**Decision : 9.1.3 reste non conforme.** Le re-audit exigeait 29 / 29 sur la stack documentee (ou des echecs prouves environnementaux), avec le rapport joint, ou un job `@critical,@regression` au gate. Aucune des deux conditions n'est remplie. Le MAJ est encore reduit : tous les defauts de specs qu'il nommait sont corriges, preuve a l'appui. Il ne reste que la **preuve d'execution** de la suite et son perimetre CI.
+
+### Tests ajoutes par la passe (+50)
+
+Chaque correctif arrive avec son test :
+- OpenAPI : `tests/test_openapi_contract.py`, 5 tests sur le schema reellement publie ;
+- refus de chunk par MRO : `tests/test_chunk_errors.py` ;
+- identifiants Neo4j : `tests/test_store_backend_resolver.py:201-418` ;
+- budget de grilles : `tests/test_docling_importer.py:60-218` ;
+- plafond de 50 Mo : `tests/test_api_endpoints.py:781-848` ;
+- lecture seule HF de `remove_document` : `tests/test_store_service.py:734` ;
+- 500 generique de `/reasoning` : `tests/test_reasoning_api.py:251` ;
+- une seule question « parse courante » par appel : `tests/test_source_service.py` (`TestOneParsePerCall`, `latest_lookups`).
+
+Exception, rattachee a l'INFO « glue de composition non testee » sans changer le compte : l'activation de la garde SSRF dans le resolveur de production (`bootstrap/factories.py:194`) n'est couverte par aucun test (`grep build_backend_resolver tests/` : 0). La sonde `push_ssrf_probe.py` confirme qu'elle est cablee.
+
+**Regressions** : aucune.
+
+### Score recalcule
+
+Meme lecture que le re-audit (une seule) : seul 9.1.3 (poids 2) reste non conforme, 25 / 27 → **93 / 100**, inchange.
+
+| Metrique | Re-audit (`a4d9679`) | Post-correctifs (`3f1d1cb`) |
+|----------|----------------------|-----------------------------|
+| Items conformes | 13 / 14 | 13 / 14 |
+| Score | 93 / 100 | **93 / 100** |
+| Ecarts CRITICAL | 0 | 0 |
+| Ecarts MAJOR | 1 | 1 (perimetre reduit a la preuve d'execution) |
+| Ecarts MINOR | 3 | 3 (#344 hors gate, `extract_pages_detail`, `LocalChunker`, inchanges) |
+| Ecarts INFO | 8 | 8 |
+
+Pour 100 :
+- lancer `UIRunner#testLocal` sur la stack de `e2e/ui/README.md:20-27` (vrai Docling Serve, Hugging Face joignable, base vide) et joindre `karate-summary.html`, 29 / 29 ou echecs prouves environnementaux ;
+- ou ajouter au Release Gate un job `@critical,@regression` ;
+- et ouvrir la PR vers `release/0.7.4` pour obtenir le run `@critical` du gate.
+
+### Verdict partiel apres correctifs : GO
+
+Score **93 / 100**, 0 CRITICAL, 1 MAJOR, 3 MINOR, 8 INFO.

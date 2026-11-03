@@ -477,3 +477,52 @@ Conditions :
    groupe `reasoning`, scanné pour la première fois (sinon 8.5.1 → 92/100, 1 CRIT, NO-GO).
 2. Il doit tourner **avant le 2026-12-31** (expiration commune des 5 suppressions).
 3. Ouvrir l'issue « docling → Pillow 13 » au milestone 0.8.0 (demandée depuis la synthèse 0.7.3).
+
+---
+
+## Addendum — vérification post-correctifs (HEAD 3f1d1cb, 2026-11-03)
+
+Vérification dans le code de la passe `a4d9679..3f1d1cb` : commits `6d3c880`, `d3d6f66`, `0272201`, `da2cafc`, `15a6ae3`, `c5d932b` et `9d307d6` pour cet audit. Les sondes du scratchpad sont rejouées sur `3f1d1cb` avec le venv du projet, et complétées par trois variantes. Gates du coordinateur sur `3f1d1cb` : ruff et format OK (232 fichiers), `uv lock --check` OK, pytest **1723 passed, 19 skipped** ; eslint, prettier, vue-tsc OK, vitest 522 passed, build OK, `npm audit --omit=dev` **0** ; actionlint 0 ; `mkdocs build --strict` OK. **Aucun run CI ni Trivy** depuis le re-audit. `git status` reste propre après les sondes.
+
+### Écarts visés
+
+| Écart | Statut | Preuve (`3f1d1cb`) |
+|-------|--------|--------------------|
+| [MAJ] Le mot de passe Neo4j de l'environnement part vers l'URI choisie par l'appelant | **Fermé** | `services/store_backend_resolver.py:222-246` (`_neo4j_credentials`). `NEO4J_USER` / `NEO4J_PASSWORD` ne sont fournis que si l'URI utilisée a le même `(schéma, hôte, port)` que `NEO4J_URI` (`_neo4j_endpoint`, `:67-87`, port par défaut du driver). Sinon, un store sans mot de passe propre est refusé **avant toute connexion** (`:239-245`, « credentials required »). **Sonde rejouée** (`probes/neo4j_creds_probe.py`, faux serveur Bolt sur 127.0.0.1, `NEO4J_PASSWORD=EnvSecretPw-1234`), avec et sans garde SSRF injectée : `StoreBackendNotConfiguredError`, **0 octet reçu, mot de passe non envoyé** (à `a4d9679`, il arrivait en clair dans le HELLO). **Variante** : écart d'analyse d'URI entre `urlsplit` et le driver (`neo4j.api.parse_neo4j_uri` puis `Address.parse(netloc)`, neo4j 5.28.4), sur 10 formes (userinfo, `@` vide, fragment, requête, chemin, casse, point final, `%2E`, antislash). Aucune forme ne fait voir à `urlsplit` l'hôte de `NEO4J_URI` alors que le driver se connecte ailleurs : le driver refuse toute URI avec userinfo (`ConfigurationError`), et `bolt://@neo4j:7687` vise l'hôte `@neo4j`, que le DNS ne résout pas. Tests : `tests/test_store_backend_resolver.py:201`, `:235`, `:280`, `:306`, `:381`, `:398`, `:418`. Documenté : `SECURITY.md:60`, `CHANGELOG.md:15`, rupture `:59`. |
+| [MAJ] Import Docling : grilles cachées dans les images | **Fermé** | `infra/docling_importer.py`. Le budget compte **toutes** les `TableData`, où qu'elles soient : d'abord sur le JSON brut, **avant validation** (`_payload_grids`, `:56-88`, appelé `:172`), car valider le `meta` d'une image construit déjà sa grille ; puis sur le modèle validé (`_document_grids`, `:91-119`, appelé `:177`), qui compte deux fois une annotation copiée dans `meta`. Une ligne sans colonnes compte 1 case (`_grid_cost`, `:51`, `max(num_cols, 1)`). **Sondes rejouées**, budget 100 000 : table, `pictures[].meta.tabular_chart`, `pictures[].annotations`, en 400 × 400 et 100 000 × 100 000 → **refusées en 0,00 s, pic 0 Mo** (à `a4d9679` : `meta` 400 → 24,9 s, 350 Mo, accepté). `1 000 000 × 0` en table et en `meta` → refusé en 0,00 s. **Variante** : grille sans `num_rows` / `num_cols` mais avec une cellule qui couvre 2 000 × 2 000 → dimensions non déduites par docling-core (0 × 0), import inoffensif (0,15 s, 2 Mo). Tests : `tests/test_docling_importer.py:60`, `:165`, `:180`, `:189`, `:198`, `:208`, `:218`. |
+| [MAJ] Import Docling : plafond de corps au-delà de ce que le conteneur importe | **Fermé** | `api/analyses.py:45` (`_MAX_BODY_BYTES = 50 * 1024 * 1024`), `:85` (Content-Length refusé d'emblée), `:56-68` (corps chunked compté), `:92` (tout le routeur `/api/analyses`). Le commentaire `:31-44` justifie la valeur par des mesures (≈ 44 × la taille du JSON en RSS ; 50 Mo → +2,2 Go). Tests : `tests/test_api_endpoints.py:781`, `:801`, `:820`, `:848`. Documenté : `docs/configuration.md:31`, `SECURITY.md:68`, rupture `CHANGELOG.md:60`. La valeur est codée en dur, sans variable : c'est assumé et documenté (export sans images embarquées). |
+| [MIN] Résidus SSRF des stores | **Fermé** | **Push sous garde** : le résolveur filtre l'URI propre du store à **chaque** résolution (`store_backend_resolver.py:163`, `:172-189`), câblé en `bootstrap/factories.py:194`. Sonde `probes/push_ssrf_probe.py` (ligne pré-garde vers `[::ffff:169.254.169.254]`, résolveur de production) : 503, **aucun driver ouvert**. **503 générique** : `services/chunk_push_service.py:204-217` (refus nommés du résolveur, sinon « Could not connect … (details in the server log) ») ; le texte du driver ne va plus que dans `document_store_links.error_message`, qu'aucune réponse d'API ne sérialise (`DocStoreLinkResponse`, `api/schemas.py:115-129`). **`remove_document` en lecture seule HF** : `services/store_service.py:442` (`_require_writable()` → 403), test `tests/test_store_service.py:734`, rupture `CHANGELOG.md:62`. Reste le TOCTOU DNS, documenté (`SECURITY.md:61`) et accepté. |
+| [MIN] Rate limiter | **Partiel** | `FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}` est transmis par `docker-compose.yml:178` et `docker-compose.dev.yml:145` ; uvicorn lit cette variable quand l'option CLI est absente (`document-parser/Dockerfile:38`). Restent : le seau global par défaut en Compose (documenté, `docs/configuration.md:33-34`), `_buckets` jamais purgé (`infra/rate_limiter.py:65`), et le cas limite 127.0.0.1. L'écart reste ouvert en MIN. |
+| [INFO] `/reasoning` renvoie le texte de l'exception (500) | **Fermé** | `api/reasoning.py:50-58` : exception dans le log (`logger.exception`), détail générique « Reasoning run failed (details in the server log) » ; test `tests/test_reasoning_api.py:251` |
+
+### Nouveau constat (issu de la vérification)
+
+#### [INFO] Coût d'un import juste sous le budget par défaut
+
+- **Localisation** : `infra/settings.py:40` (`max_import_table_cells = 100_000`) ; `services/analysis_service.py:172` (`asyncio.to_thread`, hors sémaphore des analyses, déjà INFO « imports hors sémaphore » de l'audit 12).
+- **Constat** (sonde `probes/import_budget_probe.py`, n = 316, soit 99 856 cellules déclarées) : un corps de **641 octets** est accepté. Il coûte **9,9 s** de CPU (14,9 s par `meta`) et un pic tracemalloc de **218 Mo**, et il écrit **≈ 25 Mo** en base (`document_json` 24,0 Mo, HTML 0,9 Mo, Markdown 0,5 Mo). C'est le comportement voulu du budget, pas un contournement. Mais l'amplification reste d'environ 40 000 en disque, et les imports ne sont bornés en concurrence que par le pool de threads par défaut. Avec les chiffres du commentaire `api/analyses.py:31-44`, deux imports de 50 Mo en parallèle dépassent la limite de 4 Go du conteneur.
+- **Règle** : 8.2.1 / 8.2.2 dans leur esprit ; observation, sans impact de score (API sans authentification, comme pour l'upload).
+- **Remédiation** (S) : un sémaphore dédié aux imports (1 ou 2), et/ou un budget par défaut plus bas.
+
+### Régressions
+
+Aucune trouvée dans les diffs `document-parser`, `frontend` et Compose de la passe. Observation non comptée : sur le test de connexion, l'URI passe deux fois par la garde (`store_service.py:380`, puis `store_backend_resolver.py:163`), soit deux résolutions DNS hors boucle d'événements. C'est redondant, mais sans risque.
+
+### Score recalculé
+
+Même lecture qu'en 0.7.4 (le rapport n'en donnait qu'une) : aucun item ne bascule, **36 / 36 = 100 / 100**.
+
+| Métrique | Re-audit (`a4d9679`) | Post-correctifs (`3f1d1cb`) |
+|----------|----------------------|-----------------------------|
+| Items conformes | 14 / 14 | 14 / 14 |
+| Score | 100 / 100 | **100 / 100** |
+| Écarts CRITICAL | 0 | 0 |
+| Écarts MAJOR | 3 | **1** (garde `Host`, décision du mainteneur) |
+| Écarts MINOR | 6 | **5** (MCP par défaut, Pillow, dépendances Python, écritures de config MCP, rate limiter partiel) |
+| Écarts INFO | 8 | **8** (−1 `/reasoning`, +1 coût d'import au budget) |
+
+La sensibilité de 8.5.1 est inchangée : aucun Trivy depuis le run `41468347487`, groupe `reasoning` jamais scanné, 5 suppressions qui expirent le 2026-12-31. Un CRITICAL au premier scan donnerait 33 / 36 = **92**, 1 CRIT, **NO-GO**.
+
+### Verdict partiel après correctifs : GO
+
+Score **100 / 100**, 0 CRITICAL, **1 MAJOR** (`Host`, inchangé), 5 MINOR, 8 INFO. On n'est plus au seuil des 3 MAJ. Les deux MAJ que le re-audit recommandait de corriger avant le tag (identifiants Neo4j, import par les images) sont fermés, avec preuve par sonde. Les conditions 1 à 3 du re-audit (premier gate vert sur les deux Trivy, avant le 2026-12-31, issue Pillow 13) restent entières.

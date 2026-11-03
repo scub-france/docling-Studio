@@ -139,7 +139,7 @@ These compose settings are for a laptop: OpenSearch runs without security and Ne
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
-| `DEPLOYMENT_MODE` | `self-hosted` | `huggingface` shows a demo banner, makes **Settings** › **Ask** and the MCP sections of **Settings** read-only, makes stores read-only (creating, editing and deleting a store answer 403, and connection tests are refused), and turns the MCP server off unless `MCP_ENABLED=true`. |
+| `DEPLOYMENT_MODE` | `self-hosted` | `huggingface` shows a demo banner, makes **Settings** › **Ask** and the MCP sections of **Settings** read-only, makes stores read-only (creating, editing and deleting a store, and removing a document from it, answer 403, and connection tests are refused), and turns the MCP server off unless `MCP_ENABLED=true`. |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Browser origins allowed to call the API, comma-separated. Only needed when the UI is served from another address. |
 | `UPLOAD_DIR` | `/app/uploads` in the images | Folder for uploaded PDFs. |
 | `DB_PATH` | `/app/data/docling_studio.db` in the images | SQLite database: documents, analyses, stores and settings saved in the app. |

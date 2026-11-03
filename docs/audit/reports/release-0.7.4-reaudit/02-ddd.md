@@ -272,3 +272,42 @@ Calcul : conformes = 2.1.1 (3) + 2.1.2 (3) + 2.1.3 (2) + 2.1.4 (2) + 2.2.1 (2) +
 ## Verdict partiel : GO
 
 Score 94 ≥ 80, 0 CRITICAL, 1 MAJOR (langage ubiquitaire, partiellement corrigé, sans risque de corruption de données). Le score progresse de +2 grâce au typage des statuts ; trois MIN sur six sont partiellement corrigés, aucun écart n'est aggravé. Pour atteindre 100 : deux renommages internes de faible effort (paramètre `document_version_id` côté versioning, « versions » au lieu de « History » dans le backend et le CHANGELOG), sans toucher au contrat MCP.
+
+---
+
+## Addendum — vérification post-correctifs (HEAD 3f1d1cb, 2026-11-03)
+
+Vérification dans le code de la passe de correctifs `a4d9679..3f1d1cb` (commits `3b1941f` et `4feea47` pour cet audit), et non dans les messages de commit. Gates du coordinateur sur `3f1d1cb` : ruff et format OK (232 fichiers), `uv lock --check` OK, pytest **1723 passed, 19 skipped** ; vue-tsc OK, vitest **522 passed** (53 fichiers) ; `mkdocs build --strict` OK. Aucun run CI sur la branche.
+
+### Écart visé : [MAJ] 2.3.1 Langage ubiquitaire
+
+| Volet | Statut | Preuve (`3f1d1cb`) |
+|-------|--------|--------------------|
+| Homonyme `version_id` côté versioning | **Fermé** | Service : `services/version_service.py:134` (`restore(document_id, document_version_id)`), `:145`, `:147`, `:162`, `:180`. Route : `api/document_versions.py:52` (`/{doc_id}/versions/{document_version_id}/restore`), `:56`, `:63`, et l'URL est inchangée. Port : `domain/ports.py:291` (`DocumentVersionRepository.find_by_id(self, document_version_id)`). Adaptateur : `persistence/document_version_repo.py:61`, `:65`. Dans ces quatre modules, `version_id` n'apparaît plus que dans les docstrings qui expliquent la différence (`version_service.py:9-11`, `document_versions.py:7-9`). Dans le backend, `version_id` ne désigne plus que le jeton de parse (`domain/anchors.py:7`, `services/parse_loader.py:70`). Le contrat MCP n'est pas touché. |
+| « History » = versions dans les docstrings backend | **Fermé** | `domain/models.py:321-323` (« the document's version list (`GET /api/documents/{id}/versions`) ») ; `services/analysis_service.py:108` ; `services/chunk_service.py:78`, `:280` ; `services/version_service.py:7`, `:82`, `:140` ; `main.py:110` ; `api/schemas.py:586` ; `api/document_versions.py:1-9`. Dans `document-parser/` hors tests, aucun « History » avec majuscule ne désigne plus une version. |
+| « History » dans `CHANGELOG.md` `[Unreleased]` | **Fermé** | `:24` (« version restore »), `:25` (« The document versions list … »), `:32` (paramètre de route documenté `document_version_id`). « History » ne désigne plus que la page des analyses (`:28`) et le tiroir supprimé (`:48`, `:54`), comme le dit le glossaire. |
+| Glossaire | **Cohérent** | `docs/architecture/glossary.md:14` (Document version) ; `:16-32` : l'avertissement donne désormais le nom du côté versioning (`document_version_id`), au lieu de justifier le statu quo ; `:69-70` (History = liste des analyses). |
+
+Résidus, sans effet sur l'item et non comptés :
+- trois docstrings antérieures, non citées par le re-audit, emploient encore « version history » / « the history list » en minuscules pour les versions (`domain/ports.py:275`, `:287` ; `persistence/document_version_repo.py:14`). La première forme est qualifiée, la seconde est ambiguë ;
+- côté front, `versionId` désigne toujours le `DocumentVersion.id` (`features/document/api.ts:80-81`, `store.ts:186-193`). Le front n'a pas d'homonyme ;
+- les volets 3 (`fetchHistory`) et 4 (`parse_id`) de la remédiation étaient optionnels. Ils ne sont pas faits.
+
+### Score recalculé
+
+Même lecture que le re-audit. L'item 2.3.1 (poids 2) redevient conforme : 36 / 36 → **100 / 100**. La lecture alternative du re-audit (glossaire suffisant) donnait déjà 100 : les deux lectures coïncident désormais.
+
+| Métrique | Re-audit (`a4d9679`) | Post-correctifs (`3f1d1cb`) |
+|----------|----------------------|-----------------------------|
+| Items conformes | 16 / 17 | **17 / 17** |
+| Score | 94 / 100 | **100 / 100** |
+| Écarts CRITICAL | 0 | 0 |
+| Écarts MAJOR | 1 | **0** |
+| Écarts MINOR | 5 | 5 (inchangés : 2.5.3, 2.4.2, 2.2.2, 2.5.1, 2.1.3) |
+| Écarts INFO | 7 | 7 |
+
+**Régressions** : aucune. `94fbfcb` fait lever `DocumentNotFoundError` par `ExportService` et `VersionService` (`export_service.py:63`, `version_service.py:190`). L'INFO « erreur document inconnu partagée » progresse donc, mais elle reste ouverte : l'erreur vit toujours dans `navigation_errors`, et `api/documents.py:100`, `:110`, `:160`, `:184` gardent leur `HTTPException(404)`.
+
+### Verdict partiel après correctifs : GO
+
+Score **100 / 100**, 0 CRITICAL, 0 MAJOR, 5 MINOR, 7 INFO.

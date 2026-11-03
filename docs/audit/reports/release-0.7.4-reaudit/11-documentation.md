@@ -304,3 +304,72 @@ Score **56/100** aujourd'hui : **2 CRITICAL**, 1 MAJOR, 11 INFO. Il etait de 72 
 Le commit de gel tel que `docs/maintainers.md` le decrit donnerait **83/100**, toujours **NO-GO** (11.1.3). Le gel avec une puce BREAKING de plus donnerait **100/100, GO**. Avec la lecture alternative (point non cassant), le score est de 72 aujourd'hui et de 100 apres le gel.
 
 Le reste de la documentation est en net progres : changelog complet et exact, 48/48 variables documentees, `LLM_PROVIDER_TYPE` retire partout, glossaire et `SECURITY.md` justes, 10 INFO 0.7.4 levees entierement et 4 en partie.
+
+---
+
+## Addendum — vérification post-correctifs (HEAD 3f1d1cb, 2026-11-03)
+
+Verification dans le depot de la passe `a4d9679..3f1d1cb` (commits `3f1d1cb` et `c78b7cb` pour la documentation, et les puces de chaque correctif). Gates du coordinateur sur `3f1d1cb` : `mkdocs build --strict` OK, actionlint 0. Gel toujours **non fait, volontairement**. Etat de la PR #371 lu par l'API REST GitHub le 2026-11-03 : `open`, base `release/0.7.4`, non mergee.
+
+### Ecarts vises
+
+| Ecart | Statut | Preuve (`3f1d1cb`) |
+|-------|--------|--------------------|
+| [CRIT] 11.1.3 rupture `X-Forwarded-For` hors `### BREAKING CHANGES` | **Ferme** | `CHANGELOG.md:58` (« Rate limit behind your own reverse proxy », sous `### BREAKING CHANGES`, `:56`) donne l'avant / apres et le remede (`FORWARDED_ALLOW_IPS`, « never set it to `*` »). La puce Security `:17` y renvoie (« see BREAKING CHANGES ») |
+| Nouvelle rupture : identifiants Neo4j limites a `NEO4J_URI` | **Signalee** | `CHANGELOG.md:59` (BREAKING : un store Neo4j sur sa propre URI doit porter son mot de passe), `:15` (Security, renvoi) ; `SECURITY.md:60`. Conforme au code (`services/store_backend_resolver.py:222-246`) |
+| Nouvelle rupture : plafond de corps de 50 Mo | **Signalee** | `CHANGELOG.md:60` (BREAKING, avec le contournement `image_export_mode=placeholder`), `:13` (Security, renvoi) ; `docs/configuration.md:31` ; `SECURITY.md:68`. Conforme au code (`api/analyses.py:45`) |
+| Autre rupture etendue : HF, retrait d'un document d'un store | **Signalee** | `CHANGELOG.md:62` (« and removing a document from it ») ; `SECURITY.md:55`. Code : `services/store_service.py:442` |
+| [INFO-N1] `troubleshooting` contredit le correctif rate limit ; Compose ne transmet pas `FORWARDED_ALLOW_IPS` | **Fermee** | `docs/troubleshooting.md:29-31` : compte par client dans l'image unique ; en Compose ou derriere un proxy, compteur partage jusqu'a `FORWARDED_ALLOW_IPS` ; renvoi vers Limits. `docker-compose.yml:178` et `docker-compose.dev.yml:145` transmettent la variable (defaut `127.0.0.1`). `docs/configuration.md:33-34` le dit. L'exemple de sous-reseau propose n'est pas ajoute : detail |
+| [INFO-N2] `DEPLOYMENT_MODE` : stores en lecture seule absents de la doc | **Fermee** | `docs/configuration.md:142` (« makes stores read-only (creating, editing and deleting a store answer 403, and connection tests are refused) ») ; `.env.example:43-44` (« the stores read-only »). Nuance en INFO-N5 |
+
+### Grille apres correctifs
+
+| # | Item | Poids | Re-audit | Post-correctifs | Preuve |
+|---|------|-------|----------|-----------------|--------|
+| 11.1.1 | `[X.Y.Z] - date` | 3 | NON (pre-gel) | **NON** (pre-gel) | `CHANGELOG.md:7` : `## [Unreleased]` |
+| 11.1.2 | Modifications significatives listees | 2 | OUI | **OUI** | Chaque commit de la passe a sa puce : `:13` (budget de grilles, 50 Mo), `:14` (garde au push, 503 generique, `remove_document` HF), `:15` (Neo4j), `:16` (`/reasoning`), `:17` (Compose `FORWARDED_ALLOW_IPS`), `:32` (OpenAPI type, test, `document_version_id`), `:45` (couleurs, `--on-accent`), `:48` (Karate) ; internes (`94fbfcb`, `af5b62f`, `618a39a`, `ad8e2ae`, `db43a21`) sous « Internals » / `:30`. Tient au gel si #371 est tranchee (INFO-N4) |
+| 11.1.3 | Breaking changes identifies | 3 | **NON** | **OUI** | `CHANGELOG.md:56-62` : 5 ruptures classees (`X-Forwarded-For`, Neo4j, 50 Mo, `LLM_PROVIDER_TYPE`, stores HF) |
+| 11.1.4 | Keep a Changelog | 1 | OUI | OUI | `:7`, `:11`, `:22`, `:38`, `:51`, `:56` |
+| 11.2.1 | `frontend/package.json` = X.Y.Z | 2 | NON (pre-gel) | **NON** (pre-gel) | `frontend/package.json:3` et `package-lock.json:3`, `:9` = `0.7.3` |
+| 11.2.2 | SemVer | 2 | OUI | OUI | Patch en 0.y.z (SemVer §4) ; voir INFO-14 |
+| 11.3.1 | Pas de TODO / FIXME | 1 | OUI | OUI | `git grep` : 0 ; aucun ajoute par la passe (scan des lignes `+` du diff) |
+| 11.3.2 | Pas de `console.log` | 2 | OUI | OUI | 0 ajoute |
+| 11.3.3 | Pas de `print()` | 2 | OUI | OUI | 0 ajoute |
+
+### INFO mises a jour
+
+- **INFO-N3** (changements a arbitrer) : le plafond de corps code en dur passe de 200 a **50 Mo**, et il est desormais classe en rupture (`:60`). Le budget `MAX_IMPORT_TABLE_CELLS` compte aussi les graphiques des images et les lignes sans colonnes (`:13`) : un import accepte en 0.7.3 peut etre refuse, avec un message qui nomme la variable. Lecture inchangee : non cassant. **Reste ouverte.**
+- **INFO-N4** (#371 vers `release/0.7.4`) : **inchangee**. La PR est ouverte et non mergee, et `:9` dit toujours « no new feature ».
+- **INFO-14** (SemVer) : **contexte aggrave** : `[Unreleased]` porte maintenant **5** ruptures classees dans un patch. 11.2.2 reste conforme par §4 et les precedents.
+- **INFO-N5** (nouvelle, issue de la passe) — trois petites inexactitudes :
+  1. `CHANGELOG.md:45` « Hard-coded colours now use the theme's tokens (the graph palette keeps its own) ». Au-dela de la palette du graphe, 7 regles restent codees en dur (`DocsLibraryPage.vue:416-418`, `StoreForm.vue:426-427`, `StrategyPopover.vue:361-362`, `ChunkPanel.vue:523`, `:527`, `:571`, `StatusBadge.vue:58` ; MIN couleurs (c) de l'audit 05).
+  2. `.env.example:38-40` decrit encore `MAX_IMPORT_TABLE_CELLS` comme « all tables together (rows x columns of each table) », sans les graphiques ni les lignes sans colonnes. `docs/configuration.md:31` est exact.
+  3. `docs/configuration.md:142` ne cite pas le refus du retrait d'un document d'un store, que disent `CHANGELOG.md:62` et `SECURITY.md:55`.
+
+  Remediation : 3 lignes dans le commit de gel.
+- INFO-8, 10, 12, 13, 15 et 16 : non visees, inchangees.
+
+### Score recalcule
+
+| Scenario | 11.1.1 | 11.1.3 | 11.2.1 | Score | Verdict |
+|----------|--------|--------|--------|-------|---------|
+| Re-audit, actuel (pre-gel) | NON | NON | NON | 56 | NO-GO (2 CRIT) |
+| **Post-correctifs, actuel (pre-gel)** | NON | **OUI** | NON | **72** (13 / 18) | **NO-GO** (1 CRIT : 11.1.1) |
+| **Post-correctifs, apres le commit de gel** de `docs/maintainers.md:22-24` | OUI | OUI | OUI | **100** (18 / 18) | **GO** |
+
+La lecture alternative du re-audit (`X-Forwarded-For` juge non cassant) donnait 72 / 100. Elle coincide desormais avec la lecture retenue, puisque 11.1.3 est conforme dans les deux.
+
+| Metrique | Re-audit | Post-correctifs (pre-gel) | Apres gel |
+|----------|----------|---------------------------|-----------|
+| Items conformes | 6 / 9 | **7 / 9** | 9 / 9 |
+| Score | 56 | **72** | **100** |
+| Ecarts CRITICAL | 2 | **1** (11.1.1) | 0 |
+| Ecarts MAJOR | 1 | 1 (11.2.1) | 0 |
+| Ecarts MINOR | 0 | 0 | 0 |
+| Ecarts INFO | 11 | **10** (−N1, −N2, +N5) | 10 (9 si N5 est traitee au gel) |
+
+Le 100 apres gel suppose que 11.1.2 tienne : trancher #371 avant le gel, soit une puce `### Added` et le retrait de « no new feature », soit le changement de jalon de #370.
+
+### Verdict partiel apres correctifs : NO-GO pre-gel, GO apres le commit de gel
+
+Aujourd'hui : **72 / 100**, 1 CRITICAL (section `[0.7.4]` absente, etape du gel), 1 MAJOR (version front, etape du gel), 10 INFO. Le gel decrit par `docs/maintainers.md:22-24` suffit desormais a lui seul : **100 / 100, GO**. La puce BREAKING supplementaire qu'exigeait le re-audit est faite. Les trois lignes de l'INFO-N5 peuvent entrer dans le meme commit.

@@ -299,3 +299,51 @@ Suivi, non bloquant :
 - INFO 16 : publier la troncature des résumés ou compter par document ;
 - INFO 17 : remplacer les règles pytestarch aveugles par le scanner AST ;
 - reconduits d'avant 0.8.0 : INFO 1, 11, 13, 14 et la fiche (15).
+
+---
+
+## Addendum — vérification post-correctifs (HEAD 3f1d1cb, 2026-11-03)
+
+Vérification dans le code de la passe `a4d9679..3f1d1cb` (commit `13a5011` pour cet audit, avec `94fbfcb` et `3b1941f` en périphérie). Gates du coordinateur sur `3f1d1cb` : ruff et format OK, pytest **1723 passed, 19 skipped** ; eslint, vue-tsc OK, vitest 522 passed. Pas de run CI.
+
+### Écart visé : [MAJ] 7.4.2 — schémas publiés comme objets libres
+
+**Statut : fermé.**
+
+- **Cause levée** : `ProvidedKeysModel._provided_keys_only` n'a plus d'annotation de retour (`document-parser/api/schemas.py:81-84`). La docstring (`:73-76`) dit pourquoi : `dict[str, Any]` publiait chaque sous-classe comme objet libre.
+- **Contrat réellement servi**, vérifié sur l'application (`cd document-parser && uv run python -c "import main; main.app.openapi()…"`, pydantic du lock) :
+  - `StoreConfigResponse` : `type: object`, `properties` = `index_name`, `indexName`, `database`, sans `additionalProperties` ;
+  - `StoreResponse.config` = `{"$ref": "#/components/schemas/StoreConfigResponse"}` ;
+  - `GraphNode` : 17 propriétés (`id`, `group`, `label`, `doc_id`, `provs`, `page_no`, `chunk_index`…), `required == ["id", "group"]`, sans `additionalProperties`. La régression relevée au re-audit (perte de `id` / `group` / `label`) est réparée ;
+  - `GraphProvenance` : `order`, `page_no`, `bbox_l`, `bbox_t`, `bbox_r`, `bbox_b`, `coord_origin`, `charspan_start`, `charspan_end`.
+- **Test** : `document-parser/tests/test_openapi_contract.py`, 5 tests passés en local. Il lit `app.openapi()` et non le schéma de validation. Il asserte les propriétés et le `required` des trois modèles et la `$ref` de `config`. `test_no_response_publishes_a_free_object` (`:77-88`) parcourt **toutes** les réponses de toutes les routes, `$ref` suivies, et échoue sur tout objet libre (`additionalProperties: true` sans `properties`). C'est plus que la remédiation demandée : la règle 7.4.2 est désormais gardée pour toute nouvelle route.
+- **Vérification complémentaire** : un scan des réponses 2xx à la recherche d'un schéma `{}` (le cas `Any`, que le test ne vise pas) ne trouve que des réponses sans modèle Pydantic. Ce sont les 204 et les deux réponses binaires `GET /api/documents/{doc_id}/export` et `/preview`, publiées avec le schéma JSON vide par défaut de FastAPI, comme avant la passe. Aucun champ `Any` dans un modèle de réponse. Hors périmètre de 7.4.2 (pas de schéma Pydantic) ; observation, non comptée.
+- **JSON servi** : inchangé, puisque le sérialiseur garde les seules clés fournies.
+- **CHANGELOG** : la puce `CHANGELOG.md:32` (« now typed in the OpenAPI schema … and a test keeps every response schema typed ») est désormais exacte. Le re-audit l'avait signalée à l'audit 11 comme inexacte.
+
+### Autres changements de la passe
+
+- `94fbfcb` : les erreurs document et export passent par `ServiceError` et le handler unique (7.4.3 renforcé). Le reliquat 400 / 404 des routes legacy d'analyse (INFO 20) est inchangé.
+- `3b1941f` : la variable de chemin de la route de restore devient `document_version_id`. L'URL ne change pas, et le front construit l'URL lui-même (`frontend/src/features/document/api.ts:81`) : aucun contrat client touché.
+
+**Régressions** : aucune.
+
+### Score recalculé
+
+| Lecture | Re-audit (`a4d9679`) | Post-correctifs (`3f1d1cb`) |
+|---------|----------------------|-----------------------------|
+| Même lecture qu'en 0.7.4 (contrat publié) | 94 (33 / 35) | **100** (35 / 35) |
+| Lecture « déclarations Python » | 100 | 100 |
+
+| Métrique | Re-audit | Post-correctifs |
+|----------|----------|-----------------|
+| Items conformes | 15 / 16 | **16 / 16** |
+| Score | 94 / 100 | **100 / 100** |
+| Écarts CRITICAL | 0 | 0 |
+| Écarts MAJOR | 1 | **0** |
+| Écarts MINOR | 0 | 0 |
+| Écarts INFO | 18 | 18 (inchangées ; la régression `GraphNode` était comptée dans le MAJ) |
+
+### Verdict partiel après correctifs : GO
+
+Score **100 / 100** dans les deux lectures, 0 CRITICAL, 0 MAJOR, 0 MINOR, 18 INFO. Le suivi non bloquant est inchangé : INFO 16 (troncature des résumés), INFO 17 (règles pytestarch), INFO 1, 11, 13, 14 et la fiche (15).

@@ -590,3 +590,65 @@ ou les 15 couleurs hors inventaire tiennent l'item, le score est **83 / 100** av
 au-dessus de 80. Les deux reliquats (couleurs, contrat d'erreur) se traitent en effort S et
 rendent la note insensible a la lecture. La remediation n'introduit aucune regression DRY au-dela
 des trois erreurs de service creees hors contrat.
+
+---
+
+## Addendum — vérification post-correctifs (HEAD 3f1d1cb, 2026-11-03)
+
+Verification dans le code de la passe `a4d9679..3f1d1cb` (commits `b034313`, `5a92b85`, `94fbfcb` et `af5b62f` pour cet audit). Gates du coordinateur sur `3f1d1cb` : ruff et format OK (232 fichiers), pytest 1723 passed / 19 skipped ; eslint, prettier, vue-tsc OK, vitest 522 passed (53 fichiers), build OK. Pas de run CI. Le rendu visuel n'est pas verifie par cet addendum : les effets sont deduits des regles CSS.
+
+Methode couleurs : le script du re-audit (custom properties referencees mais jamais definies) est rejoue sur tout `frontend/src` (`.vue`, `.css`, `.ts`, hors tests). Comptent comme definitions les `--x:` de n'importe quel fichier, les `setProperty('--x')` et les liaisons `:style`. Rejoue sur l'arbre `a4d9679` (`git archive`), il retrouve exactement les 13 references du re-audit : le script est donc valide.
+
+### Ecarts vises
+
+| Ecart | Statut | Preuve (`3f1d1cb`) |
+|-------|--------|--------------------|
+| 5.3 lecture stricte, (a) 13 tokens jamais definis | **Ferme** | Scan : 1 329 `var(--x)`, 23 noms, **0 non defini** (13 a `a4d9679`). Remplacements : `ChunkPanel.vue:407`, `:548`, `:676`, `:737` → `--bg-elevated` ; `:512` → `--bg-surface` ; `:438` → `--border-light` ; `:612` → `--bg-hover` ; `:563` → `--accent-muted` (plus de repli indigo) ; `StudioPage.vue:1264` → `--bg-surface` ; `ChunkItem.vue:211` → `--border-light` ; `DocTreeNode.vue:131` et `StaleStoresStrip.vue:118` → `color-mix(in srgb, var(--warning) 10%, transparent)` ; `DocumentActionsMenu.vue:133` → ombre litterale (voir residus) |
+| 5.3 lecture stricte, (b) 2 `#ef4444` | **Ferme** | `ChunkPanel.vue:620-621` et `:727` passent sur `var(--error)`. Le seul `#ef4444` restant est la definition de `--error` (`App.vue:99`). Le `#EF4444` de `shared/elementColors.ts:15` appartient a la palette des types d'elements, hors categorie |
+| 5.3, (d) `white` / `#fff` sur un fond accent | **Ferme** | `var(--on-accent)` passe de 7 a **27** usages, dont `Composer.vue:122`, `ElementProperties.vue:430`, `ChunksEditor.vue:370`, `:376`, `:596`, `StrategyPopover.vue:353`, `AnalysisPanel.vue:120`, `:144-145` (spinner), `GraphView.vue:635`, `ChunkPanel.vue:452`, `:481`, `:667`, `:790-791`, `StudioPage.vue:864`, `:884-885`, `:1407`, `DocumentsPage.vue:292`. Restent 4 `white`, tous sur des fonds **non accent** : `IngestPanel.vue:310` et `:336` (`--success`), `ChunkPanel.vue:728` (`--error`), `StrategyPopover.vue:363` (`#b91c1c`) |
+| 5.3, (c) surfaces codees en dur | **Non ferme** (non vise par la passe) | Inchanges : `DocsLibraryPage.vue:416-418` (`.flash--warning`), `StoreForm.vue:426-427`, `StrategyPopover.vue:361-362`, `ChunkPanel.vue:523`, `:527`, `:571`, `StatusBadge.vue:58`. Le garde « token non defini » (test ou lint) n'existe toujours pas |
+| 5.1, MIN contrat d'erreur : 4 erreurs hors `ServiceError` | **Ferme** | `services/document_service.py:41` (`PageOutOfRangeError(ServiceError)`, 400), `:50` (`PageNotFoundError`, 404), `:59` (`DocumentFileError`, 422) ; `services/export_service.py:115` (`ExportNotFoundError`, 404). `api/documents.py` n'importe plus aucune de ces classes ; `export_document` (`:126`) et `preview` (`:153`) les laissent au handler unique. Pour l'export et le versioning, « document introuvable » est desormais `DocumentNotFoundError` (`export_service.py:63`, `version_service.py:190`) |
+| 5.1, MIN contrat d'erreur : reste | **Partiel** | Toujours recopies : les blocs `FileNotFoundError` → 404 / `OSError` → 422 (`api/documents.py:154-158`, `:178-182`), les `except ValueError` → 400 x5 (`api/analyses.py:151`, `:216`, `:240`, `:263`, `api/documents.py:82`), les `HTTPException(404, "Document not found")` x4 (`api/documents.py:100`, `:110`, `:160`, `:184`). La garde `require_document` (`chunk_errors.py:70`) n'est pas reprise par `analysis_service`, `parse_loader`, `export_service` ni `version_service` |
+| MIN `_utcnow` / `_new_id` : copie de `chunk_push_service.py` | **Copie retiree** (MIN partiel : x4 → x3) | `services/chunk_push_service.py:20` importe `_new_id` et `_utcnow` de `domain.models`. Restent `domain/models.py:29`, `:33`, `services/chunk_service.py:54`, `services/version_service.py:44`, `:48` (hex du restore) et `domain/chunk_editing.py:154` |
+
+### Residus et regressions de la passe
+
+- `DocumentActionsMenu.vue:133` : le token fantome `--shadow-lg` devient la valeur litterale `0 4px 12px rgba(0, 0, 0, 0.15)`. La meme valeur figure dans 3 autres SFC (`DownloadDropdown.vue:262`, `ChunkPanel.vue:701`, `StudioPage.vue:1270`), et `App.vue` ne definit aucun token d'ombre. C'est coherent avec l'existant, mais c'est une 4e copie d'une valeur magique. Rattache au MIN couleurs (c).
+- `chunk_push_service.py:20` importe deux noms prives (`_new_id`, `_utcnow`) d'un autre module. La copie disparait, mais le partage passe par des noms soulignes ; le commit `af5b62f` le reconnait (« making them public is the DRY report's remaining step »). Rattache au MIN `_utcnow` / `_new_id`.
+- Sur le test de connexion d'un store, l'URI passe deux fois par la garde SSRF, donc deux resolutions DNS : `store_service.py:380`, puis `store_backend_resolver.py:163`, ajoute par `d3d6f66`. Redondance voulue (le resolveur garde aussi le push), sans risque. Observation, non comptee.
+- Aucune autre duplication : dans `document-parser` et `frontend`, les diffs de la passe remplacent des valeurs et suppriment des `except`.
+
+### Score recalcule
+
+| Lecture | Re-audit (`a4d9679`) | Post-correctifs (`3f1d1cb`) |
+|---------|----------------------|-----------------------------|
+| Lecture 0.7.4 (retenue) | 100 (12 / 12) | **100** (12 / 12) |
+| Lecture stricte de 5.3 (tout token non defini tient l'item) | 83 (10 / 12), 1 MAJ | **100** (12 / 12), 0 MAJ |
+
+Les deux lectures coincident desormais. Il ne reste aucun token non defini ni rouge d'erreur brut. Le reliquat (c) n'etait pas ce qui tenait 5.3 en lecture stricte : le re-audit liait le passage 83 → 100 aux seuls (a) + (b).
+
+| Metrique | Re-audit | Post-correctifs |
+|----------|----------|-----------------|
+| Items conformes | 7 / 7 | 7 / 7 |
+| Score | 100 (83 strict) | **100 (100 strict)** |
+| Ecarts CRITICAL | 0 | 0 |
+| Ecarts MAJOR | 0 (1 strict) | **0 (0 strict)** |
+| Ecarts MINOR | 14 | 14 (couleurs, contrat d'erreur et `_utcnow` partiellement corriges, encore ouverts) |
+| Ecarts INFO | 8 | 8 |
+
+Compteurs mis a jour :
+
+| Compteur | Avant (`a4d9679`) | Apres (`3f1d1cb`) |
+|----------|-------------------|-------------------|
+| Tokens non definis | 13 | **0** |
+| `#ef4444` hors definition | 2 | **0** |
+| `var(--on-accent)` | 7 | **27** |
+| `white` / `#fff` sur fond plein | 19 | **4**, aucun sur l'accent |
+| Erreurs de service hors `ServiceError` mappees a la main | 4 | **0** |
+| Formes de « document introuvable » | 4 | **2** |
+| `_utcnow` / `_new_id` | 4 | **3** |
+| `except ValueError` → `HTTPException` | 5 | 5 |
+
+### Verdict partiel apres correctifs : GO
+
+Score **100 / 100** dans les deux lectures, 0 CRITICAL, 0 MAJOR, 14 MIN, 8 INFO. La puce `CHANGELOG.md:45` (« Hard-coded colours now use the theme's tokens ») va un peu au-dela du code : les surfaces (c) (7 regles, 11 declarations) restent codees en dur. Le point est signale a l'audit 11.

@@ -487,3 +487,59 @@ Score **90/100** (>= 80), **0 ecart CRITICAL**, **0 ecart MAJOR**, 2 MINOR, 11 I
 partiellement leve, un MIN hors checklist est inchange ; aucune regression. Le seul item non conforme
 (12.1.1) tient a un reliquat d'une requete legere par citation dans `show_sources` (59 ms pour 49
 citations) ; sa correction (S) donne 100. Lu de facon tolerante, ce reliquat donnerait deja 100.
+
+---
+
+## Addendum — vérification post-correctifs (HEAD 3f1d1cb, 2026-11-03)
+
+Verification dans le code de la passe `a4d9679..3f1d1cb` (commit `db43a21` pour cet audit). Gates du coordinateur sur `3f1d1cb` : pytest **1723 passed, 19 skipped**, vitest 522 passed, ruff, eslint, prettier, vue-tsc, build OK. Pas de run CI. Tests cibles relances localement (dont `tests/test_source_service.py`) : passes.
+
+### Ecart vise : [MIN] 12.1.1, reliquat N+1 de `show_sources`
+
+**Statut : ferme.**
+
+- `SourceService.show` pose la question « une parse plus recente supplante-t-elle celle-ci ? » **une fois par appel**, apres le chargement unique de la parse et seulement s'il y a des citations : `services/source_service.py:106-110` (`superseded_by = await self._citations.superseding_parse(...) if quoted else None`).
+- La reponse est passee a chaque verification : `:111-114`. `_check` (`:175`) est desormais synchrone, et la boucle ne contient plus aucun `await`.
+- `CitationService.verify_citation_in` (`services/citation_service.py:105-119`) recoit `superseded_by` et ne fait aucune I/O (« Reads nothing: no I/O »). `superseding_parse` (`:211-216`) est l'unique appel a `latest_parsed_ids`. `verify_citation` (outil MCP unitaire, `:92-103`) l'appelle une fois avant de deleguer.
+- **Test** : `tests/test_source_service.py:306` (`TestOneParsePerCall`), avec un repository qui compte les appels a `latest_parsed_ids` :
+  - 3 citations : `latest_lookups == [[DOC_ID]]` (`:379`) ;
+  - parse supplantee : un seul appel, et chaque citation trouvee est marquee `stale_version` (`:381-389`) ;
+  - aucune citation : aucun appel (`:391-394`).
+
+  Le compte du re-audit (1 / 10 / 49 appels pour 1 / 10 / 49 citations) devient **1 / 1 / 1**.
+- **Nuance** : l'appel a lieu des qu'il y a une citation, meme si aucune n'est trouvee (avant : seulement pour les citations trouvees). Au plus 1 requete legere par carte : sans effet.
+
+### Regressions
+
+Aucune. Balayage AST des `await` en boucle ou en comprehension sur les 22 fichiers backend modifies par la passe (hors tests). Il ne trouve que des sites anterieurs, deja juges au re-audit :
+- la boucle de lots de `services/analysis_service.py:305-325` ;
+- les stores dedoublonnes de l'historique des push, `services/chunk_push_service.py:289` ;
+- des iterables de comprehension evalues une fois (`api/analyses.py:196`, `services/document_service.py:196`) ;
+- les lectures de corps par morceaux (`api/analyses.py:62`, `api/documents.py:69`).
+
+Les autres changements de la passe vont dans le bon sens ou sont neutres :
+- le plafond de corps de `/api/analyses` passe de 200 a 50 Mo (`api/analyses.py:45`), ce qui borne le pic memoire d'un import (≈ 2,2 Go d'apres `:31-44`) ;
+- le budget de grilles est verifie sur le JSON brut avant validation (`infra/docling_importer.py:172`) ;
+- le test de connexion d'un store fait une resolution DNS de plus, hors boucle d'evenements (`store_backend_resolver.py:163`), ce qui est negligeable.
+
+L'INFO « imports hors semaphore » est inchangee. L'audit 08 chiffre le cout d'un import juste sous le budget : 641 octets → ≈ 10 s, ≈ 220 Mo, ≈ 25 Mo ecrits.
+
+### Score recalcule
+
+| Lecture | Re-audit (`a4d9679`) | Post-correctifs (`3f1d1cb`) |
+|---------|----------------------|-----------------------------|
+| Retenue (« aucun N+1 residuel ») | 90 (19 / 21) | **100** (21 / 21) |
+| Tolerante (reliquat borne accepte) | 100 | 100 |
+
+| Metrique | Re-audit | Post-correctifs |
+|----------|----------|-----------------|
+| Items conformes | 12 / 13 | **13 / 13** |
+| Score | 90 / 100 | **100 / 100** |
+| Ecarts CRITICAL | 0 | 0 |
+| Ecarts MAJOR | 0 | 0 |
+| Ecarts MINOR | 2 | **1** (suivi a 3 s sans borne de duree, `frontend/src/features/analysis/store.ts:184-195`, inchange) |
+| Ecarts INFO | 11 | 11 |
+
+### Verdict partiel apres correctifs : GO
+
+Score **100 / 100** dans les deux lectures, 0 CRITICAL, 0 MAJOR, 1 MINOR, 11 INFO.
