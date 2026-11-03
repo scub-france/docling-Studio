@@ -103,7 +103,7 @@ None of them is needed to import and analyze PDFs.
 
 > **Deprecated.** Ingestion will be removed in 0.8.0, with everything built on it: the embedding service, OpenSearch, Neo4j and its graph view, the stores and the chunk search. Avoid it in new setups.
 
-Ingestion sends chunks to OpenSearch or Neo4j. It turns on when `EMBEDDING_URL` is set together with `OPENSEARCH_URL` or `NEO4J_URI`. In 0.7.3 only the older Studio pages use it, so it also needs `STUDIO_MODE_ENABLED=true`.
+Ingestion sends chunks to OpenSearch or Neo4j. It turns on when `EMBEDDING_URL` is set together with `OPENSEARCH_URL` or `NEO4J_URI`. Only the older Studio pages use it, so it also needs `STUDIO_MODE_ENABLED=true`.
 
 | Variable | Default | What it does |
 |----------|---------|--------------|

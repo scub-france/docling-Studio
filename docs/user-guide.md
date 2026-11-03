@@ -117,7 +117,7 @@ There is no undo.
 
 ## Not in the default screens
 
-These features are in the code but no default screen reaches them in 0.7.3:
+These features are in the code but no default screen reaches them:
 
 - chunking (splitting the text into pieces for a RAG pipeline),
 - sending chunks to OpenSearch or Neo4j (deprecated, removed in 0.8.0),
