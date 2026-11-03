@@ -18,7 +18,7 @@ from services.document_service import (
 from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
 
 if TYPE_CHECKING:
-    from domain.ports import DocumentStoreLinkRepository, StoreRepository
+    from services.document_service import StoreLinkView
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 _READ_CHUNK_SIZE = 64 * 1024  # 64 KB
 
 
-def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) -> DocumentResponse:
+def _to_response(doc, *, store_links: list[StoreLinkView] | None = None) -> DocumentResponse:
     return DocumentResponse(
         id=doc.id,
         filename=doc.filename,
@@ -36,37 +36,17 @@ def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) 
         created_at=str(doc.created_at),
         lifecycle_state=doc.lifecycle_state.value,
         lifecycle_state_at=(str(doc.lifecycle_state_at) if doc.lifecycle_state_at else None),
-        store_links=store_links,
+        store_links=None if store_links is None else [_link_response(v) for v in store_links],
     )
 
 
-async def _fetch_store_links(
-    doc_id: str,
-    link_repo: DocumentStoreLinkRepository,
-    store_repo: StoreRepository,
-) -> list[DocStoreLinkResponse]:
-    """Build the per-store link payload for a single document (#283 fix).
-
-    Joins `document_store_links` with `stores` so the frontend gets the
-    store slug (its stable identity) on each link, not the opaque
-    store_id. Returns an empty list when no links exist — the frontend
-    treats absent vs empty the same.
-    """
-    links = await link_repo.find_for_document(doc_id)
-    if not links:
-        return []
-    # Resolve store_id → slug in one shot. `find_all()` is fine here —
-    # store rows are O(1-10) in practice.
-    stores = await store_repo.find_all()
-    slug_by_id = {s.id: s.slug for s in stores}
-    return [
-        DocStoreLinkResponse(
-            store=slug_by_id.get(link.store_id, link.store_id),
-            state=link.state.value,
-            pushed_at=str(link.last_push_at) if link.last_push_at else None,
-        )
-        for link in links
-    ]
+def _link_response(link: StoreLinkView) -> DocStoreLinkResponse:
+    """One per-store link of a document, keyed by the store's slug (#283)."""
+    return DocStoreLinkResponse(
+        store=link.store,
+        state=link.state.value,
+        pushed_at=str(link.pushed_at) if link.pushed_at else None,
+    )
 
 
 @router.post("/upload", response_model=DocumentResponse, status_code=200)
@@ -111,17 +91,12 @@ async def list_documents(service: deps.DocumentServiceDep) -> list[DocumentRespo
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
-async def get_document(
-    doc_id: str,
-    service: deps.DocumentServiceDep,
-    link_repo: deps.DocumentStoreLinkRepoDep,
-    store_repo: deps.StoreRepoDep,
-) -> DocumentResponse:
+async def get_document(doc_id: str, service: deps.DocumentServiceDep) -> DocumentResponse:
     """Get a single document, joined with its per-store ingestion links."""
-    doc = await service.find_by_id(doc_id)
-    if not doc:
+    found = await service.find_with_store_links(doc_id)
+    if found is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    store_links = await _fetch_store_links(doc_id, link_repo, store_repo)
+    doc, store_links = found
     return _to_response(doc, store_links=store_links)
 
 

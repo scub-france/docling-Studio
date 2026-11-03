@@ -19,13 +19,17 @@ from typing import TYPE_CHECKING
 from domain.models import Document
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from domain.ports import (
         AnalysisRepository,
         DocumentRepository,
+        DocumentStoreLinkRepository,
         PageRasterizer,
         PdfInspector,
+        StoreRepository,
     )
-    from domain.value_objects import PageDetail
+    from domain.value_objects import DocumentStoreLinkState, PageDetail
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +71,16 @@ class DocumentConfig:
     max_page_count: int = 0
 
 
+@dataclass(frozen=True)
+class StoreLinkView:
+    """A document's presence in one store (#283), named by the store's slug —
+    its stable identity — or by its id when the store row is gone."""
+
+    store: str
+    state: DocumentStoreLinkState
+    pushed_at: datetime | None
+
+
 class DocumentService:
     """Orchestrates document upload, storage, and preview."""
 
@@ -78,12 +92,18 @@ class DocumentService:
         *,
         rasterizer: PageRasterizer,
         pdf: PdfInspector,
+        store_repo: StoreRepository | None = None,
+        link_repo: DocumentStoreLinkRepository | None = None,
     ):
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
         self._config = config
         self._rasterizer = rasterizer
         self._pdf = pdf
+        # Stores and their links (deprecated ingestion surface): without them
+        # a document reads as pushed nowhere.
+        self._store_repo = store_repo
+        self._link_repo = link_repo
         self._upload_dir = config.upload_dir
         self._max_file_size = (
             config.max_file_size_mb * 1024 * 1024 if config.max_file_size_mb > 0 else 0
@@ -148,6 +168,35 @@ class DocumentService:
     async def find_by_id(self, doc_id: str) -> Document | None:
         """Find a document by its ID, or return None."""
         return await self._document_repo.find_by_id(doc_id)
+
+    async def find_with_store_links(
+        self, doc_id: str
+    ) -> tuple[Document, list[StoreLinkView]] | None:
+        """A document with the stores it was pushed to, or None if unknown."""
+        doc = await self._document_repo.find_by_id(doc_id)
+        if doc is None:
+            return None
+        return doc, await self._store_links(doc_id)
+
+    async def _store_links(self, doc_id: str) -> list[StoreLinkView]:
+        """Join `document_store_links` with `stores` so each link carries the
+        store's slug rather than its opaque id. Empty when there is none."""
+        if self._link_repo is None or self._store_repo is None:
+            return []
+        links = await self._link_repo.find_for_document(doc_id)
+        if not links:
+            return []
+        # Resolve store_id → slug in one shot. `find_all()` is fine here —
+        # store rows are O(1-10) in practice.
+        slug_by_id = {store.id: store.slug for store in await self._store_repo.find_all()}
+        return [
+            StoreLinkView(
+                store=slug_by_id.get(link.store_id, link.store_id),
+                state=link.state,
+                pushed_at=link.last_push_at,
+            )
+            for link in links
+        ]
 
     def resolve_storage_path(self, storage_path: str) -> Path:
         """Resolve a persisted upload path in either Docker or host development.

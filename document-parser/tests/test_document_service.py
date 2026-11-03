@@ -317,6 +317,40 @@ class TestRenderPreview:
             await service.render_preview("doc-1", page=1, dpi=72)
 
 
+class TestFindWithStoreLinks:
+    @pytest.mark.asyncio
+    async def test_unknown_document_is_none(self):
+        service = _make_service()
+        service._document_repo.find_by_id = AsyncMock(return_value=None)
+
+        assert await service.find_with_store_links("missing") is None
+
+    @pytest.mark.asyncio
+    async def test_without_links_the_stores_are_not_read(self, tmp_path):
+        stores, links = AsyncMock(), AsyncMock()
+        links.find_for_document.return_value = []
+        service = DocumentService(
+            document_repo=AsyncMock(),
+            analysis_repo=AsyncMock(),
+            config=DocumentConfig(),
+            rasterizer=PdfPageRasterizer(),
+            pdf=PdfiumInspector(),
+            store_repo=stores,
+            link_repo=links,
+        )
+        doc = _stored(service, tmp_path / "test.pdf")
+
+        assert await service.find_with_store_links("doc-1") == (doc, [])
+        stores.find_all.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_without_the_store_repositories_it_is_pushed_nowhere(self, tmp_path):
+        service = _make_service()
+        doc = _stored(service, tmp_path / "test.pdf")
+
+        assert await service.find_with_store_links("doc-1") == (doc, [])
+
+
 class TestDelete:
     @pytest.mark.asyncio
     async def test_delete_removes_file_and_records(self, tmp_path):

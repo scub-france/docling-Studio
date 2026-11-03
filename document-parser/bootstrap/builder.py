@@ -143,7 +143,9 @@ class AppStateBuilder:
             analysis_repo=analysis_repo,
             store_repo=store_repo,
             document_store_link_repo=link_repo,
-            document_service=build_document_service(document_repo, analysis_repo),
+            document_service=build_document_service(
+                document_repo, analysis_repo, store_repo=store_repo, link_repo=link_repo
+            ),
             analysis_service=analysis_service,
             export_service=ExportService(document_repo=document_repo, analysis_repo=analysis_repo),
             store_service=StoreService(

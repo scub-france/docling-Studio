@@ -217,7 +217,9 @@ def build_analysis_service(document_repo, analysis_repo, graph_writer) -> Analys
     )
 
 
-def build_document_service(document_repo, analysis_repo) -> DocumentService:
+def build_document_service(
+    document_repo, analysis_repo, *, store_repo=None, link_repo=None
+) -> DocumentService:
     return DocumentService(
         document_repo=document_repo,
         analysis_repo=analysis_repo,
@@ -228,6 +230,8 @@ def build_document_service(document_repo, analysis_repo) -> DocumentService:
         ),
         rasterizer=_build_rasterizer(),
         pdf=_build_pdf_inspector(),
+        store_repo=store_repo,
+        link_repo=link_repo,
     )
 
 

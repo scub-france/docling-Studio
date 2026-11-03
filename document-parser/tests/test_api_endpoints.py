@@ -1,13 +1,15 @@
 """Tests for FastAPI API endpoints using TestClient."""
 
 from dataclasses import replace
-from pathlib import Path
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from domain.models import AnalysisJob, Document
+from domain.models import AnalysisJob, Document, DocumentStoreLink, Store
+from domain.value_objects import DocumentStoreLinkState
 from infra.page_raster import PdfPageRasterizer
 from infra.pdf_inspector import PdfiumInspector
 from main import app
@@ -34,37 +36,35 @@ def mock_document_service(client):
     mock_svc = MagicMock()
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
-    mock_svc.resolve_storage_path.side_effect = lambda storage_path: Path(storage_path)
     with state_override(app, document_service=mock_svc):
         yield mock_svc
 
 
 @pytest.fixture
-def stored_documents(client, tmp_path):
-    """The document repository behind a real DocumentService, with the real
-    PDF adapters: the preview and page-size routes run end to end on the
-    files a test writes under `tmp_path`."""
-    repo = AsyncMock()
+def document_repos(client, tmp_path):
+    """The repositories behind a real DocumentService, with the real PDF
+    adapters: the document routes run end to end, on the files a test writes
+    under `tmp_path`. No document has store links unless a test adds some."""
+    repos = SimpleNamespace(documents=AsyncMock(), links=AsyncMock(), stores=AsyncMock())
+    repos.links.find_for_document.return_value = []
+    repos.stores.find_all.return_value = []
     service = DocumentService(
-        document_repo=repo,
+        document_repo=repos.documents,
         analysis_repo=AsyncMock(),
         config=DocumentConfig(upload_dir=str(tmp_path)),
         rasterizer=PdfPageRasterizer(),
         pdf=PdfiumInspector(),
+        store_repo=repos.stores,
+        link_repo=repos.links,
     )
     with state_override(app, document_service=service):
-        yield repo
+        yield repos
 
 
-@pytest.fixture(autouse=True)
-def mock_document_related_repos(client):
-    """Provide the repos expected by document routes using shared deps."""
-    link_repo = MagicMock()
-    link_repo.find_for_document = AsyncMock(return_value=[])
-    store_repo = MagicMock()
-    store_repo.find_all = AsyncMock(return_value=[])
-    with state_override(app, document_store_link_repo=link_repo, store_repo=store_repo):
-        yield
+@pytest.fixture
+def stored_documents(document_repos):
+    """The document repository of `document_repos`."""
+    return document_repos.documents
 
 
 @pytest.fixture
@@ -154,8 +154,8 @@ class TestDocumentEndpoints:
         # Verify camelCase
         assert "createdAt" in data[0]
 
-    def test_get_document(self, client, mock_document_service):
-        mock_document_service.find_by_id = AsyncMock(
+    def test_get_document(self, client, stored_documents):
+        stored_documents.find_by_id = AsyncMock(
             return_value=Document(
                 id="d1",
                 filename="test.pdf",
@@ -172,12 +172,43 @@ class TestDocumentEndpoints:
         assert data["id"] == "d1"
         assert data["fileSize"] == 2048
         assert data["pageCount"] == 3
+        assert data["storeLinks"] == []
 
-    def test_get_document_not_found(self, client, mock_document_service):
-        mock_document_service.find_by_id = AsyncMock(return_value=None)
+    def test_get_document_with_its_store_links(self, client, document_repos):
+        """Each link names its store by slug (#283); a link whose store row is
+        gone falls back to the store id."""
+        document_repos.documents.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="test.pdf", storage_path="/tmp/test")
+        )
+        pushed = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+        document_repos.links.find_for_document.return_value = [
+            DocumentStoreLink(
+                document_id="d1",
+                store_id="s-1",
+                state=DocumentStoreLinkState.INGESTED,
+                last_push_at=pushed,
+            ),
+            DocumentStoreLink(
+                document_id="d1", store_id="s-gone", state=DocumentStoreLinkState.FAILED
+            ),
+        ]
+        document_repos.stores.find_all.return_value = [Store(id="s-1", slug="legal-v1")]
+
+        resp = client.get("/api/documents/d1")
+
+        assert resp.status_code == 200
+        assert resp.json()["storeLinks"] == [
+            {"store": "legal-v1", "state": "Ingested", "pushedAt": str(pushed)},
+            {"store": "s-gone", "state": "Failed", "pushedAt": None},
+        ]
+        document_repos.links.find_for_document.assert_awaited_once_with("d1")
+
+    def test_get_document_not_found(self, client, stored_documents):
+        stored_documents.find_by_id = AsyncMock(return_value=None)
 
         resp = client.get("/api/documents/missing")
         assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found"}
 
     def test_upload_document(self, client, mock_document_service):
         mock_document_service.upload = AsyncMock(
