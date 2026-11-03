@@ -99,17 +99,24 @@ class CitationService:
             return CitationCheck(
                 valid=False, status=CitationStatus.UNKNOWN_VERSION, detail=str(exc)
             )
-        return await self.verify_citation_in(parse, anchor, quote)
+        superseded_by = await self.superseding_parse(parse.document.id, parse.version_id)
+        return self.verify_citation_in(parse, anchor, quote, superseded_by=superseded_by)
 
-    async def verify_citation_in(
-        self, parse: LoadedParse, anchor: DocumentAnchor, quote: str
+    def verify_citation_in(
+        self,
+        parse: LoadedParse,
+        anchor: DocumentAnchor,
+        quote: str,
+        *,
+        superseded_by: str | None,
     ) -> CitationCheck:
         """`verify_citation`, against a parse the caller has already loaded.
 
         For a caller checking several quotes against the one parse their
-        anchors all pin (`show_sources`), which would otherwise reload it once
-        per quote. `anchor` must pin `parse`, and the quote must already have
-        passed `check_quote`.
+        anchors all pin (`show_sources`), which would otherwise reload it, and
+        ask which parse is current, once per quote. `anchor` must pin `parse`,
+        the quote must already have passed `check_quote`, and `superseded_by`
+        is `superseding_parse` of that parse. Reads nothing: no I/O.
         """
         element = resolve(parse.index, anchor.ref)
         if element is None:
@@ -144,14 +151,13 @@ class CitationService:
             )
 
         matched = self.build(parse.document.id, parse.version_id, match)
-        current = await self._superseding_parse(parse.document.id, parse.version_id)
-        if current is not None:
+        if superseded_by is not None:
             return CitationCheck(
                 valid=True,
                 status=CitationStatus.STALE_VERSION,
                 detail=(
                     "The quote appears verbatim at this anchor, but the anchor pins an "
-                    f"earlier parse: {current} is now the current one. Re-read the "
+                    f"earlier parse: {superseded_by} is now the current one. Re-read the "
                     "document to cite the current parse."
                 ),
                 citation=matched,
@@ -202,8 +208,10 @@ class CitationService:
     def _clipped(self, text: str) -> str:
         return clip_to_tokens(text, self._config.max_read_tokens)
 
-    async def _superseding_parse(self, document_id: str, version_id: str) -> str | None:
-        """The id of the current parse when the anchor pins an older one."""
+    async def superseding_parse(self, document_id: str, version_id: str) -> str | None:
+        """The id of the current parse when `version_id` is an older one, else
+        None. One query: a caller checking several quotes against one parse
+        asks once."""
         latest = (await self._parses.analyses.latest_parsed_ids([document_id])).get(document_id)
         return latest if latest is not None and latest != version_id else None
 

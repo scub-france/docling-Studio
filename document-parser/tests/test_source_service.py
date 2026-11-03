@@ -305,10 +305,11 @@ class TestTitle:
 
 class TestOneParsePerCall:
     """Every anchor pins the same parse, so it is loaded once per call — not
-    once more per quote checked and once more for the map."""
+    once more per quote checked and once more for the map — and whether a
+    newer parse supersedes it is asked once, not once per quote verified."""
 
     @staticmethod
-    def sources_over_a_counting_loader():
+    def sources_over_a_counting_loader(*, newer_parse: str | None = None):
         from infra.docling_tree import DoclingTreeReader
         from services.citation_service import CitationService
         from services.navigation_service import NavigationService
@@ -330,10 +331,20 @@ class TestOneParsePerCall:
                 self.loads.append((document_id, version_id))
                 return await super().load(document_id, version_id)
 
+        class CountingAnalysisRepository(FakeAnalysisRepository):
+            def __init__(self, jobs):
+                super().__init__(jobs)
+                self.latest_lookups: list[list[str]] = []
+
+            async def latest_parsed_ids(self, document_ids):
+                self.latest_lookups.append(list(document_ids))
+                return await super().latest_parsed_ids(document_ids)
+
+        jobs = [make_job()] + ([make_job(job_id=newer_parse)] if newer_parse else [])
         config = NavigationConfig(studio_base_url="http://localhost:3000")
         parses = CountingParseLoader(
             document_repo=FakeDocumentRepository([make_document()]),
-            analysis_repo=FakeAnalysisRepository([make_job()]),
+            analysis_repo=CountingAnalysisRepository(jobs),
             tree_reader=DoclingTreeReader(),
             config=config,
         )
@@ -344,16 +355,18 @@ class TestOneParsePerCall:
         )
         return sources, parses
 
+    THREE_QUOTES = (
+        (anchor_uri(PREAVIS_SECTION), "trois mois à compter de la notification"),
+        (anchor_uri("#/texts/2"), "Chaque partie peut résilier le contrat."),
+        (anchor_uri("#/texts/2"), "six mois à compter de la signature"),
+    )
+
     async def test_the_parse_is_loaded_once_however_many_quotes_are_checked(self):
         sources, parses = self.sources_over_a_counting_loader()
         report = await sources.show(
             "Quel est le préavis ?",
             [(anchor_uri(PREAVIS_SECTION), "le préavis", "trois mois")],
-            [
-                (anchor_uri(PREAVIS_SECTION), "trois mois à compter de la notification"),
-                (anchor_uri("#/texts/2"), "Chaque partie peut résilier le contrat."),
-                (anchor_uri("#/texts/2"), "six mois à compter de la signature"),
-            ],
+            list(self.THREE_QUOTES),
         )
         assert parses.loads == [(DOC_ID, JOB_ID)]
         # Each quote was still checked against it, the section one narrowed.
@@ -362,6 +375,23 @@ class TestOneParsePerCall:
             ("#/texts/2", "verified"),
             ("#/texts/2", "quote_drift"),
         ]
+        # Two quotes found, one question about the current parse.
+        assert parses.analyses.latest_lookups == [[DOC_ID]]
+
+    async def test_a_superseded_parse_is_looked_up_once_and_marks_every_found_quote(self):
+        sources, parses = self.sources_over_a_counting_loader(newer_parse="an-2")
+        report = await sources.show("Quel est le préavis ?", [], list(self.THREE_QUOTES))
+        assert parses.analyses.latest_lookups == [[DOC_ID]]
+        assert [(p.ref, p.status) for p in report.sources.passages] == [
+            (PREAVIS_REF, "stale_version"),
+            ("#/texts/2", "stale_version"),
+            ("#/texts/2", "quote_drift"),
+        ]
+
+    async def test_no_quote_no_lookup(self):
+        sources, parses = self.sources_over_a_counting_loader(newer_parse="an-2")
+        await sources.show("Quel est le préavis ?", [(anchor_uri(PREAVIS_SECTION), "", "")], [])
+        assert parses.analyses.latest_lookups == []
 
     async def test_a_parse_that_cannot_be_loaded_is_still_refused(self):
         sources, parses = self.sources_over_a_counting_loader()

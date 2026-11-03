@@ -100,8 +100,18 @@ class SourceService:
 
         # Every anchor pins this one parse: loaded once, for each quote's
         # check and for the map, rather than once per quote and again for each.
+        # Whether a newer parse supersedes it is the same answer for every
+        # quote, so it is asked once too.
         parse = await self._parses.load(document_id, version_id)
-        cited_anchors = [await self._check(parse, anchor, quote) for anchor, quote in quoted]
+        superseded_by = (
+            await self._citations.superseding_parse(parse.document.id, parse.version_id)
+            if quoted
+            else None
+        )
+        cited_anchors = [
+            self._check(parse, anchor, quote, superseded_by=superseded_by)
+            for anchor, quote in quoted
+        ]
         anchors = [a for a, *_ in read_anchors] + [a for a, *_ in cited_anchors]
         outline = self._navigation.outline_of(parse, depth=_MAP_DEPTH)
         known = _resolvable(parse, anchors, unknown)
@@ -162,8 +172,13 @@ class SourceService:
 
         return replace(sources, passages=await asyncio.to_thread(mark_all))
 
-    async def _check(
-        self, parse: LoadedParse, anchor: DocumentAnchor, quote: str
+    def _check(
+        self,
+        parse: LoadedParse,
+        anchor: DocumentAnchor,
+        quote: str,
+        *,
+        superseded_by: str | None,
     ) -> tuple[DocumentAnchor, str, str | None]:
         """The anchor to show for one citation, and the server's word on its quote.
 
@@ -178,7 +193,9 @@ class SourceService:
             return anchor, "", None
         try:
             self._citations.check_quote(quote)
-            check = await self._citations.verify_citation_in(parse, anchor, quote)
+            check = self._citations.verify_citation_in(
+                parse, anchor, quote, superseded_by=superseded_by
+            )
         except NavigationServiceError:
             return anchor, quote, None
         if check.valid and check.citation:
