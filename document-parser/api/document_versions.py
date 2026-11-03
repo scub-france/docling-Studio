@@ -1,9 +1,12 @@
 """Document versions API router (#267).
 
-Exposes the History timeline for a document — frozen (analysis_id,
-chunks_snapshot) pairs created on `+ New analysis` runs and on
-`+ Generate chunks` invocations. The drawer in the doc workspace reads
-this list and can restore any version to overwrite the live chunkset.
+Exposes a document's versions — frozen (analysis_id, chunks_snapshot)
+pairs created on `+ New analysis` runs and on `+ Generate chunks`
+invocations — and restores any of them over the live chunkset.
+
+The restore route names its path variable `document_version_id`: it takes
+a `DocumentVersion` id, never the `version_id` of an anchor, which names a
+parse (`docs/architecture/glossary.md`). The URL is the same.
 
 Routes mount under `/api/documents/{doc_id}/...`. Read-mostly + a single
 write endpoint (`restore`) — the version-creation triggers fire from
@@ -46,16 +49,16 @@ async def list_versions(
 
 
 @router.post(
-    "/{doc_id}/versions/{version_id}/restore",
+    "/{doc_id}/versions/{document_version_id}/restore",
     response_model=DocumentVersionResponse,
 )
 async def restore_version(
-    doc_id: str, version_id: str, service: deps.VersionServiceDep
+    doc_id: str, document_version_id: str, service: deps.VersionServiceDep
 ) -> DocumentVersionResponse:
     """Restore a frozen version — overwrites the live chunkset with the
     version's snapshot. The active-analysis pointer is managed
     client-side (the frontend reads `analysisId` off the response).
     The chunk count is the service's: the snapshot is not decoded here.
     """
-    entry = await service.restore(doc_id, version_id)
+    entry = await service.restore(doc_id, document_version_id)
     return _to_response(entry.version, entry.chunk_count)

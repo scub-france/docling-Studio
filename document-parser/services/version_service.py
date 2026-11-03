@@ -4,10 +4,12 @@ Records frozen (analysis_id, chunks_snapshot) pairs at the two explicit
 version-creating triggers — a `+ New analysis` run completes, or a
 `+ Generate chunks` (rechunk) invocation finishes. Manual chunk edits
 between snapshots are NOT recorded as versions; they mutate the live
-chunkset and only land in History when the next explicit trigger fires.
+chunkset and only land in a version when the next explicit trigger fires.
 
-`restore(document_id, version_id)` writes the version's chunks_snapshot
-back into the live `chunks` table. The current analysis pointer is
+`restore(document_id, document_version_id)` writes the version's
+chunks_snapshot back into the live `chunks` table. The parameter is a
+`DocumentVersion` id, not the `version_id` of an anchor, which names a
+parse (`docs/architecture/glossary.md`). The current analysis pointer is
 managed by the workspace (frontend reads `version.analysis_id` to
 re-render the OCR side).
 """
@@ -77,8 +79,8 @@ class VersionService:
         self._documents = document_repo
 
     async def list_for_document(self, document_id: str) -> list[DocumentVersionEntry]:
-        """The document's history, newest first: each version without its
-        snapshot body, with the number of chunks the snapshot holds."""
+        """The document's versions, newest first: each without its snapshot
+        body, with the number of chunks the snapshot holds."""
         await self._require_doc(document_id)
         return await self._versions.list_for_document(document_id)
 
@@ -129,20 +131,20 @@ class VersionService:
         await self._versions.insert(version)
         return version
 
-    async def restore(self, document_id: str, version_id: str) -> DocumentVersionEntry:
+    async def restore(self, document_id: str, document_version_id: str) -> DocumentVersionEntry:
         """Replace the live chunkset with the version's snapshot. The
         active-analysis pointer is the caller's responsibility (the
         frontend reads `version.analysis_id` and updates the workspace
         store).
 
-        Returns the restored version as a history row: without its snapshot
-        body, with the number of chunks restored — counted from the snapshot
+        Returns the restored version as a row of the version list: without
+        its snapshot body, with the number of chunks restored — counted from the snapshot
         decoded here, so the caller never parses it a second time.
         """
         await self._require_doc(document_id)
-        version = await self._versions.find_by_id(version_id)
+        version = await self._versions.find_by_id(document_version_id)
         if not version or version.document_id != document_id:
-            raise VersionNotFoundError(f"Version not found: {version_id}")
+            raise VersionNotFoundError(f"Version not found: {document_version_id}")
 
         # Retire the live chunks and insert the snapshot's under fresh ids,
         # journaled, in one transaction: a failure leaves the live chunkset
@@ -156,7 +158,9 @@ class VersionService:
 
         # A restore journals no before/after snapshot, and its rows keep the
         # hex ids they always had.
-        journal = EditJournal(document_id, f"system:restore:{version_id}", now, new_id=_new_id)
+        journal = EditJournal(
+            document_id, f"system:restore:{document_version_id}", now, new_id=_new_id
+        )
 
         existing = await self._chunks.find_for_document(document_id)
         await self._chunks.replace_chunkset(
@@ -173,7 +177,7 @@ class VersionService:
         logger.info(
             "Restored doc %s to version %s (%d chunks)",
             document_id,
-            version_id,
+            document_version_id,
             len(new_chunks),
         )
         return DocumentVersionEntry(

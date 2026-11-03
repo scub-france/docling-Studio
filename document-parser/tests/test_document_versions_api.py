@@ -1,6 +1,6 @@
-"""The /api/documents/{id}/versions router (#267): the wire shape the
-workspace History drawer reads (`frontend/src/shared/types.ts`,
-`DocumentVersion`), on a real VersionService and a temporary database."""
+"""The /api/documents/{id}/versions router (#267): the wire shape of a
+document's versions (`frontend/src/shared/types.ts`, `DocumentVersion`),
+on a real VersionService and a temporary database."""
 
 from __future__ import annotations
 

@@ -110,7 +110,7 @@ class TestRestore:
         restored = await service.restore(doc.id, v1.id)
         live = await repos["chunks"].find_for_document(doc.id)
         assert sorted(c.text for c in live) == ["v1-a", "v1-b"]
-        # ...and the result is V1 as a history row: counted, without its body.
+        # ...and the result is V1 as a version-list row: counted, without its body.
         assert (restored.version.id, restored.chunk_count) == (v1.id, 2)
         assert restored.version.chunks_snapshot is None
 

@@ -105,7 +105,7 @@ class AnalysisService:
         self._chunk_promoter = None
         # Duck-typed recorder for document versions (#267). Wired in
         # main.py to `VersionService.record_on_analysis` so each
-        # successful analysis appends a frozen pair to History.
+        # successful analysis appends a frozen pair to the document's versions.
         self._version_recorder = None
 
     def set_chunk_promoter(self, chunk_service) -> None:

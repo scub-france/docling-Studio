@@ -583,7 +583,7 @@ class ChunkPushListResponse(_CamelModel):
 
 
 class DocumentVersionResponse(_CamelModel):
-    """Frozen pair surfaced by the workspace History drawer."""
+    """One version of a document: a frozen (analysis, chunks) pair."""
 
     id: str
     document_id: str

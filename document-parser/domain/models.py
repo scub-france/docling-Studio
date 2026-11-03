@@ -318,8 +318,9 @@ class DocumentVersion:
 
     `chunks_snapshot` is a JSON array of chunk records captured at the
     moment of version creation. `analysis_id` points at the active
-    analysis at that moment. The pair is what the History drawer
-    surfaces, and what `restore` writes back into the live state.
+    analysis at that moment. The pair is what the document's version list
+    shows (`GET /api/documents/{id}/versions`), and what `restore` writes
+    back into the live state.
     """
 
     id: str = field(default_factory=_new_id)

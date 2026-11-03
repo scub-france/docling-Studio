@@ -16,7 +16,7 @@ uses, and why the other one is still around.
 !!! warning "`version_id` names a parse, not a document version"
     In anchors and in the MCP tools, `version_id` is the id of the parse, so of
     an `AnalysisJob`. It is not a `DocumentVersion` id, which only the
-    versions API takes (`/versions/{version_id}/restore`).
+    versions API takes (`/versions/{document_version_id}/restore`).
 
     The name is part of the MCP contract: tool arguments (`get_outline`,
     `read_element`), result fields (`find_documents`, every citation), the
@@ -24,8 +24,12 @@ uses, and why the other one is still around.
     server teaches agents. Renaming it would break every connected agent, so
     it stays until that contract is versioned. Inside the backend it is kept
     too: the parse loader, the citation services and the MCP tool handlers
-    all pass it along, and renaming one layer only would add a third name
-    rather than remove one.
+    all pass it along under that name.
+
+    The versioning side uses another name for its own id:
+    `VersionService.restore` and the restore route take a
+    `document_version_id`. The URL did not change, only the name of its path
+    variable.
 
 ## Chunks
 
