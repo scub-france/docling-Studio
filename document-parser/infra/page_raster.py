@@ -5,9 +5,10 @@ ladder, the byte budget and the bounding-box arithmetic that drive this live
 in the services and domain layers; here a page is rendered at the dpi it is
 asked for and a PNG is cropped to the box it is given.
 
-Reads the file itself so no caller above `infra/` has to touch the
+Reaches the file itself so no caller above `infra/` has to touch the
 filesystem — the service passes a `storage_path` from the `Document` entity
-and gets bytes back.
+and gets bytes back. poppler reads the stored PDF in place: rendering one page
+never loads the whole file into memory, nor copies it to a temporary file.
 """
 
 from __future__ import annotations
@@ -15,17 +16,23 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from pdf2image import convert_from_bytes
+from pdf2image import convert_from_path
 
 from domain.navigation import RasterCrop
 
 
 class PdfPageRasterizer:
-    """Stateless adapter for the `PageRasterizer` port."""
+    """Stateless adapter for the `PageRasterizer` port.
+
+    `render_page` raises `FileNotFoundError` when nothing is stored at the
+    path, and `ValueError` when the document has no such page.
+    """
 
     def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
-        content = Path(storage_path).read_bytes()
-        images = convert_from_bytes(content, first_page=page, last_page=page, dpi=dpi)
+        # poppler reports a missing file as a page-count failure; name it.
+        if not Path(storage_path).is_file():
+            raise FileNotFoundError(storage_path)
+        images = convert_from_path(storage_path, first_page=page, last_page=page, dpi=dpi)
         if not images:
             raise ValueError(f"Page {page} not found in {storage_path}")
         buffer = io.BytesIO()

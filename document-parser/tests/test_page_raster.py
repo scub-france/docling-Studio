@@ -59,6 +59,18 @@ class TestRenderPage:
         with pytest.raises(FileNotFoundError):
             PdfPageRasterizer().render_page(str(tmp_path / "gone.pdf"), page=1, dpi=72)
 
+    def test_reads_the_stored_file_in_place(self, two_pages, monkeypatch):
+        # Copying the PDF to a temporary file (what `convert_from_bytes` does)
+        # cost a full read and a full write of the document per page.
+        import pdf2image.pdf2image
+
+        def no_copy(*_args, **_kwargs):
+            raise AssertionError("the PDF was copied to a temporary file")
+
+        monkeypatch.setattr(pdf2image.pdf2image.tempfile, "mkstemp", no_copy)
+
+        assert png_size(PdfPageRasterizer().render_page(two_pages, page=1, dpi=72)) == (612, 792)
+
     def test_a_file_that_is_not_a_pdf_is_refused(self, tmp_path):
         broken = tmp_path / "broken.pdf"
         broken.write_bytes(b"%PDF-not really")

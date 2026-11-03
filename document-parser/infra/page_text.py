@@ -4,31 +4,24 @@ pdfium knows where every character of a born-digital PDF sits; this reads
 them off one page and hands them up as page fractions, so the domain can find
 a quote among them without knowing what a PDF is.
 
-pdfium is not thread-safe. Docling drives it from its own threads during an
-analysis and guards it with one process-wide lock; this takes the same lock
-when Docling is installed, and a lock of its own when it is not.
+pdfium is not thread-safe: this holds the process-wide pdfium lock
+(`infra.pdfium_lock`, shared with Docling) while the document is open.
 """
 
 from __future__ import annotations
-
-import threading
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 
 from domain.quote_marks import Glyph
-
-try:  # pragma: no cover - which branch runs depends on the image
-    from docling.utils.locks import pypdfium2_lock as _pdfium_lock
-except ImportError:  # pragma: no cover
-    _pdfium_lock = threading.Lock()
+from infra.pdfium_lock import pdfium_lock
 
 
 class PdfPageTextReader:
     """Stateless adapter for the `PageTextReader` port."""
 
     def glyphs(self, storage_path: str, *, page: int) -> list[Glyph]:
-        with _pdfium_lock:
+        with pdfium_lock:
             pdf = pdfium.PdfDocument(storage_path)
             try:
                 if not 1 <= page <= len(pdf):
