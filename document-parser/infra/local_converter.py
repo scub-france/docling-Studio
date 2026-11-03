@@ -69,9 +69,14 @@ def _build_docling_converter(options: ConversionOptions) -> DoclingConverter:
     )
 
     return DoclingConverter(
+        # Studio converts PDFs only. `format_options` does not restrict the
+        # formats: without this, Docling would read any input it can guess
+        # (HTML, Office, Docling JSON...) through backends the upload never
+        # meant to expose (#audit-08).
+        allowed_formats=[InputFormat.PDF],
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
-        }
+        },
     )
 
 

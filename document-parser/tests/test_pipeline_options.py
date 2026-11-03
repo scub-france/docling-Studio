@@ -138,6 +138,23 @@ class TestBuildConverter:
         assert opts.generate_page_images is True
         assert opts.images_scale == 1.5
 
+    def test_only_pdf_is_allowed(self):
+        """`format_options` alone does not restrict the formats (#audit-08)."""
+        conv = build_converter(ConversionOptions())
+        assert conv.allowed_formats == [InputFormat.PDF]
+
+    def test_a_docling_json_input_is_refused(self, tmp_path):
+        """A non-PDF input never reaches its Docling backend (here JSON_DOCLING,
+        which advisories for docling 2.121 target)."""
+        from docling.exceptions import ConversionError
+        from docling_core.types.doc import DoclingDocument
+
+        source = tmp_path / "doc.json"
+        source.write_text(DoclingDocument(name="doc").model_dump_json())
+
+        with pytest.raises(ConversionError, match="not allowed"):
+            build_converter(ConversionOptions()).convert(source)
+
 
 # ---------------------------------------------------------------------------
 # convert_document — default vs custom converter routing
