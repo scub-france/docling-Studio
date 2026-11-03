@@ -249,7 +249,16 @@ jobs:
           target: ${{ matrix.target }}
           load: true
           tags: docling-studio:${{ matrix.target }}
-          build-args: APP_VERSION=${{ steps.version.outputs.value }}
+          # `local` is built with the same packages release.yml publishes, so
+          # the Trivy scan and docker-smoke-local cover docling-agent + mellea
+          # (WITH_REASONING). BAKE_MODELS stays false (the Dockerfile default):
+          # baking downloads ~1.3 GB of models from HuggingFace Hub, which
+          # rate-limits shared runner IPs, and release.yml is the only place
+          # allowed to do it (docs/architecture/huggingface-dependency-map.md).
+          # What the gate does not build: the baked models and arm64.
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
+            WITH_REASONING=${{ matrix.target == 'local' && 'true' || 'false' }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
@@ -330,6 +339,79 @@ jobs:
           echo "Remote smoke test passed"
 
           docker stop smoke-remote && docker rm smoke-remote
+
+  docker-smoke-local:
+    name: Docker smoke test — local
+    needs: [docker-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download local image
+        uses: actions/download-artifact@v4.3.0
+        with:
+          name: docker-image-local
+          path: /tmp
+
+      - name: Load local image
+        run: docker load < /tmp/docling-studio-local.tar.gz
+
+      - name: Smoke test — local
+        run: |
+          # --network none: the container has loopback only, so it proves the
+          # image boots without HuggingFace Hub (or any network). Models are
+          # not baked here, and docling only loads them on the first
+          # conversion, which this test does not run.
+          # REASONING_ENABLED=true wires the runner only if docling-agent and
+          # mellea import, so reasoningAvailable=true proves WITH_REASONING
+          # put them in the image (the 0.7.1 hotfix bug). Ollama is contacted
+          # per call, never at boot nor by /api/health.
+          docker run -d --name smoke-local --network none \
+            -e RATE_LIMIT_RPM=0 \
+            -e REASONING_ENABLED=true \
+            docling-studio:local
+
+          # No published port without a network: ask from inside.
+          health() {
+            docker exec smoke-local python3 -c \
+              "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:3000/api/health', timeout=5).read().decode())"
+          }
+
+          echo "Waiting for container to start..."
+          for i in $(seq 1 60); do
+            if HEALTH=$(health 2>/dev/null); then
+              echo "Local image healthy!"
+              echo "$HEALTH" | python3 -m json.tool
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' smoke-local)" != "true" ] || [ "$i" -eq 60 ]; then
+              echo "::error::Local image failed health check"
+              docker logs smoke-local
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Verify response fields
+          field() { echo "$HEALTH" | python3 -c "import sys,json; print(str(json.load(sys.stdin)['$1']).lower())"; }
+          STATUS=$(field status)
+          ENGINE=$(field engine)
+          REASONING=$(field reasoningAvailable)
+
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::Health status is '$STATUS', expected 'ok'"
+            exit 1
+          fi
+          if [ "$ENGINE" != "local" ]; then
+            echo "::error::Engine is '$ENGINE', expected 'local'"
+            exit 1
+          fi
+          if [ "$REASONING" != "true" ]; then
+            echo "::error::reasoningAvailable is '$REASONING', expected 'true': docling-agent or mellea is missing from the image"
+            docker logs smoke-local
+            exit 1
+          fi
+          echo "Local smoke test passed"
+
+          docker stop smoke-local && docker rm smoke-local
 
   image-scan:
     name: Security scan — ${{ matrix.target }}
@@ -678,6 +760,7 @@ jobs:
       - audit-checks
       - docker-build
       - docker-smoke
+      - docker-smoke-local
       - image-scan
       - image-size
       - e2e-api
@@ -714,6 +797,7 @@ jobs:
           AUDIT="${{ needs.audit-checks.result }}"
           BUILD="${{ needs.docker-build.result }}"
           SMOKE="${{ needs.docker-smoke.result }}"
+          SMOKE_LOCAL="${{ needs.docker-smoke-local.result }}"
           SCAN="${{ needs.image-scan.result }}"
           SIZE="${{ needs.image-size.result }}"
           E2E_API="${{ needs.e2e-api.result }}"
@@ -721,7 +805,7 @@ jobs:
 
           # Determine verdict
           BLOCKING_FAILED="false"
-          for result in "$LINT" "$TESTS" "$BUILD" "$SMOKE" "$SCAN" "$E2E_API" "$E2E_UI"; do
+          for result in "$LINT" "$TESTS" "$BUILD" "$SMOKE" "$SMOKE_LOCAL" "$SCAN" "$E2E_API" "$E2E_UI"; do
             if [ "$result" = "failure" ]; then
               BLOCKING_FAILED="true"
             fi
@@ -774,7 +858,8 @@ jobs:
           | Dependency audit | $(status_icon "$DEP") | npm CRITICAL only |
           | Audit checks | $(status_icon "$AUDIT") | Yes |
           | Docker build | $(status_icon "$BUILD") | Yes |
-          | Docker smoke test | $(status_icon "$SMOKE") | Yes |
+          | Docker smoke test (remote) | $(status_icon "$SMOKE") | Yes |
+          | Docker smoke test (local) | $(status_icon "$SMOKE_LOCAL") | Yes |
           | Image security scan | $(status_icon "$SCAN") | Yes (CRITICAL) |
           | Image size check | $(status_icon "$SIZE") | No |
           | E2E API (full scope) | $(status_icon "$E2E_API") | Yes |
