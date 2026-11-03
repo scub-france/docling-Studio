@@ -547,6 +547,48 @@ class TestDiff:
         statuses = {d["chunkId"]: d["status"] for d in diffs}
         assert statuses == {c1.id: "added", c2.id: "added"}
 
+    async def test_against_the_last_push(self, service, repos, doc):
+        """Added / modified / unchanged / removed, in canonical order then
+        the removed ids, all without a text diff."""
+        from domain.models import ChunkPush
+
+        await SqliteStoreRepository().insert(
+            Store(id="s-1", name="S", slug="s", kind=StoreKind.OPENSEARCH, embedder="e")
+        )
+        pushed_at = datetime(2026, 5, 19, 10, 0, tzinfo=UTC)
+        same = Chunk(document_id=doc.id, sequence=0, text="same", updated_at=pushed_at)
+        edited = Chunk(
+            document_id=doc.id,
+            sequence=1,
+            text="edited",
+            updated_at=datetime(2026, 5, 19, 10, 5, tzinfo=UTC),
+        )
+        fresh = Chunk(document_id=doc.id, sequence=2, text="fresh")
+        await repos["chunks"].insert_many([same, edited, fresh])
+        await repos["pushes"].insert(
+            ChunkPush(
+                id="p-1",
+                document_id=doc.id,
+                store_id="s-1",
+                chunkset_hash="h",
+                chunk_ids=[same.id, edited.id, "gone"],
+                pushed_at=pushed_at,
+            )
+        )
+
+        diffs = await service.diff_against_store(doc.id, "s-1")
+
+        assert diffs == [
+            {"chunkId": same.id, "status": "unchanged", "textDiff": None},
+            {"chunkId": edited.id, "status": "modified", "textDiff": None},
+            {"chunkId": fresh.id, "status": "added", "textDiff": None},
+            {"chunkId": "gone", "status": "removed", "textDiff": None},
+        ]
+
+    async def test_unknown_document_is_the_shared_404(self, service):
+        with pytest.raises(DocumentNotFoundError):
+            await service.diff_against_store("ghost", "s-1")
+
 
 # ---------------------------------------------------------------------------
 # push_to_store (slug → id resolution, 503/404/409 surfaces)
@@ -812,6 +854,91 @@ class TestPushToStore:
         link = await link_repo.find_one(doc.id, "store-uuid-1")
         assert link is not None
         assert link.state == DocumentStoreLinkState.FAILED
+
+    async def test_push_result_and_record(self, service_with_store, repos, link_repo, doc):
+        """The summary counts what the ingestion indexed and the known tokens;
+        the push row lists the canonical ids in order, and the link points at
+        that row with the same hash and date."""
+        a = Chunk(document_id=doc.id, sequence=0, text="a", token_count=5)
+        b = Chunk(document_id=doc.id, sequence=1, text="b")
+        await repos["chunks"].insert_many([a, b])
+
+        result = await service_with_store.push_to_store(doc.id, "rh-corpus-v3")
+
+        push = await repos["pushes"].find_latest(doc.id, "store-uuid-1")
+        assert result == {"pushId": push.id, "summary": {"embeds": 2, "tokens": 5}}
+        assert push.chunk_ids == [a.id, b.id]
+        link = await link_repo.find_one(doc.id, "store-uuid-1")
+        assert (link.last_run_id, link.chunkset_hash, link.last_push_at) == (
+            push.id,
+            push.chunkset_hash,
+            push.pushed_at,
+        )
+
+    async def test_without_a_store_repo_the_value_is_used_as_the_store_id(
+        self, repos, store_repo, doc, mock_ingestion
+    ):
+        """Legacy wiring: no store repo, no link repo — the value the caller
+        passed is recorded verbatim, and no link is written."""
+        service = ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            ingestion_service=mock_ingestion,
+        )
+        await service.add_chunk(doc.id, text="hello")
+
+        await service.push_to_store(doc.id, "store-uuid-1")
+
+        assert (await repos["pushes"].find_latest(doc.id, "store-uuid-1")) is not None
+        assert mock_ingestion.ingest.await_args.kwargs["targets"] is None
+        assert await SqliteDocumentStoreLinkRepository().find_one(doc.id, "store-uuid-1") is None
+
+    async def test_a_failing_link_write_never_hides_the_push_error(self, repos, store_repo, doc):
+        """Recording Failed on the link is best effort: if that write fails
+        too, the ingestion's own error is what the caller sees."""
+        failing = AsyncMock()
+        failing.ingest.side_effect = RuntimeError("opensearch unreachable")
+        broken_links = AsyncMock()
+        broken_links.find_one.side_effect = RuntimeError("database is locked")
+        service = ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            ingestion_service=failing,
+            store_repo=store_repo,
+            link_repo=broken_links,
+        )
+        await service.add_chunk(doc.id, text="hello")
+
+        with pytest.raises(RuntimeError, match="opensearch unreachable"):
+            await service.push_to_store(doc.id, "rh-corpus-v3")
+        assert await repos["pushes"].find_latest(doc.id, "store-uuid-1") is None
+
+    async def test_a_long_failure_message_is_cut_on_the_link(
+        self, repos, store_repo, link_repo, doc
+    ):
+        failing = AsyncMock()
+        failing.ingest.side_effect = RuntimeError("x" * 900)
+        service = ChunkService(
+            chunk_repo=repos["chunks"],
+            chunk_edit_repo=repos["edits"],
+            chunk_push_repo=repos["pushes"],
+            document_repo=repos["documents"],
+            analysis_repo=repos["analyses"],
+            ingestion_service=failing,
+            store_repo=store_repo,
+            link_repo=link_repo,
+        )
+        await service.add_chunk(doc.id, text="hello")
+        with pytest.raises(RuntimeError):
+            await service.push_to_store(doc.id, "rh-corpus-v3")
+        link = await link_repo.find_one(doc.id, "store-uuid-1")
+        assert link.error_message == "x" * 500
 
 
 class TestListPushes:
