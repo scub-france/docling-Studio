@@ -931,8 +931,8 @@ dev = [
 ]
 local = [
     { name = "docling", specifier = ">=2.80.0,<3.0.0" },
-    { name = "torch", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "torchvision", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torch", specifier = ">=2.13.0,<3.0.0", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchvision", specifier = ">=0.28.0,<1.0.0", index = "https://download.pytorch.org/whl/cpu" },
 ]
 reasoning = [
     { name = "docling-agent", specifier = "==0.6.0" },

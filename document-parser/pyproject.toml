@@ -39,8 +39,10 @@ local = [
   # [tool.uv.sources] below. Without this, `uv sync --group local` would
   # resolve to the default (CUDA) build from PyPI — ~3 GB of useless
   # CUDA + triton in the latest-local image. See docs/design/254-docker-slim-post-uv.md.
-  "torch",
-  "torchvision",
+  # Bounded like every other dependency (#audit-08, 8.5.2): the lock holds
+  # 2.13.0 / 0.28.0, and a major bump must be a deliberate change.
+  "torch>=2.13.0,<3.0.0",
+  "torchvision>=0.28.0,<1.0.0",
 ]
 # Opt-in reasoning stack (R&D). Pulled in only when the image is built
 # with --build-arg WITH_REASONING=true (see document-parser/Dockerfile +
