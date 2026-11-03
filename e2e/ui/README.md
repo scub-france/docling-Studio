@@ -51,7 +51,7 @@ Features are in `src/test/resources/`, one folder per area:
 
 ## Tags in CI
 
-CI runs `@critical` only: `ci.yml` on every push to `main`, and `release-gate.yml` on every pull request to `main`. Both call `mvn test` with `-Dkarate.options="--tags @critical"` and no `-Dtest`. The `--tags` option replaces the tags of each `UIRunner` method, so every critical scenario runs three times.
+CI runs `@critical` only: `ci.yml` on every push to `main`, and `release-gate.yml` on every pull request to `main`. Both call `mvn test` with `-Dtest='UIRunner#testCritical'` and `-Dkarate.options="--tags @critical"`, so each critical scenario runs once. Before 0.7.4 they passed no `-Dtest`: Maven ran all three `UIRunner` methods, `--tags` replaced their tags, and every critical scenario ran three times.
 
 Every feature also has `@ui`. Some have `@regression`, or `@reasoning-off` on scenarios that expect Ask to be off (the default). No CI job selects these tags, so tests outside `@critical` may be out of date.
 

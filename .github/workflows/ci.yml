@@ -212,9 +212,12 @@ jobs:
       - name: Warm up docling-serve
         run: bash .github/scripts/warmup-docling-serve.sh
 
+      # -Dtest picks one UIRunner method: without it every @critical scenario
+      # ran 3 times, once per method. Mirrors release-gate.yml.
       - name: Run critical UI tests
         run: >
           mvn test -f e2e/ui/pom.xml
+          -Dtest='UIRunner#testCritical'
           -DbaseUrl=http://localhost:3000
           -DuiBaseUrl=http://localhost:3000
           -Dkarate.options="--tags @critical"
