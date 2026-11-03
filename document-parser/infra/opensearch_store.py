@@ -199,7 +199,7 @@ class OpenSearchStore:
         except NotFoundError:
             return 0
 
-    # -- full-text search (bonus from spec) ------------------------------------
+    # -- full-text search ------------------------------------------------------
 
     async def search_fulltext(
         self,
@@ -209,11 +209,7 @@ class OpenSearchStore:
         k: int = 10,
         doc_id: str | None = None,
     ) -> list[SearchResult]:
-        """Full-text search on the content field.
-
-        This method is not part of the VectorStore protocol but is specified
-        in the issue acceptance criteria.
-        """
+        """Full-text search on the content field (`VectorStore.search_fulltext`)."""
         must: list[dict[str, Any]] = [{"match": {"content": query_text}}]
         if doc_id:
             must.append({"term": {"doc_id": doc_id}})
