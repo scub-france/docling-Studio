@@ -10,7 +10,8 @@ Verification is deliberately tolerant in three ways, each covering how an
 honest agent quotes — a partial quote, a quote from inside the section an
 anchor covers, and reflowed whitespace — and strict about the two failures
 that matter: a ref that does not exist, and a quote that is nowhere in what
-the ref covers.
+the ref covers. The matching rules themselves are pure and live in
+`domain.citation_match`; this service loads the parse and words the verdict.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from domain.anchors import DocumentAnchor, normalise_quote, quote_hash
-from domain.element_reader import element_text, resolve, section_refs
+from domain.citation_match import MIN_QUOTE_CHARS, locate_quote
+from domain.element_reader import resolve
 from domain.navigation import (
     Citation,
     CitationCheck,
@@ -28,19 +30,15 @@ from domain.navigation import (
     estimate_tokens,
 )
 from domain.parse_index import parse_page_ref
-from domain.spans import is_span, span_ref, span_start
+from domain.spans import is_span, span_start
 from services.navigation_errors import (
     InvalidArgumentError,
     NavigationServiceError,
     RefNotFoundError,
 )
 
-# Below this, a match proves nothing: "e" or "mois" is in most sections.
-MIN_QUOTE_CHARS = 10
-
 if TYPE_CHECKING:
     from domain.navigation import ResolvedElement
-    from domain.parse_index import DocumentIndex
     from services.navigation_config import NavigationConfig
     from services.parse_loader import LoadedParse, ParseLoader
 
@@ -132,7 +130,7 @@ class CitationService:
                 actual_quote=self._clipped(element.text),
             )
 
-        match = self._locate_quote(parse.index, anchor.ref, element, claimed)
+        match = locate_quote(parse.index, anchor.ref, element, claimed)
         if match is None:
             return CitationCheck(
                 valid=False,
@@ -208,84 +206,6 @@ class CitationService:
         """The id of the current parse when the anchor pins an older one."""
         latest = (await self._parses.analyses.latest_parsed_ids([document_id])).get(document_id)
         return latest if latest is not None and latest != version_id else None
-
-    @staticmethod
-    def _locate_quote(
-        index: DocumentIndex,
-        ref: str,
-        element: ResolvedElement,
-        claimed: str,
-    ) -> ResolvedElement | None:
-        """Return the element carrying `claimed`, or None.
-
-        Three passes, narrowest first: the anchor itself, then each element it
-        covers, then runs of consecutive elements. The third is what makes a
-        quote that finishes in the next paragraph verifiable instead of
-        drifted — and it answers with a span anchor, so the citation the agent
-        publishes covers the whole passage it quoted.
-        """
-        # A span's own text is all of its members: answering with it would
-        # hand back the range as sent, however wide. Look inside it instead.
-        if not is_span(ref) and claimed in normalise_quote(element.text):
-            return element
-        covered = section_refs(index, ref)
-        for candidate in covered:
-            if candidate == ref:
-                continue
-            found = resolve(index, candidate)
-            if found is not None and claimed in normalise_quote(found.text):
-                return found
-        return CitationService._locate_across(index, covered, claimed)
-
-    @staticmethod
-    def _locate_across(
-        index: DocumentIndex,
-        refs: list[str],
-        claimed: str,
-    ) -> ResolvedElement | None:
-        """The smallest run of consecutive elements containing `claimed`.
-
-        Windows grow from each starting element and stop as soon as the text
-        *before* the window's last addition is already longer than the claim:
-        past that point no match could still involve the element the window
-        starts at, so extending it only re-tests what the next start will.
-        That bound is what keeps this linear-ish over a long section instead
-        of quadratic.
-        """
-        texts = [(ref, normalise_quote(element_text(index, ref))) for ref in refs]
-        texts = [(ref, text) for ref, text in texts if text]
-        # Longer than everything the anchor covers, joined: no window can hold it.
-        if len(claimed) > sum(len(text) + 1 for _, text in texts):
-            return None
-        for start, (_, head) in enumerate(texts):
-            joined = head
-            for end in range(start + 1, len(texts)):
-                if len(joined) > len(claimed) + len(head):
-                    break
-                joined = f"{joined} {texts[end][1]}"
-                if claimed in joined:
-                    first = CitationService._trim_left(texts, start, end, claimed)
-                    return resolve(index, span_ref(texts[first][0], texts[end][0]))
-        return None
-
-    @staticmethod
-    def _trim_left(
-        texts: list[tuple[str, str]],
-        start: int,
-        end: int,
-        claimed: str,
-    ) -> int:
-        """Drop leading elements the quote does not actually reach into.
-
-        The scan finds the leftmost start that works, and the section's own
-        heading works for every quote inside it — so without this, quoting one
-        paragraph of Article 12 would come back as a span opening on the title
-        of Article 12. The end needs no such trim: the scan already stops at
-        the first one that matches.
-        """
-        while start < end and claimed in " ".join(text for _, text in texts[start + 1 : end + 1]):
-            start += 1
-        return start
 
     def deep_link(self, version_id: str, element: ResolvedElement) -> str | None:
         """The Studio URL that opens the cited parse on this element — None
