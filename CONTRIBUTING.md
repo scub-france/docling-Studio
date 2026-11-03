@@ -18,7 +18,9 @@ flowchart LR
 ```
 
 - Every change starts from a GitHub issue.
-- Branch from the current release branch, never from `main`. `main` only receives releases and hotfixes. The current release branch is the highest one in `git branch -r --list 'origin/release/*'`.
+- Branch from a release branch, never from `main`. `main` only receives releases and hotfixes. Several release branches can be open at once, so pick it this way:
+    - the issue has a milestone: use the release branch of that version (milestone `0.8.0`, branch `release/0.8.0`);
+    - it has none: use the next release, the lowest `release/x.y.z` in `git branch -r --list 'origin/release/*'` that has no `vx.y.z` tag yet (`git tag --list 'v*'`).
 - Name the branch `<type>/<issue>-<short-slug>`, where type is `feature`, `fix`, `docs`, `test` or `chore`. Example: `fix/142-upload-empty-pdf`.
 - Open the pull request against that release branch, with `Closes #<issue>` in the description.
 - Urgent fix on a published version: branch `hotfix/...` from `main`, pull request to `main`.
