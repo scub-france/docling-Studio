@@ -25,7 +25,7 @@ flowchart LR
 
 | Item | What it is for |
 |------|----------------|
-| **Home** | Drop a PDF to import it. Shows counters and your 5 latest documents. |
+| **Home** | Drop a PDF to import it, or upload a PDF with its Docling analysis. Shows counters and your 5 latest documents. |
 | **Docs** | Your PDFs: import, open, analyze several at once, download, delete. |
 | **Analyses** | Every analysis: open the result, delete. |
 | **Runs** | Nothing yet. The page says "Coming soon". |
@@ -46,7 +46,7 @@ To look at the pages first, open the document from **Docs**. It shows in the sam
 ## Run an analysis
 
 1. In **Docs**, click **Open visualization** on the document.
-2. Click **New analysis**. While Docling works, a bar under the title shows how far it is: the percentage and the pages done for a long PDF, the time elapsed otherwise. When the analysis completes, its result opens by itself. If it fails, the reason shows next to the button.
+2. Open the **⋯** menu next to the title and click **New analysis**. While Docling works, a bar under the title shows how far it is: the percentage and the pages done for a long PDF, the time elapsed otherwise. When the analysis completes, its result opens by itself. If it fails, the reason shows next to the menu.
 
 There are no options to choose here. The server settings apply: OCR on, table structure on, and the table mode set by the admin ("accurate" by default).
 
@@ -56,6 +56,15 @@ There are no options to choose here. The server settings apply: OCR on, table st
 2. Click **Analyze**. One analysis starts per document, and **Analyses** opens.
 
 Their status updates by itself until they end, with the percentage of long PDFs. The server runs three analyses at a time and queues the others. If some analyses cannot start, **Docs** stays open and lists them with the reason. They stay ticked, so you can try again.
+
+## Import a Docling analysis
+
+Already ran Docling on the PDF elsewhere (the `docling` command, Docling Serve, another Docling Studio)? Import its Docling JSON instead of analyzing the PDF again.
+
+- For a document already in **Docs**: click the **Import analysis** icon on its row, or open the document and choose **Import analysis** in its **⋯** menu. Pick the `.json` file. The result opens when the import is done.
+- For a new PDF: on **Home**, click **Upload PDF and Docling analysis** and choose the PDF and its `.json` together. The document then shows in **Docs**, and the analysis in **Analyses**.
+
+The **Docling JSON** that **Download** gives on a result page can be imported this way. Studio checks that the file is a valid Docling document, not that it comes from this PDF.
 
 ## Open the result
 
