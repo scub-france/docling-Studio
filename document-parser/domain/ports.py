@@ -558,7 +558,13 @@ class PageRasterizer(Protocol):
     """
 
     def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
-        """Return `page` of the document at `storage_path` as PNG bytes."""
+        """Return `page` of the document at `storage_path` as PNG bytes.
+
+        Raises `FileNotFoundError` when nothing is stored at `storage_path`,
+        and `ValueError` when the document has no such page; any other
+        exception means the file could not be rendered. Callers tell the cases
+        apart by these types: a page the document lacks is not a broken file.
+        """
         ...
 
     def crop(
