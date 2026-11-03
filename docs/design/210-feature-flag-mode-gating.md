@@ -4,7 +4,7 @@
 - **Title on issue:** [ENHANCEMENT] Feature flags hide entire mode tabs instead of routing to 404
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-04-29
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.6.0)
 - **Target milestone:** 0.6.0 — Doc-centric ingest
 - **Impacted layers:** frontend: features/feature-flags · app/router · pages · shared · backend: api/health
 - **Audit dimensions likely touched:** Clean Code · Tests · Security · Documentation

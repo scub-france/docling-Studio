@@ -30,7 +30,7 @@ the linked issue. Everything else is on the author.
 - **Title on issue:** [FEATURE] Admin panel — runtime configuration for reasoning mode
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-08-04
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.7.0)
 - **Target milestone:** 0.7.0 — UI Redesign Maquette
 - **Impacted layers:** backend: domain · api · services · persistence · infra · frontend: `features/admin-config` (new) · `features/feature-flags` · `features/settings` · `shared/i18n`
 - **Audit dimensions likely touched:** Hexagonal Architecture · DDD · Security · Decoupling · Tests · Documentation

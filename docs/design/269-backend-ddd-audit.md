@@ -11,7 +11,7 @@ follow-up issues for legacy retirements).
 - **Title on issue:** [CHORE] Backend audit — enforce DDD granularity, strip UX-shaped routes
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-05-12
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.6.1)
 - **Target milestone:** 0.6.1 — Stabilisation
 - **Impacted layers:** backend: `api/` (audit only — no routes added/removed in this PR)
 - **Audit dimensions likely touched:** Hexagonal Architecture · DDD · Decoupling · Documentation

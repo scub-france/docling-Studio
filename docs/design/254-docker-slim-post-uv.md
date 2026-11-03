@@ -14,7 +14,7 @@ Bump the Status line as the doc progresses; do not delete sections on the way.
 - **Title on issue:** [ENHANCEMENT] Optim taille image latest-local (sortir reasoning, multi-stage, dockerignore)
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-05-29
-- **Status:** Draft
+- **Status:** Implemented (shipped in 0.6.2)
 - **Target milestone:** 0.6.2 — uv + Docker slim
 - **Impacted layers:** infra/CI (Dockerfile, pyproject groups, compose) · docs (README, this doc)
 - **Audit dimensions likely touched:** CI/Build · Performance · Decoupling · Documentation

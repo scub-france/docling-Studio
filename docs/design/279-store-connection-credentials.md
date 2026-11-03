@@ -30,7 +30,7 @@ the linked issue. Everything else is on the author.
 - **Title on issue:** [FEATURE] Move store connection (URI/user/password) into the Store entity
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-05-18
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.6.1)
 
 > **Note on design depth:** §3–§11 are intentionally light — the design was
 > negotiated in conversation prior to scaffolding (scope adjustment recorded

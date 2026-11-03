@@ -30,7 +30,7 @@ the linked issue. Everything else is on the author.
 - **Title on issue:** [BUG] Doc tab: chunk mode returns 404
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-05-07
-- **Status:** Draft
+- **Status:** Implemented (shipped in 0.6.1)
 - **Target milestone:** 0.6.0 — Doc-centric ingest
 - **Impacted layers:** backend: api · services · (persistence read-only — déjà en place) · frontend: features/chunks (zéro changement attendu, déjà aligné sur le contrat) · e2e: nouveau scénario Karate
 - **Audit dimensions likely touched:** Hexagonal Architecture · DDD · Decoupling · Tests · Documentation

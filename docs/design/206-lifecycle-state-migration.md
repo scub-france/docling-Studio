@@ -4,7 +4,7 @@
 - **Title on issue:** [CHORE] Migrate existing documents to the new lifecycle state model
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-04-29
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.6.0)
 - **Target milestone:** 0.6.0 — Doc-centric ingest
 - **Impacted layers:** backend: persistence · services · infra (CLI) · frontend (none)
 - **Audit dimensions likely touched:** CI/Build · Tests · Documentation · Security

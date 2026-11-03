@@ -4,7 +4,7 @@
 - **Title on issue:** [FEATURE] Audit trail for chunk edits (who, when, before/after)
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-04-29
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.6.0)
 - **Target milestone:** 0.6.0 — Doc-centric ingest
 - **Impacted layers:** backend: domain · persistence · services · api · frontend: features/chunking · shared
 - **Audit dimensions likely touched:** Hexagonal Architecture · DDD · Tests · Security · Documentation

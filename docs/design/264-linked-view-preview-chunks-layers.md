@@ -30,7 +30,7 @@ the linked issue. Everything else is on the author.
 - **Title on issue:** [FEAT] Linked view — preview + chunks panel + LAYERS filters
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-05-12
-- **Status:** Accepted (amended after first build — mode rename + Parse view scope, see §13)
+- **Status:** Implemented (shipped in 0.6.1; amended after first build — mode rename + Parse view scope, see §13)
 - **Target milestone:** 0.6.1 — Stabilisation
 - **Impacted layers:** frontend (`features/document`, `features/chunks`, `pages/Doc*`, `shared/ui/PaginationBar`) · e2e
 - **Audit dimensions likely touched:** Decoupling · DRY · KISS · Tests · Performance

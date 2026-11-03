@@ -4,7 +4,7 @@
 - **Title on issue:** [FEATURE] Auto-detect Stale state via chunk content hash
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-04-29
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.6.0)
 - **Target milestone:** 0.6.0 — Doc-centric ingest
 - **Impacted layers:** backend: domain · persistence · services · frontend (read-only)
 - **Audit dimensions likely touched:** Hexagonal Architecture · DDD · Performance · Tests · Security

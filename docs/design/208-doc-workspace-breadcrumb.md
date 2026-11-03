@@ -4,7 +4,7 @@
 - **Title on issue:** [ENHANCEMENT] Refactor breadcrumb to Studio › <doc> › <mode>
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-04-29
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.6.0)
 - **Target milestone:** 0.6.0 — Doc-centric ingest
 - **Impacted layers:** frontend: shared/ui · app
 - **Audit dimensions likely touched:** Clean Code · Tests · Documentation

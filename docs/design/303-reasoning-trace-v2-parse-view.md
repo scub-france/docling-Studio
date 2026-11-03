@@ -30,7 +30,7 @@ the linked issue. Everything else is on the author.
 - **Title on issue:** [FEATURE] Reasoning Trace v2 — Parse-view trace timeline + Ask panel
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-06-10
-- **Status:** Accepted
+- **Status:** Implemented (shipped in 0.7.0)
 - **Target milestone:** 0.7.0 — UI Redesign Maquette
 - **Impacted layers:** backend: domain · services · api · infra · frontend: `features/reasoning` (rebuilt) · `features/document` · `features/analysis` (decouple) · `app/router` · e2e · infra/CI (uv source + `WITH_REASONING` image)
 - **Audit dimensions likely touched:** Hexagonal Architecture · DDD · Decoupling · DRY · Tests · Performance · CI/Build · Documentation
