@@ -80,16 +80,61 @@ class DocumentIndex:
 def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> DocumentIndex:
     """Walk a parse once and pre-compute order, breadcrumbs and provenance."""
     skip_refs, inline_meta = tree_reader.build_collapse_index(doc_data)
+    by_ref = _items_by_ref(doc_data, tree_reader)
+    order = [ref for ref in tree_reader.dfs_order(doc_data, skip_refs) if ref in by_ref]
+    heading_path, section_end = _heading_paths(order, by_ref, inline_meta)
+    page_sizes = _page_sizes(doc_data, tree_reader)
+    provenance = _provenance(by_ref, inline_meta, tree_reader, page_sizes)
 
+    # Union, not `or`: a parse whose `pages` map is partial (a page with no
+    # `size`) would otherwise drop that page from the map entirely — and the
+    # page fallback exists precisely for scans, where that metadata is the
+    # first thing to be missing. A page an element sits on is a page.
+    page_numbers = sorted(
+        set(page_sizes) | {number for pages in provenance.pages_of.values() for number in pages}
+    )
+
+    return DocumentIndex(
+        by_ref=by_ref,
+        order=order,
+        position={ref: idx for idx, ref in enumerate(order)},
+        heading_path=heading_path,
+        section_end=section_end,
+        page_of=provenance.page_of,
+        pages_of=provenance.pages_of,
+        bbox_of=provenance.bbox_of,
+        inline_meta=inline_meta,
+        page_numbers=page_numbers,
+        page_sizes=page_sizes,
+        boxes_of=provenance.boxes_of,
+    )
+
+
+def _items_by_ref(
+    doc_data: dict[str, Any], tree_reader: DocumentTreeReader
+) -> dict[str, dict[str, Any]]:
+    """Every element of the parse by its `self_ref`; one without a ref is not
+    addressable, so it is left out."""
     by_ref: dict[str, dict[str, Any]] = {}
     for _, item in tree_reader.iter_items(doc_data):
         ref = item.get("self_ref")
         if ref:
             by_ref[ref] = item
+    return by_ref
 
-    order = [ref for ref in tree_reader.dfs_order(doc_data, skip_refs) if ref in by_ref]
-    position = {ref: idx for idx, ref in enumerate(order)}
 
+def _heading_paths(
+    order: list[str],
+    by_ref: dict[str, dict[str, Any]],
+    inline_meta: dict[str, dict[str, Any]],
+) -> tuple[dict[str, list[str]], dict[str, int]]:
+    """Each element's heading breadcrumb, and where each heading's section ends.
+
+    One pass over reading order with a stack of open headings: a heading
+    closes every open one at its level or deeper, so its section ends where
+    the next peer (or a higher heading) starts. `section_end` is a position
+    in `order`, exclusive; a section still open at the end runs to the end.
+    """
     heading_path: dict[str, list[str]] = {}
     section_end: dict[str, int] = {}
     stack: list[tuple[int, str, str]] = []  # (level, ref, title)
@@ -109,7 +154,13 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
     while stack:
         _, closed, _ = stack.pop()
         section_end[closed] = len(order)
+    return heading_path, section_end
 
+
+def _page_sizes(
+    doc_data: dict[str, Any], tree_reader: DocumentTreeReader
+) -> dict[int, tuple[float, float]]:
+    """`(width, height)` of each page the parse gives a full size for."""
     page_sizes: dict[int, tuple[float, float]] = {}
     for page in tree_reader.iter_pages(doc_data):
         number = page.get("page_no")
@@ -118,7 +169,30 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         width, height = page.get("width"), page.get("height")
         if width and height:
             page_sizes[int(number)] = (float(width), float(height))
+    return page_sizes
 
+
+@dataclass(frozen=True)
+class _Provenance:
+    """Where each located element sits — see the fields of `DocumentIndex`."""
+
+    page_of: dict[str, int]
+    pages_of: dict[str, frozenset[int]]
+    bbox_of: dict[str, BoundingBox]
+    boxes_of: dict[str, tuple[BoundingBox, ...]]
+
+
+def _provenance(
+    by_ref: dict[str, dict[str, Any]],
+    inline_meta: dict[str, dict[str, Any]],
+    tree_reader: DocumentTreeReader,
+    page_sizes: dict[int, tuple[float, float]],
+) -> _Provenance:
+    """The pages and boxes of every element that has a page.
+
+    An inline group has no provenance of its own: it takes its runs', which
+    the collapse index gathered. An element with no page is left out.
+    """
     page_of: dict[str, int] = {}
     pages_of: dict[str, frozenset[int]] = {}
     bbox_of: dict[str, BoundingBox] = {}
@@ -135,29 +209,7 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         boxes = tuple(_box(prov, page_sizes) for prov in located)
         bbox_of[ref] = boxes[0]
         boxes_of[ref] = boxes
-
-    # Union, not `or`: a parse whose `pages` map is partial (a page with no
-    # `size`) would otherwise drop that page from the map entirely — and the
-    # page fallback exists precisely for scans, where that metadata is the
-    # first thing to be missing. A page an element sits on is a page.
-    page_numbers = sorted(
-        set(page_sizes) | {number for pages in pages_of.values() for number in pages}
-    )
-
-    return DocumentIndex(
-        by_ref=by_ref,
-        order=order,
-        position=position,
-        heading_path=heading_path,
-        section_end=section_end,
-        page_of=page_of,
-        pages_of=pages_of,
-        bbox_of=bbox_of,
-        inline_meta=inline_meta,
-        page_numbers=page_numbers,
-        page_sizes=page_sizes,
-        boxes_of=boxes_of,
-    )
+    return _Provenance(page_of=page_of, pages_of=pages_of, bbox_of=bbox_of, boxes_of=boxes_of)
 
 
 def _box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> BoundingBox:
