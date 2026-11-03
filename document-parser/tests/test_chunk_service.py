@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,6 +11,7 @@ import pytest
 
 from domain.models import AnalysisJob, AnalysisStatus, Chunk, Document, Store
 from domain.value_objects import (
+    ChunkBbox,
     ChunkDocItem,
     ChunkEditAction,
     ChunkResult,
@@ -255,6 +257,163 @@ class TestMergeChunks:
         a = await service.add_chunk(doc.id, text="a")
         with pytest.raises(ChunkValidationError):
             await service.merge_chunks(doc.id, [a.id])
+
+
+class TestSplitRules:
+    """The split the editor ships, pinned on its edges (audit 0.7.4, 01 MAJ-1)."""
+
+    async def test_both_halves_inherit_everything_but_the_token_count(self, service, repos, doc):
+        src = Chunk(
+            document_id=doc.id,
+            sequence=4,
+            text="abcdef",
+            headings=["H1", "H2"],
+            source_page=3,
+            bboxes=[ChunkBbox(page=3, bbox=[1.0, 2.0, 3.0, 4.0])],
+            doc_items=[ChunkDocItem(self_ref="#/texts/7", label="text")],
+            token_count=12,
+        )
+        await repos["chunks"].insert(src)
+
+        head, tail = await service.split_chunk(doc.id, src.id, cursor_offset=2)
+
+        assert (head.sequence, tail.sequence) == (4, 5)
+        assert (head.text, tail.text) == ("ab", "cdef")
+        for half in (head, tail):
+            assert half.document_id == doc.id
+            assert half.headings == ["H1", "H2"]
+            assert half.source_page == 3
+            assert half.bboxes == src.bboxes
+            assert half.doc_items == src.doc_items
+            assert half.token_count is None
+        assert len({head.id, tail.id, src.id}) == 3
+        retired = await repos["chunks"].find_by_id(src.id)
+        assert retired.deleted_at is not None
+
+    @pytest.mark.parametrize("offset", [-1, 0, 6, 7])
+    async def test_offset_must_fall_strictly_inside_the_text(self, service, doc, offset):
+        src = await service.add_chunk(doc.id, text="abcdef")
+        expected = f"cursorOffset {offset} out of range for chunk of length 6"
+        with pytest.raises(ChunkValidationError, match=re.escape(expected)):
+            await service.split_chunk(doc.id, src.id, cursor_offset=offset)
+        assert [c.id for c in await service.list_chunks(doc.id)] == [src.id]
+
+    @pytest.mark.parametrize(("offset", "texts"), [(1, ("a", "bcdef")), (5, ("abcde", "f"))])
+    async def test_the_extreme_offsets_leave_one_character(self, service, doc, offset, texts):
+        src = await service.add_chunk(doc.id, text="abcdef")
+        head, tail = await service.split_chunk(doc.id, src.id, cursor_offset=offset)
+        assert (head.text, tail.text) == texts
+
+    async def test_the_offset_counts_characters_not_bytes(self, service, doc):
+        src = await service.add_chunk(doc.id, text="été✓x")
+        head, tail = await service.split_chunk(doc.id, src.id, cursor_offset=3)
+        assert (head.text, tail.text) == ("été", "✓x")
+
+    async def test_a_deleted_chunk_cannot_be_split(self, service, doc):
+        src = await service.add_chunk(doc.id, text="abcdef")
+        await service.delete_chunk(doc.id, src.id)
+        with pytest.raises(ChunkNotFoundError):
+            await service.split_chunk(doc.id, src.id, cursor_offset=2)
+
+
+class TestMergeRules:
+    """The merge the editor ships, pinned on its edges (audit 0.7.4, 01 MAJ-1)."""
+
+    async def test_sources_follow_the_sequence_not_the_ids_given(self, service, repos, doc):
+        box = [ChunkBbox(page=p, bbox=[float(p), 0.0, 1.0, 1.0]) for p in range(4)]
+        item_a = ChunkDocItem(self_ref="#/texts/0", label="text")
+        item_b = ChunkDocItem(self_ref="#/texts/1", label="list_item")
+        a = Chunk(
+            document_id=doc.id,
+            sequence=0,
+            text="a",
+            headings=["Ha"],
+            source_page=5,
+            bboxes=[box[0]],
+            doc_items=[item_a],
+            token_count=3,
+        )
+        b = Chunk(
+            document_id=doc.id,
+            sequence=1,
+            text="b",
+            headings=["Hb"],
+            source_page=1,
+            bboxes=[box[1]],
+            doc_items=[item_b],
+        )
+        c = Chunk(
+            document_id=doc.id,
+            sequence=2,
+            text="c",
+            source_page=2,
+            bboxes=[box[2], box[3]],
+            token_count=4,
+        )
+        await repos["chunks"].insert_many([a, b, c])
+
+        merged = await service.merge_chunks(doc.id, [c.id, a.id, b.id])
+
+        assert merged.text == "a\nb\nc"
+        assert merged.sequence == 0
+        assert merged.headings == ["Ha"]
+        assert merged.source_page == 5, "the first source's page, not the smallest"
+        assert merged.bboxes == box
+        assert merged.doc_items == [item_a, item_b]
+        assert merged.token_count == 7
+        assert merged.id not in {a.id, b.id, c.id}
+        assert [x.id for x in await service.list_chunks(doc.id)] == [merged.id]
+
+    @pytest.mark.parametrize("counts", [(None, None), (0, None), (0, 0)])
+    async def test_no_known_token_count_stays_unknown(self, service, repos, doc, counts):
+        pair = [
+            Chunk(document_id=doc.id, sequence=i, text=str(i), token_count=n)
+            for i, n in enumerate(counts)
+        ]
+        await repos["chunks"].insert_many(pair)
+        merged = await service.merge_chunks(doc.id, [c.id for c in pair])
+        assert merged.token_count is None
+
+    async def test_a_sequence_gap_refuses_the_merge(self, service, doc):
+        """Contiguity is read on `sequence`: a deleted chunk between two live
+        ones leaves a gap the merge refuses, though the two look adjacent."""
+        a = await service.add_chunk(doc.id, text="a")
+        b = await service.add_chunk(doc.id, text="b")
+        c = await service.add_chunk(doc.id, text="c")
+        await service.delete_chunk(doc.id, b.id)
+        with pytest.raises(
+            ChunkConflictError, match=re.escape("merge requires contiguous chunks (by sequence)")
+        ):
+            await service.merge_chunks(doc.id, [a.id, c.id])
+
+    async def test_the_same_id_twice_is_not_contiguous(self, service, doc):
+        a = await service.add_chunk(doc.id, text="a")
+        await service.add_chunk(doc.id, text="b")
+        with pytest.raises(ChunkConflictError):
+            await service.merge_chunks(doc.id, [a.id, a.id])
+
+    async def test_unknown_ids_are_named(self, service, doc):
+        a = await service.add_chunk(doc.id, text="a")
+        with pytest.raises(ChunkNotFoundError, match=re.escape("Chunks not found: ['ghost']")):
+            await service.merge_chunks(doc.id, [a.id, "ghost"])
+
+    async def test_a_deleted_or_foreign_chunk_is_not_found(self, service, repos, doc):
+        other = Document(id="doc-2", filename="o.pdf", storage_path="/tmp/o.pdf")
+        await repos["documents"].insert(other)
+        foreign = await service.add_chunk(other.id, text="x")
+        a = await service.add_chunk(doc.id, text="a")
+        gone = await service.add_chunk(doc.id, text="gone")
+        await service.delete_chunk(doc.id, gone.id)
+        for intruder in (foreign, gone):
+            with pytest.raises(ChunkNotFoundError):
+                await service.merge_chunks(doc.id, [a.id, intruder.id])
+
+    @pytest.mark.parametrize("ids", [[], ["only"]])
+    async def test_fewer_than_two_ids(self, service, doc, ids):
+        with pytest.raises(
+            ChunkValidationError, match=re.escape("merge requires at least 2 chunk ids")
+        ):
+            await service.merge_chunks(doc.id, ids)
 
 
 # ---------------------------------------------------------------------------
@@ -913,3 +1072,92 @@ class TestGetTree:
         list_node = tree[0]
         assert list_node["type"] == "list"
         assert [c["label"] for c in list_node["children"]] == ["First", "Second"]
+
+
+class TestTreeHeadingLevels:
+    """How a heading's `level` places it in the tree (audit 0.7.4, 01 MAJ-1)."""
+
+    @staticmethod
+    async def _tree(service, repos, doc, texts: list[dict]) -> list[dict]:
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        for i, text in enumerate(texts):
+            text.setdefault("self_ref", f"#/texts/{i}")
+        job.document_json = json.dumps(
+            {
+                "body": {
+                    "self_ref": "#/body",
+                    "children": [{"$ref": t["self_ref"]} for t in texts],
+                },
+                "texts": texts,
+                "tables": [],
+                "pictures": [],
+                "groups": [],
+            }
+        )
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        return await service.get_tree(doc.id)
+
+    @staticmethod
+    def _shape(nodes: list[dict]) -> list:
+        return [(n["label"], TestTreeHeadingLevels._shape(n["children"])) for n in nodes]
+
+    async def test_a_deeper_heading_nests_and_a_shallower_one_pops(self, service, repos, doc):
+        tree = await self._tree(
+            service,
+            repos,
+            doc,
+            [
+                {"label": "title", "text": "T"},
+                {"label": "section_header", "text": "A", "level": 1},
+                {"label": "section_header", "text": "A.1.1", "level": 3},
+                {"label": "section_header", "text": "A.2", "level": 2},
+                {"label": "text", "text": "p"},
+                {"label": "section_header", "text": "B", "level": 1},
+            ],
+        )
+        assert self._shape(tree) == [
+            ("T", [("A", [("A.1.1", []), ("A.2", [("p", [])])]), ("B", [])]),
+        ]
+
+    @pytest.mark.parametrize("level", [None, 0, -3, 1, "1", 1.0, True])
+    async def test_a_missing_or_low_level_reads_as_one(self, service, repos, doc, level):
+        header = {"label": "section_header", "text": "H"}
+        if level is not None:
+            header["level"] = level
+        tree = await self._tree(
+            service,
+            repos,
+            doc,
+            [
+                {"label": "section_header", "text": "Parent", "level": 1},
+                header,
+            ],
+        )
+        assert self._shape(tree) == [("Parent", []), ("H", [])]
+
+    async def test_a_numeric_string_level_is_read_as_its_number(self, service, repos, doc):
+        tree = await self._tree(
+            service,
+            repos,
+            doc,
+            [
+                {"label": "section_header", "text": "Parent", "level": 1},
+                {"label": "section_header", "text": "Child", "level": "2"},
+            ],
+        )
+        assert self._shape(tree) == [("Parent", [("Child", [])])]
+
+    async def test_title_opens_level_zero_whatever_its_level(self, service, repos, doc):
+        tree = await self._tree(
+            service,
+            repos,
+            doc,
+            [
+                {"label": "section_header", "text": "H", "level": 1},
+                {"label": "Title", "text": "T", "level": 5},
+                {"label": "section_header", "text": "H2", "level": 1},
+            ],
+        )
+        assert self._shape(tree) == [("H", []), ("T", [("H2", [])])]
