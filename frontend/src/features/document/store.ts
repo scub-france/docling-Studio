@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import type { Analysis, Document, DocumentVersion, Page } from '../../shared/types'
 import { appMaxFileSizeMb } from '../../shared/appConfig'
 import { fetchAnalysis } from '@/features/analysis'
-import { pushChunksToStore } from '@/features/chunks'
 import * as api from './api'
 
 export const useDocumentStore = defineStore('document', () => {
@@ -202,17 +201,6 @@ export const useDocumentStore = defineStore('document', () => {
     }
   }
 
-  async function pushToStore(id: string, store: string): Promise<string | null> {
-    try {
-      const res = await pushChunksToStore(id, store)
-      return res.pushId
-    } catch (e) {
-      error.value = (e as Error).message || 'Failed to push to store'
-      console.error('Push to store failed', e)
-      return null
-    }
-  }
-
   return {
     documents,
     selectedId,
@@ -243,6 +231,5 @@ export const useDocumentStore = defineStore('document', () => {
     remove,
     select,
     rechunk,
-    pushToStore,
   }
 })

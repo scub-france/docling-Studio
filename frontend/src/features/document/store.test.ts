@@ -12,16 +12,11 @@ vi.mock('./api', () => ({
   restoreDocumentVersion: vi.fn(),
 }))
 
-vi.mock('../chunks/api', () => ({
-  pushChunksToStore: vi.fn(),
-}))
-
 vi.mock('../analysis/api', () => ({
   fetchAnalysis: vi.fn(),
 }))
 
 import * as api from './api'
-import * as chunksApi from '../chunks/api'
 import * as analysisApi from '../analysis/api'
 
 describe('useDocumentStore', () => {
@@ -163,25 +158,6 @@ describe('useDocumentStore', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const store = useDocumentStore()
     const result = await store.rechunk('42')
-    expect(result).toBeNull()
-  })
-
-  it('pushToStore() delegates to chunks/api.pushChunksToStore and returns pushId', async () => {
-    chunksApi.pushChunksToStore.mockResolvedValue({
-      pushId: 'p2',
-      summary: { embeds: 5, tokens: 50 },
-    })
-    const store = useDocumentStore()
-    const result = await store.pushToStore('42', 'my-store')
-    expect(chunksApi.pushChunksToStore).toHaveBeenCalledWith('42', 'my-store')
-    expect(result).toBe('p2')
-  })
-
-  it('pushToStore() returns null on error', async () => {
-    chunksApi.pushChunksToStore.mockRejectedValue(new Error('fail'))
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const store = useDocumentStore()
-    const result = await store.pushToStore('42', 'my-store')
     expect(result).toBeNull()
   })
 
