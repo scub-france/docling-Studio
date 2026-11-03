@@ -10,8 +10,7 @@ Feature: UI — Upload a PDF and verify preview
     * waitFor('[data-e2e=upload-zone]')
 
     # Upload via hidden file input
-    * def filePath = karate.toAbsolutePath('classpath:common/data/generated/small.pdf')
-    * driver.inputFile('input[type=file]', filePath)
+    * driver.inputFile('input[type=file]', 'classpath:common/data/generated/small.pdf')
 
     # Verify document appears in the doc list sidebar
     * waitFor('[data-e2e=doc-item]')
@@ -32,8 +31,7 @@ Feature: UI — Upload a PDF and verify preview
     * driver uiBaseUrl + '/studio'
     * waitFor('[data-e2e=upload-zone]')
 
-    * def filePath = karate.toAbsolutePath('classpath:common/data/generated/medium.pdf')
-    * driver.inputFile('input[type=file]', filePath)
+    * driver.inputFile('input[type=file]', 'classpath:common/data/generated/medium.pdf')
 
     # Verify document appears
     * waitFor('[data-e2e=doc-item]')

@@ -6,5 +6,4 @@ Feature: Helper — Upload a PDF via the UI
   # Prerequisite: driver must already be on a page with .upload-zone (home or studio)
 
   Scenario:
-    * def filePath = karate.toAbsolutePath('classpath:common/data/generated/' + file)
-    * driver.inputFile('input[type=file]', filePath)
+    * driver.inputFile('input[type=file]', 'classpath:common/data/generated/' + file)

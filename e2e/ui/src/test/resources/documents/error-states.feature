@@ -6,8 +6,7 @@ Feature: UI — Upload error states
     * waitFor('[data-e2e=upload-zone]')
 
     # Try to upload a non-PDF file
-    * def filePath = karate.toAbsolutePath('classpath:common/data/generated/not-a-pdf.txt')
-    * driver.inputFile('input[type=file]', filePath)
+    * driver.inputFile('input[type=file]', 'classpath:common/data/generated/not-a-pdf.txt')
 
     # Verify error message is displayed
     * waitFor('[data-e2e=upload-error]')

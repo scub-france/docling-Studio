@@ -10,8 +10,7 @@ Feature: UI — Full happy path via browser
     * waitFor('[data-e2e=upload-zone]')
 
     # Step 2: Upload a PDF via UI
-    * def filePath = karate.toAbsolutePath('classpath:common/data/generated/medium.pdf')
-    * driver.inputFile('input[type=file]', filePath)
+    * driver.inputFile('input[type=file]', 'classpath:common/data/generated/medium.pdf')
 
     # Step 3: Verify document appears in doc list
     * waitFor('[data-e2e=doc-item]')

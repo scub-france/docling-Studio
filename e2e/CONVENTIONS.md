@@ -222,6 +222,7 @@ Commands are in [api/README.md](api/README.md) and [ui/README.md](ui/README.md).
 | `match x > 0` fails with "no step-definition" | Use `assert x > 0` for numeric comparisons. |
 | `if (...) call read(...)` fails with a JS error | Use `karate.call()` inside `if`. |
 | `input()` on `input[type=file]` crashes | Use `driver.inputFile()`. |
+| `driver.inputFile()` uploads nothing ("Failed to fetch") | Pass the `classpath:` path itself, not `karate.toAbsolutePath(...)`: `inputFile` resolves a plain path against the feature's folder. |
 | `waitFor()` on a spinner times out on fast operations | Wait for the result instead, or use `optional()`. |
 | Nav links break when the language changes | Select with `data-e2e`, not text. |
 | Tests break when a CSS class is renamed | Select with `[data-e2e=...]`, never `.class-name`. |
