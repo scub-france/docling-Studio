@@ -66,6 +66,14 @@ The backend still reads three more variables and returns them in `/api/health`, 
 | `MAX_PASTE_IMAGE_SIZE_MB` | `10` | `maxPasteImageSizeMb` (`null` when `0`) |
 | `PASTE_ALLOWED_IMAGE_TYPES` | `image/png,image/jpeg,image/webp` | `pasteAllowedImageTypes` |
 
+## MCP server
+
+The [MCP server](mcp-server.md) lets AI agents read and cite your documents at `/mcp`. It is on by default, except with `DEPLOYMENT_MODE=huggingface`, and it has no authentication.
+
+Its seven variables are described in [Turn it on or off](mcp-server.md#turn-it-on-or-off): `MCP_ENABLED`, `MCP_ALLOWED_HOSTS`, `MCP_STUDIO_BASE_URL`, `MCP_MAX_READ_TOKENS`, `MCP_MAX_ROUNDS`, `MCP_APPS_ENABLED` and `MCP_CITATION_CARD`. Docker Compose forwards the first three only.
+
+**Settings** › **MCP server** turns the server off and on while it runs, and **Settings** › **Read budgets** changes `MCP_MAX_ROUNDS`, `MCP_MAX_READ_TOKENS` and `MCP_STUDIO_BASE_URL` without a restart.
+
 ## Optional services
 
 ```mermaid
@@ -128,7 +136,7 @@ These compose settings are for a laptop: OpenSearch runs without security and Ne
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
-| `DEPLOYMENT_MODE` | `self-hosted` | `huggingface` shows a demo banner and makes **Settings** › **Ask** read-only. |
+| `DEPLOYMENT_MODE` | `self-hosted` | `huggingface` shows a demo banner, makes **Settings** › **Ask** and the MCP sections of **Settings** read-only, and turns the MCP server off unless `MCP_ENABLED=true`. |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Browser origins allowed to call the API, comma-separated. Only needed when the UI is served from another address. |
 | `UPLOAD_DIR` | `/app/uploads` in the images | Folder for uploaded PDFs. |
 | `DB_PATH` | `/app/data/docling_studio.db` in the images | SQLite database: documents, analyses, stores and settings saved in the app. |
