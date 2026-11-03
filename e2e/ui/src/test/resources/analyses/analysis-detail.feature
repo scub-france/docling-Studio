@@ -60,9 +60,12 @@ Feature: UI — Saved analysis detail page
     # UI — the detail page is read-only and links back to its document.
     * driver uiBaseUrl + '/analyses/' + analysisOldId
     * waitFor('[data-e2e=parse-tab]')
-    * assert !exists('[data-e2e=parse-new-analysis]')
+    # New analysis lives in the document actions menu, which this page lacks.
+    * match karate.sizeOf(locateAll('[data-e2e=doc-actions-trigger]')) == 0
     * click('[data-e2e=analysis-open-document]')
     * waitForUrl('/docs/' + docId)
     * waitFor('[data-e2e=document-viewer]')
+    # The document workspace has the menu, so the check above can fail.
+    * waitFor('[data-e2e=doc-actions-trigger]')
 
     * call read('classpath:common/helpers/cleanup-by-name.feature') { filename: 'small.pdf' }
