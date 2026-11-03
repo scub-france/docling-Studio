@@ -1,11 +1,12 @@
 # Docker build context for `document-parser/Dockerfile` (context: ./document-parser).
 # Keeps the COPY . . layer slim — anything not needed at runtime is filtered here.
 
-# Python caches & venv
+# Python caches & venv. A pattern without `**/` only matches at the context
+# root, and most __pycache__ dirs sit in subpackages (api/, infra/, ...).
 .venv/
-__pycache__/
-*.pyc
-*.pyo
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 *.egg-info/
 
 # Linter / type-checker / test caches

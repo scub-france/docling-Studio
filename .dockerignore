@@ -20,18 +20,22 @@
 *.md
 LICENSE
 
-# Local env / secrets
-.env
-.env.*
+# Local env / secrets, at any depth (frontend/.env.local would otherwise reach
+# the frontend-build stage, where vite reads it)
+**/.env
+**/.env.*
 
 # Frontend build artefacts (the frontend-build stage runs `npm ci` from sources)
 frontend/node_modules/
 frontend/dist/
+frontend/coverage/
 
 # Backend dev / cache / runtime artefacts
 document-parser/.venv/
-document-parser/__pycache__/
-document-parser/*.pyc
+# Python caches at any depth: a pattern without `**/` only matches at the
+# context root, and most __pycache__ dirs sit in subpackages.
+**/__pycache__/
+**/*.pyc
 document-parser/*.iml
 document-parser/.pytest_cache/
 document-parser/.mypy_cache/

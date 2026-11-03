@@ -1,0 +1,28 @@
+# Docker build context for `frontend/Dockerfile` (context: ./frontend), built by
+# the `frontend` service of docker-compose.yml. The root `Dockerfile` does not
+# read this file: its context is the repository root (see /.dockerignore).
+#
+# The build stage runs `npm ci` from package*.json, then `COPY . .` and
+# `npm run build` (vue-tsc + vite), then nginx copies dist/ and
+# nginx.conf.template. Sources, configs and public/ must stay in the context.
+
+# Recreated by `npm ci` / `npm run build`. A host node_modules would also
+# overwrite, at `COPY . .`, the one `npm ci` just installed for the image's
+# platform.
+node_modules/
+dist/
+coverage/
+
+# Local env / secrets
+.env
+.env.*
+
+# Logs, editor and OS noise
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Docker files themselves (the builder still reads them)
+Dockerfile
+.dockerignore
