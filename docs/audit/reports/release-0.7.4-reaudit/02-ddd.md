@@ -134,7 +134,7 @@ Calcul : conformes = 2.1.1 (3) + 2.1.2 (3) + 2.1.3 (2) + 2.1.4 (2) + 2.2.1 (2) +
 **Statut vs 0.7.4 : inchangé** (renommé : `SourceHop` → `SourceRound`).
 
 - **Localisation** : `document-parser/domain/source_map.py:85-109`, `:211-213`, `:295`
-- **Constat** : `SourceRound` est `frozen=True` (`:85`), mais `build_source_map` ajoute des URI à `round_.cited` après sa création (`round_.cited.append(anchor.uri)`, `:213`). `_Trail.nodes` passe toujours la liste interne `self.reached[...]` par référence à `SourceNode.round_ids` (`:295`), alors que `source_bar.py:59` en fait une copie. Le même module utilise `replace(...)` dans `_rounds` (`:320`). Le commit de typage (`44d0e2f`) et celui du renommage (`6daaa7c`) ont réécrit ces lignes sans traiter le point.
+- **Constat** : `SourceRound` est `frozen=True` (`:85`), mais `build_source_map` ajoute des URI à `round_.cited` après sa création (`round_.cited.append(anchor.uri)`, `:213`). `_Trail.nodes` passe toujours la liste interne `self.reached[...]` par référence à `SourceNode.round_ids` (`:295`), alors que `source_bar.py:61` en fait une copie. Le même module utilise `replace(...)` dans `_rounds` (`:320`). Le commit de typage (`44d0e2f`) et celui du renommage (`6daaa7c`) ont réécrit ces lignes sans traiter le point.
 - **Règle violée** : 2.2.2 — conforme ; dégradation.
 - **Remédiation** (S) : rassembler les citations par round avant de construire les `SourceRound`, ou `replace(round_, cited=[...])` ; `list(...)` à `:295` ; à terme, collections des VO en `tuple[...]`.
 
