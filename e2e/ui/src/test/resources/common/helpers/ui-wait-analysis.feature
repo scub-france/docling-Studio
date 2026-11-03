@@ -7,4 +7,4 @@ Feature: Helper — Wait for analysis to complete via UI polling
 
   Scenario:
     # Poll up to 2 minutes — result-tabs (COMPLETED) or error placeholder (FAILED)
-    * retry(120, 1000).script("document.querySelector('[data-e2e=result-tabs]') || document.querySelector('[data-e2e=result-error]')")
+    * retry(120, 1000).waitForAny('[data-e2e=result-tabs]', '[data-e2e=result-error]')

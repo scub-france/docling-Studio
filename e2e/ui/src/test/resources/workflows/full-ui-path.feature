@@ -75,4 +75,4 @@ Feature: UI — Full happy path via browser
     * click('[data-e2e=doc-delete]')
 
     # Verify document is gone from the list
-    * retry(10, 500).script("!document.querySelector('[data-e2e=doc-item]') || !document.querySelector('[data-e2e=doc-name]').textContent.includes('medium.pdf')")
+    * retry(10, 500).waitUntil("!document.querySelector('[data-e2e=doc-item]') || !document.querySelector('[data-e2e=doc-name]').textContent.includes('medium.pdf')")

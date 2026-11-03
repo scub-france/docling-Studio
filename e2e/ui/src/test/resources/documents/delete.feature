@@ -23,8 +23,9 @@ Feature: UI — Delete a document
     * waitFor('[data-e2e=doc-delete]')
     * click('[data-e2e=doc-delete]')
 
-    # Wait for the doc count to decrease (UI confirmation)
-    * retry(10, 500).script("document.querySelectorAll('[data-e2e=doc-item]').length < " + countBefore)
+    # Wait for the doc count to decrease (UI confirmation). waitUntil, not
+    # script(): script() runs once and never waits (e2e/CONVENTIONS.md).
+    * retry(10, 500).waitUntil("document.querySelectorAll('[data-e2e=doc-item]').length < " + countBefore)
 
     # Cleanup — ensure our uploaded doc is gone regardless
     * call read('classpath:common/helpers/cleanup.feature') { docId: '#(docId)' }
