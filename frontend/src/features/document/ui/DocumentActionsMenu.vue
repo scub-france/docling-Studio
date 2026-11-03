@@ -4,6 +4,7 @@
     <button
       type="button"
       class="document-actions-trigger"
+      data-e2e="doc-actions-trigger"
       :title="t('documentActions.title')"
       :aria-label="t('documentActions.title')"
       :aria-expanded="open"
@@ -22,7 +23,13 @@
       role="menu"
       :aria-label="t('documentActions.title')"
     >
-      <button type="button" role="menuitem" :disabled="startDisabled" @click="start">
+      <button
+        type="button"
+        role="menuitem"
+        data-e2e="doc-actions-start"
+        :disabled="startDisabled"
+        @click="start"
+      >
         {{ t('newAnalysis.title') }}
       </button>
       <button type="button" role="menuitem" :disabled="importing" @click="fileInput?.click()">
