@@ -18,8 +18,8 @@ from infra.ssrf_guard import BLOCKED_TARGET_REASON, resolved_target_is_blocked
 
 logger = logging.getLogger(__name__)
 
-# Same endpoint the sync `OllamaProvider.health_check` uses — returns 200 with
-# the installed model list even on a fresh install.
+# Ollama's list of installed models: it answers 200 even on a fresh install,
+# with an empty list, so reachable and "no model yet" stay distinct.
 _TAGS_PATH = "/api/tags"
 _PROBE_TIMEOUT_SECONDS = 3.0
 
