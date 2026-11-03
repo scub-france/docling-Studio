@@ -13,6 +13,7 @@ import copy
 import pytest
 
 from domain.navigation import CLIP_MARKER, CitationStatus, read_cost
+from domain.value_objects import DocumentLifecycleState
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import (
     DocumentNotFoundError,
@@ -80,6 +81,12 @@ class TestFindDocuments:
     async def test_every_match_returned_is_not_truncated(self):
         search = await _service().find_documents()
         assert search.truncated is False
+
+    async def test_a_row_holds_the_lifecycle_state_member(self):
+        # #audit-02 — the enum member, no longer its bare word; still equal to it.
+        [row] = (await _service().find_documents()).documents
+        assert row.lifecycle_state is DocumentLifecycleState.UPLOADED
+        assert row.lifecycle_state == "Uploaded"
 
 
 class TestGetOutline:

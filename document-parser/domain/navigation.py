@@ -13,6 +13,8 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from domain.value_objects import DocumentLifecycleState
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -34,6 +36,38 @@ class CitationStatus(StrEnum):
     UNKNOWN_REF = "unknown_ref"
     UNKNOWN_VERSION = "unknown_version"
     STALE_VERSION = "stale_version"
+
+
+class OutlineMode(StrEnum):
+    """How a document map was derived: from its headings, or page by page
+    when it has fewer than two (a scanned PDF still gets a usable map)."""
+
+    SECTIONS = "sections"
+    PAGES = "pages"
+
+
+class OutlineNodeKind(StrEnum):
+    """What one entry of the map stands for: a section under its heading, a
+    page (in `pages` mode), or the text before the first heading."""
+
+    SECTION = "section"
+    PAGE = "page"
+    PREAMBLE = "preamble"
+
+
+class SourceStatus(StrEnum):
+    """What an answer's reading did to a place on the map, weakest first.
+
+    - UNREAD  on the bar only: no read reached the section
+    - PATH    on the map only: touched as the route to a marked descendant
+    - READ    a read landed here — or, on the bar, in a section containing it
+    - CITED   a quoted anchor sits here
+    """
+
+    UNREAD = "unread"
+    PATH = "path"
+    READ = "read"
+    CITED = "cited"
 
 
 @dataclass(frozen=True)
@@ -185,10 +219,14 @@ class DocumentSummary:
 
     document_id: str
     filename: str
-    lifecycle_state: str
+    lifecycle_state: DocumentLifecycleState
     page_count: int | None = None
     version_id: str | None = None
     created_at: str | None = None
+
+    def __post_init__(self) -> None:
+        # A caller may pass the plain value; the field holds the member.
+        object.__setattr__(self, "lifecycle_state", DocumentLifecycleState(self.lifecycle_state))
 
 
 @dataclass(frozen=True)
@@ -244,12 +282,16 @@ class OutlineNode:
     ref: str
     uri: str
     title: str
-    kind: str  # "section" | "page"
+    kind: OutlineNodeKind
     level: int
     page: int | None = None
     est_tokens: int = 0
     child_count: int = 0
     children: list[OutlineNode] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # A builder may pass the plain value; the field holds the member.
+        object.__setattr__(self, "kind", OutlineNodeKind(self.kind))
 
 
 @dataclass(frozen=True)
@@ -263,10 +305,14 @@ class DocumentOutline:
     filename: str
     page_count: int | None
     total_est_tokens: int
-    mode: str  # "sections" | "pages" — how the map was derived
+    mode: OutlineMode
     nodes: list[OutlineNode] = field(default_factory=list)
     depth_limited: bool = False
     node_limited: bool = False
+
+    def __post_init__(self) -> None:
+        # A builder may pass the plain value; the field holds the member.
+        object.__setattr__(self, "mode", OutlineMode(self.mode))
 
 
 @dataclass(frozen=True)

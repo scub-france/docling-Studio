@@ -268,7 +268,7 @@ class ReasoningTrace:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class GraphPayload:
     """Cytoscape-shaped projection of a document's structure.
 

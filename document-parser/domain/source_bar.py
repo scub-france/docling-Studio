@@ -14,12 +14,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from domain.navigation import SourceStatus
+
 if TYPE_CHECKING:
     from domain.navigation import OutlineNode
 
-STATUS_UNREAD = "unread"
-_INHERITED = "read"
-_UNMARKED = {None, "path"}
+# A section the trail did not mark itself — or only as a route — is read when
+# a section containing it was, unread otherwise.
+_UNMARKED = {None, SourceStatus.PATH}
 
 
 @dataclass(frozen=True)
@@ -30,14 +32,14 @@ class SourceSegment:
     title: str
     level: int
     tokens: int
-    status: str
+    status: SourceStatus
     page: int | None = None
     hop_ids: list[str] = field(default_factory=list)
 
 
 def build_segments(
     flat: list[tuple[OutlineNode, list[str]]],
-    status: dict[str, str],
+    status: dict[str, SourceStatus],
     reached: dict[str, list[str]],
 ) -> list[SourceSegment]:
     """Every published section, in document order, with what happened to it."""
@@ -47,7 +49,7 @@ def build_segments(
         state = status.get(node.ref)
         if state in _UNMARKED:
             read_above = any(reached.get(ancestor) for ancestor in ancestors)
-            state = _INHERITED if read_above else STATUS_UNREAD
+            state = SourceStatus.READ if read_above else SourceStatus.UNREAD
         segments.append(
             SourceSegment(
                 ref=node.ref,

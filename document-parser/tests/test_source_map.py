@@ -9,11 +9,12 @@ section that holds an element is not always one the outline published.
 from __future__ import annotations
 
 import copy
+import json
 
+import pytest
+
+from domain.navigation import CitationStatus, OutlineMode, OutlineNodeKind, SourceStatus
 from domain.source_map import (
-    STATUS_CITED,
-    STATUS_PATH,
-    STATUS_READ,
     SourceCited,
     SourceRead,
     build_source_map,
@@ -65,13 +66,13 @@ def _refs(nodes):
 class TestContainment:
     async def test_a_cited_element_is_attributed_to_the_section_that_holds_it(self):
         sources, _ = await project(cited=[cite(PREAVIS_REF)])
-        assert status_of(sources)[PREAVIS_SECTION] == STATUS_CITED
+        assert status_of(sources)[PREAVIS_SECTION] == SourceStatus.CITED
 
     async def test_ancestors_are_kept_so_the_tree_is_connected(self):
         sources, _ = await project(cited=[cite(PREAVIS_REF)])
         statuses = status_of(sources)
-        assert statuses[TITLE] == STATUS_PATH
-        assert statuses[ARTICLE_12] == STATUS_PATH
+        assert statuses[TITLE] == SourceStatus.PATH
+        assert statuses[ARTICLE_12] == SourceStatus.PATH
 
     async def test_untouched_branches_are_left_out(self):
         sources, _ = await project(reads=[read(PREAVIS_SECTION)])
@@ -83,28 +84,28 @@ class TestContainment:
         rather than vanishing from the tree."""
         sources, outline = await project(cited=[cite(PREAVIS_REF)], depth=1)
         assert PREAVIS_SECTION not in _refs(outline.nodes)
-        assert status_of(sources)[ARTICLE_12] == STATUS_CITED
+        assert status_of(sources)[ARTICLE_12] == SourceStatus.CITED
 
     async def test_a_span_is_located_by_its_first_member(self):
         sources, _ = await project(cited=[cite(f"{PREAVIS_REF}..#/tables/0")])
-        assert status_of(sources)[PREAVIS_SECTION] == STATUS_CITED
+        assert status_of(sources)[PREAVIS_SECTION] == SourceStatus.CITED
 
     async def test_an_anchor_before_the_first_heading_lands_on_the_preamble(self):
         payload = copy.deepcopy(SECTIONED)
         payload["texts"][0]["label"] = "text"  # the title becomes preamble text
         sources, _ = await project(cited=[cite(TITLE)], payload=payload)
-        assert status_of(sources) == {TITLE: STATUS_CITED}
+        assert status_of(sources) == {TITLE: SourceStatus.CITED}
 
 
 class TestStatus:
     async def test_a_section_read_is_marked_read(self):
         sources, _ = await project(reads=[read(PREAVIS_SECTION)])
-        assert status_of(sources)[PREAVIS_SECTION] == STATUS_READ
+        assert status_of(sources)[PREAVIS_SECTION] == SourceStatus.READ
 
     async def test_cited_wins_over_read_on_the_same_node(self):
         """A section the answer quotes from is a source, not just a stop."""
         sources, _ = await project(reads=[read(PREAVIS_SECTION)], cited=[cite(PREAVIS_REF)])
-        assert status_of(sources)[PREAVIS_SECTION] == STATUS_CITED
+        assert status_of(sources)[PREAVIS_SECTION] == SourceStatus.CITED
 
     async def test_every_hop_that_reached_a_node_is_recorded(self):
         sources, _ = await project(reads=[read(ARTICLE_12), read(PREAVIS_SECTION)])
@@ -220,12 +221,12 @@ class TestHeadlessDocument:
     async def test_an_element_is_attributed_to_its_page(self):
         sources, outline = await project(cited=[cite("#/texts/1")], payload=FLAT)
         assert outline.mode == "pages"
-        assert status_of(sources) == {"#/pages/1": STATUS_CITED}
+        assert status_of(sources) == {"#/pages/1": SourceStatus.CITED}
         assert sources.totals.mode == "pages"
 
     async def test_a_virtual_page_read_maps_to_itself(self):
         sources, _ = await project(reads=[read("#/pages/2")], payload=FLAT)
-        assert status_of(sources) == {"#/pages/2": STATUS_READ}
+        assert status_of(sources) == {"#/pages/2": SourceStatus.READ}
 
 
 class TestSegments:
@@ -244,16 +245,16 @@ class TestSegments:
     async def test_each_segment_says_what_happened_to_it(self):
         sources, _ = await project(reads=[read(ARTICLE_13)], cited=[cite(PREAVIS_REF)])
         status = {segment.ref: segment.status for segment in sources.segments}
-        assert status[ARTICLE_13] == STATUS_READ
-        assert status[PREAVIS_SECTION] == STATUS_CITED
+        assert status[ARTICLE_13] == SourceStatus.READ
+        assert status[PREAVIS_SECTION] == SourceStatus.CITED
         assert status[TITLE] == "unread"
 
     async def test_a_section_read_whole_lights_its_subsections(self):
         """Reading Article 12 reads 12.2 with it."""
         sources, _ = await project(reads=[read(ARTICLE_12)])
         status = {segment.ref: segment.status for segment in sources.segments}
-        assert status[ARTICLE_12] == STATUS_READ
-        assert status[PREAVIS_SECTION] == STATUS_READ
+        assert status[ARTICLE_12] == SourceStatus.READ
+        assert status[PREAVIS_SECTION] == SourceStatus.READ
         assert status[ARTICLE_13] == "unread"
 
 
@@ -292,3 +293,35 @@ class TestWhereItSits:
             reads=[read(PREAVIS_SECTION)], cited=[cite(PREAVIS_REF), cite(PREAVIS_REF)]
         )
         assert len(sources.passages) == 1
+
+
+class TestTypedVocabulary:
+    """#audit-02 — statuses, kinds and modes are StrEnums: the projection
+    holds members, and a member still equals and serialises as its word."""
+
+    async def test_the_projection_holds_members(self):
+        cited = SourceCited(
+            ref=PREAVIS_REF, uri=anchor_uri(PREAVIS_REF), quote="trois mois", status="verified"
+        )
+        sources, outline = await project(reads=[read(PREAVIS_SECTION)], cited=[cited])
+        assert all(isinstance(node.status, SourceStatus) for node in sources.nodes)
+        assert all(isinstance(node.kind, OutlineNodeKind) for node in sources.nodes)
+        assert all(isinstance(seg.status, SourceStatus) for seg in sources.segments)
+        assert sources.passages[0].status is CitationStatus.VERIFIED
+        assert outline.mode is OutlineMode.SECTIONS
+        assert sources.totals.mode is OutlineMode.SECTIONS
+
+    def test_a_member_is_its_word(self):
+        assert SourceStatus.CITED == "cited"
+        words = json.dumps([SourceStatus.UNREAD, OutlineNodeKind.PREAMBLE, OutlineMode.PAGES])
+        assert words == '["unread", "preamble", "pages"]'
+        assert f"[{SourceStatus.READ}]" == "[read]"
+
+    def test_a_plain_value_is_held_as_the_member(self):
+        cited = SourceCited(ref="r", uri="u", status="quote_drift")
+        assert cited.status is CitationStatus.QUOTE_DRIFT
+        assert SourceCited(ref="r", uri="u").status is None
+
+    def test_an_unknown_value_is_refused(self):
+        with pytest.raises(ValueError, match="nonsense"):
+            SourceCited(ref="r", uri="u", status="nonsense")

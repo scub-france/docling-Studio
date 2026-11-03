@@ -84,6 +84,8 @@ class TestFindDocuments:
         row = search["documents"][0]
         assert row["document_id"] == DOC_ID
         assert row["version_id"] == "an-1"
+        # A `DocumentLifecycleState` in the domain, its bare value on the wire.
+        assert type(row["state"]) is str and row["state"] == "Uploaded"
         assert "get_outline" in search["next_step"]
 
     async def test_an_empty_search_is_not_truncated(self):
@@ -109,6 +111,21 @@ class TestGetOutline:
         assert outline["document_id"] == DOC_ID
         assert root["children"][0]["title"].startswith("Article 12")
         assert "read_element" in outline["next_step"]
+
+    async def test_mode_and_kinds_go_on_the_wire_as_plain_strings(self):
+        """#audit-02 — StrEnums in the domain, the same bare words on the wire."""
+        async with _client() as client:
+            result = await client.call_tool("get_outline", {"document_id": DOC_ID})
+        outline = _payload(result)
+        entries, kinds = list(outline["entries"]), []
+        while entries:
+            entry = entries.pop()
+            kinds.append(entry["kind"])
+            entries.extend(entry["children"])
+        assert type(outline["mode"]) is str and outline["mode"] == "sections"
+        assert set(kinds) <= {"section", "page", "preamble"} and "section" in kinds
+        assert all(type(kind) is str for kind in kinds)
+        assert '"mode":"sections"' in result.content[0].text
 
     async def test_page_mode_survives_a_document_without_headings(self):
         service = make_document_tools(job=make_job(FLAT))

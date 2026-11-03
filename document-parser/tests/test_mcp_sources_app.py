@@ -117,6 +117,24 @@ class TestCard:
         assert card["totals"]["over_cap"] is False
         assert card["totals"]["tokens_read"] < card["totals"]["tokens_total"]
 
+    async def test_statuses_kinds_and_mode_go_on_the_wire_as_plain_strings(self):
+        """#audit-02 — StrEnums in the domain, the same bare words in the card
+        and in the text a host without a UI reads."""
+        async with _client(make_document_tools()) as client:
+            result = await _show(client)
+        card = _payload(result)
+        values = (
+            [node["status"] for node in card["map"]]
+            + [node["kind"] for node in card["map"]]
+            + [seg["status"] for seg in card["segments"]]
+            + [p["status"] for p in card["passages"] if p["status"] is not None]
+            + [card["totals"]["mode"]]
+        )
+        assert all(type(value) is str for value in values)
+        assert {node["status"] for node in card["map"]} <= {"path", "read", "cited"}
+        assert card["totals"]["mode"] == "sections"
+        assert "[cited]" in result.content[0].text
+
     async def test_the_text_a_ui_less_host_reads_is_a_tree_not_json(self):
         async with _client(make_document_tools()) as client:
             result = await _show(client)

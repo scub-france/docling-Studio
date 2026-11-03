@@ -26,7 +26,13 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from domain.element_reader import element_text, section_refs
-from domain.navigation import read_cost
+from domain.navigation import (
+    CitationStatus,
+    OutlineMode,
+    OutlineNodeKind,
+    SourceStatus,
+    read_cost,
+)
 from domain.outline_locate import containing_chain, flatten, heading_ranges
 from domain.page_regions import regions_of
 from domain.source_bar import SourceSegment, build_segments
@@ -41,11 +47,7 @@ if TYPE_CHECKING:
 
 # Ordered weakest to strongest: a section that was read and also quoted from
 # is a source, not merely a place the agent passed through.
-STATUS_PATH = "path"
-STATUS_READ = "read"
-STATUS_CITED = "cited"
-
-_RANK = {STATUS_PATH: 0, STATUS_READ: 1, STATUS_CITED: 2}
+_RANK = {SourceStatus.PATH: 0, SourceStatus.READ: 1, SourceStatus.CITED: 2}
 
 
 @dataclass(frozen=True)
@@ -64,15 +66,20 @@ class SourceRead:
 class SourceCited:
     """One anchor the agent cites in its answer, with the quote it gave.
 
-    `status` is what the server said of that quote when it checked it again
-    (a `CitationStatus` value), or None when no quote came with the anchor:
-    a citation nobody checked is shown as cited, never as verified.
+    `status` is what the server said of that quote when it checked it again,
+    or None when no quote came with the anchor: a citation nobody checked is
+    shown as cited, never as verified.
     """
 
     ref: str
     uri: str
     quote: str = ""
-    status: str | None = None
+    status: CitationStatus | None = None
+
+    def __post_init__(self) -> None:
+        # A caller may pass the plain value; the field holds the member.
+        if self.status is not None:
+            object.__setattr__(self, "status", CitationStatus(self.status))
 
 
 @dataclass(frozen=True)
@@ -113,7 +120,7 @@ class SourcePassage:
     uri: str
     ref: str
     quote: str
-    status: str | None
+    status: CitationStatus | None
     regions: list[PageRegion]
     hop_id: str | None = None
     page: int | None = None
@@ -132,9 +139,9 @@ class SourceNode:
     ref: str
     uri: str
     title: str
-    kind: str
+    kind: OutlineNodeKind
     level: int
-    status: str
+    status: SourceStatus
     est_tokens: int = 0
     page: int | None = None
     hop_ids: list[str] = field(default_factory=list)
@@ -149,7 +156,7 @@ class SourceTotals:
     the ratio errs against the agent, never for it.
     """
 
-    mode: str
+    mode: OutlineMode
     rounds: int
     sections_read: int
     sections_total: int
@@ -184,7 +191,7 @@ def build_source_map(
     """Project the reads and the cited anchors onto `outline`."""
     flat = flatten(outline.nodes)
     published = {node.ref: node for node, _ in flat}
-    ranges = heading_ranges(index) if outline.mode == "sections" else []
+    ranges = heading_ranges(index) if outline.mode == OutlineMode.SECTIONS else []
 
     def locate(ref: str) -> str | None:
         for candidate in containing_chain(ref, index, ranges, mode=outline.mode):
@@ -195,14 +202,14 @@ def build_source_map(
     hops, covered = _hops(reads, index, published, locate)
     trail = _Trail()
     for hop in hops:
-        trail.mark(hop.node_ref, STATUS_READ, hop.hop_id)
+        trail.mark(hop.node_ref, SourceStatus.READ, hop.hop_id)
     passages: dict[tuple[str, str], SourcePassage] = {}
     for anchor in cited:
         hop = _hop_covering(span_start(anchor.ref), hops, covered)
         if hop is not None and anchor.uri not in hop.cited:
             hop.cited.append(anchor.uri)
         node_ref = locate(anchor.ref)
-        trail.mark(node_ref, STATUS_CITED, hop.hop_id if hop else None)
+        trail.mark(node_ref, SourceStatus.CITED, hop.hop_id if hop else None)
         node = published.get(node_ref) if node_ref else None
         passages.setdefault(
             (anchor.uri, anchor.quote), _passage(anchor, index, hop, node.title if node else "")
@@ -256,10 +263,10 @@ class _Trail:
     winning — then the nodes to draw, ancestors included."""
 
     def __init__(self) -> None:
-        self.status: dict[str, str] = {}
+        self.status: dict[str, SourceStatus] = {}
         self.reached: dict[str, list[str]] = {}
 
-    def mark(self, node_ref: str | None, state: str, hop_id: str | None) -> None:
+    def mark(self, node_ref: str | None, state: SourceStatus, hop_id: str | None) -> None:
         if node_ref is None:
             return
         self.status[node_ref] = _stronger(self.status.get(node_ref), state)
@@ -279,7 +286,7 @@ class _Trail:
                 title=node.title,
                 kind=node.kind,
                 level=node.level,
-                status=self.status.get(node.ref, STATUS_PATH),
+                status=self.status.get(node.ref, SourceStatus.PATH),
                 est_tokens=node.est_tokens,
                 page=node.page,
                 hop_ids=self.reached.get(node.ref, []),
@@ -348,7 +355,7 @@ def _cost(index: DocumentIndex, refs: set[str]) -> int:
     return sum(read_cost(element_text(index, ref)) for ref in refs)
 
 
-def _stronger(current: str | None, candidate: str) -> str:
+def _stronger(current: SourceStatus | None, candidate: SourceStatus) -> SourceStatus:
     if current is None:
         return candidate
     return candidate if _RANK[candidate] > _RANK[current] else current
