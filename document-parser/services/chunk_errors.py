@@ -48,13 +48,23 @@ _REFUSALS: dict[type[chunk_editing.ChunkEditingError], type[ChunkServiceError]] 
 }
 
 
+def _refusal_error(exc: chunk_editing.ChunkEditingError) -> type[ChunkServiceError]:
+    """The chunk error for a refusal: its class's, else its nearest mapped
+    ancestor's. A refusal the table does not know — a new subclass, or the
+    base raised as is — is a bad edit (400), never a `KeyError` (500)."""
+    for cls in type(exc).__mro__:
+        if cls in _REFUSALS:
+            return _REFUSALS[cls]
+    return ChunkValidationError
+
+
 @contextmanager
 def refusals_as_service_errors() -> Iterator[None]:
     """Answer a refusal of `domain.chunk_editing` with its chunk error."""
     try:
         yield
     except chunk_editing.ChunkEditingError as exc:
-        raise _REFUSALS[type(exc)](str(exc)) from exc
+        raise _refusal_error(exc)(str(exc)) from exc
 
 
 async def require_document(documents: DocumentRepository, document_id: str) -> Document:
