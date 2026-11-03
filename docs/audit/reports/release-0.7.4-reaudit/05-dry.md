@@ -114,7 +114,7 @@ Poids total : 12. **Lecture 0.7.4 : 12 / 12 = 100.** Lecture stricte : 5.3 non c
 | SFC redefinissant `@keyframes spin` | 17 | 16 |
 | Parse booleen `.lower() in ("1","true","yes","on")` dans `infra/settings.py` | 8 | 8 |
 | Ensemble `{"page_header","page_footer"}` redeclare | 3 | 2 |
-| Constructions `ChunkEdit(` dans `services/` | 10 | **0** (fabrique unique `domain/chunk_editing.py:210-218`) |
+| Constructions `ChunkEdit(` dans `services/` | 10 | **0** (fabrique unique `domain/chunk_editing.py:210-219`) |
 | Serialiseurs Chunk → dict camelCase | 4 | 2 |
 | `function formatDate` locales dans `frontend/src` | 4 | 3 |
 | `str(<datetime>)` dans `api/` | 13 | 13 |
@@ -140,7 +140,7 @@ Poids total : 12. **Lecture 0.7.4 : 12 / 12 = 100.** Lecture stricte : 5.3 non c
 | `api/analyses.py` chunks x3 / resume | MIN | Inchange | voir MIN |
 | `_utcnow` / `_new_id` x4, deux formats d'id | MIN | Inchange (une copie deplacee dans le nouveau `chunk_push_service.py`) | voir MIN |
 | Serialisation Chunk ↔ dict x4 | MIN | **Partiellement corrige → INFO** (4 → 2) | voir INFO |
-| Journal `ChunkEdit` x10 + remplacement de chunkset divergent | MIN | **Corrige** | `EditJournal` `domain/chunk_editing.py:159-218` ; `replace_chunkset` unique `persistence/chunk_repo.py:80` |
+| Journal `ChunkEdit` x10 + remplacement de chunkset divergent | MIN | **Corrige** | `EditJournal` `domain/chunk_editing.py:159-219` ; `replace_chunkset` unique `persistence/chunk_repo.py:80` |
 | Regles split / merge en double (domaine mort) | MIN | **Corrige** | `services/chunk_service.py:183` (`chunk_editing.split`), `:212` (`chunk_editing.merge`) |
 | `formatDate` x4 | MIN | **Partiellement corrige** (4 → 3) | voir MIN |
 | Squelette d'action Pinia | MIN | Inchange | voir MIN |
@@ -205,7 +205,7 @@ Poids total : 12. **Lecture 0.7.4 : 12 / 12 = 100.** Lecture stricte : 5.3 non c
 
 ### [MIN → corrige] Journal `ChunkEdit` x10 et remplacement de chunkset
 
-- `EditJournal` (`domain/chunk_editing.py:159-218`) est la seule fabrique de lignes
+- `EditJournal` (`domain/chunk_editing.py:159-219`) est la seule fabrique de lignes
   `chunk_edits` : `git grep "ChunkEdit("` hors tests ne trouve que `chunk_editing.py:211` et le
   mapper `persistence/chunk_edit_repo.py:20`.
 - `replace_chunkset` est unique (port `domain/ports.py:204`, adaptateur
