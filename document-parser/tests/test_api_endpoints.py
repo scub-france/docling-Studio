@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from domain.models import AnalysisJob, Document, DocumentStoreLink, Store
 from domain.value_objects import DocumentStoreLinkState
+from infra.file_storage import LocalFileStorage
 from infra.page_raster import PdfPageRasterizer
 from infra.pdf_inspector import PdfiumInspector
 from main import app
@@ -52,7 +53,8 @@ def document_repos(client, tmp_path):
     service = DocumentService(
         document_repo=repos.documents,
         analysis_repo=AsyncMock(),
-        config=DocumentConfig(upload_dir=str(tmp_path)),
+        config=DocumentConfig(),
+        files=LocalFileStorage(str(tmp_path)),
         rasterizer=PdfPageRasterizer(),
         pdf=PdfiumInspector(),
         store_repo=repos.stores,

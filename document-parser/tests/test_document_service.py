@@ -10,6 +10,7 @@ import pypdfium2 as pdfium
 import pytest
 
 from domain.models import Document
+from infra.file_storage import LocalFileStorage
 from infra.page_raster import PdfPageRasterizer
 from infra.pdf_inspector import PdfiumInspector
 from services.document_service import (
@@ -35,14 +36,15 @@ def _make_service(
     *,
     rasterizer=None,
     pdf=None,
+    files=None,
 ) -> DocumentService:
     """Create a DocumentService with mock repos for testing.
 
-    The PDF ports default to the real adapters: the tests that care about
-    them write real PDFs, the others never reach them.
+    The storage and PDF ports default to the real adapters, the storage over
+    `upload_dir`: the tests that care about them write real files, the others
+    never reach them.
     """
     config = DocumentConfig(
-        upload_dir=upload_dir,
         max_file_size_mb=max_file_size_mb,
         max_page_count=max_page_count,
     )
@@ -50,6 +52,7 @@ def _make_service(
         document_repo=AsyncMock(),
         analysis_repo=AsyncMock(),
         config=config,
+        files=files or LocalFileStorage(upload_dir),
         rasterizer=rasterizer or PdfPageRasterizer(),
         pdf=pdf or PdfiumInspector(),
     )
@@ -176,13 +179,6 @@ class TestCountPages:
 
 
 class TestPageSizes:
-    def test_resolves_docker_upload_path_from_local_worktree(self, tmp_path):
-        service = _make_service(upload_dir=str(tmp_path))
-        local_file = tmp_path / "stored.pdf"
-        local_file.write_bytes(b"%PDF-1.4")
-
-        assert service.resolve_storage_path("/app/uploads/stored.pdf") == local_file
-
     @pytest.mark.asyncio
     async def test_reads_the_size_of_every_page(self, tmp_path):
         service = _make_service(upload_dir=str(tmp_path))
@@ -333,6 +329,7 @@ class TestFindWithStoreLinks:
             document_repo=AsyncMock(),
             analysis_repo=AsyncMock(),
             config=DocumentConfig(),
+            files=LocalFileStorage("/tmp/uploads"),
             rasterizer=PdfPageRasterizer(),
             pdf=PdfiumInspector(),
             store_repo=stores,
@@ -395,6 +392,40 @@ class TestDelete:
 
         # File should NOT have been deleted
         assert outside_file.exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.asyncio
+    async def test_delete_refuses_a_path_that_climbs_out_of_the_upload_dir(self, tmp_path):
+        """`..` in the recorded path is judged by where it lands."""
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        secret = tmp_path / "secret.txt"
+        secret.write_bytes(b"secret")
+        doc = Document(
+            id="doc-1", filename="x.pdf", storage_path=str(uploads / ".." / "secret.txt")
+        )
+
+        service = _make_service(upload_dir=str(uploads))
+        service._document_repo.find_by_id = AsyncMock(return_value=doc)
+        service._document_repo.delete = AsyncMock(return_value=True)
+
+        assert await service.delete("doc-1") is True
+        assert secret.exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error", [FileNotFoundError(), PermissionError(), OSError()], ids=lambda e: type(e).__name__
+    )
+    async def test_a_file_that_cannot_be_removed_does_not_keep_the_record(self, error):
+        files = MagicMock()
+        files.delete.side_effect = error
+        service = _make_service(files=files)
+        doc = _stored(service, "/tmp/uploads/test.pdf")
+        service._document_repo.delete = AsyncMock(return_value=True)
+
+        assert await service.delete("doc-1") is True
+        files.delete.assert_called_once_with(doc.storage_path)
+        service._document_repo.delete.assert_awaited_once_with("doc-1")
 
     @pytest.mark.asyncio
     async def test_delete_not_found_returns_false(self):

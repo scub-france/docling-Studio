@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from domain.models import AnalysisJob, AnalysisStatus, Document
+from infra.file_storage import LocalFileStorage
 from services.export_service import ExportFormat, ExportNotFoundError, ExportService
 
 
@@ -24,15 +25,20 @@ def _analysis(
     )
 
 
-def _make_service(requested: AnalysisJob | None = None) -> ExportService:
-    """A service over one doc whose latest completed analysis is `latest`."""
+def _make_service(requested: AnalysisJob | None = None, *, uploads=".") -> ExportService:
+    """A service over one doc whose latest completed analysis is `latest`;
+    the source PDF is looked up on disk, under `uploads`."""
     document_repo = AsyncMock()
     document_repo.find_by_id.return_value = Document(id="d1", filename="report.pdf")
     analysis_repo = AsyncMock()
     analysis_repo.find_latest_completed.return_value = _analysis("latest")
     analysis_repo.find_latest_completed_by_document.return_value = _analysis("latest")
     analysis_repo.find_by_id.return_value = requested
-    return ExportService(document_repo=document_repo, analysis_repo=analysis_repo)
+    return ExportService(
+        document_repo=document_repo,
+        analysis_repo=analysis_repo,
+        files=LocalFileStorage(str(uploads)),
+    )
 
 
 class TestExportAnalysisSelection:
@@ -82,7 +88,7 @@ class TestExportAnalysisSelection:
     async def test_pdf_export_ignores_the_analysis(self, tmp_path):
         pdf = tmp_path / "report.pdf"
         pdf.write_bytes(b"%PDF-1.4\n")
-        service = _make_service()
+        service = _make_service(uploads=tmp_path)
         service._document_repo.find_by_id.return_value = Document(
             id="d1", filename="report.pdf", storage_path=str(pdf)
         )
@@ -91,3 +97,13 @@ class TestExportAnalysisSelection:
 
         assert result.file_path == str(pdf)
         service._analysis_repo.find_by_id.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_pdf_no_longer_stored_is_not_found(self, tmp_path):
+        service = _make_service(uploads=tmp_path)
+        service._document_repo.find_by_id.return_value = Document(
+            id="d1", filename="report.pdf", storage_path=str(tmp_path / "gone.pdf")
+        )
+
+        with pytest.raises(ExportNotFoundError, match="PDF file not found"):
+            await service.export("d1", ExportFormat.PDF)

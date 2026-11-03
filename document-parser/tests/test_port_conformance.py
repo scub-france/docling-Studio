@@ -14,6 +14,7 @@ import inspect
 import pytest
 
 from domain import ports
+from infra.file_storage import LocalFileStorage
 from infra.neo4j.driver_pool import Neo4jDriverPool
 from infra.opensearch_pool import OpenSearchClientPool
 from infra.opensearch_store import OpenSearchStore
@@ -37,6 +38,7 @@ PAIRS = [
     (ports.VectorStore, OpenSearchStore),
     (ports.VectorStorePool, OpenSearchClientPool),
     (ports.GraphDriverPool, Neo4jDriverPool),
+    (ports.FileStorage, LocalFileStorage),
 ]
 
 

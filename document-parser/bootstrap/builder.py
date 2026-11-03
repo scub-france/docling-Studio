@@ -28,6 +28,7 @@ from bootstrap.factories import (
     build_chunk_service,
     build_document_service,
     build_document_tools,
+    build_file_storage,
     build_ingestion_service,
     build_parse_loader,
     build_reasoning_runner,
@@ -107,6 +108,9 @@ class AppStateBuilder:
         chunk_repo = SqliteChunkRepository()
         chunk_edit_repo = SqliteChunkEditRepository()
         chunk_push_repo = SqliteChunkPushRepository()
+        # One storage for the uploaded files, shared by upload, preview,
+        # deletion and the PDF export.
+        files = build_file_storage()
 
         graph_writer, graph_reader = await self._build_graph_adapters()
         ingestion_service = build_ingestion_service(graph_writer)
@@ -160,10 +164,16 @@ class AppStateBuilder:
             store_repo=store_repo,
             document_store_link_repo=link_repo,
             document_service=build_document_service(
-                document_repo, analysis_repo, store_repo=store_repo, link_repo=link_repo
+                document_repo,
+                analysis_repo,
+                files=files,
+                store_repo=store_repo,
+                link_repo=link_repo,
             ),
             analysis_service=analysis_service,
-            export_service=ExportService(document_repo=document_repo, analysis_repo=analysis_repo),
+            export_service=ExportService(
+                document_repo=document_repo, analysis_repo=analysis_repo, files=files
+            ),
             store_service=store_service,
             chunk_service=chunk_service,
             # 0.6.1 (#audit-01) — GraphService serves /graph so api/graph.py

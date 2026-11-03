@@ -688,3 +688,40 @@ class PdfInspector(Protocol):
         """Width and height of each page, in points, numbered from 1, without
         any element."""
         ...
+
+
+@runtime_checkable
+class FileStorage(Protocol):
+    """Port for the uploaded files: written once, found again, removed.
+
+    A file is named by the storage path its document record keeps. Writing
+    it, finding it after the upload directory moved (a record written in the
+    Docker image, read from a worktree on the host) and keeping removals
+    inside the storage are infrastructure; what a missing or unremovable file
+    means is the caller's policy. Every method touches the disk: async
+    callers run it in a worker thread.
+    """
+
+    def save(self, content: bytes, *, suffix: str) -> str:
+        """Store `content` under a fresh name ending in `suffix`; return its
+        absolute storage path."""
+        ...
+
+    def exists(self, storage_path: str) -> bool:
+        """Whether a file is stored at `storage_path`, read as recorded."""
+        ...
+
+    def resolve(self, storage_path: str) -> str:
+        """Where the file recorded at `storage_path` can be read now: that
+        path when a file is there, else a file of the same name in the
+        storage, else `storage_path` itself (the read then fails)."""
+        ...
+
+    def delete(self, storage_path: str) -> None:
+        """Remove the file at `storage_path`, when one is there.
+
+        Never removes anything outside the storage, whatever the path says
+        (`..`, a symlink): such a path is refused and logged, not raised.
+        Raises `OSError` when the removal itself fails.
+        """
+        ...

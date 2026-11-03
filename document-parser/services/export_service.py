@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -12,7 +13,7 @@ from domain.models import AnalysisStatus
 
 if TYPE_CHECKING:
     from domain.models import AnalysisJob
-    from domain.ports import AnalysisRepository, DocumentRepository
+    from domain.ports import AnalysisRepository, DocumentRepository, FileStorage
 
 
 class ExportFormat(StrEnum):
@@ -36,9 +37,12 @@ class ExportService:
         self,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
+        files: FileStorage,
     ) -> None:
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
+        # Checks that the source PDF is still there; the API streams it.
+        self._files = files
 
     async def export(
         self,
@@ -57,7 +61,7 @@ class ExportService:
             raise ExportNotFoundError("Document not found")
 
         if format is ExportFormat.PDF:
-            if not Path(doc.storage_path).is_file():
+            if not await asyncio.to_thread(self._files.exists, doc.storage_path):
                 raise ExportNotFoundError("PDF file not found")
             return ExportResult(
                 file_path=doc.storage_path,

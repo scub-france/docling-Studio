@@ -209,17 +209,24 @@ def build_analysis_service(document_repo, analysis_repo, graph_writer) -> Analys
     )
 
 
+def build_file_storage():
+    """The uploaded files, under `UPLOAD_DIR`."""
+    from infra.file_storage import LocalFileStorage
+
+    return LocalFileStorage(settings.upload_dir)
+
+
 def build_document_service(
-    document_repo, analysis_repo, *, store_repo=None, link_repo=None
+    document_repo, analysis_repo, *, files=None, store_repo=None, link_repo=None
 ) -> DocumentService:
     return DocumentService(
         document_repo=document_repo,
         analysis_repo=analysis_repo,
         config=DocumentConfig(
-            upload_dir=settings.upload_dir,
             max_file_size_mb=settings.max_file_size_mb,
             max_page_count=settings.max_page_count,
         ),
+        files=files or build_file_storage(),
         rasterizer=_build_rasterizer(),
         pdf=_build_pdf_inspector(),
         store_repo=store_repo,
