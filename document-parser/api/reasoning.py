@@ -49,7 +49,12 @@ async def run_reasoning(
             ),
         ) from exc
     except Exception as exc:
+        # Anything else is the runner's own error (Ollama, docling-agent): its
+        # text can name internal hosts and paths, so it goes to the server log
+        # only (#audit-08), as for the store connection test.
         logger.exception("Reasoning run failed for doc %s", doc_id)
-        raise HTTPException(status_code=500, detail=f"Reasoning run failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail="Reasoning run failed (details in the server log)"
+        ) from exc
 
     return ReasoningTraceResponse.from_trace(trace)

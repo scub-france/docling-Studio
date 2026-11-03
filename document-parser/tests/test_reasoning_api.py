@@ -238,10 +238,16 @@ class TestReasoningUpstreamFailure:
         assert "granite4:micro-h" in detail
         assert "parseable" in detail or "rephrase" in detail
 
-    def test_500_for_other_unexpected_errors(self) -> None:
-        runner = _FakeRunner(raises=RuntimeError("Ollama unreachable"))
+    def test_500_for_other_unexpected_errors_keeps_the_detail_in_the_log(self, caplog) -> None:
+        """The runner's own error can name internal hosts: logged, never
+        answered (#audit-08)."""
+        runner = _FakeRunner(raises=RuntimeError("Ollama unreachable at 10.0.0.7:11434"))
         client = _make_client(runner=runner)
 
-        resp = client.post("/api/documents/doc-1/reasoning", json={"query": "Q"})
+        with caplog.at_level("ERROR", logger="api.reasoning"):
+            resp = client.post("/api/documents/doc-1/reasoning", json={"query": "Q"})
         assert resp.status_code == 500
-        assert "Ollama unreachable" in resp.json()["detail"]
+        detail = resp.json()["detail"]
+        assert detail == "Reasoning run failed (details in the server log)"
+        assert "10.0.0.7" not in detail
+        assert "Ollama unreachable at 10.0.0.7:11434" in caplog.text
