@@ -731,6 +731,28 @@ class TestReadOnlyDeployment:
             assert caught.value.http_status == 403
         assert (await read_only.get_by_slug("default")).name != "renamed"
 
+    async def test_removing_a_document_link_is_refused_with_403(self, read_only):
+        from services.store_service import StoreServiceError
+
+        store = await read_only.get_by_slug("default")
+        await SqliteDocumentRepository().insert(
+            Document(id="d-1", filename="t.pdf", storage_path="/tmp/t.pdf")
+        )
+        links = SqliteDocumentStoreLinkRepository()
+        await links.upsert(
+            DocumentStoreLink(
+                id="l-1",
+                document_id="d-1",
+                store_id=store.id,
+                state=DocumentStoreLinkState.INGESTED,
+            )
+        )
+
+        with pytest.raises(StoreServiceError, match="read-only") as caught:
+            await read_only.remove_document("default", "d-1")
+        assert caught.value.http_status == 403
+        assert await links.find_one("d-1", store.id) is not None
+
     async def test_connection_test_is_refused_without_connecting(self, read_only, resolver):
         ok, err = await read_only.test_connection("default")
 

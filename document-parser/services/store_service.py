@@ -437,6 +437,9 @@ class StoreService:
         return entries
 
     async def remove_document(self, slug: str, doc_id: str) -> None:
+        # Deletes the (document, store) link row: a write, refused on a
+        # read-only deployment like the store's own writes (#audit-08).
+        self._require_writable()
         store = await self.get_by_slug(slug)
         removed = await self._links.delete(doc_id, store.id)
         if not removed:

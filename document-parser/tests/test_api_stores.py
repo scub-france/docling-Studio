@@ -421,9 +421,12 @@ class TestConnectionPolicyEndpoints:
             created = client.post("/api/stores", json={**VALID_OS, "slug": "rh2", "name": "rh2"})
             patched = client.patch("/api/stores/rh", json={"name": "renamed"})
             deleted = client.delete("/api/stores/rh")
+            unlinked = client.delete("/api/stores/rh/documents/d-1")
             listed = client.get("/api/stores")
-        assert [created.status_code, patched.status_code, deleted.status_code] == [403, 403, 403]
+        writes = [created, patched, deleted, unlinked]
+        assert [r.status_code for r in writes] == [403, 403, 403, 403]
         assert "read-only" in created.json()["detail"]
+        assert "read-only" in unlinked.json()["detail"]
         assert listed.status_code == 200
 
     def test_connection_test_answers_ok_false_on_a_read_only_deployment(self, client):
