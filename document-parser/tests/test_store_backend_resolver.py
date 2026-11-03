@@ -198,9 +198,11 @@ class TestNeo4jResolution:
         await resolver.resolve(store)
         assert neo4j_pool.get.await_args.kwargs["database"] == "prod-graph"
 
-    async def test_uses_env_password_when_store_has_no_seal(
+    async def test_store_without_password_on_env_uri_uses_env_credentials(
         self, store_repo, neo4j_pool, opensearch_pool
     ):
+        """The seeded `default` store, its URI filled in with NEO4J_URI's own
+        endpoint: the env credentials still fill in (#audit-08)."""
         await store_repo.insert(
             Store(
                 id="s-nop",
@@ -208,18 +210,219 @@ class TestNeo4jResolution:
                 slug="nop",
                 kind=StoreKind.NEO4J,
                 embedder="b",
-                connection_uri="bolt://store:7687",
-                connection_username="neo4j",
+                # Same endpoint as NEO4J_URI, written differently: scheme and
+                # host case, the default port spelled out.
+                connection_uri="BOLT://Neo4j:7687",
             ),
             # No password kwarg — connection_password_sealed stays NULL.
         )
         store = await store_repo.find_by_id("s-nop")
         assert store.has_connection_password is False
-        resolver = _make_resolver(store_repo, neo4j_pool, opensearch_pool, neo4j_password="env-pwd")
+        resolver = _make_resolver(
+            store_repo,
+            neo4j_pool,
+            opensearch_pool,
+            neo4j_uri="bolt://neo4j",
+            neo4j_user="env-user",
+            neo4j_password="env-pwd",
+        )
 
         await resolver.resolve(store)
-        # The pool was called with the env-fallback password, not None.
-        assert neo4j_pool.get.await_args.args[2] == "env-pwd"
+        args = neo4j_pool.get.await_args.args
+        assert args[1] == "env-user"
+        assert args[2] == "env-pwd"
+
+    async def test_store_without_password_on_foreign_uri_is_refused(
+        self, store_repo, neo4j_pool, opensearch_pool
+    ):
+        """A store URI is chosen by the API caller: the env password must
+        never reach it (#audit-08). No password of its own → credentials
+        required, and no connection at all."""
+        await store_repo.insert(
+            Store(
+                id="s-foreign",
+                name="foreign",
+                slug="foreign",
+                kind=StoreKind.NEO4J,
+                embedder="b",
+                connection_uri="bolt://attacker.example:7687",
+                connection_username="neo4j",
+            ),
+        )
+        store = await store_repo.find_by_id("s-foreign")
+        resolver = _make_resolver(
+            store_repo,
+            neo4j_pool,
+            opensearch_pool,
+            neo4j_uri="bolt://neo4j:7687",
+            neo4j_password="env-pwd",
+        )
+
+        with pytest.raises(StoreBackendNotConfiguredError) as excinfo:
+            await resolver.resolve(store)
+        msg = str(excinfo.value)
+        assert "credentials required" in msg
+        assert "NEO4J_PASSWORD" in msg
+        assert "env-pwd" not in msg
+        neo4j_pool.get.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "store_uri",
+        [
+            "bolt://neo4j:7688",  # another port
+            "bolt+s://neo4j:7687",  # another scheme (TLS or not is part of it)
+            "neo4j://neo4j:7687",  # another scheme (routing)
+            "bolt://127.0.0.1:7687",  # same machine maybe, another name
+            "bolt://neo4j.attacker.example:7687",
+            "bolt://neo4j:notaport",  # unparseable: never the env endpoint
+        ],
+    )
+    async def test_only_the_env_endpoint_gets_the_env_credentials(
+        self, store_repo, neo4j_pool, opensearch_pool, store_uri
+    ):
+        await store_repo.insert(
+            Store(
+                id="s-near",
+                name="near",
+                slug="near",
+                kind=StoreKind.NEO4J,
+                embedder="b",
+                connection_uri=store_uri,
+            ),
+        )
+        store = await store_repo.find_by_id("s-near")
+        resolver = _make_resolver(
+            store_repo,
+            neo4j_pool,
+            opensearch_pool,
+            neo4j_uri="bolt://neo4j:7687",
+            neo4j_password="env-pwd",
+        )
+
+        with pytest.raises(StoreBackendNotConfiguredError, match="credentials required"):
+            await resolver.resolve(store)
+        neo4j_pool.get.assert_not_awaited()
+
+    async def test_store_password_on_foreign_uri_never_borrows_env_user(
+        self, store_repo, neo4j_pool, opensearch_pool
+    ):
+        await store_repo.insert(
+            Store(
+                id="s-own",
+                name="own",
+                slug="own",
+                kind=StoreKind.NEO4J,
+                embedder="b",
+                connection_uri="bolt://other:7687",
+            ),
+            password="store-pwd",
+        )
+        store = await store_repo.find_by_id("s-own")
+        resolver = _make_resolver(
+            store_repo,
+            neo4j_pool,
+            opensearch_pool,
+            neo4j_uri="bolt://neo4j:7687",
+            neo4j_user="env-admin",
+            neo4j_password="env-pwd",
+        )
+
+        await resolver.resolve(store)
+        args = neo4j_pool.get.await_args.args
+        assert args[0] == "bolt://other:7687"
+        # Neo4j's built-in user, not NEO4J_USER.
+        assert args[1] == "neo4j"
+        assert args[2] == "store-pwd"
+
+
+class TestEnvCredentialsNeverLeaveForAForeignUri:
+    """The re-audit's probe, at the driver boundary (#audit-08): with the
+    real `Neo4jDriverPool`, nothing built for a store on a foreign URI ever
+    carries the env password."""
+
+    @pytest.fixture
+    def opened(self, monkeypatch) -> list[tuple[str, Any]]:
+        """Every driver the real pool opens: `(uri, auth)`."""
+        from infra.neo4j import driver_pool
+
+        calls: list[tuple[str, Any]] = []
+
+        class _FakeDriver:
+            async def verify_connectivity(self) -> None:
+                return None
+
+            async def close(self) -> None:
+                return None
+
+        def _driver(uri: str, *, auth: Any) -> _FakeDriver:
+            calls.append((uri, auth))
+            return _FakeDriver()
+
+        async def _no_schema(_neo: Any) -> None:
+            return None
+
+        monkeypatch.setattr(driver_pool.AsyncGraphDatabase, "driver", _driver)
+        monkeypatch.setattr("infra.neo4j.schema.bootstrap_schema", _no_schema)
+        return calls
+
+    def _resolver(self, store_repo: SqliteStoreRepository) -> StoreBackendResolver:
+        from infra.neo4j.driver_pool import Neo4jDriverPool
+
+        return StoreBackendResolver(
+            store_repo=store_repo,
+            neo4j_pool=Neo4jDriverPool(),
+            opensearch_pool=AsyncMock(),
+            graph_writer_factory=lambda driver: driver,
+            env_neo4j_uri="bolt://neo4j:7687",
+            env_neo4j_user="neo4j",
+            env_neo4j_password="EnvSecretPw-1234",
+        )
+
+    async def test_foreign_uri_without_password_opens_nothing(self, store_repo, opened):
+        await store_repo.insert(
+            Store(
+                id="s-evil",
+                name="evil",
+                slug="evil",
+                kind=StoreKind.NEO4J,
+                embedder="b",
+                connection_uri="bolt://127.0.0.1:17687",
+            ),
+        )
+        store = await store_repo.find_by_id("s-evil")
+
+        with pytest.raises(StoreBackendNotConfiguredError):
+            await self._resolver(store_repo).resolve(store)
+        assert opened == []
+
+    async def test_foreign_uri_with_password_sends_only_the_store_credentials(
+        self, store_repo, opened
+    ):
+        await store_repo.insert(
+            Store(
+                id="s-own",
+                name="own",
+                slug="own",
+                kind=StoreKind.NEO4J,
+                embedder="b",
+                connection_uri="bolt://127.0.0.1:17687",
+            ),
+            password="store-pwd",
+        )
+        store = await store_repo.find_by_id("s-own")
+
+        await self._resolver(store_repo).resolve(store)
+        assert opened == [("bolt://127.0.0.1:17687", ("neo4j", "store-pwd"))]
+        assert all("EnvSecretPw-1234" not in str(auth) for _, auth in opened)
+
+    async def test_env_uri_still_gets_the_env_credentials(self, store_repo, opened):
+        await store_repo.insert(
+            Store(id="s-plain", name="plain", slug="plain", kind=StoreKind.NEO4J, embedder="b"),
+        )
+        store = await store_repo.find_by_id("s-plain")
+
+        await self._resolver(store_repo).resolve(store)
+        assert opened == [("bolt://neo4j:7687", ("neo4j", "EnvSecretPw-1234"))]
 
 
 class TestOpenSearchResolution:

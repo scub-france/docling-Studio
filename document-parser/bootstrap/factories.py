@@ -171,7 +171,8 @@ async def init_neo4j():
 def build_backend_resolver(store_repo) -> StoreBackendResolver:
     """0.6.1 (#279) — bridges per-store CRUD to the (uri, user)-keyed
     driver pools. Env vars feed the transitional fallback for the seeded
-    `default` store and any pre-#279 row without its own credentials."""
+    `default` store and any pre-#279 row without its own URI; the Neo4j
+    credentials only for a store that targets `NEO4J_URI` itself (#audit-08)."""
     from infra.neo4j.driver_pool import get_pool as get_neo4j_pool
     from infra.neo4j.graph_adapter import Neo4jGraphWriter
     from infra.opensearch_pool import get_pool as get_opensearch_pool

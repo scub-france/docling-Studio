@@ -14,12 +14,18 @@ Resolution policy:
   - `kind = neo4j` → resolves to a `Neo4jDriver` from the Neo4j pool.
     The pool key is `(uri, user)`.
   - `connection_uri` / `connection_username` on the store entity win.
-    When unset, env-var fallbacks (`OPENSEARCH_URL`, `NEO4J_URI`,
-    `NEO4J_USER`, `NEO4J_PASSWORD`) supply the values — this keeps
-    the seeded `default` store working on installs that haven't
-    filled the connection form yet.
+    When unset, env-var fallbacks (`OPENSEARCH_URL`, `NEO4J_URI`)
+    supply the URI — this keeps the seeded `default` store working on
+    installs that haven't filled the connection form yet.
+  - `NEO4J_USER` / `NEO4J_PASSWORD` are only ever sent to `NEO4J_URI`
+    (#audit-08): a store whose own URI points elsewhere must carry its
+    own password, or it is not resolved at all. A store's URI is chosen
+    by whoever calls the API, so falling back to the operator's
+    credentials for it would hand them to any server the caller names.
+    OpenSearch has no credential fallback: a store authenticates with
+    its own credentials or not at all.
 
-The fallback is a transitional convenience. Long-term every store
+The URI fallback is a transitional convenience. Long-term every store
 will carry its own connection identity; the env vars become a default
 pre-fill for the create-store UI, not a runtime authority. See #279
 acceptance criteria.
@@ -31,6 +37,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from domain.value_objects import StoreKind
 
@@ -45,6 +52,34 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+
+# The Neo4j driver's own defaults: the port of every bolt/neo4j scheme, and
+# the built-in admin user a store's password goes with when it names none.
+_NEO4J_DEFAULT_PORT = 7687
+_NEO4J_DEFAULT_USER = "neo4j"
+
+
+def _neo4j_endpoint(uri: str) -> tuple[str, str, int] | None:
+    """The `(scheme, host, port)` a Neo4j URI connects to; None if unparseable.
+
+    The port defaults as the driver's does. The scheme stays part of the
+    endpoint: `bolt+s://` and `bolt://` on the same host differ in whether the
+    password crosses the network in clear. The host is compared as written
+    (lowercased): `localhost` and `127.0.0.1` are different endpoints, which
+    errs on the side of not sending the credentials.
+    """
+    try:
+        parts = urlsplit(uri.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    if not parts.scheme or not parts.hostname:
+        return None
+    return (
+        parts.scheme.lower(),
+        parts.hostname,
+        port if port is not None else _NEO4J_DEFAULT_PORT,
+    )
 
 
 @dataclass(frozen=True)
@@ -139,12 +174,7 @@ class StoreBackendResolver:
                 "(set `connection_uri` on the store or NEO4J_URI in the "
                 "backend environment)."
             )
-        user = store.connection_username or self._env_neo4j_user
-        password = self._env_neo4j_password
-        if store.has_connection_password:
-            stored = await self._stores.get_connection_password(store.id)
-            if stored is not None:
-                password = stored
+        user, password = await self._neo4j_credentials(store, uri)
         # The store can pin a specific Neo4j database via config; falls
         # back to the cluster default "neo4j" when unspecified.
         database = (store.config or {}).get("database", "neo4j")
@@ -152,3 +182,29 @@ class StoreBackendResolver:
         # Wrap the raw driver in the injected `GraphWriter` factory so the
         # IngestionService consumes a port, not infra.
         return IngestionTargets(graph_writer=self._make_graph_writer(driver))
+
+    async def _neo4j_credentials(self, store: Store, uri: str) -> tuple[str, str]:
+        """The `(user, password)` to open `uri` with, for `store` (#audit-08).
+
+        The store's own credentials win. `NEO4J_USER` / `NEO4J_PASSWORD` fill
+        in only when `uri` is `NEO4J_URI` — same scheme, host and port: a
+        store URI is chosen by the API caller, and the env password must never
+        reach a server they pick. Elsewhere, a store without its own password
+        is refused before any connection.
+        """
+        stored: str | None = None
+        if store.has_connection_password:
+            stored = await self._stores.get_connection_password(store.id)
+        env_endpoint = _neo4j_endpoint(self._env_neo4j_uri)
+        if env_endpoint is not None and _neo4j_endpoint(uri) == env_endpoint:
+            user = store.connection_username or self._env_neo4j_user
+            password = stored if stored is not None else self._env_neo4j_password
+            return user, password
+        if stored is None:
+            raise StoreBackendNotConfiguredError(
+                f"Store {store.slug!r} connects to its own URI, not the backend's NEO4J_URI, "
+                "and has no password of its own: credentials required. Set the store's "
+                "password (and username, if not 'neo4j'); NEO4J_USER and NEO4J_PASSWORD "
+                "are only sent to NEO4J_URI."
+            )
+        return store.connection_username or _NEO4J_DEFAULT_USER, stored
