@@ -19,18 +19,17 @@ import json
 import logging
 import uuid
 from contextlib import contextmanager
-from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from domain import chunk_editing, hashing
-from domain.models import Chunk, ChunkEdit, ChunkPush, Document, DocumentStoreLink
-from domain.value_objects import (
-    ChunkBbox,
-    ChunkDocItem,
-    ChunkEditAction,
-    ChunkingOptions,
+from domain.chunk_serialization import (
+    chunk_from_dict,
+    chunk_to_audit_dict,
+    chunk_to_ingestion_dict,
 )
+from domain.models import Chunk, ChunkEdit, ChunkPush, Document, DocumentStoreLink
+from domain.value_objects import ChunkEditAction, ChunkingOptions
 from services.errors import ServiceError
 from services.navigation_errors import DocumentNotFoundError
 
@@ -104,7 +103,7 @@ async def require_document(documents: DocumentRepository, document_id: str) -> D
 
 
 # ---------------------------------------------------------------------------
-# Helpers — chunk ↔ dict conversions for audit log + analysis chunks_json.
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -114,49 +113,6 @@ def _utcnow() -> datetime:
 
 def _new_id() -> str:
     return str(uuid.uuid4())
-
-
-def _chunk_to_audit_dict(c: Chunk) -> dict:
-    """Serializable snapshot for ChunkEdit.before / .after."""
-    return {
-        "id": c.id,
-        "sequence": c.sequence,
-        "text": c.text,
-        "headings": list(c.headings),
-        "sourcePage": c.source_page,
-        "tokenCount": c.token_count,
-        "bboxes": [asdict(b) for b in c.bboxes],
-        "docItems": [asdict(d) for d in c.doc_items],
-    }
-
-
-def _bbox_from_dict(d: dict) -> ChunkBbox:
-    return ChunkBbox(page=d["page"], bbox=list(d["bbox"]))
-
-
-def _doc_item_from_dict(d: dict) -> ChunkDocItem:
-    return ChunkDocItem(
-        self_ref=d.get("selfRef") or d.get("self_ref", ""), label=d.get("label", "")
-    )
-
-
-def _analysis_chunk_to_canonical(
-    document_id: str,
-    sequence: int,
-    raw: dict,
-) -> Chunk:
-    """Convert an entry from `AnalysisJob.chunks_json` (camelCase) into a
-    canonical `Chunk`. Used by `_promote_from_analysis`."""
-    return Chunk(
-        document_id=document_id,
-        sequence=sequence,
-        text=raw.get("text", ""),
-        headings=list(raw.get("headings", [])),
-        source_page=raw.get("sourcePage"),
-        bboxes=[_bbox_from_dict(b) for b in raw.get("bboxes", [])],
-        doc_items=[_doc_item_from_dict(d) for d in raw.get("docItems", [])],
-        token_count=raw.get("tokenCount"),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +191,7 @@ class ChunkService:
             return 0
 
         canonical = [
-            _analysis_chunk_to_canonical(document_id, seq, raw)
+            chunk_from_dict(raw, document_id=document_id, sequence=seq)
             for seq, raw in enumerate(raw_chunks)
             if not raw.get("deleted")
         ]
@@ -255,7 +211,7 @@ class ChunkService:
                     action=ChunkEditAction.INSERT,
                     actor="system:initial-analysis",
                     at=now,
-                    after=_chunk_to_audit_dict(c),
+                    after=chunk_to_audit_dict(c),
                 )
                 for c in canonical
             ],
@@ -300,7 +256,7 @@ class ChunkService:
                     action=ChunkEditAction.INSERT,
                     actor=self._actor,
                     at=now,
-                    after=_chunk_to_audit_dict(new_chunk),
+                    after=chunk_to_audit_dict(new_chunk),
                 )
             ],
         )
@@ -318,7 +274,7 @@ class ChunkService:
         headings: list[str] | None = None,
     ) -> Chunk:
         chunk = await self._require_chunk(document_id, chunk_id)
-        before = _chunk_to_audit_dict(chunk)
+        before = chunk_to_audit_dict(chunk)
         if text is not None:
             chunk.text = text
         if headings is not None:
@@ -334,7 +290,7 @@ class ChunkService:
                 actor=self._actor,
                 at=_utcnow(),
                 before=before,
-                after=_chunk_to_audit_dict(chunk),
+                after=chunk_to_audit_dict(chunk),
             )
         )
         logger.info("chunk.update docId=%s chunkId=%s", document_id, chunk.id)
@@ -342,7 +298,7 @@ class ChunkService:
 
     async def delete_chunk(self, document_id: str, chunk_id: str) -> None:
         chunk = await self._require_chunk(document_id, chunk_id)
-        before = _chunk_to_audit_dict(chunk)
+        before = chunk_to_audit_dict(chunk)
         deleted = await self._chunks.soft_delete(chunk_id, at=_utcnow())
         if not deleted:
             raise ChunkNotFoundError(f"Chunk not found: {chunk_id}")
@@ -364,7 +320,7 @@ class ChunkService:
         with _refusals_as_service_errors():
             head, tail = chunk_editing.split(source, cursor_offset)
         existing = await self._chunks.find_for_document(document_id)
-        before = _chunk_to_audit_dict(source)
+        before = chunk_to_audit_dict(source)
 
         # Push subsequent sequences by 1 to make room for `tail`. Should the
         # replacement below fail, the shift only leaves a gap, which the
@@ -420,7 +376,7 @@ class ChunkService:
                     actor=self._actor,
                     at=now,
                     parents=[c.id for c in ordered],
-                    after=_chunk_to_audit_dict(merged),
+                    after=chunk_to_audit_dict(merged),
                 )
             ],
         )
@@ -484,7 +440,7 @@ class ChunkService:
                         action=ChunkEditAction.DELETE,
                         actor="system:rechunk",
                         at=now,
-                        before=_chunk_to_audit_dict(c),
+                        before=chunk_to_audit_dict(c),
                     )
                     for c in existing
                 ),
@@ -496,7 +452,7 @@ class ChunkService:
                         action=ChunkEditAction.INSERT,
                         actor="system:rechunk",
                         at=now,
-                        after=_chunk_to_audit_dict(c),
+                        after=chunk_to_audit_dict(c),
                     )
                     for c in new_chunks
                 ),
@@ -608,7 +564,7 @@ class ChunkService:
                 http_status=409,
             )
 
-        chunks_payload = [_chunk_to_ingestion_dict(c) for c in canonical]
+        chunks_payload = [chunk_to_ingestion_dict(c) for c in canonical]
         chunks_json_payload = json.dumps(chunks_payload)
         chunkset_hash = hashing.chunkset_hash(canonical)
         # Resolve the per-store backends through the pool (#279). When
@@ -799,22 +755,3 @@ class ChunkService:
         one UPDATE — skipped when nothing sits there (append at the end)."""
         if any(c.sequence >= from_sequence for c in existing):
             await self._chunks.shift_sequences(document_id, from_sequence=from_sequence, at=at)
-
-
-# ---------------------------------------------------------------------------
-# Push payload
-# ---------------------------------------------------------------------------
-
-
-def _chunk_to_ingestion_dict(c: Chunk) -> dict:
-    """Convert a canonical `Chunk` into the legacy chunks_json shape that
-    `IngestionService.ingest` consumes (camelCase, modeled after
-    `analysis_service._chunk_to_dict`)."""
-    return {
-        "text": c.text,
-        "headings": list(c.headings),
-        "sourcePage": c.source_page,
-        "tokenCount": c.token_count or 0,
-        "bboxes": [{"page": b.page, "bbox": list(b.bbox)} for b in c.bboxes],
-        "docItems": [{"selfRef": d.self_ref, "label": d.label} for d in c.doc_items],
-    }
