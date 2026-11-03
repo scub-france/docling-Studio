@@ -13,10 +13,30 @@ Feature: UI — Parse view: selecting a structure node fills the Properties pane
   Scenario: Select a node → Properties populated, no inline chunk edit
     * def upload = call read('classpath:common/helpers/upload.feature') { file: 'small.pdf' }
     * def docId = upload.docId
-    * def analysis = call read('classpath:common/helpers/analyze.feature') { docId: '#(docId)' }
-    * match analysis.response.status == 'COMPLETED'
 
-    * driver uiBaseUrl + '/analyses/' + analysis.jobId
+    # Analyse with chunks: the edit button lives in the Linked chunk section,
+    # which only renders for an element a chunk covers. The hierarchical
+    # chunker needs no tokenizer, so nothing is fetched from Hugging Face.
+    Given url baseUrl
+    And path '/api/analyses'
+    And request { documentId: '#(docId)', chunkingOptions: { chunkerType: 'hierarchical' } }
+    When method POST
+    Then status 200
+    * def analysisId = response.id
+
+    Given url baseUrl
+    And path '/api/analyses', analysisId
+    And retry until response.status == 'COMPLETED' || response.status == 'FAILED'
+    When method GET
+    Then status 200
+    And match response.status == 'COMPLETED'
+
+    # An element the first chunk covers
+    * json chunks = response.chunksJson
+    * assert karate.sizeOf(chunks) > 0
+    * def chunkedRef = chunks[0].docItems[0].selfRef
+
+    * driver uiBaseUrl + '/analyses/' + analysisId
     * waitFor('[data-e2e=parse-tab]')
     * waitFor('[data-e2e=element-properties]')
 
@@ -29,7 +49,10 @@ Feature: UI — Parse view: selecting a structure node fills the Properties pane
     * waitUntil("!document.querySelector('[data-e2e=element-properties-empty]')")
     * waitFor('[data-e2e=properties-extracted-text]')
 
-    # Read-only: a saved analysis never offers the inline chunk editor.
+    # Read-only: open the chunked element (deep link, as a citation does).
+    # Its Linked chunk section shows, without the inline chunk editor.
+    * driver uiBaseUrl + '/analyses/' + analysisId + '?ref=' + encodeURIComponent(chunkedRef)
+    * waitFor('[data-e2e=properties-linked-chunk]')
     * match karate.sizeOf(locateAll('[data-e2e=properties-edit-btn]')) == 0
 
-    * call read('classpath:common/helpers/cleanup-by-name.feature') { filename: 'small.pdf' }
+    * call read('classpath:common/helpers/cleanup.feature') { docId: '#(docId)' }
