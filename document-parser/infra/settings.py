@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 
@@ -9,6 +10,10 @@ from domain.app_config import MAX_ITERATIONS_MAX as _MAX_ITERATIONS_MAX
 from domain.app_config import MAX_ITERATIONS_MIN as _MAX_ITERATIONS_MIN
 from domain.mcp_config import MAX_ROUNDS_MAX as _MCP_ROUNDS_MAX
 from domain.mcp_config import MAX_ROUNDS_MIN as _MCP_ROUNDS_MIN
+from domain.mcp_config import READ_TOKENS_MAX as _MCP_READ_TOKENS_MAX
+from domain.mcp_config import READ_TOKENS_MIN as _MCP_READ_TOKENS_MIN
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -105,6 +110,7 @@ class Settings:
     # Hard server-side ceiling on a single read. A client argument may lower
     # it, never raise it. Like the round cap and the deep-link base below, a
     # bootstrap default: the admin panel overrides it at runtime (#364).
+    # Clamped into the panel's bounds (100-32000), see `__post_init__`.
     mcp_max_read_tokens: int = 4000
     # The Chunkless RAG round cap the prompt states and the sources card counts
     # against. Nothing enforces it server-side: the client model drives the loop.
@@ -124,6 +130,7 @@ class Settings:
     mcp_studio_base_url: str = ""
 
     def __post_init__(self) -> None:
+        self._clamp_mcp_max_read_tokens()
         errors: list[str] = []
         if self.document_timeout <= 0:
             errors.append(f"document_timeout must be > 0 (got {self.document_timeout})")
@@ -193,6 +200,30 @@ class Settings:
                 )
         if errors:
             raise ValueError("Invalid settings:\n  " + "\n  ".join(errors))
+
+    def _clamp_mcp_max_read_tokens(self) -> None:
+        """Bring a positive read ceiling into the bounds the admin panel enforces.
+
+        The panel validates every write against the domain bounds, and its
+        On/Off switch re-sends the whole form: an env value outside them left
+        the MCP settings unsavable, the switch included (#audit-04). Clamped
+        with a warning rather than refused, so a deployment that boots today
+        still boots after the upgrade. A value below 1 stays a boot error.
+        """
+        value = self.mcp_max_read_tokens
+        if value < 1:
+            return
+        clamped = min(max(value, _MCP_READ_TOKENS_MIN), _MCP_READ_TOKENS_MAX)
+        if clamped != value:
+            logger.warning(
+                "MCP_MAX_READ_TOKENS=%d is outside %d-%d; using %d",
+                value,
+                _MCP_READ_TOKENS_MIN,
+                _MCP_READ_TOKENS_MAX,
+                clamped,
+            )
+            # Frozen dataclass: set during construction, like a validated field.
+            object.__setattr__(self, "mcp_max_read_tokens", clamped)
 
     @classmethod
     def from_env(cls) -> Settings:

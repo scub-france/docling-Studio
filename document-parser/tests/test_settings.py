@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
+from domain.mcp_config import (
+    READ_TOKENS_MAX,
+    READ_TOKENS_MIN,
+    McpRuntimeConfig,
+    validate_mcp_config,
+)
 from infra.settings import Settings
 
 
@@ -247,6 +255,52 @@ class TestMcpMaxRounds:
             Settings(mcp_max_rounds=0)
         with pytest.raises(ValueError, match="mcp_max_rounds"):
             Settings(mcp_max_rounds=21)
+
+
+class TestMcpMaxReadTokens:
+    """#audit-04 — the read ceiling is held to the bounds the admin panel
+    enforces (clamped, not refused, so a deployment that boots keeps booting)."""
+
+    def test_default_is_4000(self):
+        assert Settings().mcp_max_read_tokens == 4000
+
+    def test_from_env(self, monkeypatch):
+        monkeypatch.setenv("MCP_MAX_READ_TOKENS", "1500")
+        assert Settings.from_env().mcp_max_read_tokens == 1500
+
+    def test_the_bounds_themselves_are_kept(self, caplog):
+        assert Settings(mcp_max_read_tokens=READ_TOKENS_MIN).mcp_max_read_tokens == 100
+        assert Settings(mcp_max_read_tokens=READ_TOKENS_MAX).mcp_max_read_tokens == 32_000
+        assert "MCP_MAX_READ_TOKENS" not in caplog.text
+
+    def test_below_the_floor_is_raised_to_it_with_a_warning(self, monkeypatch, caplog):
+        monkeypatch.setenv("MCP_MAX_READ_TOKENS", "50")
+        with caplog.at_level(logging.WARNING, logger="infra.settings"):
+            assert Settings.from_env().mcp_max_read_tokens == READ_TOKENS_MIN
+        assert "MCP_MAX_READ_TOKENS=50 is outside 100-32000; using 100" in caplog.text
+
+    def test_above_the_ceiling_is_lowered_to_it_with_a_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="infra.settings"):
+            assert Settings(mcp_max_read_tokens=50_000).mcp_max_read_tokens == READ_TOKENS_MAX
+        assert "using 32000" in caplog.text
+
+    def test_zero_or_negative_is_still_refused(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="mcp_max_read_tokens must be >= 1"):
+            Settings(mcp_max_read_tokens=0)
+
+    def test_the_env_default_passes_the_panels_validation(self, monkeypatch):
+        # What the On/Off switch re-sends must validate, whatever the env said.
+        monkeypatch.setenv("MCP_MAX_READ_TOKENS", "50")
+        s = Settings.from_env()
+        config = McpRuntimeConfig(
+            max_rounds=s.mcp_max_rounds,
+            max_read_tokens=s.mcp_max_read_tokens,
+            studio_base_url="",
+            enabled=False,
+        )
+        assert validate_mcp_config(config) == []
 
 
 class TestSettingsFromEnv:
