@@ -10,7 +10,7 @@
         <div>
           <p class="eyebrow">{{ analysis.status }}</p>
           <h1>{{ analysis.documentFilename || analysis.documentId }}</h1>
-          <p class="meta">{{ analysis.id }} · {{ formatDate(analysis.createdAt) }}</p>
+          <p class="meta">{{ analysis.id }} · {{ formatAbsolute(analysis.createdAt) }}</p>
         </div>
         <div class="detail-actions">
           <RouterLink
@@ -38,6 +38,7 @@ import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fetchAnalysis } from '../features/analysis/api'
 import type { Analysis } from '../shared/types'
+import { formatAbsolute } from '../shared/format'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocParseTab from './DocParseTab.vue'
@@ -48,12 +49,6 @@ const { t } = useI18n()
 const analysis = ref<Analysis | null>(null)
 const loading = ref(true)
 const error = ref(false)
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
-    new Date(value),
-  )
-}
 
 onMounted(async () => {
   try {
