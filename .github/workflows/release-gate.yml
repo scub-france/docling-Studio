@@ -121,7 +121,10 @@ jobs:
 
       - name: Install deps
         run: |
-          cd document-parser && uv sync --frozen && uv pip install --python .venv/bin/python pip-audit
+          # `local` and `reasoning` ship in the published `local` image, so
+          # audit them too (docling, torch, docling-agent, mellea...). The
+          # Python audit stays a warning: see the comment in the next step.
+          cd document-parser && uv sync --frozen --group local --group reasoning && uv pip install --python .venv/bin/python pip-audit
           cd ../frontend && npm ci
 
       - name: Python audit
