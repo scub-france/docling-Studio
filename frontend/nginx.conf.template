@@ -44,15 +44,16 @@ server {
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     }
 
-    # X-Forwarded-For is overwritten, not appended to, so a value sent by the
-    # client never reaches the backend. The backend only reads it when this
-    # container's address is in its FORWARDED_ALLOW_IPS (uvicorn's default
-    # trusts 127.0.0.1 only); until then it rate-limits by this proxy's address.
+    # nginx appends the peer address to X-Forwarded-For. The backend only reads
+    # the header when this container's address is in its FORWARDED_ALLOW_IPS
+    # (uvicorn's default trusts 127.0.0.1 only), and then takes the right-most
+    # address it does not trust, so a value sent by the client cannot choose
+    # its rate-limit bucket. Until then it rate-limits by this proxy's address.
     location /api/ {
         proxy_pass http://document-parser:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_read_timeout 900s;
         proxy_send_timeout 900s;
         client_max_body_size ${NGINX_MAX_BODY_SIZE};
@@ -67,7 +68,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header Connection "";
         proxy_buffering off;
         gzip off;
