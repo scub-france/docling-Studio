@@ -588,9 +588,11 @@ consumes, frozen before its consumer exists.
 ## 7. API & data contract
 
 The contract as built — the tools, their arguments and results, the
-outcomes, the configuration — is documented in
-[`docs/mcp-server.md`](../mcp-server.md#investigations), which the code keeps
-current. It departs from the plan above in four ways:
+outcomes, the configuration — was documented in the *Investigations*
+section of `docs/mcp-server.md`. That section went away with the journal
+(#363, see [design doc 363](363-mcp-chunkless-rag-simplification.md));
+[`docs/mcp-server.md`](../mcp-server.md) now documents the surface that
+shipped. As built, the journal departed from the plan above in four ways:
 
 - `open_investigation` takes a `document_id` (from `find_documents`), like
   every other tool, not a filename.

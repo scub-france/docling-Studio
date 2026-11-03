@@ -19,7 +19,7 @@
 ## Checklist
 
 - [ ] Branch follows naming convention (`feature/`, `fix/`, `hotfix/`)
-- [ ] Commits follow [Conventional Commits](docs/git-workflow/commit-conventions.md)
+- [ ] Commits follow [Conventional Commits](https://github.com/scub-france/Docling-Studio/blob/main/docs/git-workflow/commit-conventions.md)
 - [ ] Tests added/updated for the change
 - [ ] All tests pass (`pytest tests/ -v` + `npm run test:run`)
 - [ ] Linting passes (`ruff check .` + `npx eslint src/`)
