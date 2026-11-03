@@ -526,9 +526,14 @@ jobs:
           echo "Previous release: $PREV_TAG"
           echo "found=true" >> "$GITHUB_OUTPUT"
 
-          # Pull previous images and get sizes
-          for target in remote local; do
-            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${PREV_TAG#v}-${target}"
+          # Only `remote` has a comparable baseline: the published `local`
+          # bakes ~1.3 GB of models that the gate's image does not.
+          echo "local=0" >> "$GITHUB_OUTPUT"
+
+          # Pull the previous image and get its size. Image references must be
+          # lowercase, and github.repository is not (docling-Studio).
+          for target in remote; do
+            IMAGE="${REGISTRY}/${IMAGE_NAME,,}:${PREV_TAG#v}-${target}"
             if docker pull "$IMAGE" 2>/dev/null; then
               PREV_SIZE=$(docker image inspect "$IMAGE" --format='{{.Size}}')
               PREV_MB=$((PREV_SIZE / 1024 / 1024))
