@@ -2,17 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from domain.models import AnalysisJob, AnalysisStatus
 from persistence.database import get_connection
-
-
-def _parse_dt(value: str | None) -> datetime | None:
-    """Parse an ISO-format datetime string back into a datetime object."""
-    if not value:
-        return None
-    return datetime.fromisoformat(value)
+from persistence.timestamps import parse_iso, parse_required_iso
 
 
 def _row_to_job(row) -> AnalysisJob:
@@ -29,9 +21,9 @@ def _row_to_job(row) -> AnalysisJob:
         error_message=row["error_message"],
         progress_current=row["progress_current"] if "progress_current" in keys else None,
         progress_total=row["progress_total"] if "progress_total" in keys else None,
-        started_at=_parse_dt(row["started_at"]),
-        completed_at=_parse_dt(row["completed_at"]),
-        created_at=_parse_dt(row["created_at"]) or datetime.now(UTC),
+        started_at=parse_iso(row["started_at"]),
+        completed_at=parse_iso(row["completed_at"]),
+        created_at=parse_required_iso(row["created_at"], column="analysis_jobs.created_at"),
         document_filename=row["filename"] if "filename" in keys else None,
     )
 

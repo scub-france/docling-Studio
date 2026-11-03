@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from domain.models import Document
 from domain.value_objects import DocumentLifecycleState
 from persistence.database import get_connection
+from persistence.timestamps import parse_iso, parse_required_iso
 
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if value is None or value == "":
-        return None
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 def _escape_like(text: str) -> str:
@@ -24,11 +19,6 @@ def _escape_like(text: str) -> str:
 
 
 def _row_to_document(row) -> Document:
-    created = row["created_at"]
-    if isinstance(created, str):
-        created = datetime.fromisoformat(created)
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=UTC)
     # The schema defines both lifecycle columns inline (#279 schema
     # reset), so direct access is always safe.
     lifecycle_value = row["lifecycle_state"]
@@ -37,7 +27,7 @@ def _row_to_document(row) -> Document:
         if lifecycle_value
         else DocumentLifecycleState.UPLOADED
     )
-    lifecycle_state_at = _parse_iso(row["lifecycle_state_at"])
+    lifecycle_state_at = parse_iso(row["lifecycle_state_at"])
     return Document(
         id=row["id"],
         filename=row["filename"],
@@ -45,7 +35,7 @@ def _row_to_document(row) -> Document:
         file_size=row["file_size"],
         page_count=row["page_count"],
         storage_path=row["storage_path"],
-        created_at=created,
+        created_at=parse_required_iso(row["created_at"], column="documents.created_at"),
         lifecycle_state=lifecycle_state,
         lifecycle_state_at=lifecycle_state_at,
     )

@@ -3,20 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 
 from domain.models import ChunkEdit, ChunkPush
 from domain.value_objects import ChunkEditAction
 from persistence.database import get_connection
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if value is None or value == "":
-        return None
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
+from persistence.timestamps import parse_required_iso
 
 
 def _row_to_edit(row) -> ChunkEdit:
@@ -26,7 +17,7 @@ def _row_to_edit(row) -> ChunkEdit:
         chunk_id=row["chunk_id"],
         action=ChunkEditAction(row["action"]),
         actor=row["actor"],
-        at=_parse_iso(row["at"]) or datetime.now(UTC),
+        at=parse_required_iso(row["at"], column="chunk_edits.at"),
         before=json.loads(row["before_json"]) if row["before_json"] else None,
         after=json.loads(row["after_json"]) if row["after_json"] else None,
         parents=json.loads(row["parents_json"]) if row["parents_json"] else [],
@@ -42,7 +33,7 @@ def _row_to_push(row) -> ChunkPush:
         store_id=row["store_id"],
         chunkset_hash=row["chunkset_hash"],
         chunk_ids=json.loads(row["chunk_ids"]) if row["chunk_ids"] else [],
-        pushed_at=_parse_iso(row["pushed_at"]) or datetime.now(UTC),
+        pushed_at=parse_required_iso(row["pushed_at"], column="chunk_pushes.pushed_at"),
     )
 
 

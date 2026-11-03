@@ -2,20 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from domain.models import DocumentStoreLink
 from domain.value_objects import DocumentStoreLinkState
 from persistence.database import get_connection
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if value is None or value == "":
-        return None
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
+from persistence.timestamps import parse_iso
 
 
 def _row_to_link(row) -> DocumentStoreLink:
@@ -25,7 +15,7 @@ def _row_to_link(row) -> DocumentStoreLink:
         store_id=row["store_id"],
         state=DocumentStoreLinkState(row["state"]),
         chunkset_hash=row["chunkset_hash"],
-        last_push_at=_parse_iso(row["last_push_at"]),
+        last_push_at=parse_iso(row["last_push_at"]),
         last_run_id=row["last_run_id"],
         error_message=row["error_message"],
     )

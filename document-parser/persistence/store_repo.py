@@ -18,21 +18,12 @@ through dedicated endpoints and never echoes it back in responses.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 
 from domain.models import Store
 from domain.value_objects import StoreKind
 from infra.secrets import get_fernet_box
 from persistence.database import get_connection
-
-
-def _parse_dt(value: str | datetime) -> datetime:
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=UTC)
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
+from persistence.timestamps import parse_required_iso
 
 
 def _row_to_store(row) -> Store:
@@ -56,8 +47,8 @@ def _row_to_store(row) -> Store:
         # touching the Fernet box on a regular list/read.
         has_connection_password=row["connection_password_sealed"] is not None,
         is_default=bool(row["is_default"]),
-        created_at=_parse_dt(row["created_at"]),
-        updated_at=_parse_dt(row["updated_at"]),
+        created_at=parse_required_iso(row["created_at"], column="stores.created_at"),
+        updated_at=parse_required_iso(row["updated_at"], column="stores.updated_at"),
     )
 
 

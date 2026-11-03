@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from domain.models import Chunk
 from domain.value_objects import ChunkBbox, ChunkDocItem
 from persistence.database import get_connection
+from persistence.timestamps import parse_iso, parse_required_iso
 
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if value is None or value == "":
-        return None
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 def _row_to_chunk(row) -> Chunk:
@@ -34,9 +29,9 @@ def _row_to_chunk(row) -> Chunk:
         bboxes=[ChunkBbox(page=b["page"], bbox=b["bbox"]) for b in bboxes_raw],
         doc_items=[ChunkDocItem(self_ref=d["self_ref"], label=d["label"]) for d in doc_items_raw],
         token_count=row["token_count"],
-        created_at=_parse_iso(row["created_at"]) or datetime.now(UTC),
-        updated_at=_parse_iso(row["updated_at"]) or datetime.now(UTC),
-        deleted_at=_parse_iso(row["deleted_at"]),
+        created_at=parse_required_iso(row["created_at"], column="chunks.created_at"),
+        updated_at=parse_required_iso(row["updated_at"], column="chunks.updated_at"),
+        deleted_at=parse_iso(row["deleted_at"]),
     )
 
 
