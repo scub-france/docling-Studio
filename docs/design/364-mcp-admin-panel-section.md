@@ -5,7 +5,7 @@
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-10-27
 - **Status:** Implemented (shipped in 0.7.3)
-- **Target milestone:** 0.8.0 — Production ready
+- **Target milestone:** 0.8.0 — Production ready (planned) · shipped in 0.7.3
 - **Impacted layers:** backend: domain | api | services | infra (settings) | bootstrap · frontend: features/mcp-config, features/settings · e2e
 - **Audit dimensions likely touched:** Hexagonal Architecture · DRY · Security · Tests · Documentation
 - **ADR spawned?:** no
@@ -213,7 +213,7 @@ One INFO line per apply: `MCP config applied: max_rounds=… max_read_tokens=…
 
 Merged into PR #328 so the server and its panel land together. Two changes to the design above:
 
-- **`MCP_ENABLED` defaults to `true`**, except when `DEPLOYMENT_MODE=huggingface` (still `false` there). The default `MCP_ALLOWED_HOSTS` (localhost only, and nginx forwards the client's Host) keeps a default install answering local clients only.
+- **`MCP_ENABLED` defaults to `true`**, except when `DEPLOYMENT_MODE=huggingface` (still `false` there). The default `MCP_ALLOWED_HOSTS` accepts only a loopback `Host` header (nginx forwards the client's), which stops DNS rebinding from a browser. It does not keep network clients out: one that reaches the port can send `Host: localhost`, and the server has no authentication (`docs/mcp-server.md`, *Security*).
 - **A live on/off switch.** `McpRuntimeConfig.enabled` joins the live knobs (key `enabled` in namespace `mcp`, stored only when it differs from the env default, dropped by the reset). The route stays mounted; `bootstrap/mcp_mount.py` puts it behind `_ServingGate`, which answers 503 with a JSON-RPC error while `AppState.mcp_serving` is false, and the SDK is never reached. `PUT /api/config/mcp` takes a required `enabled`; turning it on is refused (400) when `MCP_ENABLED=false` left nothing mounted.
 
 Why the §3 objection no longer holds for the switch: with the server on by default, re-enabling it from the panel opens nothing the default did not already open. Turning it off only narrows the surface. The two decisions that do widen it, mounting it where `MCP_ENABLED=false` and widening the allow-list, stay in the environment.

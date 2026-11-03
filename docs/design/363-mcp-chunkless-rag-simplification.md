@@ -5,7 +5,7 @@
 - **Author:** Pier-Jean Malandrino
 - **Date:** 2026-10-26
 - **Status:** Implemented (shipped in 0.7.3)
-- **Target milestone:** 0.8.0 — Production ready · demo at BDX I/O on **2026-10-29**
+- **Target milestone:** 0.8.0 — Production ready (planned) · shipped in 0.7.3 · demo at BDX I/O on **2026-10-29**
 - **Impacted layers:** backend: domain | services | persistence | infra (settings) | `mcp_adapter` · frontend: none (deep link already shipped) · infra/CI: `.env.example`, compose
 - **Audit dimensions likely touched:** KISS · Performance · Decoupling · DRY · Tests · Documentation · Security
 - **ADR spawned?:** proposed — *"Studio does not journal an agent's reasoning: the trail is projected from the anchors it read and cited"* (a deliberate non-action that reverses #329's "the server keeps the plan")
@@ -71,7 +71,10 @@ read and cited, instead of a journal it must keep.
   navigation; neither docling-agent nor this server searches. It becomes the
   first follow-up if needle-in-a-haystack questions matter.
 - **Multi-document questions.** `find_documents` stays a filename lookup.
-- **Authentication.** Localhost only, as today; HF Space keeps `MCP_ENABLED=false`.
+- **Authentication.** None, as today; HF Space keeps `MCP_ENABLED=false`. The
+  default `MCP_ALLOWED_HOSTS` only stops DNS rebinding from a browser: any
+  client that reaches the port can send an allowed `Host` header and read
+  every document (`docs/mcp-server.md`, *Security*).
 - **#330**, replaying the trail in the Parse-view timeline. It comes after the
   demo. A deep link carrying several refs is its natural first step.
 - **The wire diet of §5.5.** Only its zero-risk items are in scope for Thursday.
