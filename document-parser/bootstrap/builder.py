@@ -161,8 +161,6 @@ class AppStateBuilder:
 
         self._update(
             analysis_repo=analysis_repo,
-            store_repo=store_repo,
-            document_store_link_repo=link_repo,
             document_service=build_document_service(
                 document_repo,
                 analysis_repo,

@@ -27,12 +27,7 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, Request
 
 if TYPE_CHECKING:
-    from domain.ports import (
-        AnalysisRepository,
-        DocumentStoreLinkRepository,
-        ReasoningRunner,
-        StoreRepository,
-    )
+    from domain.ports import AnalysisRepository, ReasoningRunner
     from services.analysis_service import AnalysisService
     from services.app_config_service import AppConfigService
     from services.chunk_service import ChunkService
@@ -58,8 +53,6 @@ class AppState:
 
     # Repositories reached directly by the API layer.
     analysis_repo: AnalysisRepository | None = None
-    store_repo: StoreRepository | None = None
-    document_store_link_repo: DocumentStoreLinkRepository | None = None
 
     # Use-case services.
     document_service: DocumentService | None = None
