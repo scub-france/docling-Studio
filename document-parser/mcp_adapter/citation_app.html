@@ -625,7 +625,7 @@
     // Covers a host whose engine has no ResizeObserver; where there is one it
     // reports again, more accurately, once the image has decoded. The card is
     // brand new, so the fit is measured rather than reused.
-    fitToFrame(true);
+    refitToFrame();
     reportSize();
   }
 
@@ -642,7 +642,7 @@
       const folded = quote?.classList.toggle("clamped");
       const button = root.querySelector('[data-act="more"]');
       if (button) button.textContent = folded ? "Lire la suite" : "Réduire";
-      fitToFrame(true);
+      refitToFrame();
       reportSize();
       return;
     }
@@ -870,7 +870,7 @@
       track.firstElementChild.style.width = `${at * 100}%`;
       track.hidden = false;
     }
-    fitToFrame(true);
+    refitToFrame();
     reportSize();
   }
 
@@ -878,7 +878,7 @@
     sheet.classList.remove("pending");
     sheet.classList.add("failed");
     sheet.innerHTML = `<p class="fallback">${esc(message)}</p>`;
-    fitToFrame(true);
+    refitToFrame();
     reportSize();
   }
 
@@ -1030,13 +1030,30 @@
   // forever. It recomputes when the frame changes, or when the card does.
   let fittedFor = null;
 
-  function fitToFrame(contentChanged) {
+  // The card itself changed: measure it again, whatever width it was fitted for.
+  function refitToFrame() {
+    const target = fitTarget();
+    if (target) fitCard(target);
+  }
+
+  // Every size report goes through here, the fit's own included: only a width
+  // the card was not fitted for yet is measured again.
+  function fitToFrameIfResized() {
+    const target = fitTarget();
+    if (target && target.available !== fittedFor) fitCard(target);
+  }
+
+  // What a fit measures, or null while there is nothing to measure.
+  function fitTarget() {
     const main = document.querySelector("main");
     const card = main && main.querySelector(".card");
-    if (!main || !card) return;
+    if (!main || !card) return null;
     const available = document.documentElement.clientWidth;
-    if (!available) return;
-    if (!contentChanged && fittedFor === available) return;
+    if (!available) return null;
+    return { main, card, available };
+  }
+
+  function fitCard({ main, card, available }) {
     fittedFor = available;
 
     main.style.zoom = "";
@@ -1065,7 +1082,7 @@
   function reportSize() {
     const main = document.querySelector("main");
     if (!main) return;
-    fitToFrame(false);
+    fitToFrameIfResized();
     const origin = main.querySelector(".origin");
     // Not decoration: if a card still comes back clipped, these two numbers
     // say whether the content was too wide or the frame was.

@@ -443,8 +443,12 @@ class TestTemplate:
         # Re-fitting is driven by the ResizeObserver, and the fit resizes what
         # that observer watches. Without the cache this is a loop.
         assert "fittedFor" in CITATION_APP_HTML
-        assert "fitToFrame(false)" in CITATION_APP_HTML
-        assert "fitToFrame(true)" in CITATION_APP_HTML
+        report = re.search(r"function reportSize\(\) \{.*?\n  \}", CITATION_APP_HTML, re.S)
+        assert report is not None
+        assert "fitToFrameIfResized()" in report.group(0)
+        assert "refitToFrame()" not in report.group(0)
+        # A changed card is measured again, whatever width it was fitted for.
+        assert "refitToFrame()" in CITATION_APP_HTML
 
     def test_says_what_it_measured_when_a_card_still_does_not_fit(self):
         # If a card comes back clipped anyway, these two numbers separate "the

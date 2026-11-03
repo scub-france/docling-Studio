@@ -366,7 +366,9 @@ function setupObserver(): void {
     (entries) => {
       for (const entry of entries) {
         const page = Number((entry.target as HTMLElement).dataset.pageNumber)
-        if (page) updateRenderWindow(page, entry.isIntersecting)
+        if (!page) continue
+        if (entry.isIntersecting) keepRendered(page)
+        else releaseRendered(page)
       }
     },
     { root: stage, rootMargin: '100% 0px' },
@@ -382,11 +384,13 @@ function setupObserver(): void {
   }
 }
 
-function updateRenderWindow(pageNumber: number, isIntersecting: boolean): void {
-  if (isIntersecting) {
-    renderedPageNumbers.add(pageNumber)
-    return
-  }
+/** A page entering the render window gets its raster. */
+function keepRendered(pageNumber: number): void {
+  renderedPageNumbers.add(pageNumber)
+}
+
+/** A page leaving the render window gives its raster back. */
+function releaseRendered(pageNumber: number): void {
   renderedPageNumbers.delete(pageNumber)
   // Hold on to the raster of the page carrying the highlight (#336): the focus
   // scroll may still be travelling towards it, and dropping it mid-flight would

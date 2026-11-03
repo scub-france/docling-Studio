@@ -598,21 +598,28 @@
   function highlights(view, item) {
     const page = item.page;
     const shown = [];
-    const draw = (other) => (entry) => {
+    // A read's blocks, or a quote's lines. False for a quote whose lines were
+    // not found, which draws nothing here.
+    const drawMarks = (entry) => {
       if (entry.kind === "hop") {
         onPage(entry.h.regions, page).forEach((r) => shown.push(block(r, "read")));
-        return;
+        return true;
       }
       const lines = onPage(entry.p.marks, page);
       const look = tone(entry.p) === "bad" ? " bad" : "";
-      if (lines.length) {
-        lines.forEach((r) => shown.push(`<span class="hl${look}" style="${boxStyle(r, 0.003, 0.002)}"></span>`));
-      } else if (!other) {
+      lines.forEach((r) => shown.push(`<span class="hl${look}" style="${boxStyle(r, 0.003, 0.002)}"></span>`));
+      return lines.length > 0;
+    };
+    const drawNeighbour = (entry) => {
+      drawMarks(entry);
+    };
+    const drawCurrent = (entry) => {
+      if (!drawMarks(entry)) {
         onPage(entry.p.regions, page).forEach((r) => shown.push(block(r, tone(entry.p))));
       }
     };
-    state.items.filter((x) => x !== item && x.page === page).forEach(draw(true));
-    draw(false)(item);
+    state.items.filter((x) => x !== item && x.page === page).forEach(drawNeighbour);
+    drawCurrent(item);
     return shown.join("");
   }
 
