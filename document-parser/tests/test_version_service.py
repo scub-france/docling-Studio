@@ -131,11 +131,23 @@ class TestListForDocument:
         await service.record_on_analysis(doc.id, "a1")
         await service.record_on_rechunk(doc.id, "a1")
         await service.record_on_analysis(doc.id, "a2")
-        versions = await service.list_for_document(doc.id)
+        entries = await service.list_for_document(doc.id)
         # 3 entries, newest first (analysis a2 wins)
-        assert len(versions) == 3
-        assert versions[0].kind is DocumentVersionKind.ANALYSIS
-        assert versions[0].analysis_id == "a2"
+        assert len(entries) == 3
+        assert entries[0].version.kind is DocumentVersionKind.ANALYSIS
+        assert entries[0].version.analysis_id == "a2"
+
+    async def test_counts_snapshot_chunks_without_loading_snapshots(self, service, repos, doc):
+        await service.record_on_analysis(doc.id, "a1")
+        await repos["chunks"].insert_many(
+            [Chunk(document_id=doc.id, sequence=i, text=f"t{i}") for i in range(3)]
+        )
+        await service.record_on_rechunk(doc.id, "a1")
+
+        entries = await service.list_for_document(doc.id)
+
+        assert [e.chunk_count for e in entries] == [3, 0]
+        assert all(e.version.chunks_snapshot is None for e in entries)
 
     async def test_unknown_doc_raises(self, service):
         with pytest.raises(VersionServiceError):

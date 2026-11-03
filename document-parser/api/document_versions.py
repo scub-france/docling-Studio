@@ -26,19 +26,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
-def _to_response(version) -> DocumentVersionResponse:
-    snapshot_size = 0
-    if version.chunks_snapshot:
+def _snapshot_size(chunks_snapshot: str | None) -> int:
+    if chunks_snapshot:
         try:
-            snapshot_size = len(json.loads(version.chunks_snapshot))
+            return len(json.loads(chunks_snapshot))
         except (json.JSONDecodeError, TypeError):
-            snapshot_size = 0
+            return 0
+    return 0
+
+
+def _to_response(version, chunks_snapshot_size: int) -> DocumentVersionResponse:
     return DocumentVersionResponse(
         id=version.id,
         document_id=version.document_id,
         kind=version.kind.value,
         analysis_id=version.analysis_id,
-        chunks_snapshot_size=snapshot_size,
+        chunks_snapshot_size=chunks_snapshot_size,
         summary=version.summary,
         created_at=str(version.created_at),
     )
@@ -52,12 +55,13 @@ def _raise_for(error: VersionServiceError) -> NoReturn:
 async def list_versions(
     doc_id: str, service: deps.VersionServiceDep
 ) -> list[DocumentVersionResponse]:
-    """List frozen versions for a document, newest-first."""
+    """List frozen versions for a document, newest-first. The chunk counts
+    come from the store: the snapshots themselves are never loaded here."""
     try:
-        versions = await service.list_for_document(doc_id)
+        entries = await service.list_for_document(doc_id)
     except VersionServiceError as e:
         _raise_for(e)
-    return [_to_response(v) for v in versions]
+    return [_to_response(e.version, e.chunk_count) for e in entries]
 
 
 @router.post(
@@ -75,4 +79,4 @@ async def restore_version(
         version = await service.restore(doc_id, version_id)
     except VersionServiceError as e:
         _raise_for(e)
-    return _to_response(version)
+    return _to_response(version, _snapshot_size(version.chunks_snapshot))

@@ -7,6 +7,7 @@ Infrastructure adapters (local Docling, Docling Serve, etc.) implement these.
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -269,6 +270,19 @@ class ChunkPushRepository(Protocol):
     async def count_for_document(self, document_id: str) -> int: ...
 
 
+@dataclass(frozen=True)
+class DocumentVersionEntry:
+    """One row of a document's version history, as the history list needs it.
+
+    `version.chunks_snapshot` is not loaded (None): the list only shows how
+    many chunks each snapshot holds, which the store counts (`chunk_count`)
+    rather than handing every snapshot over to be parsed.
+    """
+
+    version: DocumentVersion
+    chunk_count: int
+
+
 class DocumentVersionRepository(Protocol):
     """Port for the frozen (analysis, chunks) version history (#267)."""
 
@@ -276,8 +290,9 @@ class DocumentVersionRepository(Protocol):
 
     async def find_by_id(self, version_id: str) -> DocumentVersion | None: ...
 
-    async def find_for_document(self, document_id: str) -> list[DocumentVersion]:
-        """Every version of the document, newest first."""
+    async def list_for_document(self, document_id: str) -> list[DocumentVersionEntry]:
+        """Every version of the document, newest first, without the snapshot
+        bodies. A snapshot that is not a JSON array counts 0 chunks."""
         ...
 
 

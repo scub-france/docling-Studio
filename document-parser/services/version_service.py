@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from domain.ports import (
         ChunkRepository,
         DocumentRepository,
+        DocumentVersionEntry,
         DocumentVersionRepository,
     )
 
@@ -93,9 +94,11 @@ class VersionService:
         self._chunks = chunk_repo
         self._documents = document_repo
 
-    async def list_for_document(self, document_id: str) -> list[DocumentVersion]:
+    async def list_for_document(self, document_id: str) -> list[DocumentVersionEntry]:
+        """The document's history, newest first: each version without its
+        snapshot body, with the number of chunks the snapshot holds."""
         await self._require_doc(document_id)
-        return await self._versions.find_for_document(document_id)
+        return await self._versions.list_for_document(document_id)
 
     async def record_on_analysis(
         self,
