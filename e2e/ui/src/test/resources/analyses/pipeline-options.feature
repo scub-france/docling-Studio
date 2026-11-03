@@ -36,23 +36,27 @@ Feature: UI — Pipeline configuration options
     * call read('classpath:common/helpers/cleanup.feature') { docId: '#(docId)' }
 
   Scenario: Verify pipeline options are preserved across mode switches
-    # Setup via API
+    # Setup via API. The Verify button stays disabled until the Studio holds
+    # an analysis, so the scenario needs a finished one.
     * def result = call read('classpath:common/helpers/upload.feature') { file: 'small.pdf' }
     * def docId = result.docId
+    * def analysis = call read('classpath:common/helpers/analyze.feature') { docId: '#(docId)' }
+    * match analysis.response.status == 'COMPLETED'
 
-    # Open Studio and select document
-    * driver uiBaseUrl + '/studio'
-    * waitFor('[data-e2e=doc-item]')
-    * click('[data-e2e=doc-item]')
-    * waitFor('[data-e2e=doc-item].selected')
+    # Open Studio on the analysis: it selects the document and opens Verify
+    * driver uiBaseUrl + '/studio?analysisId=' + analysis.jobId
+    * waitFor('[data-e2e~=verify-btn].active')
 
-    # Change table mode to fast
+    # Change table mode from the default to fast
+    * click('[data-e2e~=configure-btn]')
     * waitFor('[data-e2e=config-select]')
+    * match value('[data-e2e=config-select]') == 'accurate'
     * select('[data-e2e=config-select]', 'fast')
 
-    # Switch to Verify mode and back
+    # Switch to Verify mode, where the config panel is not rendered, and back
     * click('[data-e2e~=verify-btn]')
     * waitFor('[data-e2e~=verify-btn].active')
+    * match karate.sizeOf(locateAll('[data-e2e=config-select]')) == 0
     * click('[data-e2e~=configure-btn]')
     * waitFor('[data-e2e=config-select]')
 
