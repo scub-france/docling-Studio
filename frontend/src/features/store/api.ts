@@ -13,6 +13,18 @@ export interface StoreInfo {
   errorMessage?: string
 }
 
+/**
+ * The kind-specific settings the backend reads (`StoreConfigResponse`),
+ * echoed as stored: a key is present only when the store row holds it.
+ * The form writes `indexName`; a store created through the API may carry
+ * `index_name` instead.
+ */
+export interface StoreConfig {
+  indexName?: string | null
+  index_name?: string | null
+  database?: string | null
+}
+
 export interface StoreDetail {
   id: string
   name: string
@@ -20,7 +32,7 @@ export interface StoreDetail {
   kind: string
   embedder: string
   isDefault: boolean
-  config: Record<string, unknown>
+  config: StoreConfig
   // Connection identity (#279). The password itself never crosses
   // the wire on a GET — only the boolean indicator does. The form
   // renders "•••• (unchanged — type to replace)" when this is true.

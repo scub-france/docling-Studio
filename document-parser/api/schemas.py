@@ -8,9 +8,18 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+)
 
 from domain.app_config import (
     MAX_ITERATIONS_MAX,
@@ -50,6 +59,24 @@ class _CamelModel(BaseModel):
         populate_by_name=True,
         serialize_by_alias=True,
     )
+
+
+class ProvidedKeysModel(BaseModel):
+    """A response object that emits the keys it was given, and only those.
+
+    For payloads that were a free `dict` until typed (#audit-07): a key the
+    source did not carry stays absent instead of turning up as `null`, so the
+    JSON is the one the dict produced. `always_emitted` names declared fields
+    that were emitted whether set or not. Field names are the wire keys: no
+    alias generator here.
+    """
+
+    always_emitted: ClassVar[frozenset[str]] = frozenset()
+
+    @model_serializer(mode="wrap")
+    def _provided_keys_only(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        keep = self.model_fields_set | self.always_emitted
+        return {key: value for key, value in handler(self).items() if key in keep}
 
 
 class HealthResponse(_CamelModel):
@@ -331,6 +358,22 @@ class StoreInfoResponse(_CamelModel):
     error_message: str | None = None
 
 
+class StoreConfigResponse(ProvidedKeysModel):
+    """The kind-specific store settings the backend reads, echoed as stored.
+
+    Typed instead of a free `dict` (#audit-07). The store service requires an
+    index name under either spelling — the SPA writes `indexName`, API
+    clients `index_name` — and the Neo4j resolver reads `database` (default
+    `neo4j`). Each key comes back as the row holds it, and only when it does:
+    the shape the SPA reads is unchanged. Any other key is still persisted,
+    no longer echoed.
+    """
+
+    index_name: str | None = None
+    indexName: str | None = None
+    database: str | None = None
+
+
 class StoreResponse(_CamelModel):
     """Detailed read model for `GET /api/stores/{slug}`.
 
@@ -346,7 +389,7 @@ class StoreResponse(_CamelModel):
     kind: str
     embedder: str
     is_default: bool
-    config: dict
+    config: StoreConfigResponse
     connection_uri: str | None = None
     connection_username: str | None = None
     has_connection_password: bool = False

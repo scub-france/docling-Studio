@@ -13,22 +13,65 @@ domain `GraphPayload` into `GraphResponse`; the service's typed errors (404,
 from __future__ import annotations
 
 import logging
+from typing import ClassVar, Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from api import deps  # noqa: TC001
+from api.schemas import ProvidedKeysModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["graph"])
 
 
-class GraphNode(BaseModel):
-    id: str
-    group: str
-    label: str | None = None
+class GraphProvenance(ProvidedKeysModel):
+    """One provenance of an element — a page and a box on it, in order."""
 
-    model_config = {"extra": "allow"}
+    order: int | None = None
+    page_no: int | None = None
+    bbox_l: int | float | None = None
+    bbox_t: int | float | None = None
+    bbox_r: int | float | None = None
+    bbox_b: int | float | None = None
+    coord_origin: str | None = None
+    charspan_start: int | None = None
+    charspan_end: int | None = None
+
+
+class GraphNode(ProvidedKeysModel):
+    """One cytoscape node: the fields `infra/neo4j/queries.py` emits, by group.
+
+    Typed instead of `extra="allow"` (#audit-07). A node carries its own
+    group's keys only, as the adapter built it; `label` (an element's Neo4j
+    label) is on every node, `null` off elements, as it always was.
+    """
+
+    always_emitted: ClassVar[frozenset[str]] = frozenset({"label"})
+
+    id: str
+    group: Literal["document", "element", "page", "chunk"]
+    label: str | None = None
+    # document, element, page
+    doc_id: str | None = None
+    # document
+    title: str | None = None
+    stages_applied: list[str] | None = None
+    # element
+    docling_label: str | None = None
+    self_ref: str | None = None
+    level: int | None = None
+    prov_page: int | None = None
+    provs: list[GraphProvenance] | None = None
+    # element, chunk (both cut to 200 characters)
+    text: str | None = None
+    # page
+    page_no: int | None = None
+    width: int | float | None = None
+    height: int | float | None = None
+    # chunk
+    chunk_index: int | None = None
+    token_count: int | None = None
 
 
 class GraphEdge(BaseModel):

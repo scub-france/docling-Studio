@@ -17,23 +17,36 @@ export interface GraphProvenance {
   charspan_end: number | null
 }
 
+/**
+ * One node, as the backend's `GraphNode` types it: a node carries only its
+ * own group's keys.
+ */
 export interface GraphNode {
   id: string
   group: 'document' | 'element' | 'page' | 'chunk'
+  /** An element's Neo4j label (SectionHeader, Paragraph, …). */
   label?: string
+  /** document, element, page */
+  doc_id?: string
+  /** document */
+  title?: string | null
+  stages_applied?: string[] | null
+  /** element */
   docling_label?: string
   self_ref?: string
-  text?: string
+  level?: number | null
   prov_page?: number | null
   /** Full list of provenances (page + bbox) — used by the bbox-highlight UI. */
   provs?: GraphProvenance[]
-  level?: number | null
+  /** element, chunk (cut to 200 characters) */
+  text?: string
+  /** page */
   page_no?: number
+  width?: number | null
+  height?: number | null
+  /** chunk */
   chunk_index?: number
-  title?: string
-  doc_id?: string
   token_count?: number
-  [key: string]: unknown
 }
 
 export interface GraphEdge {

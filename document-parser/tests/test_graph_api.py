@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from api.errors import register_error_handlers
 from api.graph import router
 from domain.value_objects import GraphPayload
+from infra.neo4j.queries import _chunk_node, _element_node, _page_node
 from services.graph_service import GraphService
 from tests.app_state import wire_state
 
@@ -77,6 +78,64 @@ class TestDocumentGraph:
         client = _client(reader=_FakeGraphReader(None))
         resp = client.get("/api/documents/doc-1/graph")
         assert resp.status_code == 404
+
+
+def _adapter_nodes() -> list[dict]:
+    """One node of each group, built the way the Neo4j adapter builds them."""
+    element = _element_node(
+        "doc-1",
+        {"self_ref": "#/texts/0", "docling_label": "section_header", "text": "Intro", "level": 1},
+        provs=[
+            {
+                "order": 0,
+                "page_no": 1,
+                "bbox_l": 72.5,
+                "bbox_t": 700,
+                "bbox_r": 300.25,
+                "bbox_b": 680,
+                "coord_origin": "BOTTOMLEFT",
+                "charspan_start": 0,
+                "charspan_end": 5,
+            }
+        ],
+    )
+    element["label"] = "SectionHeader"
+    bare = _element_node("doc-1", {"self_ref": "#/texts/1", "docling_label": "text", "text": ""})
+    bare["label"] = "TextElement"
+    return [
+        {
+            "id": "doc::doc-1",
+            "group": "document",
+            "doc_id": "doc-1",
+            "title": "hello.pdf",
+            "stages_applied": ["tree", "chunks"],
+        },
+        element,
+        bare,
+        _page_node("doc-1", {"page_no": 1, "width": 612.0, "height": 792}),
+        _chunk_node({"id": "c1", "chunk_index": 0, "text": "Intro", "token_count": 3}),
+    ]
+
+
+class TestNodeShape:
+    """`GraphNode` is typed (#audit-07) but each node keeps the keys the
+    adapter gave it, as `extra="allow"` did: no other group's keys, `label`
+    on every node (`null` off elements)."""
+
+    def test_every_node_comes_back_as_the_adapter_built_it(self) -> None:
+        nodes = _adapter_nodes()
+        payload = GraphPayload(
+            doc_id="doc-1",
+            nodes=nodes,
+            edges=[],
+            node_count=len(nodes),
+            edge_count=0,
+            truncated=False,
+            page_count=1,
+        )
+        resp = _client(reader=_FakeGraphReader(payload)).get("/api/documents/doc-1/graph")
+        assert resp.status_code == 200
+        assert resp.json()["nodes"] == [{"label": None, **node} for node in nodes]
 
 
 class TestPrimeEndpointRemoved:

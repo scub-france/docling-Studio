@@ -98,6 +98,34 @@ class TestRead:
         assert resp.status_code == 404
 
 
+class TestConfigShape:
+    """`config` is typed (#audit-07) but echoes the keys the row holds, as the
+    free dict did: the SPA reads `indexName ?? index_name` and `database`."""
+
+    def test_the_spa_spelling_comes_back_unchanged(self, client):
+        client.post(
+            "/api/stores",
+            json={**VALID_OS, "kind": "neo4j", "config": {"indexName": "rh", "database": "g"}},
+        )
+        assert client.get("/api/stores/rh").json()["config"] == {
+            "indexName": "rh",
+            "database": "g",
+        }
+
+    def test_an_api_client_spelling_comes_back_unchanged(self, client):
+        resp = client.post("/api/stores", json={**VALID_OS, "config": {"index_name": "rh"}})
+        assert resp.json()["config"] == {"index_name": "rh"}
+
+    def test_unread_keys_are_no_longer_echoed(self, client):
+        resp = client.post(
+            "/api/stores", json={**VALID_OS, "config": {"indexName": "rh", "shards": 3}}
+        )
+        assert resp.json()["config"] == {"indexName": "rh"}
+
+    def test_the_seeded_default_store_has_an_empty_config(self, client):
+        assert client.get("/api/stores/default").json()["config"] == {}
+
+
 class TestUpdate:
     def test_patch_embedder(self, client):
         client.post("/api/stores", json=VALID_OS)
