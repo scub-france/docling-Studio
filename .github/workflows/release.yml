@@ -19,6 +19,10 @@ jobs:
       packages: write
 
     strategy:
+      # A failed build must not cancel the other target's build-push: with
+      # fail-fast, a `local` failure could leave a release with only part of
+      # its images pushed.
+      fail-fast: false
       matrix:
         target: [remote, local]
 

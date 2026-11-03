@@ -234,6 +234,9 @@ jobs:
     name: Docker build — ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
+      # A failed build must not cancel the other one: both results are needed
+      # to tell a target-specific break from a shared one.
+      fail-fast: false
       matrix:
         target: [remote, local]
 
