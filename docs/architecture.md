@@ -138,6 +138,7 @@ On start, the app reads `/api/health`. The answer decides which pages exist (`ST
 
 ## Going further
 
+- [Glossary](architecture/glossary.md): what document, analysis, parse, version, round and citation mean here, and the older names still in use.
 - [Bounding boxes](bbox-pipeline.md): how a Docling box becomes a rectangle on the page.
 - [Design docs](https://github.com/scub-france/Docling-Studio/tree/main/docs/design): one per feature, named after its issue.
 - [Architecture decisions](architecture/adr-guide.md), for example [ADR-001](architecture/adrs/ADR-001-graph-visualization-library.md) on the graph library.

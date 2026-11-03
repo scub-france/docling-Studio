@@ -41,6 +41,7 @@ nav:
   - Contribute:
       - Contributing: https://github.com/scub-france/Docling-Studio/blob/main/CONTRIBUTING.md
       - Architecture: architecture.md
+      - Glossary: architecture/glossary.md
       - Bounding boxes: bbox-pipeline.md
   - Maintain: maintainers.md
 

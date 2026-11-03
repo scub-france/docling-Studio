@@ -523,8 +523,8 @@ class AnalysisService:
         return job
 
     async def _record_version(self, job: AnalysisJob) -> None:
-        """Record a frozen (analysis, chunks_snapshot) pair in the workspace
-        History timeline (#267).
+        """Record a document version: the frozen pair of this analysis and
+        a snapshot of the document's chunks (#267).
 
         Snapshots the LIVE chunks at this moment so user edits since the
         previous version are preserved alongside the new analysis pointer.
