@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "docling-studio": {
+      "type": "http",
+      "url": "${user_config.mcp_url}"
+    }
+  }
+}

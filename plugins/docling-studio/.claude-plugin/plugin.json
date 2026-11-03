@@ -1,0 +1,26 @@
+{
+  "name": "docling-studio",
+  "displayName": "Docling Studio",
+  "version": "0.7.4",
+  "description": "Answer from the documents parsed in your Docling Studio, with every quote verified by the server. Chunkless RAG over MCP: no chunks, no embeddings.",
+  "author": {
+    "name": "SCUB",
+    "url": "https://github.com/scub-france"
+  },
+  "homepage": "https://scub-france.github.io/Docling-Studio/mcp-server/",
+  "repository": "https://github.com/scub-france/Docling-Studio",
+  "license": "MIT",
+  "keywords": ["docling", "documents", "pdf", "rag", "citations", "mcp"],
+  "icon": "./.claude-plugin/icon.png",
+  "documentationUrl": "https://scub-france.github.io/Docling-Studio/mcp-server/",
+  "supportUrl": "https://github.com/scub-france/Docling-Studio/issues",
+  "userConfig": {
+    "mcp_url": {
+      "type": "string",
+      "title": "Docling Studio MCP URL",
+      "description": "Where your Studio serves MCP. Docker Compose: http://localhost:3000/mcp. From source: http://localhost:8000/mcp.",
+      "default": "http://localhost:3000/mcp",
+      "required": true
+    }
+  }
+}
