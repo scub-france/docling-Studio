@@ -81,12 +81,17 @@ jobs:
 
       - name: Backend tests
         run: |
+          # Without pipefail the step takes tee's exit code, so a red pytest
+          # passed. Set here, not as the workflow's default shell: the Node
+          # audit below relies on `npm audit | tee` not failing its step.
+          set -o pipefail
           cd document-parser
           uv sync --frozen --group dev
           uv run pytest tests/ -v --tb=short 2>&1 | tee /tmp/backend-tests.txt
 
       - name: Frontend tests
         run: |
+          set -o pipefail
           cd frontend
           npm ci
           npm run test:run 2>&1 | tee /tmp/frontend-tests.txt
