@@ -53,6 +53,10 @@ _KEY_MAX_ITERATIONS = "max_iterations"
 
 _parse_iterations = parse_int_between(MAX_ITERATIONS_MIN, MAX_ITERATIONS_MAX)
 
+# The panel names the LLM backend Ask runs on. Ollama is the only one
+# (#audit-04): a constant, not a setting.
+_PROVIDER_TYPE = "ollama"
+
 # Re-exported: the API layer and the tests import the errors from here.
 __all__ = [
     "AppConfigError",
@@ -70,7 +74,6 @@ class AppConfigService:
         *,
         repo: AppSettingsRepository,
         env_defaults: ReasoningConfig,
-        provider_type: str,
         read_only: bool,
         probe: LLMHostProbe,
         apply_config: Callable[[ReasoningConfig], None],
@@ -78,7 +81,6 @@ class AppConfigService:
     ) -> None:
         self._repo = repo
         self._env_defaults = env_defaults
-        self._provider_type = provider_type
         self._read_only = read_only
         self._probe = probe
         self._apply_config = apply_config
@@ -183,7 +185,7 @@ class AppConfigService:
         return ReasoningConfigView(
             config=config,
             sources=sources,
-            provider_type=self._provider_type,
+            provider_type=_PROVIDER_TYPE,
             read_only=self._read_only,
             diagnostics=self._diagnostics_provider(),
         )

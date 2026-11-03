@@ -236,8 +236,6 @@ class AppStateBuilder:
             app_config_service=AppConfigService(
                 repo=SqliteAppSettingsRepository(),
                 env_defaults=env_reasoning_config(),
-                # Shown in the panel; Ollama is the only backend (#audit-04).
-                provider_type="ollama",
                 read_only=settings.deployment_mode == "huggingface",
                 probe=OllamaProbe(),
                 apply_config=apply_config,

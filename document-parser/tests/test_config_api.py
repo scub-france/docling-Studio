@@ -67,7 +67,6 @@ def _make_client(
     service = AppConfigService(
         repo=repo,
         env_defaults=ENV,
-        provider_type="ollama",
         read_only=read_only,
         probe=probe,
         apply_config=applied.append,
