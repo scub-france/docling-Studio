@@ -25,6 +25,13 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 _READ_CHUNK_SIZE = 64 * 1024  # 64 KB
 
+# A document's PDF is written once, under a fresh id, and never replaced: a
+# page image for (id, page, dpi) and the page sizes of an id cannot change.
+# Cached by the browser only (`private`), for a day, so scrolling back to a
+# page or reopening a document does not rasterise it again. Success only:
+# errors are not cached.
+_IMMUTABLE_PAGE_CACHE = "private, max-age=86400"
+
 
 def _to_response(doc, *, store_links: list[StoreLinkView] | None = None) -> DocumentResponse:
     return DocumentResponse(
@@ -163,11 +170,17 @@ async def preview(
         raise HTTPException(status_code=422, detail="Failed to generate preview") from exc
     if png_bytes is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    return Response(content=png_bytes, media_type="image/png")
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": _IMMUTABLE_PAGE_CACHE},
+    )
 
 
 @router.get("/{doc_id}/pages", response_model=list[PageSizeResponse])
-async def page_sizes(doc_id: str, service: deps.DocumentServiceDep) -> list[PageSizeResponse]:
+async def page_sizes(
+    doc_id: str, service: deps.DocumentServiceDep, response: Response
+) -> list[PageSizeResponse]:
     """Size of each page of the PDF, so the preview can lay out its pages
     before any analysis (#352)."""
     try:
@@ -179,6 +192,7 @@ async def page_sizes(doc_id: str, service: deps.DocumentServiceDep) -> list[Page
         raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
     if pages is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    response.headers["Cache-Control"] = _IMMUTABLE_PAGE_CACHE
     return [
         PageSizeResponse(page_number=p.page_number, width=p.width, height=p.height) for p in pages
     ]

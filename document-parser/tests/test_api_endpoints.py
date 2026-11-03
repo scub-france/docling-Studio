@@ -271,6 +271,8 @@ class TestDocumentEndpoints:
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/png"
         assert resp.content.startswith(b"\x89PNG")
+        # A page of a stored PDF never changes: the browser keeps it.
+        assert resp.headers["cache-control"] == "private, max-age=86400"
 
     def test_preview_unknown_document(self, client, stored_documents):
         stored_documents.find_by_id = AsyncMock(return_value=None)
@@ -321,6 +323,7 @@ class TestDocumentEndpoints:
 
         assert resp.status_code == 404
         assert resp.json() == {"detail": "PDF file not found on disk"}
+        assert "cache-control" not in resp.headers
 
     def test_preview_unreadable_pdf(self, client, stored_documents, tmp_path):
         broken = tmp_path / "broken.pdf"
@@ -350,6 +353,7 @@ class TestDocumentEndpoints:
             {"pageNumber": 1, "width": 612.0, "height": 792.0},
             {"pageNumber": 2, "width": 842.0, "height": 595.0},
         ]
+        assert resp.headers["cache-control"] == "private, max-age=86400"
 
     def test_page_sizes_unknown_document(self, client, stored_documents):
         stored_documents.find_by_id = AsyncMock(return_value=None)
@@ -367,6 +371,7 @@ class TestDocumentEndpoints:
 
         assert resp.status_code == 404
         assert "not found on disk" in resp.json()["detail"]
+        assert "cache-control" not in resp.headers
 
     def test_page_sizes_unreadable_pdf(self, client, stored_documents, tmp_path):
         broken = tmp_path / "broken.pdf"
