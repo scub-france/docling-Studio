@@ -28,7 +28,7 @@ The file is over `MAX_FILE_SIZE_MB` (50 MB by default). Raise it, and keep `NGIN
 
 ## "429 Too Many Requests"
 
-More than `RATE_LIMIT_RPM` requests in a minute (100 by default). Behind the bundled nginx, all users share this one limit. Raise it, or set `0` to turn it off.
+More than `RATE_LIMIT_RPM` requests in a minute (100 by default), counted per client address. In the single image, each client has its own count. With Docker Compose, or behind your own reverse proxy, all users share the proxy's count until `FORWARDED_ALLOW_IPS` names that proxy: see [Limits](configuration.md#limits). Raise the limit, or set `0` to turn it off.
 
 ## My documents are gone
 

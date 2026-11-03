@@ -70,6 +70,7 @@ Known gaps in the workflow today:
 - The audit script is not in the repository, so its check passes without checking anything.
 - The Python audit never reports anything as critical.
 - The gate builds neither the models of the `local` image nor the arm64 images. They are first built when the tag starts `release.yml`.
+- `Docker smoke test — local` counts in the gate's verdict, but it is not a required check on `main` until an administrator adds it to the branch protection.
 - The UI end-to-end tests outside `@critical` run in no workflow. Run them by hand with `UIRunner#testLocal` (see `e2e/ui/README.md`).
 
 ## Hotfix
