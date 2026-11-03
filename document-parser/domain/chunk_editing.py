@@ -3,7 +3,7 @@
 Pure: chunks in, chunks out. Nothing here reads or writes the database or
 the `chunk_edits` journal. `services/chunk_service.py` loads the live
 chunkset, asks these functions what an edit produces, then persists the
-result with the journal rows `journal_entry` builds, in one write.
+result with the journal rows an `EditJournal` builds.
 
 These are the rules the chunk editor ships. An earlier draft of this module
 worked on whole chunksets and disagreed with the service on four points:
@@ -19,16 +19,18 @@ allowed, so an edit never renumbers more than it must.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from domain.chunk_serialization import chunk_to_audit_dict
 from domain.models import Chunk, ChunkEdit
+from domain.value_objects import ChunkEditAction
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-    from datetime import datetime
+    from collections.abc import Callable, Iterable, Sequence
 
-    from domain.value_objects import ChunkEditAction, ChunkResult
+    from domain.value_objects import ChunkResult
 
 # What a merge puts between the texts of two consecutive sources.
 MERGE_SEPARATOR = "\n"
@@ -149,35 +151,69 @@ def chunkset_from_results(document_id: str, results: Iterable[ChunkResult]) -> l
     ]
 
 
-def journal_entry(
-    document_id: str,
-    chunk_id: str,
-    action: ChunkEditAction,
-    *,
-    actor: str,
-    at: datetime,
-    before: Chunk | None = None,
-    after: Chunk | None = None,
-    parents: list[str] | None = None,
-    children: list[str] | None = None,
-    edit_id: str | None = None,
-) -> ChunkEdit:
-    """One `chunk_edits` row: `actor` did `action` to `chunk_id` at `at`.
+def _new_edit_id() -> str:
+    return str(uuid.uuid4())
 
-    `before` / `after` are the chunk as it was and as it is, recorded in the
-    journal shape (`chunk_to_audit_dict`); a path that journals no snapshot
-    leaves them out. `parents` / `children` carry a merge's sources and a
-    split's halves. The row gets a fresh uuid4 id unless `edit_id` is given.
+
+@dataclass(frozen=True)
+class EditJournal:
+    """The `chunk_edits` rows of one edit: `actor` changed `document_id` at `at`.
+
+    The one place a journal row is built. Each method returns the row for one
+    kind of change, with what that kind records: the chunk after an insert,
+    before a delete, both around an update; a split's source and the ids of
+    its halves; a merge's result and the ids of its sources. Snapshots take
+    the journal shape (`chunk_to_audit_dict`). Row ids are uuid4 strings
+    unless `new_id` says otherwise.
     """
-    return ChunkEdit(
-        id=edit_id or str(uuid.uuid4()),
-        document_id=document_id,
-        chunk_id=chunk_id,
-        action=action,
-        actor=actor,
-        at=at,
-        before=None if before is None else chunk_to_audit_dict(before),
-        after=None if after is None else chunk_to_audit_dict(after),
-        parents=list(parents or []),
-        children=list(children or []),
-    )
+
+    document_id: str
+    actor: str
+    at: datetime
+    new_id: Callable[[], str] = _new_edit_id
+
+    def inserted(self, chunk: Chunk) -> ChunkEdit:
+        return self._row(ChunkEditAction.INSERT, chunk.id, after=chunk_to_audit_dict(chunk))
+
+    def deleted(self, chunk: Chunk) -> ChunkEdit:
+        return self._row(ChunkEditAction.DELETE, chunk.id, before=chunk_to_audit_dict(chunk))
+
+    def updated(self, before: Chunk, after: Chunk) -> ChunkEdit:
+        return self._row(
+            ChunkEditAction.UPDATE,
+            before.id,
+            before=chunk_to_audit_dict(before),
+            after=chunk_to_audit_dict(after),
+        )
+
+    def split(self, source: Chunk, halves: Sequence[Chunk]) -> ChunkEdit:
+        return self._row(
+            ChunkEditAction.SPLIT,
+            source.id,
+            before=chunk_to_audit_dict(source),
+            children=[c.id for c in halves],
+        )
+
+    def merged(self, sources: Sequence[Chunk], merged: Chunk) -> ChunkEdit:
+        return self._row(
+            ChunkEditAction.MERGE,
+            merged.id,
+            after=chunk_to_audit_dict(merged),
+            parents=[c.id for c in sources],
+        )
+
+    def without_snapshot(self, action: ChunkEditAction, chunk: Chunk) -> ChunkEdit:
+        """A row naming the chunk and the action only — what a version
+        restore journals for the chunks it retires and writes back."""
+        return self._row(action, chunk.id)
+
+    def _row(self, action: ChunkEditAction, chunk_id: str, **recorded: Any) -> ChunkEdit:
+        return ChunkEdit(
+            id=self.new_id(),
+            document_id=self.document_id,
+            chunk_id=chunk_id,
+            action=action,
+            actor=self.actor,
+            at=self.at,
+            **recorded,
+        )

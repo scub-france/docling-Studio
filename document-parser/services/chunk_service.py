@@ -28,10 +28,10 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from domain import chunk_editing
-from domain.chunk_editing import journal_entry
+from domain.chunk_editing import EditJournal
 from domain.chunk_serialization import chunk_from_dict
 from domain.models import Chunk, Document
-from domain.value_objects import ChunkEditAction, ChunkingOptions
+from domain.value_objects import ChunkingOptions
 from services.errors import ServiceError
 from services.navigation_errors import DocumentNotFoundError
 
@@ -47,10 +47,6 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
-
-# The journal actions and actor the bulk paths write, short enough for one line.
-_INSERT, _DELETE = ChunkEditAction.INSERT, ChunkEditAction.DELETE
-_RECHUNK = "system:rechunk"
 
 
 # ---------------------------------------------------------------------------
@@ -158,16 +154,9 @@ class ChunkService:
             return 0
 
         now = _utcnow()
+        journal = EditJournal(document_id, "system:initial-analysis", now)
         await self._chunks.replace_chunkset(
-            document_id,
-            at=now,
-            add=canonical,
-            edits=[
-                journal_entry(
-                    document_id, c.id, _INSERT, actor="system:initial-analysis", at=now, after=c
-                )
-                for c in canonical
-            ],
+            document_id, at=now, add=canonical, edits=[journal.inserted(c) for c in canonical]
         )
         logger.info(
             "chunk.promote docId=%s count=%d (initial-analysis)", document_id, len(canonical)
@@ -201,11 +190,7 @@ class ChunkService:
             document_id,
             at=now,
             add=[new_chunk],
-            edits=[
-                journal_entry(
-                    document_id, new_chunk.id, _INSERT, actor=self._actor, at=now, after=new_chunk
-                )
-            ],
+            edits=[self._journal(document_id, now).inserted(new_chunk)],
         )
         logger.info(
             "chunk.add docId=%s chunkId=%s sequence=%d", document_id, new_chunk.id, sequence
@@ -228,17 +213,7 @@ class ChunkService:
             changes["headings"] = list(headings)
         updated = replace(chunk, **changes)
         await self._chunks.update(updated)
-        await self._edits.insert(
-            journal_entry(
-                document_id,
-                chunk.id,
-                ChunkEditAction.UPDATE,
-                actor=self._actor,
-                at=_utcnow(),
-                before=chunk,
-                after=updated,
-            )
-        )
+        await self._edits.insert(self._journal(document_id, _utcnow()).updated(chunk, updated))
         logger.info("chunk.update docId=%s chunkId=%s", document_id, chunk.id)
         return updated
 
@@ -247,11 +222,7 @@ class ChunkService:
         deleted = await self._chunks.soft_delete(chunk_id, at=_utcnow())
         if not deleted:
             raise ChunkNotFoundError(f"Chunk not found: {chunk_id}")
-        await self._edits.insert(
-            journal_entry(
-                document_id, chunk_id, _DELETE, actor=self._actor, at=_utcnow(), before=chunk
-            )
-        )
+        await self._edits.insert(self._journal(document_id, _utcnow()).deleted(chunk))
         logger.info("chunk.delete docId=%s chunkId=%s", document_id, chunk.id)
 
     async def split_chunk(self, document_id: str, chunk_id: str, cursor_offset: int) -> list[Chunk]:
@@ -272,17 +243,7 @@ class ChunkService:
             at=now,
             retire_ids=[source.id],
             add=[head, tail],
-            edits=[
-                journal_entry(
-                    document_id,
-                    source.id,
-                    ChunkEditAction.SPLIT,
-                    actor=self._actor,
-                    at=now,
-                    before=source,
-                    children=[head.id, tail.id],
-                )
-            ],
+            edits=[self._journal(document_id, now).split(source, [head, tail])],
         )
         logger.info(
             "chunk.split docId=%s sourceId=%s newIds=[%s,%s]",
@@ -304,17 +265,7 @@ class ChunkService:
             at=now,
             retire_ids=[c.id for c in ordered],
             add=[merged],
-            edits=[
-                journal_entry(
-                    document_id,
-                    merged.id,
-                    ChunkEditAction.MERGE,
-                    actor=self._actor,
-                    at=now,
-                    parents=[c.id for c in ordered],
-                    after=merged,
-                )
-            ],
+            edits=[self._journal(document_id, now).merged(ordered, merged)],
         )
         logger.info(
             "chunk.merge docId=%s sourceIds=%s newId=%s",
@@ -350,21 +301,13 @@ class ChunkService:
         new_chunks = chunk_editing.chunkset_from_results(document_id, new_results)
         # One transaction: the old chunkset is retired and the new one
         # journaled together, or not at all.
+        journal = EditJournal(document_id, "system:rechunk", now)
         await self._chunks.replace_chunkset(
             document_id,
             at=now,
             retire_ids=[c.id for c in existing],
             add=new_chunks,
-            edits=[
-                *(
-                    journal_entry(document_id, c.id, _DELETE, actor=_RECHUNK, at=now, before=c)
-                    for c in existing
-                ),
-                *(
-                    journal_entry(document_id, c.id, _INSERT, actor=_RECHUNK, at=now, after=c)
-                    for c in new_chunks
-                ),
-            ],
+            edits=[*map(journal.deleted, existing), *map(journal.inserted, new_chunks)],
         )
         logger.info(
             "chunk.rechunk docId=%s oldCount=%d newCount=%d",
@@ -388,6 +331,10 @@ class ChunkService:
                 )
 
         return new_chunks
+
+    def _journal(self, document_id: str, at: datetime) -> EditJournal:
+        """The journal of an edit made by this service's actor."""
+        return EditJournal(document_id, self._actor, at)
 
     # -- guards
 

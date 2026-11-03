@@ -173,6 +173,8 @@ class TestJournalSnapshot:
         await chunk_service.update_chunk(DOC, "c-1", text="Edited", headings=["New"])
 
         (row,) = await _edit_rows()
+        assert re.fullmatch(r"[0-9a-f-]{36}", row["id"])
+        assert (row["action"], row["actor"], row["chunk_id"]) == ("update", "user", "c-1")
         assert row["before_json"] == json.dumps(_audit(rich[0]))
         assert row["after_json"] == json.dumps(_audit(rich[0], text="Edited", headings=["New"]))
 
@@ -349,6 +351,11 @@ class TestVersionSnapshot:
         assert kept.doc_items == [ChunkDocItem(self_ref="#/texts/2", label="text")]
         assert (bare.sequence, bare.text, bare.headings, bare.source_page) == (0, "bare", [], None)
         assert (bare.token_count, bare.bboxes, bare.doc_items) == (None, [], [])
+        # The restore journals hex ids and no snapshot, as it always did.
+        rows = await _edit_rows()
+        assert [r["action"] for r in rows] == ["insert", "insert"]
+        assert all(re.fullmatch(r"[0-9a-f]{32}", r["id"]) for r in rows)
+        assert all(r["before_json"] is None and r["after_json"] is None for r in rows)
 
 
 # ---------------------------------------------------------------------------

@@ -21,9 +21,9 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain.chunk_editing import journal_entry
+from domain.chunk_editing import EditJournal
 from domain.chunk_serialization import chunk_from_dict, chunk_to_snapshot_dict
-from domain.models import Chunk, ChunkEdit, DocumentVersion, DocumentVersionKind
+from domain.models import Chunk, DocumentVersion, DocumentVersionKind
 from domain.ports import DocumentVersionEntry
 from domain.value_objects import ChunkEditAction
 from services.errors import ServiceError
@@ -153,16 +153,9 @@ class VersionService:
         ]
         now = _utcnow()
 
-        def journal(action: ChunkEditAction, chunk: Chunk) -> ChunkEdit:
-            # No before/after snapshot on a restore; ids stay hex, as always.
-            return journal_entry(
-                document_id,
-                chunk.id,
-                action,
-                actor=f"system:restore:{version_id}",
-                at=now,
-                edit_id=_new_id(),
-            )
+        # A restore journals no before/after snapshot, and its rows keep the
+        # hex ids they always had.
+        journal = EditJournal(document_id, f"system:restore:{version_id}", now, new_id=_new_id)
 
         existing = await self._chunks.find_for_document(document_id)
         await self._chunks.replace_chunkset(
@@ -171,8 +164,8 @@ class VersionService:
             retire_ids=[c.id for c in existing],
             add=new_chunks,
             edits=[
-                *(journal(ChunkEditAction.DELETE, c) for c in existing),
-                *(journal(ChunkEditAction.INSERT, c) for c in new_chunks),
+                *(journal.without_snapshot(ChunkEditAction.DELETE, c) for c in existing),
+                *(journal.without_snapshot(ChunkEditAction.INSERT, c) for c in new_chunks),
             ],
         )
 

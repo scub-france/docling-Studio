@@ -16,11 +16,11 @@ import pytest
 from domain.chunk_editing import (
     MERGE_SEPARATOR,
     ChunkEditingError,
+    EditJournal,
     InvalidChunkEditError,
     NonContiguousMergeError,
     UnknownChunkError,
     chunkset_from_results,
-    journal_entry,
     merge,
     sequence_after,
     split,
@@ -209,31 +209,78 @@ def test_chunkset_from_results_numbers_new_chunks_from_zero() -> None:
 
 
 # ---------------------------------------------------------------------------
-# journal_entry
+# EditJournal
 # ---------------------------------------------------------------------------
 
 
-def test_journal_entry_records_snapshots_in_the_journal_shape() -> None:
-    before, after = _make(2)
-    edit = journal_entry(
-        "doc-1", "c-0", ChunkEditAction.UPDATE, actor="user", at=AT, before=before, after=after
-    )
-    assert (edit.document_id, edit.chunk_id, edit.action, edit.actor, edit.at) == (
-        "doc-1",
-        "c-0",
+def _journal(**fields) -> EditJournal:
+    return EditJournal("doc-1", "user", AT, **fields)
+
+
+def test_every_row_carries_the_document_actor_and_time() -> None:
+    chunk = _make(1)[0]
+    rows = [
+        _journal().inserted(chunk),
+        _journal().deleted(chunk),
+        _journal().updated(chunk, chunk),
+        _journal().split(chunk, [chunk]),
+        _journal().merged([chunk], chunk),
+        _journal().without_snapshot(ChunkEditAction.INSERT, chunk),
+    ]
+    assert {(r.document_id, r.actor, r.at, r.reason) for r in rows} == {("doc-1", "user", AT, None)}
+    assert [r.action for r in rows] == [
+        ChunkEditAction.INSERT,
+        ChunkEditAction.DELETE,
         ChunkEditAction.UPDATE,
-        "user",
-        AT,
+        ChunkEditAction.SPLIT,
+        ChunkEditAction.MERGE,
+        ChunkEditAction.INSERT,
+    ]
+    assert all(len(r.id) == 36 for r in rows)  # str(uuid4()), as the chunk paths always wrote
+    assert len({r.id for r in rows}) == len(rows)
+
+
+def test_each_change_records_its_own_snapshots_and_lineage() -> None:
+    a, b, c = _make(3)
+    journal = _journal()
+
+    inserted, deleted = journal.inserted(a), journal.deleted(a)
+    assert (inserted.chunk_id, inserted.before, inserted.after) == (
+        "c-0",
+        None,
+        chunk_to_audit_dict(a),
     )
-    assert edit.before == chunk_to_audit_dict(before)
-    assert edit.after == chunk_to_audit_dict(after)
-    assert (edit.parents, edit.children, edit.reason) == ([], [], None)
-    assert len(edit.id) == 36  # str(uuid4()), as the chunk paths always wrote
+    assert (deleted.chunk_id, deleted.before, deleted.after) == (
+        "c-0",
+        chunk_to_audit_dict(a),
+        None,
+    )
+
+    updated = journal.updated(a, b)
+    assert (updated.chunk_id, updated.before, updated.after) == (
+        "c-0",
+        chunk_to_audit_dict(a),
+        chunk_to_audit_dict(b),
+    )
+
+    split_row = journal.split(a, [b, c])
+    assert (split_row.chunk_id, split_row.before, split_row.after) == (
+        "c-0",
+        chunk_to_audit_dict(a),
+        None,
+    )
+    assert (split_row.parents, split_row.children) == ([], ["c-1", "c-2"])
+
+    merge_row = journal.merged([a, b], c)
+    assert (merge_row.chunk_id, merge_row.before, merge_row.after) == (
+        "c-2",
+        None,
+        chunk_to_audit_dict(c),
+    )
+    assert (merge_row.parents, merge_row.children) == (["c-0", "c-1"], [])
 
 
-def test_journal_entry_without_snapshots_or_with_lineage() -> None:
-    bare = journal_entry("d", "c", ChunkEditAction.DELETE, actor="system", at=AT, edit_id="e1")
-    assert (bare.id, bare.before, bare.after) == ("e1", None, None)
-    merged = journal_entry("d", "m", ChunkEditAction.MERGE, actor="u", at=AT, parents=["a", "b"])
-    split_ = journal_entry("d", "s", ChunkEditAction.SPLIT, actor="u", at=AT, children=["h", "t"])
-    assert (merged.parents, split_.children) == (["a", "b"], ["h", "t"])
+def test_a_row_without_snapshot_names_only_the_chunk_and_the_action() -> None:
+    row = _journal(new_id=lambda: "fixed").without_snapshot(ChunkEditAction.DELETE, _make(1)[0])
+    assert (row.id, row.chunk_id, row.action) == ("fixed", "c-0", ChunkEditAction.DELETE)
+    assert (row.before, row.after, row.parents, row.children) == (None, None, [], [])
