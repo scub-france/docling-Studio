@@ -4,6 +4,56 @@ All notable changes to Docling Studio will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+A quality release: no new feature. It closes the findings of the 0.7.4 release audit (`docs/audit/reports/release-0.7.4/`).
+
+### Security
+
+- **Docling import bounded**: `POST /api/analyses/import` could take the backend down with a JSON under 1 KB. docling-core builds every table's full rows × columns grid on export, whatever the JSON holds: a 620-byte table declaring 400 × 400 cost 3 s and 408 MB, and about 1,350 × 1,350 reached the container's 4 GB limit. An import whose tables declare more than `MAX_IMPORT_TABLE_CELLS` cells in total (new, default 100,000, `0` = no limit), or whose cells span more grid positions than that, is now refused with a 400 before any export. The `/api/analyses` routes also refuse a body over 200 MB with a 413 before reading it, as the bundled nginx already did.
+- **Store connection URIs screened**: a store's connection URI and **Test connection** let anyone who reaches the API make the backend connect to an address of their choice and read back the error. The URI now goes through the Ollama probe's guard on create and update (422) and before each connection test: a host resolving to a link-local (cloud metadata), multicast, reserved or unspecified address is refused, with no traffic sent. Loopback and LAN addresses stay allowed. A failed test returns a generic message; the details go to the server log.
+- **Rate limit could be bypassed with `X-Forwarded-For`**: in the single image, nginx passed the client's header to uvicorn, which trusts its 127.0.0.1 peer, so a client chose its own rate-limit address. nginx now appends the peer address and uvicorn takes the right-most address it does not trust, so every client is counted by its real address. Behind your own reverse proxy, add it to `FORWARDED_ALLOW_IPS` (see [Configuration](docs/configuration.md)).
+- **Local converter reads PDFs only**: Docling accepted every input format it can guess unless told otherwise; only the upload's `%PDF` check kept other formats out. The converter is now restricted to PDF, which puts docling's non-PDF backends out of reach.
+- **Frontend dependencies**: `npm audit --omit=dev` goes from 7 HIGH to 0 (dompurify 3.4.17, vue 3.5.44, lodash 4.18.1, nanoid 3.3.20, postcss 8.5.32, source-map-js 1.2.2), all within the ranges of `package.json`. vite 6.4.1, used only by the dev server and the build, is not updated yet.
+- **torch and torchvision bounded** in the `local` group: `torch>=2.13.0,<3.0.0` and `torchvision>=0.28.0,<1.0.0`. The locked versions are unchanged.
+
+### Changed
+
+- **Generate chunks and History restore are much faster**: replacing a chunkset wrote and committed each chunk and each audit row on its own connection. It is now one transaction. On 500 chunks a rechunk went from 4.6 s to 0.1 s, a restore from 4.5 s to 0.06 s, and adding a chunk at the head of the document or merging 500 chunks from about 1.5 s to 20 ms. The `chunk_edits` journal is unchanged.
+- **The History list no longer loads the snapshots**: `GET /api/documents/{id}/versions` read and parsed every version's full chunk snapshot only to count its chunks. SQLite counts them now, and the response is unchanged. With 20 versions of 500 chunks, it went from 27–30 ms to 9–10 ms.
+- **PDF pages rendered in place**: previews, MCP page images, `GET /api/documents/{id}/pages` and the upload page count open the stored PDF by its path instead of reading it into memory and copying it to a temporary file for each page. On a 47 MB, 40-page PDF, peak memory per rendered page went from 115 to 67 MiB, disk writes per page from 53 to 6 MB, and page sizes from 59 to 33 ms. The upload page count uses pdfium instead of poppler's `pdfinfo`; a PDF whose pages cannot be counted is still accepted, with an unknown page count.
+- **Caching**: `/preview` and `/pages` answer `Cache-Control: private, max-age=86400` (a stored PDF never changes). Both nginx templates serve Vite's hashed `/assets/` with a one-year `immutable` cache and `index.html` with `no-cache`, and gzip CSS, JS, JSON, SVG and text (not `/mcp`). A missing `/assets/…` file now returns 404 instead of the app shell.
+- **Analysis library** loads the light `GET /api/analyses/summaries` instead of every analysis's content.
+- **Sources card loads the parse once** (`show_sources`): it was read once per cited quote and twice more; it is now read once per card.
+- **Logo** shipped at 256 px (57 kB instead of 879 kB); it is also the favicon.
+- **Typed store config and graph responses**: `config` in `GET /api/stores/{slug}` and the nodes of `GET /api/documents/{id}/graph` are now typed in the OpenAPI schema instead of free objects. The JSON is unchanged for every key the app reads. A store config key Studio does not read (anything but `index_name`/`indexName`/`database`) is still saved, but no longer echoed back.
+- **Release gate — `local` image as published**: the gate now builds the `local` image with the Ask packages (`WITH_REASONING=true`), as `release.yml` publishes it, so Trivy scans them. A new **Docker smoke test — local** check starts it with no network and requires `/api/health` to report `engine: local` and `reasoningAvailable: true`. The dependency audit also covers the `local` and `reasoning` Python groups; it still only warns.
+- **CI**: `ruff format --check` and Prettier run in the Backend and Frontend jobs; each `@critical` UI scenario runs once instead of three times; a `frontend/.dockerignore` keeps `node_modules` and `dist` out of the frontend image build, and Python caches and `.env` files are excluded at any depth.
+- **Internals**: the services and the API share one error contract (one `ServiceError`, answered by one exception handler with the same status and `{"detail": …}` body; "document not found" is one typed error, so `POST /api/analyses/import` no longer picks 404 or 400 from the wording of the message). Repository ports declare every method the services call, PDF reads go through ports, and an architecture test rejects any `persistence` or `infra` import in `services/`. Stored dates are read through one helper. Status codes and bodies are unchanged.
+- **Documentation**: every variable the backend reads is documented, including three read but unused; Configuration and Architecture describe the MCP server, the analysis import and the summaries routes; the user guide covers importing a Docling analysis; CONTRIBUTING says which release branch a change targets; the freeze step reopens `[Unreleased]` and bumps the lockfile; 16 shipped design docs are marked Implemented.
+
+### Fixed
+
+- **A failed rechunk, restore, merge or split no longer leaves the chunkset half replaced**: the old chunks, the new ones and their audit rows are written in one transaction and rolled back together. A restore also decodes its snapshot before deleting anything.
+- **Stored dates are always read as UTC**: the analysis repository read naive dates back as naive, unlike the others. An empty date in a required column is now reported as an error; it used to be replaced by the current time, which rewrote audit dates.
+- **pdfium thread safety**: reading page sizes and counting pages before a batched analysis now hold the process-wide pdfium lock shared with Docling, and the batch page count no longer runs on the event loop.
+- **`MCP_MAX_READ_TOKENS` held to 100–32000**: the variable accepted any positive value, while **Settings** › **MCP server** refuses anything outside 100–32000; its On/Off switch re-sends the whole form, so such a value left the MCP settings unsavable. A value outside the bounds is now moved to the nearest one at startup, with a warning in the log. A value below 1 still stops the startup.
+- **Colours follow the theme**: the breadcrumb was a black bar in the light theme, the Runs placeholder a white card with a blue accent in the dark one, and the Ask connection-test error the same pink in both. Every hard-coded colour now uses the theme's tokens; text on the orange accent uses a new `--on-accent` token, so the MCP settings **Save** button now has white text like the other accent buttons.
+- **Citation card in one language**: four of its error messages were English, two of them inside French sentences. They are now French, with the sources card's wording.
+- **Release gate**: the unit-tests job could not fail (pytest and Vitest piped into `tee` without `pipefail`); the image size check never compared anything (the image name was not lowercased) and now compares the `remote` image with the previous release; a failed `local` build no longer cancels the `remote` one, in the gate and in `release.yml`.
+- **Karate UI suite**: deleted 5 specs that drove removed views (Ingest, Chunk, Strategy popover, History drawer); the Parse properties spec runs on `/analyses/:id`; the #342 spec goes through the document actions menu (new `data-e2e` hooks); the sidebar, reasoning-flag and MCP settings specs follow the current UI; an assertion that could not fail on the analysis page now checks a real hook.
+- **Documentation matches the app**: the Settings section is **Ask**, not **Reasoning**; the Docker Compose path to Ask sets `ASK_MODE=visible`; the build comments no longer promise an instant first analysis from `BAKE_MODELS` (the baked models are not read yet); two broken links fixed.
+
+### Removed
+
+- **`LLM_PROVIDER_TYPE`**: Ask only ever ran on Ollama, the one backend docling-agent drives, and the variable had a single valid value. It is no longer read. The admin API still reports `providerType: "ollama"`.
+- **Four Vue components nothing imported** (`IngestLaunchDialog`, `DocChunkTab`, `HistoryDrawer`, `InspectResultTabs`), with their orphan translations.
+
+### BREAKING CHANGES
+
+- **`LLM_PROVIDER_TYPE` is ignored**: a value other than `ollama` used to switch the reasoning runner off. Ask now follows `REASONING_ENABLED` and **Settings** alone; set `REASONING_ENABLED=false` to keep it off.
+- **Hugging Face Space: stores are read-only**: with `DEPLOYMENT_MODE=huggingface`, creating, editing and deleting a store now answer 403 and connection tests are refused, as the reasoning and MCP settings already were.
+
 ## [0.7.3] - 2026-11-02
 
 ### Added
@@ -35,7 +85,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### BREAKING CHANGES
 
-- **Ask hidden by default** (`ASK_MODE`): after the upgrade, the Parse view has no Ask tab and **Settings** has no **Reasoning** section, even where reasoning was turned on. A new `ASK_MODE` variable, `hidden` unless set to `visible`, decides whether the app shows Ask. It only hides: the reasoning API still follows `REASONING_ENABLED` and the saved settings. `/api/health` gives it as `askMode`. Set `ASK_MODE=visible` to keep Ask as before.
+- **Ask hidden by default** (`ASK_MODE`): after the upgrade, the Parse view has no Ask tab and **Settings** › **Ask** only says Ask is hidden and how to show it, with no reasoning settings, even where reasoning was turned on. A new `ASK_MODE` variable, `hidden` unless set to `visible`, decides whether the app shows Ask. It only hides: the reasoning API still follows `REASONING_ENABLED` and the saved settings. `/api/health` gives it as `askMode`. Set `ASK_MODE=visible` to keep Ask as before.
 
 ## [0.7.2] - 2026-09-22
 
