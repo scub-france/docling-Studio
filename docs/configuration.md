@@ -36,6 +36,8 @@ Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT`
 
 Ask is hidden by default. `ASK_MODE=visible` shows it: the Ask tab in the Parse view, and the reasoning settings in **Settings** › **Ask**. Hidden, there is no Ask tab, even when reasoning was turned on in **Settings**, and **Settings** › **Ask** only shows *Hidden* and how to show Ask. `ASK_MODE` only hides Ask: the reasoning API still answers as the values below say.
 
+Ask runs on Ollama, the only backend docling-agent drives: there is no provider setting.
+
 The other values are starting values. **Settings** › **Ask** in the app can change them while the server runs. After a **Save** there, the four values come from the database until you click **Reset to environment**.
 
 | Variable | Default | What it does |
@@ -45,7 +47,6 @@ The other values are starting values. **Settings** › **Ask** in the app can ch
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama address, as seen from the backend. In a container, use `http://host.docker.internal:11434`. |
 | `REASONING_MODEL_ID` | `gpt-oss:20b` | Default model. It must be pulled in Ollama. |
 | `REASONING_MAX_ITERATIONS` | `5` | Most reasoning steps per question, from 1 to 20. |
-| `LLM_PROVIDER_TYPE` | `ollama` | Only `ollama` works. |
 
 ## Feature switches
 

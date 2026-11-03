@@ -154,18 +154,16 @@ class TestProtocolConformance:
         assert isinstance(runner, ReasoningRunner)
 
 
-class TestProviderRejection:
-    def test_rejects_non_ollama_provider(self) -> None:
-        class _FakeProvider:
-            type = "openai"
-            host = "x"
-            default_model_id = "y"
+class TestConstruction:
+    def test_takes_any_provider_with_a_host_and_a_model(self) -> None:
+        # #audit-04 — Ollama is the only backend: no type tag to check.
+        class _Provider:
+            host = "http://ollama:11434"
+            default_model_id = "gpt-oss:20b"
 
-            def health_check(self) -> bool:
-                return True
-
-        with pytest.raises(NotImplementedError, match="Ollama"):
-            mod.DoclingAgentReasoningRunner(provider=_FakeProvider())  # type: ignore[arg-type]
+        runner = mod.DoclingAgentReasoningRunner(provider=_Provider(), max_iterations=3)
+        assert runner._provider.host == "http://ollama:11434"
+        assert runner._max_iterations == 3
 
 
 class TestRunHappyPath:

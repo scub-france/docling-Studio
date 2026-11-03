@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from domain.ports import LLMProvider, ReasoningParseError
 from domain.value_objects import (
-    LLMProviderType,
     ReasoningIteration,
     ReasoningResult,
 )
@@ -134,10 +133,6 @@ class DoclingAgentReasoningRunner:
     """
 
     def __init__(self, provider: LLMProvider, *, max_iterations: int = 5) -> None:
-        if provider.type is not LLMProviderType.OLLAMA:
-            raise NotImplementedError(
-                f"The reasoning runner only supports Ollama, got provider type {provider.type!r}."
-            )
         self._provider = provider
         self._max_iterations = max_iterations
         self._deps_ok = deps_present()

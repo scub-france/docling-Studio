@@ -10,7 +10,6 @@ If it is still missing, open **Settings** › **Ask**:
 
 - **Status** is **Disabled**: set it to **Enabled** and click **Save**.
 - **Diagnostics** says **Reasoning unavailable** while Status is enabled: the reasoning packages are not in the image. Use `latest-local`, or build with `WITH_REASONING=true`. The `-remote` images never have them.
-- `LLM_PROVIDER_TYPE` set to anything but `ollama` also turns Ask off.
 
 The environment variables only give the starting values. After a **Save** in Settings, all four reasoning values come from the database, and changing `REASONING_ENABLED` has no effect until you click **Reset to environment**.
 

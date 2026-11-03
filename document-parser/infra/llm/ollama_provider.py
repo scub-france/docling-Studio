@@ -1,24 +1,11 @@
 """Ollama LLM provider adapter.
 
-Implements `LLMProvider` for a locally-reachable Ollama instance. Holds the
-host URL + default model id; exposes a cheap `health_check` (HEAD `/api/tags`)
-that doesn't load any model.
+Implements `LLMProvider` for a locally-reachable Ollama instance: the host
+URL and the default model id the reasoning runner reads. Reachability is
+probed by `OllamaProbe` (`infra/llm/ollama_probe.py`), not here.
 """
 
 from __future__ import annotations
-
-import logging
-
-import httpx
-
-from domain.value_objects import LLMProviderType
-
-logger = logging.getLogger(__name__)
-
-# Ollama's tags endpoint returns 200 with an empty list even on a fresh
-# install — perfect for a "is the daemon up?" probe.
-_HEALTH_PATH = "/api/tags"
-_HEALTH_TIMEOUT_SECONDS = 1.5
 
 
 class OllamaProvider:
@@ -27,21 +14,9 @@ class OllamaProvider:
         self._default_model_id = default_model_id
 
     @property
-    def type(self) -> LLMProviderType:
-        return LLMProviderType.OLLAMA
-
-    @property
     def host(self) -> str:
         return self._host
 
     @property
     def default_model_id(self) -> str:
         return self._default_model_id
-
-    def health_check(self) -> bool:
-        try:
-            resp = httpx.get(f"{self._host}{_HEALTH_PATH}", timeout=_HEALTH_TIMEOUT_SECONDS)
-        except httpx.HTTPError as e:
-            logger.debug("Ollama health check failed for %s: %s", self._host, e)
-            return False
-        return resp.status_code == 200

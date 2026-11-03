@@ -86,8 +86,8 @@ def env_reasoning_config() -> ReasoningConfig:
 
 def build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunner | None:
     """Wire the reasoning runner for `config` if enabled and deps are
-    importable. Today only `LLM_PROVIDER_TYPE=ollama` is supported (cf. the
-    `LLMProvider` docstring); other values fall through to a logged warning +
+    importable, over Ollama — the only backend docling-agent drives (cf. the
+    `LLMProvider` docstring). Missing deps fall through to a logged warning +
     None so the rest of the app boots cleanly.
     """
     if not config.enabled:
@@ -98,14 +98,6 @@ def build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunn
             "disabled, /api/reasoning will 503. Expected docling-agent >= 0.6.0 + mellea; "
             "a bare `uvicorn` resolves against the ambient interpreter, not the project venv.",
             deps_provenance(),
-        )
-        return None
-    if settings.llm_provider_type != "ollama":
-        logger.warning(
-            "Unsupported LLM_PROVIDER_TYPE=%s — reasoning runner disabled (only "
-            "'ollama' is realizable today, see "
-            "https://github.com/docling-project/docling-agent/issues/26)",
-            settings.llm_provider_type,
         )
         return None
 

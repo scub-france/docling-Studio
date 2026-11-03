@@ -53,11 +53,8 @@ class Settings:
     # Ollama host reachable from the backend). Toggle REASONING_ENABLED=true +
     # point OLLAMA_HOST at a running instance (default http://localhost:11434).
     reasoning_enabled: bool = False
-    # LLM backend the reasoning runner talks to. Today only "ollama" is
-    # realizable (docling-agent is hardwired to Ollama via mellea); kept as a
-    # config knob to make the LLMProvider abstraction visible and prepare the
-    # ground for additional backends.
-    llm_provider_type: str = "ollama"
+    # The reasoning runner talks to Ollama, the only backend docling-agent
+    # drives. There is no provider knob: LLM_PROVIDER_TYPE is no longer read.
     ollama_host: str = "http://localhost:11434"
     reasoning_model_id: str = "gpt-oss:20b"  # matches docling-agent's example_05
     # RAG loop iteration cap threaded into DoclingRAGAgent (#317). Like the
@@ -260,7 +257,6 @@ class Settings:
             store_secret_key=os.environ.get("STORE_SECRET_KEY", ""),
             reasoning_enabled=os.environ.get("REASONING_ENABLED", "false").lower()
             in ("1", "true", "yes", "on"),
-            llm_provider_type=os.environ.get("LLM_PROVIDER_TYPE", "ollama"),
             ollama_host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
             reasoning_model_id=os.environ.get("REASONING_MODEL_ID", "gpt-oss:20b"),
             reasoning_max_iterations=int(os.environ.get("REASONING_MAX_ITERATIONS", "5")),

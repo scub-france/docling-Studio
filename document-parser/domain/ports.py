@@ -33,7 +33,6 @@ if TYPE_CHECKING:
         ConversionResult,
         DocumentLifecycleState,
         GraphPayload,
-        LLMProviderType,
         PageDetail,
         ReasoningResult,
     )
@@ -487,35 +486,20 @@ class LLMHostProbe(Protocol):
 
 @runtime_checkable
 class LLMProvider(Protocol):
-    """Connection-level abstraction over an LLM backend.
+    """Where the reasoning runner finds its LLM: the host and the default model.
 
-    A provider carries the host/base-URL, the default model identifier, and a
-    type tag that adapters can dispatch on. The reasoning runner consumes a
-    provider — it doesn't construct one — so the runner stays decoupled from
-    Ollama-vs-OpenAI-vs-WatsonX wiring.
-
-    Today only `OllamaProvider` (in `infra/llm/`) is implemented because
-    docling-agent v0.1.0 is hardwired to Ollama via mellea's
-    `setup_local_session`. Adding a non-Ollama provider requires either
-    docling-agent upstream support or a fork (track
-    https://github.com/docling-project/docling-agent/issues/26 + provider
-    abstraction work upstream).
+    The runner consumes a provider, it does not build one. The only backend
+    is Ollama (`OllamaProvider`, in `infra/llm/`): docling-agent drives
+    Ollama alone, so there is no backend to tell apart and the port carries
+    no type tag. A second backend needs docling-agent upstream support
+    first (https://github.com/docling-project/docling-agent/issues/26).
     """
-
-    @property
-    def type(self) -> LLMProviderType: ...
 
     @property
     def host(self) -> str: ...
 
     @property
     def default_model_id(self) -> str: ...
-
-    def health_check(self) -> bool:
-        """Lightweight reachability probe. Returns True if the provider looks
-        usable. Implementations should be cheap (no model load, no inference).
-        """
-        ...
 
 
 @runtime_checkable

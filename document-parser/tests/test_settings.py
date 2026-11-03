@@ -172,6 +172,12 @@ class TestReasoningMaxIterations:
         monkeypatch.setenv("REASONING_MAX_ITERATIONS", "9")
         assert Settings.from_env().reasoning_max_iterations == 9
 
+    def test_llm_provider_type_is_no_longer_read(self, monkeypatch):
+        # #audit-04 — Ollama is the only backend; a value other than "ollama"
+        # used to switch the runner off, it is now ignored.
+        monkeypatch.setenv("LLM_PROVIDER_TYPE", "openai")
+        assert not hasattr(Settings.from_env(), "llm_provider_type")
+
     def test_an_empty_mcp_allowed_hosts_keeps_the_localhost_default(self, monkeypatch):
         monkeypatch.setenv("MCP_ALLOWED_HOSTS", "")
         assert Settings.from_env().mcp_allowed_hosts == ["127.0.0.1:*", "localhost:*", "[::1]:*"]
