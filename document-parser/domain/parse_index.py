@@ -229,7 +229,13 @@ def _box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> Bo
 
 
 def heading_level(item: dict[str, Any]) -> int:
-    """0 for the document title, >=1 for section headers (docling `level`)."""
+    """0 for the document title, >=1 for section headers (docling `level`).
+
+    Docling writes `level` as an int in 1..100 (`SectionHeaderItem.level`,
+    and an imported document is re-serialized by docling-core). Anything
+    else — absent, zero, negative, not a number — reads as 1, so one odd
+    header never fails the walk of a whole document.
+    """
     if label_of(item) == "title":
         return 0
     try:

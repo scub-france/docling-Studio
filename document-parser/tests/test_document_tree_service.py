@@ -257,6 +257,23 @@ class TestTreeHeadingLevels:
         )
         assert self._shape(tree) == [("Parent", []), ("H", [])]
 
+    @pytest.mark.parametrize("level", ["deep", "2.5", [2], {"n": 2}])
+    async def test_a_non_numeric_level_reads_as_one(self, service, repos, doc, level):
+        """Docling only writes an int; anything else used to raise inside the
+        walk and fail the whole tree with a 500. It now reads as 1, as in the
+        MCP outline (`parse_index.heading_level`)."""
+        tree = await self._tree(
+            service,
+            repos,
+            doc,
+            [
+                {"label": "section_header", "text": "Parent", "level": 2},
+                {"label": "section_header", "text": "H", "level": level},
+                {"label": "text", "text": "p"},
+            ],
+        )
+        assert self._shape(tree) == [("Parent", []), ("H", [("p", [])])]
+
     async def test_a_numeric_string_level_is_read_as_its_number(self, service, repos, doc):
         tree = await self._tree(
             service,

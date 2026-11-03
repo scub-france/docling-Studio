@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from domain.navigation import is_heading
+from domain.parse_index import heading_level, label_of
+
 if TYPE_CHECKING:
     from domain.ports import DocumentTreeReader
 
@@ -27,7 +30,8 @@ def build_doc_tree(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) ->
     Two stacking rules combine to follow the document's natural structure:
 
     1. **Headings nest by level.** `title` opens a level-0 container; each
-       `section_header` opens a container at its declared `level` (default 1).
+       `section_header` opens a container at its declared `level` (default 1,
+       see `parse_index.heading_level`, the rule the MCP outline uses too).
        A new heading pops the stack until the top has a strictly lower level,
        so siblings stay siblings and sub-sections nest inside their parent.
     2. **Docling parent/child is preserved for containers.** `list` keeps its
@@ -61,10 +65,10 @@ def build_doc_tree(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) ->
             item = by_ref.get(ref)
             if item is None:
                 continue
-            label_type = (item.get("label") or "").lower() or "text"
+            label_type = label_of(item)
 
-            if label_type in {"title", "section_header"}:
-                level = 0 if label_type == "title" else max(int(item.get("level") or 1), 1)
+            if is_heading(label_type):
+                level = heading_level(item)
                 while len(stack) > 1 and stack[-1][0] >= level:
                     stack.pop()
                 node = _make_node(ref, label_type, item, inline_meta, tree_reader)
@@ -93,7 +97,7 @@ def _build_item_subtree(
     Other items are emitted as leaves — pictures and inline groups had their
     descendants pruned upstream by `build_collapse_index`.
     """
-    label_type = (item.get("label") or "").lower() or "text"
+    label_type = label_of(item)
     node = _make_node(ref, label_type, item, inline_meta, tree_reader)
     if label_type in _CONTAINER_LABELS:
         for ch in item.get("children") or []:
