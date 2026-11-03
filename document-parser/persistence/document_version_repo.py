@@ -58,11 +58,11 @@ class SqliteDocumentVersionRepository:
             )
             await conn.commit()
 
-    async def find_by_id(self, version_id: str) -> DocumentVersion | None:
+    async def find_by_id(self, document_version_id: str) -> DocumentVersion | None:
         async with get_connection() as conn:
             cur = await conn.execute(
                 "SELECT * FROM document_versions WHERE id = ?",
-                (version_id,),
+                (document_version_id,),
             )
             row = await cur.fetchone()
             return _row_to_version(row) if row else None

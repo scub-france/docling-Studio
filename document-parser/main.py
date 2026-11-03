@@ -107,7 +107,7 @@ app.include_router(documents_router)
 app.include_router(document_chunks_router)
 app.include_router(analyses_router)
 app.include_router(stores_router)
-# Document versions (#267) — workspace History timeline.
+# Document versions (#267): the frozen (analysis, chunks) pairs of a document.
 app.include_router(document_versions_router)
 # Graph view — mounted regardless; individual requests 503 if Neo4j is absent.
 app.include_router(graph_router)

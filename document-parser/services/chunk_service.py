@@ -75,7 +75,7 @@ class ChunkService:
         self._actor = actor
         # Duck-typed recorder for document versions (#267). Wired by
         # `bootstrap.builder` to `VersionService` so each `+ Generate
-        # chunks` call appends a frozen pair to History.
+        # chunks` call appends a frozen pair to the document's versions.
         self._version_recorder = None
 
     def set_version_recorder(self, version_service) -> None:
@@ -277,8 +277,8 @@ class ChunkService:
         return job
 
     async def _record_version(self, document_id: str, analysis_id: str) -> None:
-        """Record a frozen (analysis, chunks_snapshot) pair in the workspace
-        History timeline (#267): the chunks just written, paired with the
+        """Record a frozen (analysis, chunks_snapshot) pair as a new document
+        version (#267): the chunks just written, paired with the
         analysis they came from. Best effort — a failed snapshot never fails
         the rechunk."""
         if self._version_recorder is None:
