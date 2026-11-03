@@ -32,9 +32,9 @@ Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT`
 
 ## Ask
 
-Ask is hidden by default. `ASK_MODE=visible` shows it: the Ask tab in the Parse view and **Settings** › **Reasoning**. Hidden, neither shows, even when reasoning was turned on in **Settings**. `ASK_MODE` only hides Ask: the reasoning API still answers as the values below say.
+Ask is hidden by default. `ASK_MODE=visible` shows it: the Ask tab in the Parse view, and the reasoning settings in **Settings** › **Ask**. Hidden, there is no Ask tab, even when reasoning was turned on in **Settings**, and **Settings** › **Ask** only shows *Hidden* and how to show Ask. `ASK_MODE` only hides Ask: the reasoning API still answers as the values below say.
 
-The other values are starting values. **Settings** › **Reasoning** in the app can change them while the server runs. After a **Save** there, the four values come from the database until you click **Reset to environment**.
+The other values are starting values. **Settings** › **Ask** in the app can change them while the server runs. After a **Save** there, the four values come from the database until you click **Reset to environment**.
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
@@ -114,7 +114,7 @@ These compose settings are for a laptop: OpenSearch runs without security and Ne
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
-| `DEPLOYMENT_MODE` | `self-hosted` | `huggingface` shows a demo banner and makes **Settings** › **Reasoning** read-only. |
+| `DEPLOYMENT_MODE` | `self-hosted` | `huggingface` shows a demo banner and makes **Settings** › **Ask** read-only. |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Browser origins allowed to call the API, comma-separated. Only needed when the UI is served from another address. |
 | `UPLOAD_DIR` | `/app/uploads` in the images | Folder for uploaded PDFs. |
 | `DB_PATH` | `/app/data/docling_studio.db` in the images | SQLite database: documents, analyses, stores and settings saved in the app. |

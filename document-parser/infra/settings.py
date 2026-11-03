@@ -60,8 +60,9 @@ class Settings:
     # override it at runtime via the `app_settings` store.
     reasoning_max_iterations: int = 5
     # Whether the UI shows Ask: "hidden" (default) or "visible". Hidden, the
-    # Parse view has no Ask tab and Settings has no Reasoning section, even
-    # when a value saved there turned reasoning on. It hides, it does not
+    # Parse view has no Ask tab, even when a value saved in Settings turned
+    # reasoning on, and the Ask section of Settings only says how to show
+    # it, in place of the reasoning settings. It hides, it does not
     # turn off: the reasoning routes still follow REASONING_ENABLED and the
     # saved settings.
     ask_mode: str = "hidden"

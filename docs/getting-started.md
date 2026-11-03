@@ -110,7 +110,7 @@ WITH_REASONING=true docker compose up --build
 
 The compose files do not pass the reasoning variables to the backend yet, so finish in the app:
 
-1. Open **Settings**, section **Reasoning** (**Paramètres**, **Raisonnement** in the French interface).
+1. Open **Settings** (**Paramètres** in the French interface), section **Ask**.
 2. Set **Ollama URL** to `http://host.docker.internal:11434` and click **Test connection**.
 3. Pick the **Default model**, set **Status** to **Enabled**, and click **Save**.
 

@@ -41,7 +41,7 @@ The fix is prepared in the private fork attached to the advisory, so nothing is 
 
 ## Reasoning settings and outbound requests
 
-**Settings** › **Reasoning** lets a user set the Ollama URL, test it (`POST /api/config/reasoning/test`) and save it. Ask then sends its requests to that URL. These are outbound requests chosen by the user, so:
+**Settings** › **Ask** lets a user set the Ollama URL, test it (`POST /api/config/reasoning/test`) and save it. Ask then sends its requests to that URL. The section shows these settings only with `ASK_MODE=visible`, but `ASK_MODE` only hides the screen: the `/api/config/reasoning` routes answer whatever its value. These are outbound requests chosen by the user, so:
 
 - On a HuggingFace deployment (`DEPLOYMENT_MODE=huggingface`), writing the settings and testing the connection are refused with `403`.
 - Before connecting, **Test connection** resolves the host and refuses link-local addresses (including the cloud metadata endpoint `169.254.169.254` and `fe80::/10`), multicast, reserved and unspecified addresses. A refused target gets no traffic at all.
