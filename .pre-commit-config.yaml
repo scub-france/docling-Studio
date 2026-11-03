@@ -8,6 +8,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-yaml
+        # MkDocs uses a Pymdownx Python tag that PyYAML's safe loader rejects.
+        # The documentation build remains responsible for validating mkdocs.yml.
+        exclude: ^mkdocs\.yml$
       - id: check-json
       - id: end-of-file-fixer
       - id: trailing-whitespace

@@ -191,6 +191,11 @@ class VersionService:
                     )
                 )
 
+        # History restore is an aggregate operation: the backend, rather
+        # than the frontend, owns which immutable analysis is active.
+        await self._documents.update_active_analysis(document_id, version.analysis_id, None)
+        await self._documents.update_chunk_source(document_id, version.analysis_id, 0)
+
         logger.info(
             "Restored doc %s to version %s (%d chunks)",
             document_id,

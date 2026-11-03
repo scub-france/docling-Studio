@@ -45,6 +45,11 @@ export interface Document {
   stores?: string[]
   /** Per-store state detail (#224). Present when backend returns storeLinks. */
   storeLinks?: DocStoreLink[]
+  activeAnalysisId?: string | null
+  activeEditStreamId?: string | null
+  chunksSourceAnalysisId?: string | null
+  chunksSourceEditSequence?: number
+  chunksStale?: boolean
 }
 
 export interface PipelineOptions {

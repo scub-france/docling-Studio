@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         ReasoningRunner,
         StoreRepository,
     )
+    from services.analysis_edit_service import AnalysisEditService
     from services.analysis_service import AnalysisService
     from services.app_config_service import AppConfigService
     from services.chunk_service import ChunkService
@@ -64,6 +65,9 @@ class AppState:
     # Use-case services.
     document_service: DocumentService | None = None
     analysis_service: AnalysisService | None = None
+    analysis_edit_service: AnalysisEditService | None = None
+    # Static rollout flag for the analysis editor, copied from Settings at boot.
+    analysis_editor_enabled: bool = True
     export_service: ExportService | None = None
     store_service: StoreService | None = None
     chunk_service: ChunkService | None = None

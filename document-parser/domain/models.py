@@ -45,6 +45,12 @@ class Document:
     created_at: datetime = field(default_factory=_utcnow)
     lifecycle_state: DocumentLifecycleState = DocumentLifecycleState.UPLOADED
     lifecycle_state_at: datetime | None = None
+    # Active parse base and edit stream.  The working copy is resolved by the
+    # analysis-edit service when active_edit_stream_id is not null.
+    active_analysis_id: str | None = None
+    active_edit_stream_id: str | None = None
+    chunks_source_analysis_id: str | None = None
+    chunks_source_edit_sequence: int = 0
 
     def transition_to(
         self,

@@ -21,6 +21,7 @@ class TestSettingsDefaults:
         assert s.max_paste_image_size_mb == 10
         assert s.paste_allowed_image_types == ["image/png", "image/jpeg", "image/webp"]
         assert s.batch_page_size == 0
+        assert s.analysis_editor_enabled is True
         assert s.opensearch_default_limit == 1000
         assert s.upload_dir == "./uploads"
         assert s.db_path == "./data/docling_studio.db"
@@ -164,6 +165,10 @@ class TestReasoningMaxIterations:
         monkeypatch.setenv("REASONING_MAX_ITERATIONS", "9")
         assert Settings.from_env().reasoning_max_iterations == 9
 
+    def test_analysis_editor_can_be_disabled_from_env(self, monkeypatch):
+        monkeypatch.setenv("ANALYSIS_EDITOR_ENABLED", "false")
+        assert Settings.from_env().analysis_editor_enabled is False
+
     def test_an_empty_mcp_allowed_hosts_keeps_the_localhost_default(self, monkeypatch):
         monkeypatch.setenv("MCP_ALLOWED_HOSTS", "")
         assert Settings.from_env().mcp_allowed_hosts == ["127.0.0.1:*", "localhost:*", "[::1]:*"]
@@ -266,6 +271,7 @@ class TestSettingsFromEnv:
         monkeypatch.setenv("UPLOAD_DIR", "/data/uploads")
         monkeypatch.setenv("DB_PATH", "/data/test.db")
         monkeypatch.setenv("CORS_ORIGINS", "http://a.com, http://b.com")
+        monkeypatch.setenv("ANALYSIS_EDITOR_ENABLED", "false")
 
         s = Settings.from_env()
 
@@ -284,6 +290,7 @@ class TestSettingsFromEnv:
         assert s.upload_dir == "/data/uploads"
         assert s.db_path == "/data/test.db"
         assert s.cors_origins == ["http://a.com", "http://b.com"]
+        assert s.analysis_editor_enabled is False
 
     def test_defaults_when_env_empty(self, monkeypatch):
         """When no env vars set, from_env returns sensible defaults."""
@@ -298,6 +305,7 @@ class TestSettingsFromEnv:
             "UPLOAD_DIR",
             "DB_PATH",
             "CORS_ORIGINS",
+            "ANALYSIS_EDITOR_ENABLED",
         ):
             monkeypatch.delenv(key, raising=False)
 

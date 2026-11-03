@@ -9,7 +9,7 @@
 
 See what [Docling](https://github.com/docling-project/docling) extracts from your PDFs: every title, paragraph, table and picture, with its box drawn on the page.
 
-![Docling Studio](docs/screenshots/presentation.gif)
+![Docling Studio parses a PDF, then Claude answers from it over MCP, with cited sources](docs/screenshots/mcp-demo.gif)
 
 ## Run it
 

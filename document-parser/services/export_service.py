@@ -36,9 +36,11 @@ class ExportService:
         self,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
+        active_result_service=None,
     ) -> None:
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
+        self._active_result_service = active_result_service
 
     async def export(
         self,
@@ -68,6 +70,8 @@ class ExportService:
         if format is ExportFormat.MD:
             if analysis_id:
                 analysis = await self._requested_analysis(doc_id, analysis_id)
+            elif self._active_result_service is not None:
+                analysis = (await self._active_result_service.active_result(doc_id)).job
             else:
                 analysis = await self._analysis_repo.find_latest_completed(doc_id)
             if not analysis:
@@ -82,6 +86,8 @@ class ExportService:
 
         if analysis_id:
             analysis = await self._requested_analysis(doc_id, analysis_id)
+        elif self._active_result_service is not None:
+            analysis = (await self._active_result_service.active_result(doc_id)).job
         else:
             analysis = await self._analysis_repo.find_latest_completed_by_document(doc_id)
         if not analysis:
