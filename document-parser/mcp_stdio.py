@@ -70,9 +70,6 @@ async def _serve() -> None:
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         citation_card=settings.mcp_citation_card,
-        # The database is open before the server is built, so here the
-        # instructions state the effective cap, not the env one.
-        max_rounds=config.max_rounds,
     )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()

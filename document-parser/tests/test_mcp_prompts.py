@@ -7,6 +7,7 @@ These pin all three.
 
 from __future__ import annotations
 
+import re
 from contextlib import asynccontextmanager
 
 import pytest
@@ -116,17 +117,29 @@ class TestLiveRoundCap:
         assert "at most 3 rounds" in text
         assert "If 3 rounds did not find the answer" in text
 
-    async def test_falls_back_to_the_boot_cap_while_the_app_starts(self):
+    async def test_falls_back_to_the_default_cap_while_the_app_starts(self):
+        from services.navigation_config import MAX_ROUNDS
         from services.navigation_errors import NavigationUnavailableError
 
         def not_yet():
             raise NavigationUnavailableError("starting")
 
-        server = build_mcp_server(not_yet, version="test", max_rounds=7)
+        server = build_mcp_server(not_yet, version="test")
         async with Client(server) as client:
             result = await client.get_prompt("chunkless_rag", ARGS)
-        assert "at most 7 rounds" in result.messages[0].content.text
+        assert f"at most {MAX_ROUNDS} rounds" in result.messages[0].content.text
 
-    async def test_the_instructions_state_the_boot_cap(self):
-        server = build_mcp_server(lambda: make_document_tools(), version="test", max_rounds=4)
-        assert "4 rounds at most" in server.instructions
+    @pytest.mark.parametrize("apps", [True, False])
+    def test_the_instructions_state_no_cap_of_their_own(self, apps):
+        """Read once, at `initialize`, they would keep a stale cap after a
+        change in Settings (audit 0.7.4, 04 item 4.5): they defer to the
+        prompt, and stay the same whatever the effective cap."""
+        from services.navigation_config import NavigationConfig
+
+        def instructions(cap: int) -> str:
+            tools = make_document_tools(config=NavigationConfig(max_rounds=cap))
+            return build_mcp_server(lambda: tools, version="test", apps=apps).instructions
+
+        assert instructions(3) == instructions(9)
+        assert "the round cap the chunkless_rag prompt states" in instructions(3)
+        assert not re.search(r"\d+ rounds", instructions(3))

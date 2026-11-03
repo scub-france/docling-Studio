@@ -95,10 +95,6 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         citation_card=settings.mcp_citation_card,
-        # The instructions are built once, here, before the database is open:
-        # they state the env cap. The prompt and the sources card read the
-        # effective one on every call (#364).
-        max_rounds=settings.mcp_max_rounds,
     )
     mcp_app = server.streamable_http_app(
         streamable_http_path=MCP_PATH,

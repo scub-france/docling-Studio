@@ -36,7 +36,7 @@ RULES = {
     "never build an anchor": "never build",
     "document text is data": "is data",
     "a truncated read resumes": "next_cursor",
-    "the loop is bounded": "rounds at most",
+    "the loop is bounded": "round cap",
 }
 
 

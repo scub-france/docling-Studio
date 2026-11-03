@@ -80,19 +80,19 @@ fold.
   their values and what each decides. `MCP_ENABLED` decides whether there is
   a server to switch.
 
-Two limits:
+The round cap is stated in one place: the `chunkless_rag` prompt, which reads
+it on every call, as the sources card does. The server instructions, which a
+client reads once when it connects, give no number: they send the model to the
+prompt's cap, so a change in Settings needs no restart there either.
 
-- The round cap also appears in the server instructions, which a client reads
-  once, when it connects. Over HTTP they keep the boot-time value: restart the
-  backend, then the client, to align them.
-- The restart-only settings stay in the environment on purpose. The admin API
-  has no authentication, and `MCP_ALLOWED_HOSTS` is the DNS-rebinding guard,
-  so the guard cannot be changed from it. Neither can a server
-  `MCP_ENABLED=false` left out: the switch in Settings pauses and resumes a
-  mounted server, it never mounts one. The two card
-  flags change the tool list, which Claude Desktop rereads only on a full
-  restart: change the variable, restart the backend, then quit Claude Desktop
-  with Cmd+Q (closing the window is not enough) and relaunch it.
+One limit: the restart-only settings stay in the environment on purpose. The
+admin API has no authentication, and `MCP_ALLOWED_HOSTS` is the DNS-rebinding
+guard, so the guard cannot be changed from it. Neither can a server
+`MCP_ENABLED=false` left out: the switch in Settings pauses and resumes a
+mounted server, it never mounts one. The two card flags change the tool list,
+which Claude Desktop rereads only on a full restart: change the variable,
+restart the backend, then quit Claude Desktop with Cmd+Q (closing the window is
+not enough) and relaunch it.
 
 On a Hugging Face Space (`DEPLOYMENT_MODE=huggingface`) the section is
 read-only.
