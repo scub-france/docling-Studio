@@ -25,9 +25,10 @@ from domain.chunk_serialization import chunk_to_audit_dict
 from domain.models import Chunk, ChunkEdit
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from datetime import datetime
 
-    from domain.value_objects import ChunkEditAction
+    from domain.value_objects import ChunkEditAction, ChunkResult
 
 # What a merge puts between the texts of two consecutive sources.
 MERGE_SEPARATOR = "\n"
@@ -125,6 +126,27 @@ def merge(chunks: list[Chunk], ids: list[str]) -> tuple[list[Chunk], Chunk]:
         token_count=sum(c.token_count or 0 for c in sources) or None,
     )
     return sources, merged
+
+
+def chunkset_from_results(document_id: str, results: Iterable[ChunkResult]) -> list[Chunk]:
+    """The new chunkset a rechunk writes: one new chunk per chunker result.
+
+    Sequences are dense from 0 in the chunker's order; text, headings, page,
+    bboxes and doc items are copied, and a token count of 0 reads as unknown.
+    """
+    return [
+        Chunk(
+            document_id=document_id,
+            sequence=sequence,
+            text=r.text,
+            headings=list(r.headings),
+            source_page=r.source_page,
+            bboxes=list(r.bboxes),
+            doc_items=list(r.doc_items),
+            token_count=r.token_count or None,
+        )
+        for sequence, r in enumerate(results)
+    ]
 
 
 def journal_entry(

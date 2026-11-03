@@ -19,6 +19,7 @@ from domain.chunk_editing import (
     InvalidChunkEditError,
     NonContiguousMergeError,
     UnknownChunkError,
+    chunkset_from_results,
     journal_entry,
     merge,
     sequence_after,
@@ -26,7 +27,7 @@ from domain.chunk_editing import (
 )
 from domain.chunk_serialization import chunk_to_audit_dict
 from domain.models import Chunk
-from domain.value_objects import ChunkBbox, ChunkDocItem, ChunkEditAction
+from domain.value_objects import ChunkBbox, ChunkDocItem, ChunkEditAction, ChunkResult
 
 AT = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -183,6 +184,28 @@ def test_merge_leaves_the_sources_untouched() -> None:
         ("c-0", 0, None),
         ("c-1", 1, None),
     ]
+
+
+# ---------------------------------------------------------------------------
+# chunkset_from_results
+# ---------------------------------------------------------------------------
+
+
+def test_chunkset_from_results_numbers_new_chunks_from_zero() -> None:
+    box = ChunkBbox(page=2, bbox=[0.0, 1.0, 2.0, 3.0])
+    item = ChunkDocItem(self_ref="#/texts/4", label="text")
+    results = [
+        ChunkResult(text="a", headings=["H"], source_page=2, token_count=7, bboxes=[box]),
+        ChunkResult(text="b", token_count=0, doc_items=[item]),
+    ]
+    a, b = chunkset_from_results("doc-9", results)
+    assert [(c.document_id, c.sequence, c.text) for c in (a, b)] == [
+        ("doc-9", 0, "a"),
+        ("doc-9", 1, "b"),
+    ]
+    assert (a.headings, a.source_page, a.bboxes, a.token_count) == (["H"], 2, [box], 7)
+    assert (b.doc_items, b.token_count) == ([item], None)
+    assert a.id != b.id
 
 
 # ---------------------------------------------------------------------------

@@ -1,16 +1,21 @@
-"""Chunk service — canonical chunk lifecycle for a document (#256).
+"""Chunk service — editing a document's canonical chunkset (#256).
 
-Sits between the API layer and the chunk / chunk_edit / chunk_push
-repositories. Owns the invariants of the canonical chunkset:
+Sits between the API layer and the chunk / chunk_edit repositories. The
+rules of an edit (where a chunk lands, how one splits, how several merge)
+live in `domain/chunk_editing.py`; this service loads the live chunkset,
+applies them, and persists the result with one `chunk_edits` journal row
+per chunk touched. Promotion, add, split, merge and rechunk write chunks
+and journal in one transaction (`replace_chunkset`); update and delete
+write the chunk, then its row. Invariants kept:
 
 - ordering by `sequence` (dense ascending, gaps allowed after split)
 - soft-delete (audit log keeps before/after pointers valid)
-- atomic mutation + audit row (one ChunkEdit per mutation)
 - promotion from the first completed analysis (idempotent)
 
-Re-uses `DocumentChunker` for rechunk (same port that
-`AnalysisService.rechunk` uses), so chunking strategy logic is not
-duplicated.
+Re-uses `DocumentChunker` for rechunk (same port that `AnalysisService`
+uses), so chunking strategy logic is not duplicated. The document tree and
+the push to stores are services of their own (`document_tree_service`,
+`chunk_push_service`).
 """
 
 from __future__ import annotations
@@ -94,18 +99,8 @@ async def require_document(documents: DocumentRepository, document_id: str) -> D
     return doc
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _utcnow() -> datetime:
     return datetime.now(UTC)
-
-
-# ---------------------------------------------------------------------------
-# Service
-# ---------------------------------------------------------------------------
 
 
 class ChunkService:
@@ -352,19 +347,7 @@ class ChunkService:
 
         existing = await self._chunks.find_for_document(document_id)
         now = _utcnow()
-        new_chunks = [
-            Chunk(
-                document_id=document_id,
-                sequence=seq,
-                text=r.text,
-                headings=list(r.headings),
-                source_page=r.source_page,
-                bboxes=list(r.bboxes),
-                doc_items=list(r.doc_items),
-                token_count=r.token_count or None,
-            )
-            for seq, r in enumerate(new_results)
-        ]
+        new_chunks = chunk_editing.chunkset_from_results(document_id, new_results)
         # One transaction: the old chunkset is retired and the new one
         # journaled together, or not at all.
         await self._chunks.replace_chunkset(
