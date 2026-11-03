@@ -1,34 +1,33 @@
 @ui
 Feature: UI — Sidebar navigation
 
+  # The sidebar has five entries (shared/ui/AppSidebar.vue): Home, Documents,
+  # Analyses, Runs, Settings. Each one is `nav-<key>`, and the entry of the
+  # current section carries the `active` class.
+
   Scenario: Navigate through all sidebar links
     * driver uiBaseUrl
-
-    # Sidebar should be visible
     * waitFor('[data-e2e=sidebar]')
+    * match karate.sizeOf(locateAll('[data-e2e^=nav-]')) == 5
 
-    # Verify all navigation items exist (each has data-e2e starting with nav-)
-    * assert karate.sizeOf(locateAll('[data-e2e^=nav-]')) >= 4
+    * click('[data-e2e=nav-docs]')
+    * waitUntil("location.pathname == '/docs'")
+    * waitUntil("document.querySelector('[data-e2e=nav-docs]').classList.contains('active')")
 
-    # Navigate to Studio via data-e2e (i18n-safe)
-    * click('[data-e2e=nav-studio]')
-    * waitForUrl('/studio')
+    * click('[data-e2e=nav-analyses]')
+    * waitUntil("location.pathname == '/analyses'")
+    * waitUntil("document.querySelector('[data-e2e=nav-analyses]').classList.contains('active')")
 
-    # Navigate to Documents
-    * click('[data-e2e=nav-documents]')
-    * waitForUrl('/documents')
+    * click('[data-e2e=nav-runs]')
+    * waitUntil("location.pathname == '/runs'")
+    * waitUntil("document.querySelector('[data-e2e=nav-runs]').classList.contains('active')")
 
-    # Navigate to History
-    * click('[data-e2e=nav-history]')
-    * waitForUrl('/history')
-
-    # Navigate to Settings
     * click('[data-e2e=nav-settings]')
-    * waitForUrl('/settings')
+    * waitUntil("location.pathname == '/settings'")
+    * waitUntil("document.querySelector('[data-e2e=nav-settings]').classList.contains('active')")
 
-    # Navigate back to Home via logo
-    * click('[data-e2e=topbar-logo]')
-    * waitForUrl(uiBaseUrl + '/')
+    * click('[data-e2e=nav-home]')
+    * waitUntil("location.pathname == '/'")
 
   Scenario: Toggle sidebar collapse and expand
     * driver uiBaseUrl
@@ -39,10 +38,8 @@ Feature: UI — Sidebar navigation
 
     # Click burger menu to collapse
     * click('[data-e2e=burger-btn]')
-    * retry(5, 300).script("!document.querySelector('[data-e2e=sidebar]').classList.contains('open')")
-    * match attribute('[data-e2e=sidebar]', 'class') !contains 'open'
+    * waitUntil("!document.querySelector('[data-e2e=sidebar]').classList.contains('open')")
 
     # Toggle back to expand
     * click('[data-e2e=burger-btn]')
-    * retry(5, 300).script("document.querySelector('[data-e2e=sidebar]').classList.contains('open')")
-    * match attribute('[data-e2e=sidebar]', 'class') contains 'open'
+    * waitUntil("document.querySelector('[data-e2e=sidebar]').classList.contains('open')")

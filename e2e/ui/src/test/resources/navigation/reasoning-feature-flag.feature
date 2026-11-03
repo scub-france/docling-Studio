@@ -1,37 +1,50 @@
 @ui
 Feature: UI — Reasoning feature flag
 
-  # The Reasoning sidebar entry must be hidden when the backend is not wired
-  # to expose the live runner. This test runs against the default CI backend
-  # (REASONING_ENABLED unset → false), so `reasoningAvailable` from
-  # /api/health is false and the sidebar entry must not render.
+  # Reasoning (Ask) no longer has a sidebar entry or a page of its own (#303):
+  # it is a tab of the Parse view, on /analyses/:id, shown only when the
+  # `reasoning` flag is on, i.e. ASK_MODE=visible and `reasoningAvailable` on
+  # /api/health (REASONING_ENABLED=true with docling-agent installed).
   #
-  # When REASONING_ENABLED=true on the backend with docling-agent installed,
-  # this scenario will fail — flip the assertion or drop the @reasoning-off
-  # tag in CI accordingly.
+  # These scenarios run against the default CI backend, where both are off.
+  # On a backend with reasoning wired, the @reasoning-off scenario stops at
+  # its first check, the /api/health precondition, before any UI step.
 
   @reasoning-off
-  Scenario: Sidebar does not show Reasoning when the runner isn't wired
-    * driver uiBaseUrl
-    * waitFor('[data-e2e=sidebar]')
+  Scenario: Parse view has no Ask tab while the runner isn't wired
+    Given url baseUrl
+    And path '/api/health'
+    When method GET
+    Then status 200
+    * match response.reasoningAvailable == false
 
-    # The other nav items must still render
-    * waitFor('[data-e2e=nav-studio]')
-    * waitFor('[data-e2e=nav-documents]')
+    * def upload = call read('classpath:common/helpers/upload.feature') { file: 'small.pdf' }
+    * def docId = upload.docId
+    * def analysis = call read('classpath:common/helpers/analyze.feature') { docId: '#(docId)' }
+    * match analysis.response.status == 'COMPLETED'
 
-    # nav-reasoning must NOT be present (v-if="reasoningEnabled" gates it on
-    # `reasoningAvailable` in the health response)
-    * match karate.sizeOf(locateAll('[data-e2e=nav-reasoning]')) == 0
+    * driver uiBaseUrl + '/analyses/' + analysis.jobId
+    * waitFor('[data-e2e=parse-tab]')
+    * waitFor('[data-e2e=element-properties]')
+    # Without the flag the right panel is Properties alone: no Properties/Ask tabs.
+    * match karate.sizeOf(locateAll('[data-e2e=ask-tab]')) == 0
+    * match karate.sizeOf(locateAll('[data-e2e=props-tab]')) == 0
 
-  @reasoning-off
-  Scenario: /reasoning route is reachable but flag-driven UI gates the entry point
+    * call read('classpath:common/helpers/cleanup-by-name.feature') { filename: 'small.pdf' }
+
+  Scenario: Retired /reasoning deep links land on the documents
+    # Shared links to the old standalone page must not 404 (app/router/routes.ts).
+    * def upload = call read('classpath:common/helpers/upload.feature') { file: 'small.pdf' }
+    * def docId = upload.docId
+
     * driver uiBaseUrl + '/reasoning'
+    * waitUntil("location.pathname == '/docs'")
 
-    # The route is registered in the SPA router so a deep-link doesn't 404,
-    # but the sidebar nav-reasoning entry stays hidden — users can't reach
-    # the page through normal navigation when the runner is disabled.
-    * waitFor('[data-e2e=sidebar]')
-    * match karate.sizeOf(locateAll('[data-e2e=nav-reasoning]')) == 0
+    * driver uiBaseUrl + '/reasoning/' + docId
+    * waitUntil("location.pathname == '/docs/" + docId + "'")
+    * waitFor('[data-e2e=document-viewer]')
+
+    * call read('classpath:common/helpers/cleanup-by-name.feature') { filename: 'small.pdf' }
 
   # ASK_MODE is unset on the CI backend, so Ask is hidden: Settings must not
   # offer the Reasoning section, where Ask would otherwise be turned on.
