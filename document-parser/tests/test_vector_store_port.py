@@ -36,15 +36,28 @@ class FakeVectorStore:
     ) -> list[SearchResult]:
         return []
 
+    async def search_fulltext(
+        self,
+        index_name: str,
+        query_text: str,
+        *,
+        k: int = 10,
+        doc_id: str | None = None,
+    ) -> list[SearchResult]:
+        return []
+
     async def delete_document(self, index_name: str, doc_id: str) -> int:
         return 0
+
+    async def ping(self) -> bool:
+        return True
 
 
 class TestVectorStorePort:
     def test_fake_satisfies_protocol(self):
         """A class implementing all methods is accepted as a VectorStore."""
         store: VectorStore = FakeVectorStore()
-        assert store is not None
+        assert isinstance(store, VectorStore)
 
     @pytest.mark.asyncio
     async def test_ensure_index(self):
@@ -91,6 +104,12 @@ class TestVectorStorePort:
         assert results == []
 
     @pytest.mark.asyncio
+    async def test_search_fulltext(self):
+        store = FakeVectorStore()
+        results = await store.search_fulltext("test-index", "hello", k=5, doc_id="d1")
+        assert results == []
+
+    @pytest.mark.asyncio
     async def test_delete_document(self):
         store = FakeVectorStore()
         count = await store.delete_document("test-index", "d1")
@@ -104,6 +123,8 @@ class TestVectorStorePort:
             "search_similar",
             "get_chunks",
             "delete_document",
+            "search_fulltext",
+            "ping",
         }
         protocol_methods = {
             name

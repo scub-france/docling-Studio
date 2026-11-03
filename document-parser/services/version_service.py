@@ -28,8 +28,8 @@ if TYPE_CHECKING:
         ChunkEditRepository,
         ChunkRepository,
         DocumentRepository,
+        DocumentVersionRepository,
     )
-    from persistence.document_version_repo import SqliteDocumentVersionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class VersionService:
 
     def __init__(
         self,
-        version_repo: SqliteDocumentVersionRepository,
+        version_repo: DocumentVersionRepository,
         chunk_repo: ChunkRepository,
         chunk_edit_repo: ChunkEditRepository,
         document_repo: DocumentRepository,

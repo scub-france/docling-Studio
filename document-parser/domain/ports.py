@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         ChunkPush,
         Document,
         DocumentStoreLink,
+        DocumentVersion,
         Store,
     )
     from domain.navigation import RasterCrop
@@ -113,6 +114,10 @@ class DocumentRepository(Protocol):
 
     async def find_by_id(self, doc_id: str) -> Document | None: ...
 
+    async def find_by_ids(self, doc_ids: list[str]) -> dict[str, Document]:
+        """The requested documents keyed by id, in one read; missing ids are absent."""
+        ...
+
     async def update_page_count(self, doc_id: str, page_count: int) -> None: ...
 
     async def update_lifecycle(
@@ -126,9 +131,14 @@ class DocumentRepository(Protocol):
 
 
 class StoreRepository(Protocol):
-    """Port for `Store` persistence (introduced by #203)."""
+    """Port for `Store` persistence (introduced by #203).
 
-    async def insert(self, store: Store) -> None: ...
+    The connection password never travels on the `Store` entity: it is
+    written through `insert(..., password=)` / `set_connection_password`
+    and read back only through `get_connection_password` (#279).
+    """
+
+    async def insert(self, store: Store, *, password: str | None = None) -> None: ...
 
     async def find_all(self) -> list[Store]: ...
 
@@ -136,7 +146,27 @@ class StoreRepository(Protocol):
 
     async def find_by_id(self, store_id: str) -> Store | None: ...
 
+    async def find_by_name(self, name: str) -> Store | None: ...
+
     async def get_default(self) -> Store | None: ...
+
+    async def update(self, store: Store) -> None:
+        """Replace the mutable, non-secret fields; never touches the password."""
+        ...
+
+    async def clear_default_except(self, store_id: str) -> None:
+        """Unset `is_default` on every store but `store_id` (single-default invariant)."""
+        ...
+
+    async def delete(self, store_id: str) -> bool: ...
+
+    async def get_connection_password(self, store_id: str) -> str | None:
+        """The plaintext password, or None when none is set. Never log it."""
+        ...
+
+    async def set_connection_password(self, store_id: str, plaintext: str | None) -> bool:
+        """Seal and store `plaintext` (None clears it). False for an unknown store."""
+        ...
 
 
 class DocumentStoreLinkRepository(Protocol):
@@ -149,6 +179,10 @@ class DocumentStoreLinkRepository(Protocol):
     async def find_for_document(self, document_id: str) -> list[DocumentStoreLink]: ...
 
     async def find_for_store(self, store_id: str) -> list[DocumentStoreLink]: ...
+
+    async def count_by_store(self) -> dict[str, int]:
+        """Linked-document count per store id; stores without links are absent."""
+        ...
 
     async def find_one(self, document_id: str, store_id: str) -> DocumentStoreLink | None: ...
 
@@ -203,6 +237,30 @@ class ChunkPushRepository(Protocol):
 
     async def find_latest(self, document_id: str, store_id: str) -> ChunkPush | None: ...
 
+    async def find_for_document(
+        self,
+        document_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[ChunkPush]:
+        """Every push of the document, newest first."""
+        ...
+
+    async def count_for_document(self, document_id: str) -> int: ...
+
+
+class DocumentVersionRepository(Protocol):
+    """Port for the frozen (analysis, chunks) version history (#267)."""
+
+    async def insert(self, version: DocumentVersion) -> None: ...
+
+    async def find_by_id(self, version_id: str) -> DocumentVersion | None: ...
+
+    async def find_for_document(self, document_id: str) -> list[DocumentVersion]:
+        """Every version of the document, newest first."""
+        ...
+
 
 class AnalysisRepository(Protocol):
     """Port for analysis job persistence."""
@@ -216,6 +274,12 @@ class AnalysisRepository(Protocol):
         ...
 
     async def find_by_id(self, job_id: str) -> AnalysisJob | None: ...
+
+    async def find_by_document(
+        self, document_id: str, *, limit: int = 200, offset: int = 0
+    ) -> list[AnalysisJob]:
+        """The document's analysis jobs, newest first."""
+        ...
 
     async def find_latest_completed(self, document_id: str) -> AnalysisJob | None: ...
 
@@ -287,6 +351,18 @@ class VectorStore(Protocol):
         """
         ...
 
+    async def search_fulltext(
+        self,
+        index_name: str,
+        query_text: str,
+        *,
+        k: int = 10,
+        doc_id: str | None = None,
+    ) -> list[SearchResult]:
+        """Find the k best chunks for `query_text` by full-text match on
+        their content, optionally restricted to one document."""
+        ...
+
     async def get_chunks(
         self,
         index_name: str,
@@ -305,6 +381,39 @@ class VectorStore(Protocol):
         """Cheap reachability probe — True if the backing store responds.
         Used by health checks; should not throw."""
         ...
+
+
+class VectorStorePool(Protocol):
+    """Port for the per-connection vector store cache (#279).
+
+    Hands back the `VectorStore` for one `(url, username)` identity,
+    building it on first use. Ingestion-only surface, deprecated with it.
+    """
+
+    async def get(
+        self,
+        url: str,
+        *,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> VectorStore: ...
+
+
+class GraphDriverPool(Protocol):
+    """Port for the per-connection graph driver cache (#279).
+
+    The driver is opaque to the services: it only travels to the injected
+    `GraphWriter` factory. Ingestion-only surface, deprecated with it.
+    """
+
+    async def get(
+        self,
+        uri: str,
+        user: str,
+        password: str,
+        *,
+        database: str = "neo4j",
+    ) -> Any: ...
 
 
 class AppSettingsRepository(Protocol):

@@ -143,6 +143,50 @@ class TestServicesLayerIsolation:
         rule.assert_applies(_evaluable)
 
 
+def _imports_of_layer(package: str, layer: str) -> list[str]:
+    """`file:line module` for every import of `layer` under *package* —
+    guarded by `TYPE_CHECKING` or not, at module level or inside a function."""
+    found: list[str] = []
+    pkg_path = Path(_PROJECT_ROOT) / package
+    for py_file in sorted(pkg_path.rglob("*.py")):
+        if any(part in _SKIP_PATH_PARTS for part in py_file.parts):
+            continue
+        tree = ast.parse(py_file.read_text(), filename=str(py_file))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                modules = [node.module]
+            else:
+                continue
+            for module in modules:
+                if module.split(".")[0] == layer:
+                    rel = py_file.relative_to(_PROJECT_ROOT)
+                    found.append(f"{rel}:{node.lineno} {module}")
+    return found
+
+
+class TestServicesReachAdaptersThroughPortsOnly:
+    """services name no adapter layer, not even in a type hint.
+
+    The pytestarch rule above never sees an edge (see
+    `TestMcpAdapterLayerIsolation`), and an import kept under `TYPE_CHECKING`
+    is still a dependency on a concretion: a service typed on
+    `SqliteStoreRepository` ends up calling whatever that class offers instead
+    of what `StoreRepository` declares, and an adapter written against the port
+    then fails at run time (audit 0.7.4, 06 MAJ-2). The ast scan walks every
+    import, guarded or not; the dependency goes through `domain.ports`.
+    """
+
+    @pytest.mark.parametrize("forbidden", ["api", "bootstrap", "infra", "persistence"])
+    def test_services_do_not_import_adapter_layer(self, forbidden: str):
+        offenders = _imports_of_layer("services", forbidden)
+        assert not offenders, (
+            f"services/ imports '{forbidden}' (TYPE_CHECKING included) — type the "
+            "dependency on its port in domain/ports.py instead:\n" + "\n".join(offenders)
+        )
+
+
 class TestApiLayerIsolation:
     """api may import services and domain, but not infra or persistence."""
 

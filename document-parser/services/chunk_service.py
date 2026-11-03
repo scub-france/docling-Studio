@@ -38,10 +38,10 @@ if TYPE_CHECKING:
         ChunkRepository,
         DocumentChunker,
         DocumentRepository,
+        DocumentStoreLinkRepository,
         DocumentTreeReader,
+        StoreRepository,
     )
-    from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
-    from persistence.store_repo import SqliteStoreRepository
     from services.ingestion_service import IngestionService
     from services.store_backend_resolver import StoreBackendResolver
 
@@ -156,8 +156,8 @@ class ChunkService:
         tree_reader: DocumentTreeReader,
         chunker: DocumentChunker | None = None,
         ingestion_service: IngestionService | None = None,
-        store_repo: SqliteStoreRepository | None = None,
-        link_repo: SqliteDocumentStoreLinkRepository | None = None,
+        store_repo: StoreRepository | None = None,
+        link_repo: DocumentStoreLinkRepository | None = None,
         backend_resolver: StoreBackendResolver | None = None,
         actor: str = "user",
     ) -> None:

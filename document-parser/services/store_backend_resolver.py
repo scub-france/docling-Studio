@@ -36,11 +36,13 @@ from domain.value_objects import StoreKind
 
 if TYPE_CHECKING:
     from domain.models import Store
-    from domain.ports import GraphWriter
-    from infra.neo4j.driver_pool import Neo4jDriverPool
-    from infra.opensearch_pool import OpenSearchClientPool
-    from infra.opensearch_store import OpenSearchStore
-    from persistence.store_repo import SqliteStoreRepository
+    from domain.ports import (
+        GraphDriverPool,
+        GraphWriter,
+        StoreRepository,
+        VectorStore,
+        VectorStorePool,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +60,7 @@ class IngestionTargets:
     never sees the raw driver.
     """
 
-    vector_store: OpenSearchStore | None = None
+    vector_store: VectorStore | None = None
     graph_writer: GraphWriter | None = None
 
 
@@ -78,9 +80,9 @@ class StoreBackendResolver:
     def __init__(
         self,
         *,
-        store_repo: SqliteStoreRepository,
-        neo4j_pool: Neo4jDriverPool,
-        opensearch_pool: OpenSearchClientPool,
+        store_repo: StoreRepository,
+        neo4j_pool: GraphDriverPool,
+        opensearch_pool: VectorStorePool,
         graph_writer_factory: Callable[[Any], GraphWriter],
         env_neo4j_uri: str = "",
         env_neo4j_user: str = "neo4j",
