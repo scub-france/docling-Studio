@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Analysis } from '../../shared/types'
+import type { AnalysisSummary } from '../../shared/types'
 import * as api from './api'
 
 export const useHistoryStore = defineStore('history', () => {
-  const analyses = ref<Analysis[]>([])
+  const analyses = ref<AnalysisSummary[]>([])
   const error = ref<string | null>(null)
 
   async function load(): Promise<void> {

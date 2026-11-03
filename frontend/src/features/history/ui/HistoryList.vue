@@ -49,13 +49,13 @@
 import { useRouter } from 'vue-router'
 import { useHistoryStore } from '../store'
 import { useI18n } from '../../../shared/i18n'
-import type { Analysis } from '../../../shared/types'
+import type { AnalysisSummary } from '../../../shared/types'
 
 const store = useHistoryStore()
 const router = useRouter()
 const { t } = useI18n()
 
-function openAnalysis(analysis: Analysis) {
+function openAnalysis(analysis: AnalysisSummary) {
   router.push({ name: 'studio', query: { analysisId: analysis.id } })
 }
 
@@ -73,7 +73,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString()
 }
 
-function duration(analysis: Analysis) {
+function duration(analysis: AnalysisSummary) {
   if (!analysis.startedAt || !analysis.completedAt) return ''
   const ms = new Date(analysis.completedAt!).getTime() - new Date(analysis.startedAt!).getTime()
   const secs = Math.round(ms / 1000)
