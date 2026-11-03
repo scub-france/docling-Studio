@@ -346,7 +346,18 @@ class TestTemplate:
         # Three layers now: the async API, execCommand, then selecting the
         # text so the reader can copy it themselves.
         assert "execCommand" in CITATION_APP_HTML
-        assert "Clipboard blocked" in CITATION_APP_HTML
+        assert "Presse-papiers bloqué" in CITATION_APP_HTML
+
+    def test_its_error_messages_are_in_french_like_the_rest_of_the_card(self):
+        # They are spliced into French sentences ("Aperçu de la page
+        # indisponible — …"), so an English one reads as a half-translated card.
+        for english in ("Clipboard blocked", "the host did not answer", "the server refused"):
+            assert english not in CITATION_APP_HTML
+        assert "call failed" not in CITATION_APP_HTML
+        assert "call failed" not in SOURCES_APP_HTML
+        # The same words as the sources card for the same failures.
+        assert "l\u2019hôte n\u2019a pas répondu" in CITATION_APP_HTML
+        assert "le serveur a refusé" in CITATION_APP_HTML
 
     def test_open_in_studio_is_offered_only_for_a_link_a_host_can_resolve(self):
         assert "isAbsolute(view.deep_link)" in CITATION_APP_HTML

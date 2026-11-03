@@ -677,7 +677,7 @@
       let copied = false;
       try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
       document.body.removeChild(area);
-      say(copied ? confirmation : "Clipboard blocked — select the text below");
+      say(copied ? confirmation : "Presse-papiers bloqué — sélectionnez le texte ci-dessus");
     };
     let promise = null;
     try {
@@ -703,7 +703,7 @@
       const id = `app-${nextRequestId++}`;
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new Error("the host did not answer"));
+        reject(new Error("l’hôte n’a pas répondu"));
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer });
       post({ jsonrpc: "2.0", id, method, params });
@@ -715,7 +715,7 @@
     if (!entry) return false;
     pending.delete(data.id);
     clearTimeout(entry.timer);
-    if (data.error) entry.reject(new Error(data.error.message || "call failed"));
+    if (data.error) entry.reject(new Error(data.error.message || "l’appel a échoué"));
     else entry.resolve(data.result);
     return true;
   }
@@ -822,7 +822,7 @@
         arguments: { uri: view.uri },
       });
       if (result && (result.isError || result.is_error)) {
-        throw new Error(result?.content?.[0]?.text || "the server refused");
+        throw new Error(result?.content?.[0]?.text || "le serveur a refusé");
       }
       img =
         result?.structuredContent ??
@@ -954,7 +954,7 @@
         20000
       );
       if (result && (result.isError || result.is_error)) {
-        throw new Error(result?.content?.[0]?.text || "the server refused");
+        throw new Error(result?.content?.[0]?.text || "le serveur a refusé");
       }
       const img =
         result?.structuredContent ??

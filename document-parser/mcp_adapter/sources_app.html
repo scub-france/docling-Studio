@@ -1021,7 +1021,7 @@
     if (!entry) return false;
     pending.delete(data.id);
     clearTimeout(entry.timer);
-    if (data.error) entry.reject(new Error(data.error.message || "call failed"));
+    if (data.error) entry.reject(new Error(data.error.message || "l’appel a échoué"));
     else entry.resolve(data.result);
     return true;
   }
