@@ -20,8 +20,8 @@ flowchart LR
 
 1. **Audit.** Run the [quality audit](audit/master.md) on the release branch and fix what blocks.
 2. **Freeze.** On `release/x.y.z`, make one commit `chore(release): freeze [x.y.z]` that:
-    - renames `[Unreleased]` to `[x.y.z] - YYYY-MM-DD` in `CHANGELOG.md`,
-    - sets `version` in `frontend/package.json`.
+    - renames `[Unreleased]` to `[x.y.z] - YYYY-MM-DD` in `CHANGELOG.md`, and adds a new, empty `## [Unreleased]` above it for the next changes,
+    - sets the version in `frontend/package.json` and `frontend/package-lock.json`, with `cd frontend && npm version x.y.z --no-git-tag-version`.
 3. **Pull request.** Open `release/x.y.z` → `main`. The release gate runs and posts GO, GO CONDITIONAL or NO-GO as a comment. `main` needs one approval.
 4. **Merge** with **Rebase and merge**.
 5. **Tag** `main`:
@@ -71,7 +71,7 @@ Known gaps in the workflow today: the unit-test steps pipe into `tee` without `p
 
 1. Branch `hotfix/<issue>-<slug>` from `main`.
 2. Fix, add a test, open a pull request to `main`, squash it.
-3. Tag the next patch version on `main`, for example `v0.7.4`: the images follow.
+3. Tag the next patch version on `main`, for example `v1.2.4` after `v1.2.3`: the images follow.
 4. Make sure the fix also lands in the open release branch.
 
 ## Checklists and references
