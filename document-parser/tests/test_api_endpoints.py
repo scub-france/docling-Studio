@@ -720,6 +720,87 @@ class TestAnalysisEndpoints:
 
         assert resp.json() == {"detail": "Document not found: d99"}
 
+    def test_import_answers_400_at_once_to_a_huge_declared_table(
+        self, client, mock_analysis_service
+    ):
+        """#audit-08: a few hundred bytes declaring a 10**6 x 10**6 table."""
+        from docling_core.types.doc import DoclingDocument
+
+        from infra.docling_importer import DoclingDocumentImporter
+
+        document = DoclingDocument(name="source").export_to_dict()
+        document["tables"] = [
+            {
+                "self_ref": "#/tables/0",
+                "parent": {"$ref": "#/body"},
+                "label": "table",
+                "data": {"table_cells": [], "num_rows": 10**6, "num_cols": 10**6},
+            }
+        ]
+        document["body"]["children"] = [{"$ref": "#/tables/0"}]
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=lambda _doc_id, doc: DoclingDocumentImporter().deserialize(doc)
+        )
+
+        resp = client.post("/api/analyses/import", json={"documentId": "d1", "document": document})
+
+        assert resp.status_code == 400
+        assert "MAX_IMPORT_TABLE_CELLS" in resp.json()["detail"]
+
+    def test_import_refuses_a_declared_body_over_the_cap_without_reading_it(
+        self, client, mock_analysis_service, monkeypatch
+    ):
+        monkeypatch.setattr("api.analyses._MAX_BODY_BYTES", 1024)
+
+        async def must_not_read(_request):
+            raise AssertionError("the body was read despite its Content-Length")
+
+        monkeypatch.setattr("api.analyses._BoundedBodyRequest.body", must_not_read)
+        mock_analysis_service.import_docling_document = AsyncMock()
+
+        resp = client.post(
+            "/api/analyses/import", json={"documentId": "d1", "document": {"x": "y" * 2048}}
+        )
+
+        assert resp.status_code == 413
+        assert resp.json()["detail"].startswith("Request body too large")
+        mock_analysis_service.import_docling_document.assert_not_awaited()
+
+    def test_import_counts_a_chunked_body_while_reading_it(
+        self, client, mock_analysis_service, monkeypatch
+    ):
+        """No Content-Length to trust: the read itself stops past the cap."""
+        monkeypatch.setattr("api.analyses._MAX_BODY_BYTES", 1024)
+        mock_analysis_service.import_docling_document = AsyncMock()
+
+        def chunks():
+            yield b'{"documentId": "d1", "document": {"x": "'
+            for _ in range(64):
+                yield b"y" * 512
+            yield b'"}}'
+
+        resp = client.post(
+            "/api/analyses/import",
+            content=chunks(),
+            headers={"content-type": "application/json"},
+        )
+
+        assert resp.status_code == 413
+        mock_analysis_service.import_docling_document.assert_not_awaited()
+
+    def test_a_body_under_the_cap_goes_through(self, client, mock_analysis_service, monkeypatch):
+        monkeypatch.setattr("api.analyses._MAX_BODY_BYTES", 4096)
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=ValueError("Invalid Docling document: stop here")
+        )
+
+        resp = client.post(
+            "/api/analyses/import", json={"documentId": "d1", "document": {"x": "y" * 1024}}
+        )
+
+        assert resp.status_code == 400
+        mock_analysis_service.import_docling_document.assert_awaited_once()
+
     def test_delete_analysis(self, client, mock_analysis_service):
         mock_analysis_service.delete = AsyncMock(return_value=True)
 

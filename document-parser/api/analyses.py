@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.routing import APIRoute
 
 from api import deps  # noqa: TC001
 from api.schemas import (
@@ -18,8 +20,66 @@ from api.schemas import (
     UpdateChunkTextRequest,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
+    from typing import Any
+
+    from fastapi import Response
+
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/analyses", tags=["analyses"])
+
+# The bundled nginx's default `client_max_body_size` (NGINX_MAX_BODY_SIZE=200M),
+# enforced here too so a backend reached without that proxy is bounded as
+# well (#audit-08). The Docling import is the only route of this router with
+# a large body: a Docling JSON embeds its page images by default.
+_MAX_BODY_BYTES = 200 * 1024 * 1024
+
+
+def _body_too_large() -> HTTPException:
+    return HTTPException(
+        status_code=413,
+        detail=f"Request body too large (max {_MAX_BODY_BYTES // (1024 * 1024)} MB)",
+    )
+
+
+class _BoundedBodyRequest(Request):
+    """A request whose body read stops as soon as it passes `_MAX_BODY_BYTES`."""
+
+    async def body(self) -> bytes:
+        if not hasattr(self, "_body"):
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in self.stream():
+                total += len(chunk)
+                if total > _MAX_BODY_BYTES:
+                    raise _body_too_large()
+                chunks.append(chunk)
+            self._body = b"".join(chunks)
+        return self._body
+
+
+class _BoundedBodyRoute(APIRoute):
+    """Caps the body before FastAPI reads it and parses it into JSON.
+
+    FastAPI reads a JSON body before it solves any dependency, so neither a
+    dependency nor the endpoint can refuse a large one in time: the cap has to
+    sit in the route. A declared Content-Length is refused up front; a chunked
+    body is counted while it is read.
+    """
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def bounded_handler(request: Request) -> Response:
+            declared = request.headers.get("content-length", "")
+            if declared.isdigit() and int(declared) > _MAX_BODY_BYTES:
+                raise _body_too_large()
+            return await handler(_BoundedBodyRequest(request.scope, request.receive))
+
+        return bounded_handler
+
+
+router = APIRouter(prefix="/api/analyses", tags=["analyses"], route_class=_BoundedBodyRoute)
 
 
 def _to_response(job) -> AnalysisResponse:

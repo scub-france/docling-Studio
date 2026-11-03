@@ -98,6 +98,18 @@ class TestSettingsValidation:
         with pytest.raises(ValueError, match="paste_allowed_image_types must not be empty"):
             Settings(paste_allowed_image_types=[])
 
+    def test_negative_max_import_table_cells_rejected(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="max_import_table_cells must be >= 0"):
+            Settings(max_import_table_cells=-1)
+
+    def test_max_import_table_cells_defaults_and_reads_env(self, monkeypatch):
+        monkeypatch.delenv("MAX_IMPORT_TABLE_CELLS", raising=False)
+        assert Settings.from_env().max_import_table_cells == 100_000
+        monkeypatch.setenv("MAX_IMPORT_TABLE_CELLS", "0")
+        assert Settings.from_env().max_import_table_cells == 0
+
     def test_zero_max_file_size_mb_accepted(self):
         s = Settings(max_file_size_mb=0)
         assert s.max_file_size_mb == 0

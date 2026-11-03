@@ -31,6 +31,13 @@ class Settings:
     max_page_count: int = 0  # 0 = unlimited (upload validation)
     max_file_size: int = 0  # 0 = unlimited (Docling-level, bytes)
     max_file_size_mb: int = 50  # upload limit in MB (0 = unlimited)
+    # Docling JSON import (#359): the most table cells one imported document
+    # may declare, all tables together (0 = unlimited). docling-core builds
+    # every table's full rows x columns grid on export, whatever the JSON
+    # holds, so the declared size is what costs (#audit-08). 100,000 is about
+    # a hundred dense full-page tables; at that size an empty declared grid
+    # costs what a real 8 MB import of 30,000 cells does (~2 s, ~250 MB).
+    max_import_table_cells: int = 100_000
     rate_limit_rpm: int = 100  # requests per minute per IP (0 = disabled)
     batch_page_size: int = 0  # 0 = disabled, > 0 = pages per batch
     opensearch_url: str = ""  # empty = disabled
@@ -145,6 +152,10 @@ class Settings:
             errors.append(f"max_file_size must be >= 0 (got {self.max_file_size})")
         if self.max_file_size_mb < 0:
             errors.append(f"max_file_size_mb must be >= 0 (got {self.max_file_size_mb})")
+        if self.max_import_table_cells < 0:
+            errors.append(
+                f"max_import_table_cells must be >= 0 (got {self.max_import_table_cells})"
+            )
         if self.max_paste_image_size_mb < 0:
             errors.append(
                 f"max_paste_image_size_mb must be >= 0 (got {self.max_paste_image_size_mb})"
@@ -243,6 +254,7 @@ class Settings:
             max_page_count=int(os.environ.get("MAX_PAGE_COUNT", "0")),
             max_file_size=int(os.environ.get("MAX_FILE_SIZE", "0")),
             max_file_size_mb=int(os.environ.get("MAX_FILE_SIZE_MB", "50")),
+            max_import_table_cells=int(os.environ.get("MAX_IMPORT_TABLE_CELLS", "100000")),
             rate_limit_rpm=int(os.environ.get("RATE_LIMIT_RPM", "100")),
             # 0 = batching disabled (matches dataclass default). Batching
             # preserves memory on very large docs and reports progress after
