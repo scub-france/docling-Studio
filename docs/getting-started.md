@@ -102,13 +102,13 @@ With the Docker image, set everything at start:
 docker run -p 3000:3000 -e ASK_MODE=visible -e REASONING_ENABLED=true -e OLLAMA_HOST=http://host.docker.internal:11434 -e REASONING_MODEL_ID=gpt-oss:20b ghcr.io/scub-france/docling-studio:latest-local
 ```
 
-With Docker Compose, build with the packages:
+With Docker Compose, build with the packages and show Ask:
 
 ```bash
-WITH_REASONING=true docker compose up --build
+ASK_MODE=visible WITH_REASONING=true docker compose up --build
 ```
 
-The compose files do not pass the reasoning variables to the backend yet, so finish in the app:
+`WITH_REASONING=true` installs the packages, and `ASK_MODE=visible` shows Ask. You can also put `ASK_MODE=visible` in `.env`. The compose files do not pass the other reasoning variables to the backend, so finish in the app:
 
 1. Open **Settings** (**Paramètres** in the French interface), section **Ask**.
 2. Set **Ollama URL** to `http://host.docker.internal:11434` and click **Test connection**.
