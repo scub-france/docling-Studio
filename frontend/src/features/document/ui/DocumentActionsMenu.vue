@@ -130,7 +130,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 .document-actions-menu button {
   display: block;

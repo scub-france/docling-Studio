@@ -404,7 +404,7 @@ async function doRechunk() {
 
 .config-select,
 .config-input {
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px 10px;
@@ -435,7 +435,7 @@ async function doRechunk() {
 .toggle-switch {
   width: 32px;
   height: 18px;
-  background: var(--bg-tertiary);
+  background: var(--border-light);
   border-radius: 9px;
   position: relative;
   transition: background 0.2s;
@@ -509,7 +509,7 @@ async function doRechunk() {
 }
 
 .chunk-card {
-  background: var(--bg-secondary);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -545,7 +545,7 @@ async function doRechunk() {
 .chunk-page {
   font-size: 11px;
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
+  background: var(--bg-elevated);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -560,7 +560,7 @@ async function doRechunk() {
 .chunk-heading {
   font-size: 11px;
   color: var(--accent);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+  background: var(--accent-muted);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -609,7 +609,7 @@ async function doRechunk() {
 
 .chunk-edit-icon:hover {
   color: var(--accent);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
 }
 
 .chunk-card:hover .chunk-delete-icon {
@@ -617,8 +617,8 @@ async function doRechunk() {
 }
 
 .chunk-delete-icon:hover {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
 }
 
 .chunk-edit {
@@ -673,7 +673,7 @@ async function doRechunk() {
 }
 
 .chunk-edit-btn.cancel {
-  background: var(--bg-tertiary);
+  background: var(--bg-elevated);
   color: var(--text-secondary);
 }
 
@@ -724,7 +724,7 @@ async function doRechunk() {
 }
 
 .chunk-confirm-btn.danger {
-  background: #ef4444;
+  background: var(--error);
   color: white;
 }
 
@@ -734,7 +734,7 @@ async function doRechunk() {
 }
 
 .chunk-confirm-btn.cancel {
-  background: var(--bg-tertiary);
+  background: var(--bg-elevated);
   color: var(--text-secondary);
 }
 

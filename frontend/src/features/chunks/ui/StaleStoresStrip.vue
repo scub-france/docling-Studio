@@ -115,7 +115,7 @@ async function reingestAll(): Promise<void> {
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 500;
-  background: var(--warning-bg, rgba(234, 179, 8, 0.1));
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
   color: var(--warning);
   border: 1px solid var(--warning);
   border-radius: var(--radius-sm);

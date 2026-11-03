@@ -128,7 +128,7 @@ function toggle(): void {
 }
 
 .tree-node-row--highlight {
-  background: var(--warning-muted, rgba(234, 179, 8, 0.1));
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
   color: var(--text);
 }
 
