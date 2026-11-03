@@ -22,9 +22,11 @@ from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.store_repo import SqliteStoreRepository
+from services.chunk_errors import ChunkServiceError
 from services.chunk_push_service import ChunkPushService
-from services.chunk_service import ChunkService, ChunkServiceError, DocumentNotFoundError
+from services.chunk_service import ChunkService
 from services.ingestion_service import IngestionResult
+from services.navigation_errors import DocumentNotFoundError
 
 
 @pytest.fixture(autouse=True)

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from domain.doc_tree import build_doc_tree
 from domain.models import AnalysisStatus
-from services.chunk_service import ChunkNotFoundError, require_document
+from services.chunk_errors import ChunkNotFoundError, require_document
 
 if TYPE_CHECKING:
     from domain.ports import AnalysisRepository, DocumentRepository, DocumentTreeReader

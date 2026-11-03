@@ -12,8 +12,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from api.errors import register_error_handlers
-from services import chunk_service, navigation_errors
-from services.chunk_service import ChunkConflictError, ChunkServiceError
+from services import chunk_errors, navigation_errors
+from services.chunk_errors import ChunkConflictError, ChunkServiceError
 from services.config_overrides import AppConfigError, AppConfigReadOnlyError
 from services.errors import ServiceError
 from services.graph_service import GraphServiceError, GraphTooLargeError
@@ -79,7 +79,7 @@ class TestServiceErrorHandler:
         """Same status, body and content type as the `raise HTTPException(...)`
         the routers used to write by hand."""
         before = _client_raising(HTTPException(status_code=404, detail="Chunk not found: c1"))
-        after = _client_raising(chunk_service.ChunkNotFoundError("Chunk not found: c1"))
+        after = _client_raising(chunk_errors.ChunkNotFoundError("Chunk not found: c1"))
         old, new = before.get("/boom"), after.get("/boom")
         assert (new.status_code, new.json()) == (old.status_code, old.json())
         assert new.headers["content-type"] == old.headers["content-type"]
@@ -91,7 +91,7 @@ class TestServiceErrorHandler:
 
 class TestOneDocumentNotFound:
     def test_the_chunk_service_raises_the_shared_class(self):
-        assert chunk_service.DocumentNotFoundError is navigation_errors.DocumentNotFoundError
+        assert chunk_errors.DocumentNotFoundError is navigation_errors.DocumentNotFoundError
 
     def test_it_stays_in_the_navigation_family_the_mcp_adapter_reports(self):
         assert issubclass(DocumentNotFoundError, NavigationServiceError)

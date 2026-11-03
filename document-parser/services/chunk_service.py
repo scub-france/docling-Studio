@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -30,14 +29,17 @@ from typing import TYPE_CHECKING
 from domain import chunk_editing
 from domain.chunk_editing import EditJournal
 from domain.chunk_serialization import chunk_from_dict
-from domain.models import Chunk, Document
+from domain.models import Chunk
 from domain.value_objects import ChunkingOptions
-from services.errors import ServiceError
-from services.navigation_errors import DocumentNotFoundError
+from services.chunk_errors import (
+    ChunkNotFoundError,
+    ChunkServiceError,
+    refusals_as_service_errors,
+    require_document,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
+    from domain.models import AnalysisJob
     from domain.ports import (
         AnalysisRepository,
         ChunkEditRepository,
@@ -47,52 +49,6 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Errors — carry the HTTP status the API layer answers with (`ServiceError`).
-# An unknown document raises the shared `DocumentNotFoundError` (404).
-# ---------------------------------------------------------------------------
-
-
-class ChunkServiceError(ServiceError):
-    http_status = 400
-
-
-class ChunkNotFoundError(ChunkServiceError):
-    http_status = 404
-
-
-class ChunkConflictError(ChunkServiceError):
-    http_status = 409
-
-
-class ChunkValidationError(ChunkServiceError):
-    http_status = 400
-
-
-# Why the domain refused an edit → the error the API answers it with.
-_REFUSALS: dict[type[chunk_editing.ChunkEditingError], type[ChunkServiceError]] = {
-    chunk_editing.InvalidChunkEditError: ChunkValidationError,
-    chunk_editing.UnknownChunkError: ChunkNotFoundError,
-    chunk_editing.NonContiguousMergeError: ChunkConflictError,
-}
-
-
-@contextmanager
-def _refusals_as_service_errors() -> Iterator[None]:
-    try:
-        yield
-    except chunk_editing.ChunkEditingError as exc:
-        raise _REFUSALS[type(exc)](str(exc)) from exc
-
-
-async def require_document(documents: DocumentRepository, document_id: str) -> Document:
-    """The document, or the shared 404 — the guard every chunk use case opens with."""
-    doc = await documents.find_by_id(document_id)
-    if not doc:
-        raise DocumentNotFoundError(f"Document not found: {document_id}")
-    return doc
 
 
 def _utcnow() -> datetime:
@@ -117,9 +73,9 @@ class ChunkService:
         self._analyses = analysis_repo
         self._chunker = chunker
         self._actor = actor
-        # Duck-typed recorder for document versions (#267). Wired in
-        # main.py to `VersionService.record_on_rechunk` so each
-        # `+ Generate chunks` call appends a frozen pair to History.
+        # Duck-typed recorder for document versions (#267). Wired by
+        # `bootstrap.builder` to `VersionService` so each `+ Generate
+        # chunks` call appends a frozen pair to History.
         self._version_recorder = None
 
     def set_version_recorder(self, version_service) -> None:
@@ -127,7 +83,7 @@ class ChunkService:
         coroutine `(document_id: str, analysis_id: str | None) -> DocumentVersion`."""
         self._version_recorder = version_service
 
-    # -- promotion (called by AnalysisService after first successful analysis)
+    # -- promotion (AnalysisService keeps the hook; its flow no longer calls it, #266)
 
     async def promote_from_analysis_if_empty(self, document_id: str, chunks_json: str) -> int:
         """Populate the canonical chunkset from an analysis result, ONLY if
@@ -166,25 +122,21 @@ class ChunkService:
     # -- read
 
     async def list_chunks(self, document_id: str) -> list[Chunk]:
-        await self._require_doc(document_id)
+        await require_document(self._documents, document_id)
         return await self._chunks.find_for_document(document_id)
 
     # -- mutations
 
     async def add_chunk(self, document_id: str, *, text: str, after_id: str | None = None) -> Chunk:
-        await self._require_doc(document_id)
+        await require_document(self._documents, document_id)
         existing = await self._chunks.find_for_document(document_id)
-        with _refusals_as_service_errors():
+        with refusals_as_service_errors():
             sequence = chunk_editing.sequence_after(existing, after_id)
         now = _utcnow()
         await self._shift_sequences(document_id, existing, from_sequence=sequence, at=now)
 
         new_chunk = Chunk(
-            document_id=document_id,
-            sequence=sequence,
-            text=text,
-            created_at=now,
-            updated_at=now,
+            document_id=document_id, sequence=sequence, text=text, created_at=now, updated_at=now
         )
         await self._chunks.replace_chunkset(
             document_id,
@@ -227,7 +179,7 @@ class ChunkService:
 
     async def split_chunk(self, document_id: str, chunk_id: str, cursor_offset: int) -> list[Chunk]:
         source = await self._require_chunk(document_id, chunk_id)
-        with _refusals_as_service_errors():
+        with refusals_as_service_errors():
             head, tail = chunk_editing.split(source, cursor_offset)
         existing = await self._chunks.find_for_document(document_id)
 
@@ -256,7 +208,7 @@ class ChunkService:
 
     async def merge_chunks(self, document_id: str, ids: list[str]) -> Chunk:
         existing = await self._chunks.find_for_document(document_id)
-        with _refusals_as_service_errors():
+        with refusals_as_service_errors():
             ordered, merged = chunk_editing.merge(existing, ids)
 
         now = _utcnow()
@@ -282,23 +234,15 @@ class ChunkService:
         Emits one INSERT edit per new chunk and one DELETE per old chunk
         — keeps the audit log within the existing `ChunkEditAction` enum.
         """
-        await self._require_doc(document_id)
-        if not self._chunker:
-            raise ChunkServiceError("Chunker not configured", http_status=503)
-
-        job = await self._analyses.find_latest_completed_by_document(document_id)
-        if not job or not job.document_json:
-            raise ChunkServiceError(
-                "No completed analysis with document_json available for rechunk",
-                http_status=409,
-            )
-
+        await require_document(self._documents, document_id)
+        chunker = self._require_chunker()
+        job = await self._analysis_to_rechunk(document_id)
         chunk_opts = ChunkingOptions(**options) if options else ChunkingOptions()
-        new_results = await self._chunker.chunk(job.document_json, chunk_opts)
+        results = await chunker.chunk(job.document_json, chunk_opts)
 
         existing = await self._chunks.find_for_document(document_id)
         now = _utcnow()
-        new_chunks = chunk_editing.chunkset_from_results(document_id, new_results)
+        new_chunks = chunk_editing.chunkset_from_results(document_id, results)
         # One transaction: the old chunkset is retired and the new one
         # journaled together, or not at all.
         journal = EditJournal(document_id, "system:rechunk", now)
@@ -315,31 +259,40 @@ class ChunkService:
             len(existing),
             len(new_chunks),
         )
-
-        # Record a frozen (analysis, chunks_snapshot) pair in the
-        # workspace History timeline (#267). Snapshots the chunks we
-        # just wrote, paired with the analysis they came from.
-        if self._version_recorder is not None:
-            try:
-                await self._version_recorder.record_on_rechunk(document_id, job.id)
-            except Exception:
-                # Best-effort hook — never fail the rechunk if the
-                # version snapshot write hits a snag.
-                logger.exception(
-                    "Version snapshot failed for doc %s after rechunk",
-                    document_id,
-                )
-
+        await self._record_version(document_id, job.id)
         return new_chunks
+
+    def _require_chunker(self) -> DocumentChunker:
+        if not self._chunker:
+            raise ChunkServiceError("Chunker not configured", http_status=503)
+        return self._chunker
+
+    async def _analysis_to_rechunk(self, document_id: str) -> AnalysisJob:
+        job = await self._analyses.find_latest_completed_by_document(document_id)
+        if not job or not job.document_json:
+            raise ChunkServiceError(
+                "No completed analysis with document_json available for rechunk",
+                http_status=409,
+            )
+        return job
+
+    async def _record_version(self, document_id: str, analysis_id: str) -> None:
+        """Record a frozen (analysis, chunks_snapshot) pair in the workspace
+        History timeline (#267): the chunks just written, paired with the
+        analysis they came from. Best effort — a failed snapshot never fails
+        the rechunk."""
+        if self._version_recorder is None:
+            return
+        try:
+            await self._version_recorder.record_on_rechunk(document_id, analysis_id)
+        except Exception:
+            logger.exception("Version snapshot failed for doc %s after rechunk", document_id)
 
     def _journal(self, document_id: str, at: datetime) -> EditJournal:
         """The journal of an edit made by this service's actor."""
         return EditJournal(document_id, self._actor, at)
 
     # -- guards
-
-    async def _require_doc(self, document_id: str) -> None:
-        await require_document(self._documents, document_id)
 
     async def _require_chunk(self, document_id: str, chunk_id: str) -> Chunk:
         chunk = await self._chunks.find_by_id(chunk_id)
@@ -350,12 +303,7 @@ class ChunkService:
     # -- sequence helpers
 
     async def _shift_sequences(
-        self,
-        document_id: str,
-        existing: list[Chunk],
-        *,
-        from_sequence: int,
-        at: datetime,
+        self, document_id: str, existing: list[Chunk], *, from_sequence: int, at: datetime
     ) -> None:
         """Push live chunks at >= from_sequence one slot up to make room, in
         one UPDATE — skipped when nothing sits there (append at the end)."""

@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 
 from domain.models import Chunk
 from main import app
-from services.chunk_service import (
+from services.chunk_errors import (
     ChunkConflictError,
     ChunkNotFoundError,
     ChunkValidationError,
-    DocumentNotFoundError,
 )
+from services.navigation_errors import DocumentNotFoundError
 from tests.app_state import state_override
 
 

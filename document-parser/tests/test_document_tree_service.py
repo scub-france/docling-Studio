@@ -16,8 +16,9 @@ from infra.docling_tree import DoclingTreeReader
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
-from services.chunk_service import ChunkNotFoundError, DocumentNotFoundError
+from services.chunk_errors import ChunkNotFoundError
 from services.document_tree_service import DocumentTreeService
+from services.navigation_errors import DocumentNotFoundError
 
 
 @pytest.fixture(autouse=True)

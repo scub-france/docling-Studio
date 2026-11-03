@@ -23,14 +23,14 @@ from persistence.chunk_edit_repo import (
 from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
-from services.chunk_service import (
+from services.chunk_errors import (
     ChunkConflictError,
     ChunkNotFoundError,
-    ChunkService,
     ChunkServiceError,
     ChunkValidationError,
-    DocumentNotFoundError,
 )
+from services.chunk_service import ChunkService
+from services.navigation_errors import DocumentNotFoundError
 
 # ---------------------------------------------------------------------------
 # Fixtures

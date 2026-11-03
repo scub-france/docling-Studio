@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from domain import hashing
 from domain.chunk_serialization import chunk_to_ingestion_dict
 from domain.models import ChunkPush, DocumentStoreLink
-from services.chunk_service import ChunkServiceError, require_document
+from services.chunk_errors import ChunkServiceError, require_document
 
 if TYPE_CHECKING:
     from domain.models import Chunk, Document, Store
