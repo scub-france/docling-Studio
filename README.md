@@ -30,6 +30,8 @@ To build from source with Docker Compose, or to turn on Ask with a local model, 
 - Exports the result as Markdown or Docling JSON.
 - Lets AI agents read and cite your documents over MCP (on by default, no authentication: keep port 3000 private; switchable in Settings).
 
+![Docling Studio parses a PDF, then Claude answers from it over MCP, with cited sources](docs/screenshots/mcp-demo.gif)
+
 ## Documentation
 
 | Page | What is in it |
