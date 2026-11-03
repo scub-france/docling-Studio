@@ -43,6 +43,9 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      - name: Format check
+        run: uv run ruff format --check .
+
       - name: Run tests
         run: uv run pytest tests/ -v
 
@@ -67,6 +70,9 @@ jobs:
 
       - name: Lint
         run: npx eslint src/
+
+      - name: Format check
+        run: npm run format:check
 
       - name: Type check
         run: npm run type-check
