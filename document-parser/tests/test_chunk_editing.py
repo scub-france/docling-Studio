@@ -9,6 +9,8 @@ the same rules end to end, persistence and journal included.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from domain.chunk_editing import (
@@ -17,12 +19,16 @@ from domain.chunk_editing import (
     InvalidChunkEditError,
     NonContiguousMergeError,
     UnknownChunkError,
+    journal_entry,
     merge,
     sequence_after,
     split,
 )
+from domain.chunk_serialization import chunk_to_audit_dict
 from domain.models import Chunk
-from domain.value_objects import ChunkBbox, ChunkDocItem
+from domain.value_objects import ChunkBbox, ChunkDocItem, ChunkEditAction
+
+AT = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def _make(count: int = 3, document_id: str = "doc-1") -> list[Chunk]:
@@ -177,3 +183,34 @@ def test_merge_leaves_the_sources_untouched() -> None:
         ("c-0", 0, None),
         ("c-1", 1, None),
     ]
+
+
+# ---------------------------------------------------------------------------
+# journal_entry
+# ---------------------------------------------------------------------------
+
+
+def test_journal_entry_records_snapshots_in_the_journal_shape() -> None:
+    before, after = _make(2)
+    edit = journal_entry(
+        "doc-1", "c-0", ChunkEditAction.UPDATE, actor="user", at=AT, before=before, after=after
+    )
+    assert (edit.document_id, edit.chunk_id, edit.action, edit.actor, edit.at) == (
+        "doc-1",
+        "c-0",
+        ChunkEditAction.UPDATE,
+        "user",
+        AT,
+    )
+    assert edit.before == chunk_to_audit_dict(before)
+    assert edit.after == chunk_to_audit_dict(after)
+    assert (edit.parents, edit.children, edit.reason) == ([], [], None)
+    assert len(edit.id) == 36  # str(uuid4()), as the chunk paths always wrote
+
+
+def test_journal_entry_without_snapshots_or_with_lineage() -> None:
+    bare = journal_entry("d", "c", ChunkEditAction.DELETE, actor="system", at=AT, edit_id="e1")
+    assert (bare.id, bare.before, bare.after) == ("e1", None, None)
+    merged = journal_entry("d", "m", ChunkEditAction.MERGE, actor="u", at=AT, parents=["a", "b"])
+    split_ = journal_entry("d", "s", ChunkEditAction.SPLIT, actor="u", at=AT, children=["h", "t"])
+    assert (merged.parents, split_.children) == (["a", "b"], ["h", "t"])

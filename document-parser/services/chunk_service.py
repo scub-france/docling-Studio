@@ -19,16 +19,14 @@ import json
 import logging
 import uuid
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from domain import chunk_editing, hashing
-from domain.chunk_serialization import (
-    chunk_from_dict,
-    chunk_to_audit_dict,
-    chunk_to_ingestion_dict,
-)
-from domain.models import Chunk, ChunkEdit, ChunkPush, Document, DocumentStoreLink
+from domain.chunk_editing import journal_entry
+from domain.chunk_serialization import chunk_from_dict, chunk_to_ingestion_dict
+from domain.models import Chunk, ChunkPush, Document, DocumentStoreLink
 from domain.value_objects import ChunkEditAction, ChunkingOptions
 from services.errors import ServiceError
 from services.navigation_errors import DocumentNotFoundError
@@ -50,6 +48,10 @@ if TYPE_CHECKING:
     from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
+
+# The journal actions and actor the bulk paths write, short enough for one line.
+_INSERT, _DELETE = ChunkEditAction.INSERT, ChunkEditAction.DELETE
+_RECHUNK = "system:rechunk"
 
 # Sentinel for "not yet probed" in `list_pushes`'s store-name cache.
 # Distinct from None (which means "store row deleted after the push").
@@ -204,14 +206,8 @@ class ChunkService:
             at=now,
             add=canonical,
             edits=[
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=c.id,
-                    action=ChunkEditAction.INSERT,
-                    actor="system:initial-analysis",
-                    at=now,
-                    after=chunk_to_audit_dict(c),
+                journal_entry(
+                    document_id, c.id, _INSERT, actor="system:initial-analysis", at=now, after=c
                 )
                 for c in canonical
             ],
@@ -249,14 +245,8 @@ class ChunkService:
             at=now,
             add=[new_chunk],
             edits=[
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=new_chunk.id,
-                    action=ChunkEditAction.INSERT,
-                    actor=self._actor,
-                    at=now,
-                    after=chunk_to_audit_dict(new_chunk),
+                journal_entry(
+                    document_id, new_chunk.id, _INSERT, actor=self._actor, at=now, after=new_chunk
                 )
             ],
         )
@@ -274,43 +264,35 @@ class ChunkService:
         headings: list[str] | None = None,
     ) -> Chunk:
         chunk = await self._require_chunk(document_id, chunk_id)
-        before = chunk_to_audit_dict(chunk)
+        changes: dict = {"updated_at": _utcnow()}
         if text is not None:
-            chunk.text = text
+            changes["text"] = text
         if headings is not None:
-            chunk.headings = list(headings)
-        chunk.updated_at = _utcnow()
-        await self._chunks.update(chunk)
+            changes["headings"] = list(headings)
+        updated = replace(chunk, **changes)
+        await self._chunks.update(updated)
         await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=chunk.id,
-                action=ChunkEditAction.UPDATE,
+            journal_entry(
+                document_id,
+                chunk.id,
+                ChunkEditAction.UPDATE,
                 actor=self._actor,
                 at=_utcnow(),
-                before=before,
-                after=chunk_to_audit_dict(chunk),
+                before=chunk,
+                after=updated,
             )
         )
         logger.info("chunk.update docId=%s chunkId=%s", document_id, chunk.id)
-        return chunk
+        return updated
 
     async def delete_chunk(self, document_id: str, chunk_id: str) -> None:
         chunk = await self._require_chunk(document_id, chunk_id)
-        before = chunk_to_audit_dict(chunk)
         deleted = await self._chunks.soft_delete(chunk_id, at=_utcnow())
         if not deleted:
             raise ChunkNotFoundError(f"Chunk not found: {chunk_id}")
         await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=chunk_id,
-                action=ChunkEditAction.DELETE,
-                actor=self._actor,
-                at=_utcnow(),
-                before=before,
+            journal_entry(
+                document_id, chunk_id, _DELETE, actor=self._actor, at=_utcnow(), before=chunk
             )
         )
         logger.info("chunk.delete docId=%s chunkId=%s", document_id, chunk.id)
@@ -320,7 +302,6 @@ class ChunkService:
         with _refusals_as_service_errors():
             head, tail = chunk_editing.split(source, cursor_offset)
         existing = await self._chunks.find_for_document(document_id)
-        before = chunk_to_audit_dict(source)
 
         # Push subsequent sequences by 1 to make room for `tail`. Should the
         # replacement below fail, the shift only leaves a gap, which the
@@ -335,14 +316,13 @@ class ChunkService:
             retire_ids=[source.id],
             add=[head, tail],
             edits=[
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=source.id,
-                    action=ChunkEditAction.SPLIT,
+                journal_entry(
+                    document_id,
+                    source.id,
+                    ChunkEditAction.SPLIT,
                     actor=self._actor,
                     at=now,
-                    before=before,
+                    before=source,
                     children=[head.id, tail.id],
                 )
             ],
@@ -368,15 +348,14 @@ class ChunkService:
             retire_ids=[c.id for c in ordered],
             add=[merged],
             edits=[
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=merged.id,
-                    action=ChunkEditAction.MERGE,
+                journal_entry(
+                    document_id,
+                    merged.id,
+                    ChunkEditAction.MERGE,
                     actor=self._actor,
                     at=now,
                     parents=[c.id for c in ordered],
-                    after=chunk_to_audit_dict(merged),
+                    after=merged,
                 )
             ],
         )
@@ -433,27 +412,11 @@ class ChunkService:
             add=new_chunks,
             edits=[
                 *(
-                    ChunkEdit(
-                        id=_new_id(),
-                        document_id=document_id,
-                        chunk_id=c.id,
-                        action=ChunkEditAction.DELETE,
-                        actor="system:rechunk",
-                        at=now,
-                        before=chunk_to_audit_dict(c),
-                    )
+                    journal_entry(document_id, c.id, _DELETE, actor=_RECHUNK, at=now, before=c)
                     for c in existing
                 ),
                 *(
-                    ChunkEdit(
-                        id=_new_id(),
-                        document_id=document_id,
-                        chunk_id=c.id,
-                        action=ChunkEditAction.INSERT,
-                        actor="system:rechunk",
-                        at=now,
-                        after=chunk_to_audit_dict(c),
-                    )
+                    journal_entry(document_id, c.id, _INSERT, actor=_RECHUNK, at=now, after=c)
                     for c in new_chunks
                 ),
             ],

@@ -21,6 +21,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from domain.chunk_editing import journal_entry
 from domain.chunk_serialization import chunk_from_dict, chunk_to_snapshot_dict
 from domain.models import Chunk, ChunkEdit, DocumentVersion, DocumentVersionKind
 from domain.ports import DocumentVersionEntry
@@ -153,13 +154,14 @@ class VersionService:
         now = _utcnow()
 
         def journal(action: ChunkEditAction, chunk: Chunk) -> ChunkEdit:
-            return ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=chunk.id,
-                action=action,
+            # No before/after snapshot on a restore; ids stay hex, as always.
+            return journal_entry(
+                document_id,
+                chunk.id,
+                action,
                 actor=f"system:restore:{version_id}",
                 at=now,
+                edit_id=_new_id(),
             )
 
         existing = await self._chunks.find_for_document(document_id)

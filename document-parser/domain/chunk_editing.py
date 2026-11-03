@@ -3,7 +3,7 @@
 Pure: chunks in, chunks out. Nothing here reads or writes the database or
 the `chunk_edits` journal. `services/chunk_service.py` loads the live
 chunkset, asks these functions what an edit produces, then persists the
-result and its journal rows in one write.
+result with the journal rows `journal_entry` builds, in one write.
 
 These are the rules the chunk editor ships. An earlier draft of this module
 worked on whole chunksets and disagreed with the service on four points:
@@ -18,7 +18,16 @@ allowed, so an edit never renumbers more than it must.
 
 from __future__ import annotations
 
-from domain.models import Chunk
+import uuid
+from typing import TYPE_CHECKING
+
+from domain.chunk_serialization import chunk_to_audit_dict
+from domain.models import Chunk, ChunkEdit
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from domain.value_objects import ChunkEditAction
 
 # What a merge puts between the texts of two consecutive sources.
 MERGE_SEPARATOR = "\n"
@@ -116,3 +125,37 @@ def merge(chunks: list[Chunk], ids: list[str]) -> tuple[list[Chunk], Chunk]:
         token_count=sum(c.token_count or 0 for c in sources) or None,
     )
     return sources, merged
+
+
+def journal_entry(
+    document_id: str,
+    chunk_id: str,
+    action: ChunkEditAction,
+    *,
+    actor: str,
+    at: datetime,
+    before: Chunk | None = None,
+    after: Chunk | None = None,
+    parents: list[str] | None = None,
+    children: list[str] | None = None,
+    edit_id: str | None = None,
+) -> ChunkEdit:
+    """One `chunk_edits` row: `actor` did `action` to `chunk_id` at `at`.
+
+    `before` / `after` are the chunk as it was and as it is, recorded in the
+    journal shape (`chunk_to_audit_dict`); a path that journals no snapshot
+    leaves them out. `parents` / `children` carry a merge's sources and a
+    split's halves. The row gets a fresh uuid4 id unless `edit_id` is given.
+    """
+    return ChunkEdit(
+        id=edit_id or str(uuid.uuid4()),
+        document_id=document_id,
+        chunk_id=chunk_id,
+        action=action,
+        actor=actor,
+        at=at,
+        before=None if before is None else chunk_to_audit_dict(before),
+        after=None if after is None else chunk_to_audit_dict(after),
+        parents=list(parents or []),
+        children=list(children or []),
+    )
