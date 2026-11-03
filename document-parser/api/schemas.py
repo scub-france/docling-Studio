@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import (
     AliasChoices,
@@ -69,12 +69,17 @@ class ProvidedKeysModel(BaseModel):
     JSON is the one the dict produced. `always_emitted` names declared fields
     that were emitted whether set or not. Field names are the wire keys: no
     alias generator here.
+
+    The serializer has no return annotation on purpose: Pydantic derives the
+    serialization schema — the one FastAPI publishes for a response — from
+    it, and `dict[str, Any]` would publish every subclass as a free object
+    instead of its declared fields.
     """
 
     always_emitted: ClassVar[frozenset[str]] = frozenset()
 
     @model_serializer(mode="wrap")
-    def _provided_keys_only(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+    def _provided_keys_only(self, handler: SerializerFunctionWrapHandler):
         keep = self.model_fields_set | self.always_emitted
         return {key: value for key, value in handler(self).items() if key in keep}
 
