@@ -4,7 +4,17 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Security headers
+    # Compress text: the app's JS and CSS, and the API's JSON (an analysis
+    # carries its markdown, HTML and pages). text/html is always included.
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/css text/javascript application/javascript application/json image/svg+xml text/plain;
+
+    # Security headers. An `add_header` inside a location drops these for
+    # that location, so the locations that set their own repeat them.
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
@@ -12,6 +22,26 @@ server {
 
     location / {
         try_files $uri $uri/ /index.html;
+    }
+
+    # The app shell (and every client-side route that falls back to it):
+    # revalidated on each load, so a new release's asset names are seen.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    }
+
+    # Vite's build output: each file name carries a hash of its content, so a
+    # cached copy is never stale. A missing asset is a plain 404, uncached.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     }
 
     location /api/ {
@@ -25,7 +55,8 @@ server {
 
     # MCP document server; on unless the backend runs with MCP_ENABLED=false
     # or Settings turned it off. `$http_host` keeps the port the client used, which the
-    # backend's MCP_ALLOWED_HOSTS check matches; answers stream, unbuffered.
+    # backend's MCP_ALLOWED_HOSTS check matches; answers stream, unbuffered
+    # and uncompressed.
     location = /mcp {
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
@@ -33,6 +64,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Connection "";
         proxy_buffering off;
+        gzip off;
         proxy_read_timeout 900s;
         proxy_send_timeout 900s;
     }
