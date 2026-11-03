@@ -4,9 +4,16 @@
  * Pure-function tests only — the frontend doesn't ship a DOM test
  * environment, so `DocsLibraryPage.vue` is not mountable.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { keepListed, selectionState, toggleListed, toggleOne } from './DocsLibraryPage.logic'
+import {
+  SUMMARIES_PAGE,
+  countDocumentAnalyses,
+  keepListed,
+  selectionState,
+  toggleListed,
+  toggleOne,
+} from './DocsLibraryPage.logic'
 
 const LISTED = ['d1', 'd2', 'd3']
 
@@ -49,5 +56,40 @@ describe('toggleOne', () => {
 describe('keepListed', () => {
   it('drops the documents the filter or a deletion took off the list', () => {
     expect(keepListed(new Set(['d1', 'gone']), LISTED)).toEqual(new Set(['d1']))
+  })
+})
+
+describe('countDocumentAnalyses', () => {
+  const rows = (...documentIds: string[]) => documentIds.map((documentId) => ({ documentId }))
+
+  it("counts the document's analyses from the summaries alone", async () => {
+    const lookup = {
+      summaries: vi.fn().mockResolvedValue(rows('d1', 'd2', 'd1')),
+      ofDocument: vi.fn(),
+    }
+
+    expect(await countDocumentAnalyses('d1', lookup)).toBe(2)
+    expect(await countDocumentAnalyses('d3', lookup)).toBe(0)
+    expect(lookup.ofDocument).not.toHaveBeenCalled()
+  })
+
+  it("asks for the document's own list when the summaries may be cut short", async () => {
+    const full = rows(...Array.from({ length: SUMMARIES_PAGE }, () => 'other'))
+    const lookup = {
+      summaries: vi.fn().mockResolvedValue(full),
+      ofDocument: vi.fn().mockResolvedValue([{}, {}, {}]),
+    }
+
+    expect(await countDocumentAnalyses('d1', lookup)).toBe(3)
+    expect(lookup.ofDocument).toHaveBeenCalledWith('d1')
+  })
+
+  it('lets a failed lookup reach the caller, which cancels the deletion', async () => {
+    const lookup = {
+      summaries: vi.fn().mockRejectedValue(new Error('network')),
+      ofDocument: vi.fn(),
+    }
+
+    await expect(countDocumentAnalyses('d1', lookup)).rejects.toThrow('network')
   })
 })
