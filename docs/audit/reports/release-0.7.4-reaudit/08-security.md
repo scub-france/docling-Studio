@@ -82,8 +82,8 @@ basculer 8.5.1 : 33/36 = **92**, 1 CRIT, **NO-GO**.
 | 8.3.1 | SQL en paramètres liés | 3 | **Oui** | f-strings limitées à des constantes et à des `?` : `persistence/document_repo.py:83,108`, `chunk_repo.py:170` (clause constante), `analysis_repo.py:64-136` ; `LIKE` échappé (`document_repo.py:80`) |
 | 8.3.2 | Pas de `eval/exec/os.system` | 3 | **Oui** | grep `eval(`, `exec(`, `os.system(`, `subprocess.`, `shell=True`, `pickle.load`, `yaml.load(`, `__import__(`, `create_subprocess` : vide (hors `.venv`, tests) |
 | 8.3.3 | DOMPurify sur rendu HTML/MD | 3 | **Oui** | seul `v-html` : `frontend/src/shared/ui/MarkdownViewer.vue:3`, assaini `:24`. Cartes MCP : changements de libellés et de mise en page seulement, toujours via `esc()` (`citation_app.html:587-607`) |
-| 8.4.1 | CORS explicite | 3 | **Oui** | `main.py:91-97` ; défaut localhost (`infra/settings.py:86,283`) ; grep `allow_origins.*\*` vide |
-| 8.4.2 | Rate limiter actif sauf `/api/health` | 2 | **Oui** | `main.py:98-103` ; exclusion `infra/rate_limiter.py:59,68`. Contournement `X-Forwarded-For` de l'image tout-en-un corrigé : voir [MIN] rate limiter |
+| 8.4.1 | CORS explicite | 3 | **Oui** | `main.py:92-98` ; défaut localhost (`infra/settings.py:86,283`) ; grep `allow_origins.*\*` vide |
+| 8.4.2 | Rate limiter actif sauf `/api/health` | 2 | **Oui** | `main.py:99-104` ; exclusion `infra/rate_limiter.py:59,68`. Contournement `X-Forwarded-For` de l'image tout-en-un corrigé : voir [MIN] rate limiter |
 | 8.4.3 | Nginx sans directory listing | 2 | **Oui** | `nginx.conf.template:23-25,39-45` et `frontend/nginx.conf.template` (identiques au port et au backend près) ; grep `autoindex` vide. `/assets/` manquant → 404 au lieu du shell |
 | 8.5.1 | Pas de CVE critique connue | 3 | **Oui** (adossé au dernier gate vert) | voir détail ci-dessous |
 | 8.5.2 | Versions épinglées | 1 | **Oui** (corrigé) | `document-parser/pyproject.toml:44-45` (`torch>=2.13.0,<3.0.0`, `torchvision>=0.28.0,<1.0.0`) ; `uv.lock:934-935` ; versions verrouillées inchangées. Plus aucun `>=` sans borne (seul `requires-python`). `frontend/package.json` : aucun `*`, `latest` ni `>=` |
@@ -117,7 +117,7 @@ seulement) et 17 MODERATE (chaîne eslint / vitest / vue-tsc), voir [INFO] npm d
 
 **Statut vs 0.7.4 : inchangé, ouvert — décision laissée au mainteneur** (changement cassant).
 
-- **Localisation** : `document-parser/main.py:91-103` (seuls `CORSMiddleware` et
+- **Localisation** : `document-parser/main.py:92-104` (seuls `CORSMiddleware` et
   `RateLimiterMiddleware`) ; grep `TrustedHost|API_ALLOWED_HOSTS` vide dans `document-parser/` ;
   `nginx.conf.template:1-2` et `frontend/nginx.conf.template:1-2` (pas de `server_name`) ;
   `:54` (`proxy_set_header Host $host`).
@@ -219,7 +219,7 @@ déjà » : c'est inexact.
 - **Atténuants** : refusé sur le Space HF (`store_service.py:208,378-379`) ; sans valeur si
   `NEO4J_PASSWORD` est resté au défaut `changeme` ; ne concerne que les déploiements qui
   configurent Neo4j (graphe, ingestion dépréciée, supprimée en 0.8.0). OpenSearch n'a pas ce
-  fallback (`store_backend_resolver.py:124-129` : identifiants du store uniquement).
+  fallback (`store_backend_resolver.py:127-130` : identifiants du store uniquement).
 - **Règle violée** : 8.1 (secrets) et 8.2.1 (défense en profondeur). Items conformes au sens strict.
   Écart additionnel, sans impact de score.
 - **Remédiation** (effort **XS-S**, risque **faible**) :
@@ -347,7 +347,7 @@ loopback et LAN autorisés ; Save sans contrôle (`domain/app_config.py:84`) ; d
 
 ### [INFO] Pas de garde-fou contre `CORS_ORIGINS="*"` avec credentials
 
-**Statut vs 0.7.4 : inchangé.** `infra/settings.py:283` ; `main.py:93-94`.
+**Statut vs 0.7.4 : inchangé.** `infra/settings.py:283` ; `main.py:94-95`.
 
 ### [INFO] nginx : processus maître en root, pas de Content-Security-Policy
 
@@ -390,7 +390,7 @@ Score : **97 → 100**. Comptes : CRIT 0 → 0 ; MAJ 3 → 3 (1 inchangé, 1 en 
 
 | Écart 0.7.4 | Statut re-audit | Preuve |
 |-------------|-----------------|--------|
-| [MAJ] `/api/*` sans contrôle `Host` | **Inchangé** (décision mainteneur) | `main.py:91-103` |
+| [MAJ] `/api/*` sans contrôle `Host` | **Inchangé** (décision mainteneur) | `main.py:92-104` |
 | [MAJ] Import Docling, amplification | **Partiellement corrigé** : tables bornées ; contournement par `pictures[].meta.tabular_chart` démontré ; corps 200 Mo > capacité du conteneur (extrapolé) | `docling_importer.py:49,84` ; sonde |
 | [MAJ] SSRF des stores | **Corrigé** (garde, HF lecture seule, message générique) ; résidus → [MIN] | `store_service.py:208,219-220,299-301,378-391` |
 | [MIN] MCP par défaut / port publié | Inchangé | `docker-compose.yml:209` |
