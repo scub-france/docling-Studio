@@ -106,8 +106,12 @@ class NavigationService:
         depth: int = 2,
     ) -> DocumentOutline:
         """Return the document map — sections when there are headings, pages otherwise."""
-        depth = max(1, min(depth, 6))
         parse = await self._parses.load(document_id, version_id)
+        return self.outline_of(parse, depth=depth)
+
+    def outline_of(self, parse: LoadedParse, *, depth: int = 2) -> DocumentOutline:
+        """The map of a parse the caller has already loaded (`show_sources`)."""
+        depth = max(1, min(depth, 6))
         draft = build_outline(parse.index, depth=depth, max_nodes=self._config.max_outline_nodes)
         return DocumentOutline(
             document_id=parse.document.id,

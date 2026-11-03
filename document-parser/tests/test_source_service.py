@@ -303,6 +303,77 @@ class TestTitle:
         assert self.title_of(("text", "Some prose", 1), ("section_header", "Later", 1)) == ""
 
 
+class TestOneParsePerCall:
+    """Every anchor pins the same parse, so it is loaded once per call — not
+    once more per quote checked and once more for the map."""
+
+    @staticmethod
+    def sources_over_a_counting_loader():
+        from infra.docling_tree import DoclingTreeReader
+        from services.citation_service import CitationService
+        from services.navigation_service import NavigationService
+        from services.parse_loader import ParseLoader
+        from services.source_service import SourceService
+        from tests.navigation_fixtures import (
+            FakeAnalysisRepository,
+            FakeDocumentRepository,
+            make_document,
+            make_job,
+        )
+
+        class CountingParseLoader(ParseLoader):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.loads: list[tuple[str, str | None]] = []
+
+            async def load(self, document_id, version_id=None):
+                self.loads.append((document_id, version_id))
+                return await super().load(document_id, version_id)
+
+        config = NavigationConfig(studio_base_url="http://localhost:3000")
+        parses = CountingParseLoader(
+            document_repo=FakeDocumentRepository([make_document()]),
+            analysis_repo=FakeAnalysisRepository([make_job()]),
+            tree_reader=DoclingTreeReader(),
+            config=config,
+        )
+        citations = CitationService(parses=parses, config=config)
+        navigation = NavigationService(parses=parses, citations=citations, config=config)
+        sources = SourceService(
+            parses=parses, navigation=navigation, citations=citations, config=config
+        )
+        return sources, parses
+
+    async def test_the_parse_is_loaded_once_however_many_quotes_are_checked(self):
+        sources, parses = self.sources_over_a_counting_loader()
+        report = await sources.show(
+            "Quel est le préavis ?",
+            [(anchor_uri(PREAVIS_SECTION), "le préavis", "trois mois")],
+            [
+                (anchor_uri(PREAVIS_SECTION), "trois mois à compter de la notification"),
+                (anchor_uri("#/texts/2"), "Chaque partie peut résilier le contrat."),
+                (anchor_uri("#/texts/2"), "six mois à compter de la signature"),
+            ],
+        )
+        assert parses.loads == [(DOC_ID, JOB_ID)]
+        # Each quote was still checked against it, the section one narrowed.
+        assert [(p.ref, p.status) for p in report.sources.passages] == [
+            (PREAVIS_REF, "verified"),
+            ("#/texts/2", "verified"),
+            ("#/texts/2", "quote_drift"),
+        ]
+
+    async def test_a_parse_that_cannot_be_loaded_is_still_refused(self):
+        sources, parses = self.sources_over_a_counting_loader()
+        with pytest.raises(NoParseError):
+            await sources.show(
+                "Quel est le préavis ?",
+                [(anchor_uri(PREAVIS_SECTION, job_id="ghost-parse"), "", "")],
+                [(anchor_uri(PREAVIS_REF, job_id="ghost-parse"), "trois mois à compter de")],
+            )
+        assert parses.loads == [(DOC_ID, "ghost-parse")]
+
+
 class TestDeepLinks:
     async def test_cited_elements_and_map_nodes_get_a_studio_link(self):
         report = await show(

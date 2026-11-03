@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from domain.navigation import ResolvedElement
     from domain.parse_index import DocumentIndex
     from services.navigation_config import NavigationConfig
-    from services.parse_loader import ParseLoader
+    from services.parse_loader import LoadedParse, ParseLoader
 
 
 class CitationService:
@@ -101,7 +101,18 @@ class CitationService:
             return CitationCheck(
                 valid=False, status=CitationStatus.UNKNOWN_VERSION, detail=str(exc)
             )
+        return await self.verify_citation_in(parse, anchor, quote)
 
+    async def verify_citation_in(
+        self, parse: LoadedParse, anchor: DocumentAnchor, quote: str
+    ) -> CitationCheck:
+        """`verify_citation`, against a parse the caller has already loaded.
+
+        For a caller checking several quotes against the one parse their
+        anchors all pin (`show_sources`), which would otherwise reload it once
+        per quote. `anchor` must pin `parse`, and the quote must already have
+        passed `check_quote`.
+        """
         element = resolve(parse.index, anchor.ref)
         if element is None:
             return CitationCheck(

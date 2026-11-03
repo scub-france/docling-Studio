@@ -99,15 +99,17 @@ class SourceService:
         self._bound(question, reads, cited)
         unknown: list[str] = []
         read_anchors = [(a, w, f) for uri, w, f in reads if (a := _anchor(uri, unknown))]
-        checked = [await self._check(uri, quote) for uri, quote in cited]
-        cited_anchors = [(a, q, st) for uri, q, st in checked if (a := _anchor(uri, unknown))]
-        anchors = [a for a, *_ in read_anchors] + [a for a, *_ in cited_anchors]
-        document_id, version_id = _single_pin(anchors)
-
-        parse = await self._parses.load(document_id, version_id)
-        outline = await self._navigation.get_outline(
-            document_id, version_id=version_id, depth=_MAP_DEPTH
+        quoted = [(a, quote) for uri, quote in cited if (a := _anchor(uri, unknown))]
+        document_id, version_id = _single_pin(
+            [a for a, *_ in read_anchors] + [a for a, _ in quoted]
         )
+
+        # Every anchor pins this one parse: loaded once, for each quote's
+        # check and for the map, rather than once per quote and again for each.
+        parse = await self._parses.load(document_id, version_id)
+        cited_anchors = [await self._check(parse, anchor, quote) for anchor, quote in quoted]
+        anchors = [a for a, *_ in read_anchors] + [a for a, *_ in cited_anchors]
+        outline = self._navigation.outline_of(parse, depth=_MAP_DEPTH)
         known = _resolvable(parse, anchors, unknown)
         sources = build_source_map(
             outline,
@@ -166,24 +168,28 @@ class SourceService:
 
         return replace(sources, passages=await asyncio.to_thread(mark_all))
 
-    async def _check(self, uri: str, quote: str) -> tuple[str, str, str | None]:
+    async def _check(
+        self, parse: LoadedParse, anchor: DocumentAnchor, quote: str
+    ) -> tuple[DocumentAnchor, str, str | None]:
         """The anchor to show for one citation, and the server's word on its quote.
 
         A quote that checks out may sit in a narrower element than the anchor
         named — a section anchor, a span — and the passage drawn is that
         element, the one the quote is in. No quote, or one refused before any
-        matching (too short to prove anything, an anchor that does not
-        parse): no status, so the card shows it as cited, not verified.
+        matching (too short to prove anything): no status, so the card shows
+        it as cited, not verified.
         """
         quote = (quote or "").strip()
         if not quote:
-            return uri, "", None
+            return anchor, "", None
         try:
-            check = await self._citations.verify_citation(uri, quote)
-        except (AnchorParseError, NavigationServiceError):
-            return uri, quote, None
-        narrowed = check.citation.uri if check.valid and check.citation else uri
-        return narrowed, quote, check.status.value
+            self._citations.check_quote(quote)
+            check = await self._citations.verify_citation_in(parse, anchor, quote)
+        except NavigationServiceError:
+            return anchor, quote, None
+        if check.valid and check.citation:
+            return DocumentAnchor.parse(check.citation.uri), quote, check.status.value
+        return anchor, quote, check.status.value
 
     def _bound(
         self, question: str, reads: list[tuple[str, str, str]], cited: list[tuple[str, str]]
