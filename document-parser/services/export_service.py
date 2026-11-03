@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from domain.models import AnalysisStatus
+from services.errors import ServiceError
+from services.navigation_errors import DocumentNotFoundError
 
 if TYPE_CHECKING:
     from domain.models import AnalysisJob
@@ -58,7 +60,7 @@ class ExportService:
         """
         doc = await self._document_repo.find_by_id(doc_id)
         if not doc:
-            raise ExportNotFoundError("Document not found")
+            raise DocumentNotFoundError("Document not found")
 
         if format is ExportFormat.PDF:
             if not await asyncio.to_thread(self._files.exists, doc.storage_path):
@@ -110,8 +112,10 @@ class ExportService:
         return analysis
 
 
-class ExportNotFoundError(Exception):
+class ExportNotFoundError(ServiceError):
     """Requested export payload is not available."""
+
+    http_status = 404
 
 
 def build_content_disposition(filename: str) -> str:

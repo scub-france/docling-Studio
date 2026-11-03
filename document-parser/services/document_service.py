@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from domain.models import Document
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -37,26 +38,34 @@ logger = logging.getLogger(__name__)
 _PDF_MAGIC = b"%PDF"
 
 
-class PageOutOfRangeError(Exception):
+class PageOutOfRangeError(ServiceError):
     """The page asked for is past the document's last page."""
+
+    http_status = 400
 
     def __init__(self, page: int, page_count: int):
         super().__init__(f"Page {page} out of range (document has {page_count} pages)")
 
 
-class PageNotFoundError(Exception):
+class PageNotFoundError(ServiceError):
     """The stored PDF has no such page (its page count was not known)."""
+
+    http_status = 404
 
     def __init__(self, page: int):
         super().__init__(f"Page {page} not found")
 
 
-class DocumentFileError(Exception):
+class DocumentFileError(ServiceError):
     """The stored PDF could not be rendered or read.
 
     A missing file stays a `FileNotFoundError` and an I/O failure an
-    `OSError`; this wraps whatever else the PDF library raised.
+    `OSError`; this wraps whatever else the PDF library raised. Its message
+    is the one the API answers with, so it names no path: the cause is
+    logged where it is raised.
     """
+
+    http_status = 422
 
 
 @dataclass
@@ -238,7 +247,8 @@ class DocumentService:
         except OSError:
             raise
         except Exception as exc:
-            raise DocumentFileError(f"Could not render page {page} of {doc_id}") from exc
+            logger.exception("Could not render page %s of %s", page, doc_id)
+            raise DocumentFileError("Failed to generate preview") from exc
 
     async def page_sizes(self, doc_id: str) -> list[PageDetail] | None:
         """Size of each page of a document's PDF, in points, without its
@@ -256,7 +266,8 @@ class DocumentService:
         except OSError:
             raise
         except Exception as exc:
-            raise DocumentFileError(f"Could not read the pages of {doc_id}") from exc
+            logger.exception("Could not read the page sizes of %s", doc_id)
+            raise DocumentFileError("Failed to read PDF file") from exc
 
     def _render(self, storage_path: str, page: int, dpi: int) -> bytes:
         path = self._files.resolve(storage_path)

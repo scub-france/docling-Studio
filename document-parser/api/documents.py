@@ -10,12 +10,7 @@ from fastapi.responses import FileResponse, Response
 
 from api import deps  # noqa: TC001
 from api.schemas import DocStoreLinkResponse, DocumentResponse, PageSizeResponse
-from services.document_service import (
-    DocumentFileError,
-    PageNotFoundError,
-    PageOutOfRangeError,
-)
-from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
+from services.export_service import ExportFormat, build_content_disposition
 
 if TYPE_CHECKING:
     from services.document_service import StoreLinkView
@@ -127,10 +122,8 @@ async def export_document(
     ),
 ) -> Response:
     """Export the document in the specified format."""
-    try:
-        export = await service.export(doc_id, format, analysis_id)
-    except ExportNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # Nothing to export (404) is a service error the app-level handler answers.
+    export = await service.export(doc_id, format, analysis_id)
 
     if export.file_path is not None:
         return FileResponse(
@@ -154,20 +147,15 @@ async def preview(
     dpi: int = Query(150, ge=72, le=300),
 ) -> Response:
     """Generate a PNG preview of a specific PDF page."""
+    # A page out of range (400), a page the PDF lacks (404) and a PDF that
+    # cannot be rendered (422) are service errors the app-level handler answers.
     try:
         png_bytes = await service.render_preview(doc_id, page=page, dpi=dpi)
-    except PageOutOfRangeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except PageNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
     except OSError as exc:
         logger.exception("I/O error generating preview for %s", doc_id)
         raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
-    except DocumentFileError as exc:
-        logger.exception("Unexpected error generating preview for %s", doc_id)
-        raise HTTPException(status_code=422, detail="Failed to generate preview") from exc
     if png_bytes is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return Response(
@@ -183,11 +171,13 @@ async def page_sizes(
 ) -> list[PageSizeResponse]:
     """Size of each page of the PDF, so the preview can lay out its pages
     before any analysis (#352)."""
+    # A PDF that cannot be read as one (422) is a service error the app-level
+    # handler answers.
     try:
         pages = await service.page_sizes(doc_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
-    except (OSError, DocumentFileError) as exc:
+    except OSError as exc:
         logger.exception("Could not read the page sizes of %s", doc_id)
         raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
     if pages is None:

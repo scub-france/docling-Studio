@@ -27,6 +27,7 @@ from domain.models import Chunk, DocumentVersion, DocumentVersionKind
 from domain.ports import DocumentVersionEntry
 from domain.value_objects import ChunkEditAction
 from services.errors import ServiceError
+from services.navigation_errors import DocumentNotFoundError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -182,7 +183,7 @@ class VersionService:
     async def _require_doc(self, document_id: str) -> None:
         doc = await self._documents.find_by_id(document_id)
         if not doc:
-            raise VersionServiceError(f"Document not found: {document_id}", http_status=404)
+            raise DocumentNotFoundError(f"Document not found: {document_id}")
 
 
 def _chunk_from_snapshot(document_id: str, raw: dict) -> Chunk:

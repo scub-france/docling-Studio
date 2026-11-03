@@ -226,8 +226,9 @@ class TestPageSizes:
         broken.write_bytes(b"%PDF-not really")
         _stored(service, broken)
 
-        with pytest.raises(DocumentFileError):
+        with pytest.raises(DocumentFileError, match=r"^Failed to read PDF file$") as caught:
             await service.page_sizes("doc-1")
+        assert caught.value.http_status == 422
 
 
 class TestRenderPreview:
@@ -309,8 +310,9 @@ class TestRenderPreview:
         broken.write_bytes(b"%PDF-not really")
         _stored(service, broken, page_count=1)
 
-        with pytest.raises(DocumentFileError):
+        with pytest.raises(DocumentFileError, match=r"^Failed to generate preview$") as caught:
             await service.render_preview("doc-1", page=1, dpi=72)
+        assert caught.value.http_status == 422
 
 
 class TestFindWithStoreLinks:

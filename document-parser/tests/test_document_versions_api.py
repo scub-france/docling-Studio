@@ -122,7 +122,10 @@ class TestListVersions:
         assert [v["chunksSnapshotSize"] for v in resp.json()] == [0]
 
     def test_unknown_document_404(self, client):
-        assert client.get("/api/documents/nope/versions").status_code == 404
+        resp = client.get("/api/documents/nope/versions")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found: nope"}
 
 
 class TestRestoreVersion:
@@ -138,4 +141,13 @@ class TestRestoreVersion:
         assert (body["id"], body["analysisId"], body["chunksSnapshotSize"]) == ("v1", "a1", 4)
 
     def test_unknown_version_404(self, client):
-        assert client.post("/api/documents/doc-1/versions/nope/restore").status_code == 404
+        resp = client.post("/api/documents/doc-1/versions/nope/restore")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Version not found: nope"}
+
+    def test_unknown_document_404(self, client):
+        resp = client.post("/api/documents/nope/versions/v1/restore")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found: nope"}

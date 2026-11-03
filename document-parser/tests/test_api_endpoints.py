@@ -361,7 +361,10 @@ class TestDocumentEndpoints:
     def test_page_sizes_unknown_document(self, client, stored_documents):
         stored_documents.find_by_id = AsyncMock(return_value=None)
 
-        assert client.get("/api/documents/nope/pages").status_code == 404
+        resp = client.get("/api/documents/nope/pages")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found"}
 
     def test_page_sizes_missing_file(self, client, stored_documents, tmp_path):
         stored_documents.find_by_id = AsyncMock(
@@ -483,6 +486,29 @@ class TestDocumentEndpoints:
 
         assert resp.status_code == 404
         assert resp.json() == {"detail": "JSON content not available"}
+
+    @pytest.mark.parametrize(
+        ("stored", "detail"),
+        [(None, "Document not found"), ("gone.pdf", "PDF file not found")],
+        ids=["unknown-document", "pdf-gone"],
+    )
+    def test_export_not_found_on_a_real_service(self, client, tmp_path, stored, detail):
+        """The export service's rejections reach the app-level handler: same
+        404 and body as the mapping the router used to write by hand."""
+        from services.export_service import ExportService
+
+        documents = AsyncMock()
+        documents.find_by_id.return_value = (
+            Document(id="d1", filename="r.pdf", storage_path=str(tmp_path / stored))
+            if stored
+            else None
+        )
+        service = ExportService(documents, AsyncMock(), LocalFileStorage(str(tmp_path)))
+        with state_override(app, export_service=service):
+            resp = client.get("/api/documents/d1/export?format=pdf")
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": detail}
 
 
 class TestAnalysisEndpoints:

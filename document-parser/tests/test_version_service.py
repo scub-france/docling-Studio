@@ -13,11 +13,8 @@ from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
-from services.version_service import (
-    VersionNotFoundError,
-    VersionService,
-    VersionServiceError,
-)
+from services.navigation_errors import DocumentNotFoundError
+from services.version_service import VersionNotFoundError, VersionService
 
 
 @pytest.fixture(autouse=True)
@@ -153,5 +150,5 @@ class TestListForDocument:
         assert all(e.version.chunks_snapshot is None for e in entries)
 
     async def test_unknown_doc_raises(self, service):
-        with pytest.raises(VersionServiceError):
+        with pytest.raises(DocumentNotFoundError, match=r"^Document not found: nope$"):
             await service.list_for_document("nope")
