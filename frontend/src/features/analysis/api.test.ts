@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   createAnalysis,
   importAnalysis,
-  fetchAnalyses,
+  fetchAnalysisSummaries,
   fetchAnalysis,
   deleteAnalysis,
   fetchDocumentAnalyses,
@@ -60,13 +60,13 @@ describe('analysis API', () => {
     expect(result).toEqual(analysis)
   })
 
-  it('fetchAnalyses calls GET /api/analyses', async () => {
+  it('fetchAnalysisSummaries calls GET /api/analyses/summaries', async () => {
     const jobs = [{ id: '1', status: 'COMPLETED' }]
     apiFetch.mockResolvedValue(jobs)
 
-    const result = await fetchAnalyses()
+    const result = await fetchAnalysisSummaries()
 
-    expect(apiFetch).toHaveBeenCalledWith('/api/analyses')
+    expect(apiFetch).toHaveBeenCalledWith('/api/analyses/summaries')
     expect(result).toEqual(jobs)
   })
 

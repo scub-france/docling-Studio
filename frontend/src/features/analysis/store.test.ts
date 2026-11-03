@@ -3,7 +3,6 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useAnalysisStore } from './store'
 
 vi.mock('./api', () => ({
-  fetchAnalyses: vi.fn(),
   fetchAnalysis: vi.fn(),
   fetchAnalysisSummaries: vi.fn(),
   createAnalysis: vi.fn(),
@@ -49,14 +48,44 @@ describe('useAnalysisStore', () => {
     expect(store.currentPages).toEqual([])
   })
 
-  it('load() fetches analyses', async () => {
-    const data = [{ id: '1', status: 'COMPLETED' }]
-    api.fetchAnalyses.mockResolvedValue(data)
+  it('load() lists the analyses from the light summaries', async () => {
+    const data = [{ id: '1', status: 'COMPLETED', documentId: 'd1', createdAt: '2026-11-03' }]
+    api.fetchAnalysisSummaries.mockResolvedValue(data)
 
     const store = useAnalysisStore()
     await store.load()
 
     expect(store.analyses).toEqual(data)
+    expect(api.fetchAnalysisSummaries).toHaveBeenCalledTimes(1)
+    expect(api.fetchAnalysis).not.toHaveBeenCalled()
+  })
+
+  it('load() keeps the previous rows and reports why when it fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = useAnalysisStore()
+    store.analyses = [{ id: 'a1', status: 'COMPLETED', documentId: 'd1' }]
+    api.fetchAnalysisSummaries.mockRejectedValue(new Error('offline'))
+
+    await store.load()
+
+    expect(store.analyses).toEqual([{ id: 'a1', status: 'COMPLETED', documentId: 'd1' }])
+    expect(store.error).toBe('offline')
+    expect(store.loading).toBe(false)
+  })
+
+  it('a run started after load() sits on top of the summaries', async () => {
+    api.fetchAnalysisSummaries.mockResolvedValue([
+      { id: 'old', status: 'COMPLETED', documentId: 'd0' },
+    ])
+    const job = { id: 'j1', status: 'PENDING', documentId: 'd1' }
+    api.createAnalysis.mockResolvedValue(job)
+
+    const store = useAnalysisStore()
+    await store.load()
+    await store.run('d1')
+    store.stopPolling()
+
+    expect(store.analyses.map((a) => a.id)).toEqual(['j1', 'old'])
   })
 
   it('run() creates analysis, sets current, and starts polling', async () => {

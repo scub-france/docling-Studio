@@ -93,6 +93,17 @@ describe('mergeSummaries', () => {
     expect(merged[0].contentMarkdown).toBe('# Doc')
   })
 
+  it('refreshes rows that are summaries themselves (the library list)', () => {
+    const merged = mergeSummaries(
+      [summary({ id: 'a1', status: 'RUNNING' })],
+      [summary({ id: 'a1', status: 'COMPLETED', completedAt: '2026-09-28T12:05:00+00:00' })],
+    )
+
+    expect(merged).toEqual([
+      summary({ id: 'a1', status: 'COMPLETED', completedAt: '2026-09-28T12:05:00+00:00' }),
+    ])
+  })
+
   it('leaves an analysis the summaries do not list as it was', () => {
     const kept = analysis({ id: 'gone', status: 'RUNNING' })
 

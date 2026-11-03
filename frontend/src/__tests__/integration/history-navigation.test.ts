@@ -13,7 +13,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('../../features/analysis/api', () => ({
-  fetchAnalyses: vi.fn(),
+  fetchAnalysisSummaries: vi.fn(),
   fetchAnalysis: vi.fn(),
   createAnalysis: vi.fn(),
   deleteAnalysis: vi.fn(),

@@ -18,13 +18,14 @@ export function hasActive(analyses: readonly Pick<Analysis, 'status'>[]): boolea
 
 /**
  * The listed analyses with the statuses, progress, errors and dates of the
- * summaries merged in. The content an analysis already carries stays, and an
- * analysis the summaries do not list keeps its row as it was.
+ * summaries merged in. Rows keep their shape: the content an analysis already
+ * carries stays, and an analysis the summaries do not list keeps its row as
+ * it was.
  */
-export function mergeSummaries(
-  analyses: readonly Analysis[],
+export function mergeSummaries<T extends AnalysisSummary>(
+  analyses: readonly T[],
   summaries: readonly AnalysisSummary[],
-): Analysis[] {
+): T[] {
   const byId = new Map(summaries.map((summary) => [summary.id, summary]))
   return analyses.map((analysis) => {
     const summary = byId.get(analysis.id)

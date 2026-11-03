@@ -1,6 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Analysis, Chunk, ChunkingOptions, Page, PipelineOptions } from '../../shared/types'
+import type {
+  Analysis,
+  AnalysisSummary,
+  Chunk,
+  ChunkingOptions,
+  Page,
+  PipelineOptions,
+} from '../../shared/types'
 import * as api from './api'
 import { hasActive, mergeSummaries } from './batch'
 
@@ -20,7 +27,9 @@ export interface BatchLaunch {
 }
 
 export const useAnalysisStore = defineStore('analysis', () => {
-  const analyses = ref<Analysis[]>([])
+  // The library's rows: summaries, without content. A run started here may
+  // carry its content too, but nothing reads it from this list.
+  const analyses = ref<AnalysisSummary[]>([])
   const currentAnalysis = ref<Analysis | null>(null)
   const running = ref(false)
   const lastOutcome = ref<AnalysisOutcome | null>(null)
@@ -46,12 +55,17 @@ export const useAnalysisStore = defineStore('analysis', () => {
     error.value = null
   }
 
+  /**
+   * List the analyses from the light summaries (#audit-12): the library shows
+   * dates, documents, statuses and progress, never the markdown, HTML, pages
+   * or chunks the full list would carry for every analysis.
+   */
   async function load(): Promise<void> {
     if (loading.value) return
     loading.value = true
     try {
       error.value = null
-      analyses.value = await api.fetchAnalyses()
+      analyses.value = await api.fetchAnalysisSummaries()
     } catch (e) {
       error.value = (e as Error).message || 'Failed to load analyses'
       console.error('Failed to load analyses', e)
