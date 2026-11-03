@@ -125,3 +125,113 @@ def test_a_zero_budget_means_no_limit():
     result = DoclingDocumentImporter(max_table_cells=0).deserialize(payload)
 
     assert result.document_json
+
+
+# ---------------------------------------------------------------------------
+# Grids outside the tables (re-audit 0.7.4, 08 MAJ): a picture's chart data is
+# a `TableData` too, and validating a picture's `meta` already builds its grid.
+# ---------------------------------------------------------------------------
+
+
+def _grid(rows: int, cols: int, cells: list[dict] | None = None) -> dict:
+    return {"table_cells": cells or [], "num_rows": rows, "num_cols": cols}
+
+
+def _picture_document(*, meta: dict | None = None, annotations: list | None = None) -> dict:
+    """A serialized document holding one picture with the given chart data."""
+    payload = DoclingDocument(name="source").export_to_dict()
+    picture: dict = {"self_ref": "#/pictures/0", "parent": {"$ref": "#/body"}, "label": "picture"}
+    if meta is not None:
+        picture["meta"] = meta
+    if annotations is not None:
+        picture["annotations"] = annotations
+    payload["pictures"] = [picture]
+    payload["body"]["children"] = [{"$ref": "#/pictures/0"}]
+    return payload
+
+
+def _chart_annotation(grid: dict) -> dict:
+    return {"kind": "tabular_chart_data", "title": "chart", "chart_data": grid}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _picture_document(meta={"tabular_chart": {"chart_data": _grid(10**6, 10**6)}}),
+        _picture_document(annotations=[_chart_annotation(_grid(10**6, 10**6))]),
+    ],
+    ids=["meta.tabular_chart", "annotations"],
+)
+def test_a_huge_chart_grid_is_refused_before_validation(payload):
+    """The re-audit's bypass: a 400 x 400 chart (680 bytes) cost 32 s and
+    350 MB. Refused before the document is even validated, since validating a
+    picture's `meta` builds the grid."""
+    started = time.perf_counter()
+    with (
+        patch("infra.docling_importer.DoclingDocument.model_validate") as validate,
+        pytest.raises(DoclingImportTooLargeError, match="1,000,000,000,000 cells"),
+    ):
+        DoclingDocumentImporter().deserialize(payload)
+
+    assert time.perf_counter() - started < 2
+    validate.assert_not_called()
+
+
+def test_chart_grids_and_tables_share_one_budget():
+    payload = _picture_document(meta={"tabular_chart": {"chart_data": _grid(10, 10)}})
+    payload["tables"] = _document((10, 10, []))["tables"]
+    payload["body"]["children"].append({"$ref": "#/tables/0"})
+
+    with pytest.raises(DoclingImportTooLargeError, match="declare 200 cells"):
+        DoclingDocumentImporter(max_table_cells=150).deserialize(payload)
+
+
+def test_a_chart_annotation_counts_for_each_place_validation_puts_it():
+    """docling-core copies the deprecated annotation into `meta`: the same
+    grid is then exported twice, and counted twice."""
+    payload = _picture_document(annotations=[_chart_annotation(_grid(10, 10))])
+
+    with pytest.raises(DoclingImportTooLargeError, match="declare 200 cells"):
+        DoclingDocumentImporter(max_table_cells=150).deserialize(payload)
+
+
+def test_a_chart_cell_spanning_the_grid_many_times_is_refused():
+    full_span = _cell(0, 10, 0, 10)
+    payload = _picture_document(
+        meta={"tabular_chart": {"chart_data": _grid(10, 10, [full_span] * 3)}}
+    )
+
+    with pytest.raises(DoclingImportTooLargeError, match="span 300 grid positions"):
+        DoclingDocumentImporter(max_table_cells=200).deserialize(payload)
+
+
+def test_a_chart_within_the_budget_is_imported():
+    cells = [_cell(r, r + 1, c, c + 1, f"v{r}{c}") for r in range(2) for c in range(2)]
+    payload = _picture_document(meta={"tabular_chart": {"chart_data": _grid(2, 2, cells)}})
+
+    result = DoclingDocumentImporter(max_table_cells=4).deserialize(payload)
+
+    assert "v11" in result.document_json
+
+
+@pytest.mark.parametrize("vector", ["table", "chart"])
+def test_rows_without_columns_count_one_slot_each(vector):
+    """`TableData.grid` allocates a list per row even with no columns:
+    1,000,000 x 0 (643 bytes) cost 20 s and 209 MB, and counted 0 cells."""
+    if vector == "table":
+        payload = _document((10**9, 0, []))
+    else:
+        payload = _picture_document(meta={"tabular_chart": {"chart_data": _grid(10**9, 0)}})
+
+    with pytest.raises(DoclingImportTooLargeError, match="declare 1,000,000,000 cells"):
+        DoclingDocumentImporter().deserialize(payload)
+
+
+def test_an_object_that_is_not_a_grid_is_not_counted():
+    """A custom meta field with a `num_rows` key that docling-core will not
+    turn into a grid (it does not validate as one) costs nothing."""
+    payload = _picture_document(meta={"acme__stats": {"num_rows": "many", "num_cols": 10**9}})
+
+    result = DoclingDocumentImporter(max_table_cells=10).deserialize(payload)
+
+    assert result.document_json
