@@ -1,216 +1,118 @@
-"""Pure-domain operations on a chunkset.
+"""Chunk-editing rules: where a new chunk lands, how one splits, how several merge.
 
-These functions take a chunkset as input and return a new chunkset
-(plus, where appropriate, the chunks that were created). They do not
-touch the database, do not record audit rows, and do not raise
-infrastructure errors. The `ChunkEditingService` (in `services/`)
-wraps each call with audit-record generation and atomic persistence.
+Pure: chunks in, chunks out. Nothing here reads or writes the database or
+the `chunk_edits` journal. `services/chunk_service.py` loads the live
+chunkset, asks these functions what an edit produces, then persists the
+result and its journal rows in one write.
 
-All operations preserve `sequence` ordering: insertions and splits
-shift subsequent sequences upward; deletions / merges leave gaps.
-Sequences are 0-based and only required to be strictly increasing
-within a document; gaps are explicitly allowed so we never rewrite
-many rows for a single edit.
+These are the rules the chunk editor ships. An earlier draft of this module
+worked on whole chunksets and disagreed with the service on four points:
+its merge kept the smallest source page and accepted non-contiguous chunks,
+its split dropped the bboxes and doc items, and it minted hex ids. Nothing
+in production called it; the service's rules replaced it when they moved
+here (audit 0.7.4, 01 MAJ-1).
+
+Sequences are 0-based and strictly increasing within a document. Gaps are
+allowed, so an edit never renumbers more than it must.
 """
 
 from __future__ import annotations
 
-import uuid
-from datetime import UTC, datetime
-
 from domain.models import Chunk
+
+# What a merge puts between the texts of two consecutive sources.
+MERGE_SEPARATOR = "\n"
 
 
 class ChunkEditingError(Exception):
-    """Raised by chunk-editing operations on invalid input (missing id,
-    out-of-range offset, etc.). Subclasses `Exception` rather than
-    `DomainError` so the API layer can map all of them to 4xx without
-    a wider catch."""
+    """An edit the chunkset refuses. The subclass says why, so the service can
+    answer each reason with its own status."""
 
 
-def _utcnow() -> datetime:
-    return datetime.now(UTC)
+class InvalidChunkEditError(ChunkEditingError):
+    """The edit's arguments are out of range (offset, number of chunks)."""
 
 
-def _new_id() -> str:
-    return uuid.uuid4().hex
+class UnknownChunkError(ChunkEditingError):
+    """The edit names a chunk that is not live in the document."""
 
 
-def _index_of(chunks: list[Chunk], chunk_id: str) -> int:
-    for idx, c in enumerate(chunks):
-        if c.id == chunk_id:
-            return idx
-    raise ChunkEditingError(f"chunk not found: {chunk_id}")
+class NonContiguousMergeError(ChunkEditingError):
+    """The chunks to merge do not occupy consecutive sequences."""
 
 
-def insert(
-    chunks: list[Chunk],
-    *,
-    at_position: int,
-    text: str,
-    document_id: str,
-    headings: list[str] | None = None,
-    source_page: int | None = None,
-) -> tuple[list[Chunk], Chunk]:
-    """Insert a fresh chunk at position `at_position`.
+def sequence_after(chunks: list[Chunk], after_id: str | None) -> int:
+    """The sequence a new chunk takes: right after `after_id`, or at the end."""
+    if after_id is None:
+        return max((c.sequence for c in chunks), default=-1) + 1
+    anchor = next((c for c in chunks if c.id == after_id), None)
+    if anchor is None:
+        raise UnknownChunkError(f"Anchor chunk not found: {after_id}")
+    return anchor.sequence + 1
 
-    Returns the updated chunkset and the new chunk. Subsequent chunks'
-    sequences are shifted by +1.
+
+def split(source: Chunk, offset: int) -> tuple[Chunk, Chunk]:
+    """Cut `source` at character `offset` into a head and a tail.
+
+    The offset must leave at least one character on each side. Both halves
+    are new chunks (new ids): the head takes the source's sequence, the tail
+    the next one. Both inherit the headings, source page, bboxes and doc
+    items; the token count is unknown after a cut, so it is left unset.
     """
-    if at_position < 0 or at_position > len(chunks):
-        raise ChunkEditingError(f"insert position out of range: {at_position}")
-    now = _utcnow()
-    new_chunk = Chunk(
-        id=_new_id(),
-        document_id=document_id,
-        sequence=at_position,
+    if offset <= 0 or offset >= len(source.text):
+        raise InvalidChunkEditError(
+            f"cursorOffset {offset} out of range for chunk of length {len(source.text)}"
+        )
+    return (
+        _split_half(source, source.sequence, source.text[:offset]),
+        _split_half(source, source.sequence + 1, source.text[offset:]),
+    )
+
+
+def _split_half(source: Chunk, sequence: int, text: str) -> Chunk:
+    return Chunk(
+        document_id=source.document_id,
+        sequence=sequence,
         text=text,
-        headings=list(headings or []),
-        source_page=source_page,
-        created_at=now,
-        updated_at=now,
+        headings=list(source.headings),
+        source_page=source.source_page,
+        bboxes=list(source.bboxes),
+        doc_items=list(source.doc_items),
     )
-    out = list(chunks)
-    for c in out[at_position:]:
-        c.sequence += 1
-    out.insert(at_position, new_chunk)
-    return out, new_chunk
 
 
-def update(
-    chunks: list[Chunk],
-    chunk_id: str,
-    *,
-    text: str | None = None,
-    headings: list[str] | None = None,
-) -> tuple[list[Chunk], Chunk]:
-    """Update text and/or headings of a chunk in-place.
+def merge(chunks: list[Chunk], ids: list[str]) -> tuple[list[Chunk], Chunk]:
+    """Merge the live chunks `ids` names into one new chunk.
 
-    Returns the updated chunkset and the modified chunk. The chunk's
-    id and sequence are preserved.
+    `chunks` is the document's live chunkset. The order of `ids` does not
+    matter: the sources are taken in sequence order, and must occupy
+    consecutive sequences. The merged chunk takes the first source's
+    sequence, headings and source page; it joins the texts with
+    `MERGE_SEPARATOR`, concatenates the bboxes and doc items, and sums the
+    known token counts (unknown when none is known, or all are zero).
+
+    Returns the sources, in sequence order, and the merged chunk.
     """
-    idx = _index_of(chunks, chunk_id)
-    target = chunks[idx]
-    if target.deleted_at is not None:
-        raise ChunkEditingError(f"chunk is deleted: {chunk_id}")
-    if text is not None:
-        target.text = text
-    if headings is not None:
-        target.headings = list(headings)
-    target.updated_at = _utcnow()
-    return list(chunks), target
+    if len(ids) < 2:
+        raise InvalidChunkEditError("merge requires at least 2 chunk ids")
+    by_id = {c.id: c for c in chunks}
+    missing = [i for i in ids if i not in by_id]
+    if missing:
+        raise UnknownChunkError(f"Chunks not found: {missing}")
 
+    sources = sorted((by_id[i] for i in ids), key=lambda c: c.sequence)
+    first = sources[0]
+    if [c.sequence for c in sources] != list(range(first.sequence, first.sequence + len(sources))):
+        raise NonContiguousMergeError("merge requires contiguous chunks (by sequence)")
 
-def delete(chunks: list[Chunk], chunk_id: str) -> tuple[list[Chunk], Chunk]:
-    """Soft-delete a chunk. Returns the updated chunkset and the
-    deleted chunk (still present in the list, with `deleted_at` set)."""
-    idx = _index_of(chunks, chunk_id)
-    target = chunks[idx]
-    if target.deleted_at is not None:
-        return list(chunks), target  # idempotent
-    target.deleted_at = _utcnow()
-    target.updated_at = target.deleted_at
-    return list(chunks), target
-
-
-def merge(
-    chunks: list[Chunk],
-    chunk_ids: list[str],
-    *,
-    separator: str = "\n",
-) -> tuple[list[Chunk], Chunk]:
-    """Merge `chunk_ids` (in order) into a single new chunk.
-
-    The new chunk takes the headings of the first source and the
-    smallest source page. The `id`s of the sources are returned in
-    the new chunk's lineage via the audit row written by the service
-    layer.
-
-    Returns the updated chunkset and the new merged chunk. The sources
-    are removed from the chunkset (hard-removed from the list — the
-    service is responsible for soft-deleting their persisted rows so
-    history queries still resolve them).
-    """
-    if len(chunk_ids) < 2:
-        raise ChunkEditingError("merge requires at least two chunks")
-    indices = [_index_of(chunks, cid) for cid in chunk_ids]
-    sources = [chunks[i] for i in indices]
-    if any(c.deleted_at for c in sources):
-        raise ChunkEditingError("cannot merge a deleted chunk")
-
-    document_id = sources[0].document_id
-    if any(c.document_id != document_id for c in sources):
-        raise ChunkEditingError("merge across documents is not allowed")
-
-    merged_text = separator.join(c.text for c in sources)
-    merged_headings = list(sources[0].headings)
-    merged_page = min((c.source_page for c in sources if c.source_page is not None), default=None)
-    merged_sequence = min(c.sequence for c in sources)
-
-    now = _utcnow()
-    new_chunk = Chunk(
-        id=_new_id(),
-        document_id=document_id,
-        sequence=merged_sequence,
-        text=merged_text,
-        headings=merged_headings,
-        source_page=merged_page,
-        created_at=now,
-        updated_at=now,
+    merged = Chunk(
+        document_id=first.document_id,
+        sequence=first.sequence,
+        text=MERGE_SEPARATOR.join(c.text for c in sources),
+        headings=list(first.headings),
+        source_page=first.source_page,
+        bboxes=[b for c in sources for b in c.bboxes],
+        doc_items=[d for c in sources for d in c.doc_items],
+        token_count=sum(c.token_count or 0 for c in sources) or None,
     )
-
-    source_ids = {c.id for c in sources}
-    out = [c for c in chunks if c.id not in source_ids]
-    out.append(new_chunk)
-    out.sort(key=lambda c: c.sequence)
-    return out, new_chunk
-
-
-def split(
-    chunks: list[Chunk], chunk_id: str, *, at_offset: int
-) -> tuple[list[Chunk], Chunk, Chunk]:
-    """Split a chunk's text at `at_offset` into two new chunks.
-
-    The source chunk is removed from the chunkset (the service-layer
-    persistence path soft-deletes its row so history queries can
-    resolve it). The two new chunks inherit headings and source_page
-    from the source.
-
-    Returns the updated chunkset and the two new chunks `(left, right)`.
-    """
-    idx = _index_of(chunks, chunk_id)
-    target = chunks[idx]
-    if target.deleted_at is not None:
-        raise ChunkEditingError(f"chunk is deleted: {chunk_id}")
-    if at_offset <= 0 or at_offset >= len(target.text):
-        raise ChunkEditingError(f"split offset out of range for chunk of length {len(target.text)}")
-
-    now = _utcnow()
-    left = Chunk(
-        id=_new_id(),
-        document_id=target.document_id,
-        sequence=target.sequence,
-        text=target.text[:at_offset],
-        headings=list(target.headings),
-        source_page=target.source_page,
-        created_at=now,
-        updated_at=now,
-    )
-    right = Chunk(
-        id=_new_id(),
-        document_id=target.document_id,
-        sequence=target.sequence + 1,
-        text=target.text[at_offset:],
-        headings=list(target.headings),
-        source_page=target.source_page,
-        created_at=now,
-        updated_at=now,
-    )
-
-    out = [c for c in chunks if c.id != target.id]
-    for c in out:
-        if c.sequence > target.sequence:
-            c.sequence += 1
-    out.extend((left, right))
-    out.sort(key=lambda c: c.sequence)
-    return out, left, right
+    return sources, merged

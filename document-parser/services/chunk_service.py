@@ -18,10 +18,12 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from domain import chunk_editing
 from domain.models import AnalysisStatus, Chunk, ChunkEdit, ChunkPush, DocumentStoreLink
 from domain.value_objects import (
     ChunkBbox,
@@ -33,6 +35,8 @@ from services.errors import ServiceError
 from services.navigation_errors import DocumentNotFoundError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from domain.ports import (
         AnalysisRepository,
         ChunkEditRepository,
@@ -74,6 +78,22 @@ class ChunkConflictError(ChunkServiceError):
 
 class ChunkValidationError(ChunkServiceError):
     http_status = 400
+
+
+# Why the domain refused an edit → the error the API answers it with.
+_REFUSALS: dict[type[chunk_editing.ChunkEditingError], type[ChunkServiceError]] = {
+    chunk_editing.InvalidChunkEditError: ChunkValidationError,
+    chunk_editing.UnknownChunkError: ChunkNotFoundError,
+    chunk_editing.NonContiguousMergeError: ChunkConflictError,
+}
+
+
+@contextmanager
+def _refusals_as_service_errors() -> Iterator[None]:
+    try:
+        yield
+    except chunk_editing.ChunkEditingError as exc:
+        raise _REFUSALS[type(exc)](str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +274,8 @@ class ChunkService:
     async def add_chunk(self, document_id: str, *, text: str, after_id: str | None = None) -> Chunk:
         await self._require_doc(document_id)
         existing = await self._chunks.find_for_document(document_id)
-        sequence = self._sequence_after(existing, after_id)
+        with _refusals_as_service_errors():
+            sequence = chunk_editing.sequence_after(existing, after_id)
         now = _utcnow()
         await self._shift_sequences(document_id, existing, from_sequence=sequence, at=now)
 
@@ -338,35 +359,10 @@ class ChunkService:
 
     async def split_chunk(self, document_id: str, chunk_id: str, cursor_offset: int) -> list[Chunk]:
         source = await self._require_chunk(document_id, chunk_id)
-        if cursor_offset <= 0 or cursor_offset >= len(source.text):
-            raise ChunkValidationError(
-                f"cursorOffset {cursor_offset} out of range for chunk of length {len(source.text)}"
-            )
+        with _refusals_as_service_errors():
+            head, tail = chunk_editing.split(source, cursor_offset)
         existing = await self._chunks.find_for_document(document_id)
         before = _chunk_to_audit_dict(source)
-
-        # Both halves inherit headings, source_page, bboxes, doc_items.
-        # Token counts are unknown post-split; leave as None.
-        head_text = source.text[:cursor_offset]
-        tail_text = source.text[cursor_offset:]
-        head = Chunk(
-            document_id=document_id,
-            sequence=source.sequence,
-            text=head_text,
-            headings=list(source.headings),
-            source_page=source.source_page,
-            bboxes=list(source.bboxes),
-            doc_items=list(source.doc_items),
-        )
-        tail = Chunk(
-            document_id=document_id,
-            sequence=source.sequence + 1,
-            text=tail_text,
-            headings=list(source.headings),
-            source_page=source.source_page,
-            bboxes=list(source.bboxes),
-            doc_items=list(source.doc_items),
-        )
 
         # Push subsequent sequences by 1 to make room for `tail`. Should the
         # replacement below fail, the shift only leaves a gap, which the
@@ -403,38 +399,9 @@ class ChunkService:
         return [head, tail]
 
     async def merge_chunks(self, document_id: str, ids: list[str]) -> Chunk:
-        if len(ids) < 2:
-            raise ChunkValidationError("merge requires at least 2 chunk ids")
         existing = await self._chunks.find_for_document(document_id)
-        by_id = {c.id: c for c in existing}
-        targets = [by_id.get(i) for i in ids]
-        if any(t is None for t in targets):
-            missing = [i for i, t in zip(ids, targets, strict=True) if t is None]
-            raise ChunkNotFoundError(f"Chunks not found: {missing}")
-
-        ordered = sorted(targets, key=lambda c: c.sequence)
-        sequences = [c.sequence for c in ordered]
-        if sequences != list(range(sequences[0], sequences[0] + len(sequences))):
-            raise ChunkConflictError("merge requires contiguous chunks (by sequence)")
-
-        merged_text = "\n".join(c.text for c in ordered)
-        bboxes: list[ChunkBbox] = []
-        doc_items: list[ChunkDocItem] = []
-        for c in ordered:
-            bboxes.extend(c.bboxes)
-            doc_items.extend(c.doc_items)
-        token_total = sum((c.token_count or 0) for c in ordered) or None
-
-        merged = Chunk(
-            document_id=document_id,
-            sequence=ordered[0].sequence,
-            text=merged_text,
-            headings=list(ordered[0].headings),
-            source_page=ordered[0].source_page,
-            bboxes=bboxes,
-            doc_items=doc_items,
-            token_count=token_total,
-        )
+        with _refusals_as_service_errors():
+            ordered, merged = chunk_editing.merge(existing, ids)
 
         now = _utcnow()
         await self._chunks.replace_chunkset(
@@ -844,15 +811,6 @@ class ChunkService:
         return chunk
 
     # -- sequence helpers
-
-    @staticmethod
-    def _sequence_after(existing: list[Chunk], after_id: str | None) -> int:
-        if after_id is None:
-            return (max((c.sequence for c in existing), default=-1)) + 1
-        anchor = next((c for c in existing if c.id == after_id), None)
-        if anchor is None:
-            raise ChunkNotFoundError(f"Anchor chunk not found: {after_id}")
-        return anchor.sequence + 1
 
     async def _shift_sequences(
         self,
