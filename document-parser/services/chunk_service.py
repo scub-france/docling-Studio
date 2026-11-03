@@ -23,7 +23,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain import chunk_editing
+from domain import chunk_editing, hashing
 from domain.models import AnalysisStatus, Chunk, ChunkEdit, ChunkPush, DocumentStoreLink
 from domain.value_objects import (
     ChunkBbox,
@@ -608,7 +608,7 @@ class ChunkService:
 
         chunks_payload = [_chunk_to_ingestion_dict(c) for c in canonical]
         chunks_json_payload = json.dumps(chunks_payload)
-        chunkset_hash = _compute_chunkset_hash(canonical)
+        chunkset_hash = hashing.chunkset_hash(canonical)
         # Resolve the per-store backends through the pool (#279). When
         # the resolver is not wired the call falls back to the
         # IngestionService's service-level defaults — preserves
@@ -844,26 +844,6 @@ def _chunk_to_ingestion_dict(c: Chunk) -> dict:
         "bboxes": [{"page": b.page, "bbox": list(b.bbox)} for b in c.bboxes],
         "docItems": [{"selfRef": d.self_ref, "label": d.label} for d in c.doc_items],
     }
-
-
-def _compute_chunkset_hash(chunks: list[Chunk]) -> str:
-    """Stable hash of the canonical chunkset content.
-
-    Used by `ChunkPush` snapshots so we can answer 'is the store in sync
-    with the current canonical state' without listing chunks from the
-    vector store.
-    """
-    import hashlib
-
-    h = hashlib.sha256()
-    for c in chunks:
-        h.update(c.id.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(c.text.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(str(c.updated_at).encode("utf-8"))
-        h.update(b"\x01")
-    return h.hexdigest()
 
 
 def _build_tree_nodes(doc_data: dict, tree_reader: DocumentTreeReader) -> list[dict]:
