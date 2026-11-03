@@ -813,3 +813,125 @@ class TestFindAllSummaries:
 
         assert await service.find_all_summaries() == ["summary"]
         analysis_repo.find_all_summaries.assert_awaited_once()
+
+
+def _finalizing_service(*, page_count=3, version_fails=False, chunker=None, graph_fails=False):
+    """An AnalysisService whose collaborators log each write into `events`."""
+    from domain.value_objects import DocumentLifecycleState
+
+    events: list[str] = []
+    job = AnalysisJob(id="j1", document_id="d1", status=AnalysisStatus.RUNNING)
+    document = Document(id="d1", filename="source.pdf")
+    document.lifecycle_state = DocumentLifecycleState.UPLOADED
+
+    async def find_job(_job_id):
+        events.append("find_job")
+        return job
+
+    async def update_status(saved):
+        events.append(f"update_status:{saved.status.value}")
+
+    async def update_page_count(_doc_id, count):
+        events.append(f"update_page_count:{count}")
+
+    async def update_lifecycle(_doc_id, state, _at):
+        events.append(f"lifecycle:{state.value}")
+
+    async def record(_document_id, analysis_id):
+        events.append(f"record_version:{analysis_id}")
+        if version_fails:
+            raise RuntimeError("snapshot write failed")
+
+    async def write_tree(**_kwargs):
+        events.append("graph")
+        if graph_fails:
+            raise RuntimeError("neo4j down")
+
+    analysis_repo = MagicMock()
+    analysis_repo.find_by_id = AsyncMock(side_effect=find_job)
+    analysis_repo.update_status = AsyncMock(side_effect=update_status)
+    document_repo = MagicMock()
+    document_repo.find_by_id = AsyncMock(return_value=document)
+    document_repo.update_page_count = AsyncMock(side_effect=update_page_count)
+    document_repo.update_lifecycle = AsyncMock(side_effect=update_lifecycle)
+    recorder = MagicMock()
+    recorder.record_on_analysis = AsyncMock(side_effect=record)
+    graph = MagicMock()
+    graph.write_document_tree = AsyncMock(side_effect=write_tree)
+
+    service = _make_service(
+        analysis_repo=analysis_repo,
+        document_repo=document_repo,
+        chunker=chunker,
+        graph_writer=graph,
+        config=AnalysisConfig(neo4j_required=graph_fails),
+    )
+    service.set_version_recorder(recorder)
+    result = ConversionResult(
+        page_count=page_count,
+        content_markdown="# T",
+        content_html="<p>T</p>",
+        pages=[],
+        document_json='{"name": "doc"}',
+    )
+    return service, result, events
+
+
+class TestFinalizeOrder:
+    """What a successful analysis writes, and in which order.
+
+    The version row is recorded BEFORE the job is saved as COMPLETED: the
+    frontend polls the job, and must never see a completed analysis whose
+    version is not in the database yet. The other effects follow the status
+    write, the graph mirror last.
+    """
+
+    async def test_the_version_is_recorded_before_the_job_is_saved_completed(self):
+        service, result, events = _finalizing_service()
+        await service._finalize_analysis("j1", result, chunking_options=None)
+        assert events == [
+            "find_job",
+            "record_version:j1",
+            "update_status:COMPLETED",
+            "update_page_count:3",
+            "lifecycle:Parsed",
+            "graph",
+        ]
+
+    async def test_a_failed_version_snapshot_does_not_fail_the_analysis(self):
+        service, result, events = _finalizing_service(version_fails=True)
+        await service._finalize_analysis("j1", result, chunking_options=None)
+        assert events[1:3] == ["record_version:j1", "update_status:COMPLETED"]
+        assert events[-1] == "graph"
+
+    async def test_chunks_come_first_and_make_the_document_chunked(self):
+        from domain.value_objects import ChunkResult
+
+        chunker = MagicMock()
+        service, result, events = _finalizing_service(chunker=chunker)
+
+        async def chunk(*_args):
+            events.append("chunk")
+            return [ChunkResult(text="t", headings=[], source_page=1, token_count=1)]
+
+        chunker.chunk = AsyncMock(side_effect=chunk)
+        await service._finalize_analysis("j1", result, chunking_options={"max_tokens": 64})
+        assert events[:3] == ["chunk", "find_job", "record_version:j1"]
+        assert "lifecycle:Chunked" in events
+
+    async def test_no_page_count_is_written_when_the_parse_has_none(self):
+        service, result, events = _finalizing_service(page_count=0)
+        await service._finalize_analysis("j1", result, chunking_options=None)
+        assert not any(event.startswith("update_page_count") for event in events)
+
+    async def test_a_job_deleted_meanwhile_writes_nothing(self):
+        service, result, events = _finalizing_service()
+        service._analysis_repo.find_by_id = AsyncMock(return_value=None)
+        await service._finalize_analysis("j1", result, chunking_options=None)
+        assert events == []
+
+    async def test_a_required_graph_write_fails_after_the_job_is_completed(self):
+        service, result, events = _finalizing_service(graph_fails=True)
+        with pytest.raises(RuntimeError, match="neo4j down"):
+            await service._finalize_analysis("j1", result, chunking_options=None)
+        assert events.index("update_status:COMPLETED") < events.index("graph")
