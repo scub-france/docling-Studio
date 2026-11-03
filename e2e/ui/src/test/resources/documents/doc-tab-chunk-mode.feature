@@ -11,9 +11,10 @@ Feature: API — Doc chunk endpoint returns the canonical chunkset (#256, no 404
   # GET chunks (no 404, correct DocChunkResponse fields). The removed UI flow
   # (view-switcher / chunk-tab / layers-bar / chunks-panel) is dropped.
   #
-  # Follow-up: the other specs that drove the removed ?mode=chunk UI
-  # (doc-ingest-view, doc-chunk-view, doc-strategy-popover) need the same
-  # treatment — they are not @critical so they do not gate the release.
+  # The other specs that drove the removed workspace views (Ingest, Chunk,
+  # Strategy popover, History drawer) were deleted in 0.7.4: those views no
+  # longer exist, and `?mode=chunk` / `?mode=ingest` now resolve to the
+  # default mode (shared/routing/modes.ts).
   #
   # Refreshed for #266: analysis and chunk are independent — running an
   # analysis no longer auto-promotes a canonical chunkset, so we POST
