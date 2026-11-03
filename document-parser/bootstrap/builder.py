@@ -54,6 +54,7 @@ from persistence.document_store_link_repo import SqliteDocumentStoreLinkReposito
 from persistence.document_version_repo import SqliteDocumentVersionRepository
 from persistence.store_repo import SqliteStoreRepository
 from services.app_config_service import AppConfigService
+from services.chunk_push_service import ChunkPushService
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.mcp_config_service import McpConfigService
@@ -108,7 +109,6 @@ class AppStateBuilder:
         link_repo = SqliteDocumentStoreLinkRepository()
         chunk_repo = SqliteChunkRepository()
         chunk_edit_repo = SqliteChunkEditRepository()
-        chunk_push_repo = SqliteChunkPushRepository()
         # One storage for the uploaded files, shared by upload, preview,
         # deletion and the PDF export.
         files = build_file_storage()
@@ -123,10 +123,14 @@ class AppStateBuilder:
             analysis_repo=analysis_repo,
             chunk_repo=chunk_repo,
             chunk_edit_repo=chunk_edit_repo,
-            chunk_push_repo=chunk_push_repo,
+        )
+        chunk_push_service = ChunkPushService(
+            chunk_repo=chunk_repo,
+            chunk_push_repo=SqliteChunkPushRepository(),
+            document_repo=document_repo,
+            ingestion_service=ingestion_service,
             store_repo=store_repo,
             link_repo=link_repo,
-            ingestion_service=ingestion_service,
             backend_resolver=backend_resolver,
         )
         version_service = VersionService(
@@ -175,6 +179,7 @@ class AppStateBuilder:
             ),
             store_service=store_service,
             chunk_service=chunk_service,
+            chunk_push_service=chunk_push_service,
             document_tree_service=build_document_tree_service(document_repo, analysis_repo),
             # 0.6.1 (#audit-01) — GraphService serves /graph so api/graph.py
             # stops reaching into infra. Reader is None without Neo4j (503).

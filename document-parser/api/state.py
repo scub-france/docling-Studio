@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from domain.ports import AnalysisRepository, ReasoningRunner
     from services.analysis_service import AnalysisService
     from services.app_config_service import AppConfigService
+    from services.chunk_push_service import ChunkPushService
     from services.chunk_service import ChunkService
     from services.document_service import DocumentService
     from services.document_tools import DocumentTools
@@ -61,6 +62,7 @@ class AppState:
     export_service: ExportService | None = None
     store_service: StoreService | None = None
     chunk_service: ChunkService | None = None
+    chunk_push_service: ChunkPushService | None = None
     document_tree_service: DocumentTreeService | None = None
     graph_service: GraphService | None = None
     version_service: VersionService | None = None

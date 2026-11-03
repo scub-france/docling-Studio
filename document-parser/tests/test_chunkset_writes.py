@@ -20,7 +20,7 @@ import pytest
 from domain.models import AnalysisJob, AnalysisStatus, Chunk, Document
 from domain.value_objects import ChunkResult
 from persistence.analysis_repo import SqliteAnalysisRepository
-from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
+from persistence.chunk_edit_repo import SqliteChunkEditRepository
 from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import get_connection, init_db
 from persistence.document_repo import SqliteDocumentRepository
@@ -68,7 +68,6 @@ def chunk_service(chunks, edits, chunker):
     return ChunkService(
         chunk_repo=chunks,
         chunk_edit_repo=edits,
-        chunk_push_repo=SqliteChunkPushRepository(),
         document_repo=SqliteDocumentRepository(),
         analysis_repo=SqliteAnalysisRepository(),
         chunker=chunker,

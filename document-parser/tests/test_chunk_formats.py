@@ -33,6 +33,7 @@ from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
 from persistence.store_repo import SqliteStoreRepository
+from services.chunk_push_service import ChunkPushService
 from services.chunk_service import ChunkService
 from services.ingestion_service import IngestionResult
 from services.version_service import VersionService
@@ -72,7 +73,6 @@ def chunk_service(chunks):
     return ChunkService(
         chunk_repo=chunks,
         chunk_edit_repo=SqliteChunkEditRepository(),
-        chunk_push_repo=SqliteChunkPushRepository(),
         document_repo=SqliteDocumentRepository(),
         analysis_repo=SqliteAnalysisRepository(),
     )
@@ -80,12 +80,10 @@ def chunk_service(chunks):
 
 @pytest.fixture
 def push_service(chunks, ingestion):
-    return ChunkService(
+    return ChunkPushService(
         chunk_repo=chunks,
-        chunk_edit_repo=SqliteChunkEditRepository(),
         chunk_push_repo=SqliteChunkPushRepository(),
         document_repo=SqliteDocumentRepository(),
-        analysis_repo=SqliteAnalysisRepository(),
         ingestion_service=ingestion,
         store_repo=SqliteStoreRepository(),
         link_repo=SqliteDocumentStoreLinkRepository(),
@@ -424,7 +422,7 @@ def _reference_hash(chunks: list[Chunk]) -> str:
 
 class TestChunksetHash:
     # Computed once with `services.chunk_service._compute_chunkset_hash`, the
-    # function that wrote every hash stored so far.
+    # function that wrote every hash stored before it moved to domain/hashing.
     GOLDEN_THREE = "fee1efd47fb90ba0d763258ae55b566f80c039af08999961bf0e7cbb065decb2"
     GOLDEN_ONE = "3e6e2c8d4c62cae8b2486e0678cc78230c752d62a528acc7816a2c4fe9813bfa"
 

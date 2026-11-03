@@ -5,8 +5,9 @@ Exposes the canonical doc-centric chunkset (CRUD + tree + rechunk + diff
 ephemeral analysis runs (StudioPage / OCR Debug).
 
 All routes mount under `/api/documents/{doc_id}/...`. The router
-delegates to `ChunkService` (the chunkset) and `DocumentTreeService` (the
-outline) — no direct repo / persistence access — and lets their typed
+delegates to `ChunkService` (the chunkset), `DocumentTreeService` (the
+outline) and `ChunkPushService` (diff, push and push history against a
+store) — no direct repo / persistence access — and lets their typed
 errors reach the app-level handler (`api/errors.py`).
 """
 
@@ -158,7 +159,7 @@ async def get_tree(
 @router.get("/{doc_id}/diff", response_model=list[ChunkDiffResponse])
 async def diff_against_store(
     doc_id: str,
-    service: deps.ChunkServiceDep,
+    service: deps.ChunkPushServiceDep,
     store: str = Query(..., min_length=1),
 ) -> list[ChunkDiffResponse]:
     """Diff the canonical chunkset against the last push to `store`."""
@@ -170,7 +171,7 @@ async def diff_against_store(
 async def push_chunks(
     doc_id: str,
     body: PushChunksRequest,
-    service: deps.ChunkServiceDep,
+    service: deps.ChunkPushServiceDep,
 ) -> PushChunksResponse:
     """Push the canonical chunkset to a store and record a `ChunkPush`."""
     result = await service.push_to_store(doc_id, body.store)
@@ -183,7 +184,7 @@ async def push_chunks(
 @router.get("/{doc_id}/chunks/pushes", response_model=ChunkPushListResponse)
 async def list_chunk_pushes(
     doc_id: str,
-    service: deps.ChunkServiceDep,
+    service: deps.ChunkPushServiceDep,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> ChunkPushListResponse:

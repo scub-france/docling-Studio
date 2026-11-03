@@ -192,7 +192,7 @@ class TestEnsureIndex:
 # `ingest()` accepts an optional `IngestionTargets` kwarg that
 # overrides the service-level (vector_store, neo4j_driver) defaults.
 # This is the linchpin of per-store dispatch — the StoreBackendResolver
-# resolves a Store to an IngestionTargets, then `chunk_service.push_to_store`
+# resolves a Store to an IngestionTargets, then `ChunkPushService.push_to_store`
 # passes that through. The resolver itself is tested in
 # `test_store_backend_resolver.py`; this class pins the IngestionService
 # end of the contract.

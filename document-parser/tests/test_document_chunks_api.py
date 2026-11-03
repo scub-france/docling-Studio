@@ -26,7 +26,8 @@ def client():
 @pytest.fixture
 def mock_service(client):
     svc = MagicMock()
-    with state_override(app, chunk_service=svc, document_tree_service=svc):
+    # One mock behind the three services the router splits its routes across.
+    with state_override(app, chunk_service=svc, document_tree_service=svc, chunk_push_service=svc):
         yield svc
 
 

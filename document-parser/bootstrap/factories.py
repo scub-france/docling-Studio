@@ -236,8 +236,8 @@ def build_document_service(
 
 
 def build_chunk_service(**repos) -> ChunkService:
-    """Doc-centric chunks (#256) on top of the chunk / chunk_edit /
-    chunk_push repos introduced by #205."""
+    """Doc-centric chunks (#256) on top of the chunk / chunk_edit repos
+    introduced by #205."""
     return ChunkService(chunker=build_chunker(), **repos)
 
 

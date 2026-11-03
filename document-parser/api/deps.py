@@ -14,6 +14,7 @@ from fastapi import Depends
 from api.state import AppState, get_app_state, require
 from services.analysis_service import AnalysisService
 from services.app_config_service import AppConfigService
+from services.chunk_push_service import ChunkPushService
 from services.chunk_service import ChunkService
 from services.document_service import DocumentService
 from services.document_tree_service import DocumentTreeService
@@ -54,6 +55,13 @@ def get_chunk_service(state: AppStateDep) -> ChunkService:
 
 
 ChunkServiceDep = Annotated[ChunkService, Depends(get_chunk_service)]
+
+
+def get_chunk_push_service(state: AppStateDep) -> ChunkPushService:
+    return require(state.chunk_push_service, detail="Chunk push service not available")
+
+
+ChunkPushServiceDep = Annotated[ChunkPushService, Depends(get_chunk_push_service)]
 
 
 def get_document_tree_service(state: AppStateDep) -> DocumentTreeService:
