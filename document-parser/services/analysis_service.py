@@ -469,74 +469,98 @@ class AnalysisService:
         result: ConversionResult,
         chunking_options: dict | None,
     ) -> None:
-        """Serialize results, optionally chunk, mark job completed, update page count."""
-        pages_json = json.dumps([asdict(p) for p in result.pages])
+        """Persist a successful conversion on its job, then apply its effects.
 
-        chunks_json = None
-        if chunking_options and self._chunker and result.document_json:
-            chunk_opts = ChunkingOptions(**chunking_options)
-            chunks = await self._chunker.chunk(result.document_json, chunk_opts)
-            chunks_json = json.dumps([_chunk_to_dict(c) for c in chunks])
-            logger.info("Chunking produced %d chunks for job %s", len(chunks), job_id)
+        The order is load-bearing: the version row is recorded BEFORE the
+        job is saved as COMPLETED, so the frontend, which polls the job,
+        never sees a completed analysis without its version in the database
+        (#267). Page count, lifecycle and graph follow the status write.
+        """
+        chunks_json = await self._chunk_result(job_id, result, chunking_options)
+        job = await self._completed_job(job_id, result, chunks_json)
+        if job is None:
+            return
+        await self._record_version(job)
+        await self._analysis_repo.update_status(job)
+        await self._apply_analysis_effects(job, result, chunked=chunks_json is not None)
+        logger.info("Analysis completed: %s (%d pages)", job_id, result.page_count)
 
+    async def _chunk_result(
+        self,
+        job_id: str,
+        result: ConversionResult,
+        chunking_options: dict | None,
+    ) -> str | None:
+        """The chunks of the converted document, serialized — None when no
+        chunking was asked for or there is nothing to chunk."""
+        if not (chunking_options and self._chunker and result.document_json):
+            return None
+        chunk_opts = ChunkingOptions(**chunking_options)
+        chunks = await self._chunker.chunk(result.document_json, chunk_opts)
+        logger.info("Chunking produced %d chunks for job %s", len(chunks), job_id)
+        return json.dumps([_chunk_to_dict(c) for c in chunks])
+
+    async def _completed_job(
+        self,
+        job_id: str,
+        result: ConversionResult,
+        chunks_json: str | None,
+    ) -> AnalysisJob | None:
+        """The job, marked completed with `result` but not saved yet — None
+        when it was deleted while converting."""
         # Re-read the job so we don't lose progress_current/progress_total
         # written to the DB during batched conversion.
         job = await self._analysis_repo.find_by_id(job_id)
         if not job:
-            return
+            return None
         job.mark_completed(
             markdown=result.content_markdown,
             html=result.content_html,
-            pages_json=pages_json,
+            pages_json=json.dumps([asdict(p) for p in result.pages]),
             document_json=result.document_json,
             chunks_json=chunks_json,
         )
+        return job
 
-        # Record a frozen (analysis, chunks_snapshot) pair in the
-        # workspace History timeline (#267). Done BEFORE the status flip
-        # to COMPLETED so the frontend polling never observes a
-        # completed analysis without its version row in the DB.
-        # Snapshots the LIVE chunks at this moment so user edits since
-        # the previous version are preserved alongside the new analysis
-        # pointer.
-        if self._version_recorder is not None:
-            try:
-                await self._version_recorder.record_on_analysis(job.document_id, job_id)
-            except Exception:
-                # Versioning is a best-effort side hook — never fail the
-                # analysis itself if the snapshot write hits a snag.
-                logger.exception(
-                    "Version snapshot failed for doc %s after analysis %s",
-                    job.document_id,
-                    job_id,
-                )
+    async def _record_version(self, job: AnalysisJob) -> None:
+        """Record a frozen (analysis, chunks_snapshot) pair in the workspace
+        History timeline (#267).
 
-        await self._analysis_repo.update_status(job)
+        Snapshots the LIVE chunks at this moment so user edits since the
+        previous version are preserved alongside the new analysis pointer.
+        Best effort: a failed snapshot never fails the analysis itself.
+        """
+        if self._version_recorder is None:
+            return
+        try:
+            await self._version_recorder.record_on_analysis(job.document_id, job.id)
+        except Exception:
+            logger.exception(
+                "Version snapshot failed for doc %s after analysis %s",
+                job.document_id,
+                job.id,
+            )
 
+    async def _apply_analysis_effects(
+        self,
+        job: AnalysisJob,
+        result: ConversionResult,
+        *,
+        chunked: bool,
+    ) -> None:
+        """What a completed analysis changes outside its job: the document's
+        page count and lifecycle state, then the graph mirror.
+
+        No canonical chunk promotion here: since the 0.6.1 doc workspace
+        (#266), running an analysis must not create chunks implicitly; they
+        come from `POST /api/documents/{id}/rechunk` (#268).
+        """
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)
-
-        # Canonical chunk promotion was previously called here (#256), but
-        # the 0.6.1 doc workspace (#266) requires the analysis and chunk
-        # actions to be independent — running an analysis must NOT
-        # implicitly create chunks. Chunks are now produced explicitly via
-        # `POST /api/documents/{id}/rechunk` (driven from the Strategy
-        # popover, #268). The promoter hook stays wired in main.py so
-        # legacy callers / tests can still trigger it directly, but it is
-        # no longer invoked as part of the analysis flow.
-
-        # Drive the document lifecycle (#202): chunks present → Chunked,
-        # otherwise → Parsed.
-        target_state = (
-            DocumentLifecycleState.CHUNKED
-            if chunks_json is not None
-            else DocumentLifecycleState.PARSED
-        )
+        # Lifecycle (#202): chunks present → Chunked, otherwise → Parsed.
+        target_state = DocumentLifecycleState.CHUNKED if chunked else DocumentLifecycleState.PARSED
         await self._transition_document(job.document_id, target_state)
-
         await self._write_tree_to_graph(job, result.document_json)
-
-        logger.info("Analysis completed: %s (%d pages)", job_id, result.page_count)
 
     async def _write_tree_to_graph(self, job, document_json: str | None) -> None:
         """Mirror the DoclingDocument tree into the graph store if configured.
