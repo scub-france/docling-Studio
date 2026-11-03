@@ -38,7 +38,7 @@ Feature: UI — MCP section of the settings panel (#364)
 
     # Reset: the badge goes, the environment value comes back.
     * click('[data-e2e=mcp-config-reset]')
-    * retry().until(!exists('[data-e2e=mcp-config-source-max-read-tokens]'))
+    * waitUntil("!document.querySelector('[data-e2e=mcp-config-source-max-read-tokens]')")
 
     Given url baseUrl
     And path '/api/config/mcp'
@@ -81,7 +81,7 @@ Feature: UI — MCP section of the settings panel (#364)
 
     # Back on: the override goes, the environment value comes back.
     * click('[data-e2e=mcp-config-switch]')
-    * retry().until(!exists('[data-e2e=mcp-config-source-enabled]'))
+    * waitUntil("!document.querySelector('[data-e2e=mcp-config-source-enabled]')")
 
     Given url baseUrl
     And path '/api/config/mcp'
