@@ -110,9 +110,12 @@ class TestRestore:
         await service.record_on_rechunk(doc.id, "a1")
 
         # Restore V1 → live should match V1's two chunks
-        await service.restore(doc.id, v1.id)
+        restored = await service.restore(doc.id, v1.id)
         live = await repos["chunks"].find_for_document(doc.id)
         assert sorted(c.text for c in live) == ["v1-a", "v1-b"]
+        # ...and the result is V1 as a history row: counted, without its body.
+        assert (restored.version.id, restored.chunk_count) == (v1.id, 2)
+        assert restored.version.chunks_snapshot is None
 
     async def test_restore_unknown_version_raises(self, service, doc):
         with pytest.raises(VersionNotFoundError):

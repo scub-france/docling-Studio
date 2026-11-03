@@ -17,10 +17,12 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from domain.models import Chunk, ChunkEdit, DocumentVersion, DocumentVersionKind
+from domain.ports import DocumentVersionEntry
 from domain.value_objects import ChunkEditAction
 from services.errors import ServiceError
 
@@ -28,7 +30,6 @@ if TYPE_CHECKING:
     from domain.ports import (
         ChunkRepository,
         DocumentRepository,
-        DocumentVersionEntry,
         DocumentVersionRepository,
     )
 
@@ -143,11 +144,16 @@ class VersionService:
         await self._versions.insert(version)
         return version
 
-    async def restore(self, document_id: str, version_id: str) -> DocumentVersion:
+    async def restore(self, document_id: str, version_id: str) -> DocumentVersionEntry:
         """Replace the live chunkset with the version's snapshot. The
         active-analysis pointer is the caller's responsibility (the
         frontend reads `version.analysis_id` and updates the workspace
-        store)."""
+        store).
+
+        Returns the restored version as a history row: without its snapshot
+        body, with the number of chunks restored — counted from the snapshot
+        decoded here, so the caller never parses it a second time.
+        """
         await self._require_doc(document_id)
         version = await self._versions.find_by_id(version_id)
         if not version or version.document_id != document_id:
@@ -191,7 +197,9 @@ class VersionService:
             version_id,
             len(new_chunks),
         )
-        return version
+        return DocumentVersionEntry(
+            version=replace(version, chunks_snapshot=None), chunk_count=len(new_chunks)
+        )
 
     async def _require_doc(self, document_id: str) -> None:
         doc = await self._documents.find_by_id(document_id)

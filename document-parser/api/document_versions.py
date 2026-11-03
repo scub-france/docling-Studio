@@ -12,7 +12,6 @@ write endpoint (`restore`) — the version-creation triggers fire from
 
 from __future__ import annotations
 
-import json
 import logging
 
 from fastapi import APIRouter
@@ -22,15 +21,6 @@ from api.schemas import DocumentVersionResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
-
-
-def _snapshot_size(chunks_snapshot: str | None) -> int:
-    if chunks_snapshot:
-        try:
-            return len(json.loads(chunks_snapshot))
-        except (json.JSONDecodeError, TypeError):
-            return 0
-    return 0
 
 
 def _to_response(version, chunks_snapshot_size: int) -> DocumentVersionResponse:
@@ -65,6 +55,7 @@ async def restore_version(
     """Restore a frozen version — overwrites the live chunkset with the
     version's snapshot. The active-analysis pointer is managed
     client-side (the frontend reads `analysisId` off the response).
+    The chunk count is the service's: the snapshot is not decoded here.
     """
-    version = await service.restore(doc_id, version_id)
-    return _to_response(version, _snapshot_size(version.chunks_snapshot))
+    entry = await service.restore(doc_id, version_id)
+    return _to_response(entry.version, entry.chunk_count)
