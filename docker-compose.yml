@@ -146,13 +146,14 @@ services:
         # Pre-fetch Docling model checkpoints at build time (+~1.3 GB).
         # Only meaningful when CONVERSION_MODE=local. Default false so
         # no `docker compose build` ever depends on HuggingFace Hub by
-        # accident. To get the "instant first /api/convert" experience
-        # locally, either: (a) start the docling-serve container with
-        # `--profile remote`, or (b) opt in with `BAKE_MODELS=true
-        # docker compose build` and accept the HF Hub download at build
-        # time. End-user GHCR image `latest-local` is published with
-        # bake=true by release.yml — the single sanctioned HF touch
-        # point. See docs/architecture/huggingface-dependency-map.md.
+        # accident. The backend does not read the baked copy yet (no
+        # `artifacts_path`), so the first analysis downloads the models
+        # either way. To skip that download, use the remote engine:
+        # `CONVERSION_MODE=remote docker compose --profile remote up`,
+        # whose Docling Serve image ships its models. The published
+        # `-local` images are built with bake=true by release.yml — the
+        # single sanctioned HF touch point at build time. See
+        # docs/architecture/huggingface-dependency-map.md.
         BAKE_MODELS: ${BAKE_MODELS:-false}
         WITH_REASONING: ${WITH_REASONING:-false}
     expose:

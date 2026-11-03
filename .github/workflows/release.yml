@@ -53,11 +53,13 @@ jobs:
           target: ${{ matrix.target }}
           push: true
           platforms: linux/amd64,linux/arm64
-          # `latest-local` is the ONLY published image that bakes
-          # Docling model checkpoints from HuggingFace Hub — end users
-          # pull a self-contained image with an instant first /api/convert.
-          # The `remote` variant talks to docling-serve over HTTP and has
-          # no HF dependency. All other builds (CI E2E, dev compose,
+          # The `local` images are the ONLY ones built with BAKE_MODELS:
+          # the Docling model checkpoints are downloaded from HuggingFace
+          # Hub here and copied into the image. The backend does not read
+          # that copy yet (no `artifacts_path`), so the first analysis
+          # still downloads the models at runtime.
+          # The `remote` variant talks to docling-serve over HTTP and
+          # downloads no Docling model. All other builds (CI E2E, dev compose,
           # operators rebuilding from source) default to BAKE_MODELS=false
           # to keep the project HF-free outside this one sanctioned path.
           # See docs/architecture/huggingface-dependency-map.md.
