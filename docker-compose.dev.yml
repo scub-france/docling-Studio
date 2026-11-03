@@ -141,6 +141,8 @@ services:
       DOCLING_SERVE_URL: ${DOCLING_SERVE_URL:-http://docling-serve:5001}
       DOCLING_SERVE_API_KEY: ${DOCLING_SERVE_API_KEY:-}
       RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-100}
+      # Proxies trusted to set X-Forwarded-For (uvicorn); see docker-compose.yml.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
       # Ceiling on the table cells of an imported Docling JSON (0 = none).
       MAX_IMPORT_TABLE_CELLS: ${MAX_IMPORT_TABLE_CELLS:-100000}
