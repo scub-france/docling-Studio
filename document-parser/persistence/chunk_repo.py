@@ -8,11 +8,15 @@ from typing import TYPE_CHECKING
 
 from domain.models import Chunk
 from domain.value_objects import ChunkBbox, ChunkDocItem
+from persistence.chunk_edit_repo import write_edits
 from persistence.database import get_connection
 from persistence.timestamps import parse_iso, parse_required_iso
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import datetime
+
+    from domain.models import ChunkEdit
 
 
 def _row_to_chunk(row) -> Chunk:
@@ -72,6 +76,55 @@ class SqliteChunkRepository:
         async with get_connection() as db:
             await db.executemany(_INSERT_SQL, [_chunk_to_params(c) for c in chunks])
             await db.commit()
+
+    async def replace_chunkset(
+        self,
+        document_id: str,
+        *,
+        at: datetime,
+        retire_ids: Sequence[str] = (),
+        add: Sequence[Chunk] = (),
+        edits: Sequence[ChunkEdit] = (),
+    ) -> None:
+        """Retire `retire_ids`, insert `add` and journal `edits`, all or nothing.
+
+        One connection, one transaction, one statement per kind of row:
+        retiring soft-deletes the live chunks of `document_id` among
+        `retire_ids` (`deleted_at = updated_at = at`), then `add` and
+        `edits` are inserted in order. Any failure rolls the whole
+        operation back.
+        """
+        async with get_connection() as db:
+            try:
+                if retire_ids:
+                    await db.executemany(
+                        """UPDATE chunks SET deleted_at = ?, updated_at = ?
+                           WHERE id = ? AND document_id = ? AND deleted_at IS NULL""",
+                        [(str(at), str(at), chunk_id, document_id) for chunk_id in retire_ids],
+                    )
+                if add:
+                    await db.executemany(_INSERT_SQL, [_chunk_to_params(c) for c in add])
+                await write_edits(db, edits)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+
+    async def shift_sequences(self, document_id: str, *, from_sequence: int, at: datetime) -> int:
+        """Move every live chunk of `document_id` at `sequence >= from_sequence`
+        one slot up, in a single UPDATE. Returns the number of chunks moved.
+
+        `idx_chunks_doc_seq` is not UNIQUE, so the transient overlap of an
+        in-place `sequence + 1` cannot conflict.
+        """
+        async with get_connection() as db:
+            cursor = await db.execute(
+                """UPDATE chunks SET sequence = sequence + 1, updated_at = ?
+                   WHERE document_id = ? AND deleted_at IS NULL AND sequence >= ?""",
+                (str(at), document_id, from_sequence),
+            )
+            await db.commit()
+            return cursor.rowcount
 
     async def update(self, chunk: Chunk) -> None:
         async with get_connection() as db:

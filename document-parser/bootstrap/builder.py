@@ -126,7 +126,6 @@ class AppStateBuilder:
         version_service = VersionService(
             version_repo=SqliteDocumentVersionRepository(),
             chunk_repo=chunk_repo,
-            chunk_edit_repo=chunk_edit_repo,
             document_repo=document_repo,
         )
 

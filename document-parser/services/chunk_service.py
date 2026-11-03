@@ -226,19 +226,24 @@ class ChunkService:
         if not canonical:
             return 0
 
-        await self._chunks.insert_many(canonical)
-        for c in canonical:
-            await self._edits.insert(
+        now = _utcnow()
+        await self._chunks.replace_chunkset(
+            document_id,
+            at=now,
+            add=canonical,
+            edits=[
                 ChunkEdit(
                     id=_new_id(),
                     document_id=document_id,
                     chunk_id=c.id,
                     action=ChunkEditAction.INSERT,
                     actor="system:initial-analysis",
-                    at=_utcnow(),
+                    at=now,
                     after=_chunk_to_audit_dict(c),
                 )
-            )
+                for c in canonical
+            ],
+        )
         logger.info(
             "chunk.promote docId=%s count=%d (initial-analysis)", document_id, len(canonical)
         )
@@ -256,26 +261,31 @@ class ChunkService:
         await self._require_doc(document_id)
         existing = await self._chunks.find_for_document(document_id)
         sequence = self._sequence_after(existing, after_id)
-        await self._shift_sequences(existing, from_sequence=sequence)
+        now = _utcnow()
+        await self._shift_sequences(document_id, existing, from_sequence=sequence, at=now)
 
         new_chunk = Chunk(
             document_id=document_id,
             sequence=sequence,
             text=text,
-            created_at=_utcnow(),
-            updated_at=_utcnow(),
+            created_at=now,
+            updated_at=now,
         )
-        await self._chunks.insert(new_chunk)
-        await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=new_chunk.id,
-                action=ChunkEditAction.INSERT,
-                actor=self._actor,
-                at=_utcnow(),
-                after=_chunk_to_audit_dict(new_chunk),
-            )
+        await self._chunks.replace_chunkset(
+            document_id,
+            at=now,
+            add=[new_chunk],
+            edits=[
+                ChunkEdit(
+                    id=_new_id(),
+                    document_id=document_id,
+                    chunk_id=new_chunk.id,
+                    action=ChunkEditAction.INSERT,
+                    actor=self._actor,
+                    at=now,
+                    after=_chunk_to_audit_dict(new_chunk),
+                )
+            ],
         )
         logger.info(
             "chunk.add docId=%s chunkId=%s sequence=%d", document_id, new_chunk.id, sequence
@@ -364,22 +374,30 @@ class ChunkService:
             doc_items=list(source.doc_items),
         )
 
-        # Push subsequent sequences by 1 to make room for `tail`.
-        await self._shift_sequences(existing, from_sequence=source.sequence + 1)
-        await self._chunks.soft_delete(source.id, at=_utcnow())
-        await self._chunks.insert_many([head, tail])
-
-        await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=source.id,
-                action=ChunkEditAction.SPLIT,
-                actor=self._actor,
-                at=_utcnow(),
-                before=before,
-                children=[head.id, tail.id],
-            )
+        # Push subsequent sequences by 1 to make room for `tail`. Should the
+        # replacement below fail, the shift only leaves a gap, which the
+        # ordering invariant allows.
+        now = _utcnow()
+        await self._shift_sequences(
+            document_id, existing, from_sequence=source.sequence + 1, at=now
+        )
+        await self._chunks.replace_chunkset(
+            document_id,
+            at=now,
+            retire_ids=[source.id],
+            add=[head, tail],
+            edits=[
+                ChunkEdit(
+                    id=_new_id(),
+                    document_id=document_id,
+                    chunk_id=source.id,
+                    action=ChunkEditAction.SPLIT,
+                    actor=self._actor,
+                    at=now,
+                    before=before,
+                    children=[head.id, tail.id],
+                )
+            ],
         )
         logger.info(
             "chunk.split docId=%s sourceId=%s newIds=[%s,%s]",
@@ -424,21 +442,24 @@ class ChunkService:
             token_count=token_total,
         )
 
-        for c in ordered:
-            await self._chunks.soft_delete(c.id, at=_utcnow())
-        await self._chunks.insert(merged)
-
-        await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=merged.id,
-                action=ChunkEditAction.MERGE,
-                actor=self._actor,
-                at=_utcnow(),
-                parents=[c.id for c in ordered],
-                after=_chunk_to_audit_dict(merged),
-            )
+        now = _utcnow()
+        await self._chunks.replace_chunkset(
+            document_id,
+            at=now,
+            retire_ids=[c.id for c in ordered],
+            add=[merged],
+            edits=[
+                ChunkEdit(
+                    id=_new_id(),
+                    document_id=document_id,
+                    chunk_id=merged.id,
+                    action=ChunkEditAction.MERGE,
+                    actor=self._actor,
+                    at=now,
+                    parents=[c.id for c in ordered],
+                    after=_chunk_to_audit_dict(merged),
+                )
+            ],
         )
         logger.info(
             "chunk.merge docId=%s sourceIds=%s newId=%s",
@@ -471,20 +492,6 @@ class ChunkService:
 
         existing = await self._chunks.find_for_document(document_id)
         now = _utcnow()
-        for c in existing:
-            await self._chunks.soft_delete(c.id, at=now)
-            await self._edits.insert(
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=c.id,
-                    action=ChunkEditAction.DELETE,
-                    actor="system:rechunk",
-                    at=now,
-                    before=_chunk_to_audit_dict(c),
-                )
-            )
-
         new_chunks = [
             Chunk(
                 document_id=document_id,
@@ -498,10 +505,27 @@ class ChunkService:
             )
             for seq, r in enumerate(new_results)
         ]
-        if new_chunks:
-            await self._chunks.insert_many(new_chunks)
-            for c in new_chunks:
-                await self._edits.insert(
+        # One transaction: the old chunkset is retired and the new one
+        # journaled together, or not at all.
+        await self._chunks.replace_chunkset(
+            document_id,
+            at=now,
+            retire_ids=[c.id for c in existing],
+            add=new_chunks,
+            edits=[
+                *(
+                    ChunkEdit(
+                        id=_new_id(),
+                        document_id=document_id,
+                        chunk_id=c.id,
+                        action=ChunkEditAction.DELETE,
+                        actor="system:rechunk",
+                        at=now,
+                        before=_chunk_to_audit_dict(c),
+                    )
+                    for c in existing
+                ),
+                *(
                     ChunkEdit(
                         id=_new_id(),
                         document_id=document_id,
@@ -511,7 +535,10 @@ class ChunkService:
                         at=now,
                         after=_chunk_to_audit_dict(c),
                     )
-                )
+                    for c in new_chunks
+                ),
+            ],
+        )
         logger.info(
             "chunk.rechunk docId=%s oldCount=%d newCount=%d",
             document_id,
@@ -833,13 +860,18 @@ class ChunkService:
             raise ChunkNotFoundError(f"Anchor chunk not found: {after_id}")
         return anchor.sequence + 1
 
-    async def _shift_sequences(self, existing: list[Chunk], *, from_sequence: int) -> None:
-        """Push chunks at >= from_sequence one slot up to make room."""
-        affected = [c for c in existing if c.sequence >= from_sequence]
-        for c in affected:
-            c.sequence += 1
-            c.updated_at = _utcnow()
-            await self._chunks.update(c)
+    async def _shift_sequences(
+        self,
+        document_id: str,
+        existing: list[Chunk],
+        *,
+        from_sequence: int,
+        at: datetime,
+    ) -> None:
+        """Push live chunks at >= from_sequence one slot up to make room, in
+        one UPDATE — skipped when nothing sits there (append at the end)."""
+        if any(c.sequence >= from_sequence for c in existing):
+            await self._chunks.shift_sequences(document_id, from_sequence=from_sequence, at=at)
 
 
 # ---------------------------------------------------------------------------

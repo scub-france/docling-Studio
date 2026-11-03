@@ -25,7 +25,6 @@ from domain.value_objects import ChunkEditAction
 
 if TYPE_CHECKING:
     from domain.ports import (
-        ChunkEditRepository,
         ChunkRepository,
         DocumentRepository,
         DocumentVersionRepository,
@@ -86,12 +85,12 @@ class VersionService:
         self,
         version_repo: DocumentVersionRepository,
         chunk_repo: ChunkRepository,
-        chunk_edit_repo: ChunkEditRepository,
         document_repo: DocumentRepository,
     ):
         self._versions = version_repo
+        # Journals the restore too: `replace_chunkset` writes the chunks and
+        # their `chunk_edits` rows in one transaction.
         self._chunks = chunk_repo
-        self._edits = chunk_edit_repo
         self._documents = document_repo
 
     async def list_for_document(self, document_id: str) -> list[DocumentVersion]:
@@ -155,41 +154,37 @@ class VersionService:
         if not version or version.document_id != document_id:
             raise VersionNotFoundError(f"Version not found: {version_id}")
 
-        # Wipe live chunks (soft-delete + audit), then re-insert the
-        # snapshot's chunks under fresh ids.
+        # Retire the live chunks and insert the snapshot's under fresh ids,
+        # journaled, in one transaction: a failure leaves the live chunkset
+        # as it was. The snapshot is decoded first, so a corrupt one never
+        # gets as far as deleting anything.
+        new_chunks = [
+            _chunk_from_snapshot(document_id, raw)
+            for raw in json.loads(version.chunks_snapshot or "[]")
+        ]
         now = _utcnow()
-        existing = await self._chunks.find_for_document(document_id)
-        for c in existing:
-            await self._chunks.soft_delete(c.id, at=now)
-            await self._edits.insert(
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=c.id,
-                    action=ChunkEditAction.DELETE,
-                    actor=f"system:restore:{version_id}",
-                    at=now,
-                )
+
+        def journal(action: ChunkEditAction, chunk: Chunk) -> ChunkEdit:
+            return ChunkEdit(
+                id=_new_id(),
+                document_id=document_id,
+                chunk_id=chunk.id,
+                action=action,
+                actor=f"system:restore:{version_id}",
+                at=now,
             )
 
-        raw_chunks = json.loads(version.chunks_snapshot or "[]")
-        new_chunks: list[Chunk] = []
-        for raw in raw_chunks:
-            new_chunks.append(_chunk_from_snapshot(document_id, raw))
-
-        if new_chunks:
-            await self._chunks.insert_many(new_chunks)
-            for c in new_chunks:
-                await self._edits.insert(
-                    ChunkEdit(
-                        id=_new_id(),
-                        document_id=document_id,
-                        chunk_id=c.id,
-                        action=ChunkEditAction.INSERT,
-                        actor=f"system:restore:{version_id}",
-                        at=now,
-                    )
-                )
+        existing = await self._chunks.find_for_document(document_id)
+        await self._chunks.replace_chunkset(
+            document_id,
+            at=now,
+            retire_ids=[c.id for c in existing],
+            add=new_chunks,
+            edits=[
+                *(journal(ChunkEditAction.DELETE, c) for c in existing),
+                *(journal(ChunkEditAction.INSERT, c) for c in new_chunks),
+            ],
+        )
 
         logger.info(
             "Restored doc %s to version %s (%d chunks)",

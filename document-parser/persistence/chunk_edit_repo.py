@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from domain.models import ChunkEdit, ChunkPush
 from domain.value_objects import ChunkEditAction
 from persistence.database import get_connection
 from persistence.timestamps import parse_required_iso
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    import aiosqlite
 
 
 def _row_to_edit(row) -> ChunkEdit:
@@ -26,6 +32,38 @@ def _row_to_edit(row) -> ChunkEdit:
     )
 
 
+_INSERT_EDIT_SQL = """INSERT INTO chunk_edits
+    (id, document_id, chunk_id, action, actor, at,
+     before_json, after_json, parents_json, children_json, reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+
+
+def _edit_to_params(edit: ChunkEdit) -> tuple:
+    return (
+        edit.id,
+        edit.document_id,
+        edit.chunk_id,
+        edit.action.value,
+        edit.actor,
+        str(edit.at),
+        json.dumps(edit.before) if edit.before is not None else None,
+        json.dumps(edit.after) if edit.after is not None else None,
+        json.dumps(edit.parents),
+        json.dumps(edit.children),
+        edit.reason,
+    )
+
+
+async def write_edits(db: aiosqlite.Connection, edits: Sequence[ChunkEdit]) -> None:
+    """Append `edits` on `db`, in order, inside the caller's transaction.
+
+    Does not commit: the caller journals in the same transaction as the
+    chunk writes the rows describe (`SqliteChunkRepository.replace_chunkset`).
+    """
+    if edits:
+        await db.executemany(_INSERT_EDIT_SQL, [_edit_to_params(e) for e in edits])
+
+
 def _row_to_push(row) -> ChunkPush:
     return ChunkPush(
         id=row["id"],
@@ -41,32 +79,16 @@ class SqliteChunkEditRepository:
     """SQLite implementation of the ChunkEditRepository port.
 
     The audit log is append-only: this repo offers `insert` and reads,
-    but no update or delete. Aborted edits should not produce an audit
-    row in the first place — that contract is enforced in the service
-    layer (audit + chunk write happen in the same SQL transaction).
+    but no update or delete. Operations that rewrite several chunks
+    (add, split, merge, rechunk, restore) journal through
+    `SqliteChunkRepository.replace_chunkset`, in the transaction of the
+    chunk writes, so an aborted edit leaves no row. `insert` serves the
+    single-chunk update and delete, which write the chunk first.
     """
 
     async def insert(self, edit: ChunkEdit) -> None:
         async with get_connection() as db:
-            await db.execute(
-                """INSERT INTO chunk_edits
-                   (id, document_id, chunk_id, action, actor, at,
-                    before_json, after_json, parents_json, children_json, reason)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    edit.id,
-                    edit.document_id,
-                    edit.chunk_id,
-                    edit.action.value,
-                    edit.actor,
-                    str(edit.at),
-                    json.dumps(edit.before) if edit.before is not None else None,
-                    json.dumps(edit.after) if edit.after is not None else None,
-                    json.dumps(edit.parents),
-                    json.dumps(edit.children),
-                    edit.reason,
-                ),
-            )
+            await write_edits(db, [edit])
             await db.commit()
 
     async def find_for_document(

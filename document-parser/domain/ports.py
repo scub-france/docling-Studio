@@ -6,7 +6,7 @@ Infrastructure adapters (local Docling, Docling Serve, etc.) implement these.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -199,6 +199,25 @@ class ChunkRepository(Protocol):
     async def update(self, chunk: Chunk) -> None: ...
 
     async def soft_delete(self, chunk_id: str, *, at: datetime) -> bool: ...
+
+    async def replace_chunkset(
+        self,
+        document_id: str,
+        *,
+        at: datetime,
+        retire_ids: Sequence[str] = (),
+        add: Sequence[Chunk] = (),
+        edits: Sequence[ChunkEdit] = (),
+    ) -> None:
+        """Soft-delete the live chunks `retire_ids` (at `at`), insert `add`
+        and append `edits` to the audit log as one atomic write: either all
+        of it lands or none of it does."""
+        ...
+
+    async def shift_sequences(self, document_id: str, *, from_sequence: int, at: datetime) -> int:
+        """Move every live chunk at `sequence >= from_sequence` one slot up
+        (touching `updated_at`); returns how many moved."""
+        ...
 
     async def find_for_document(
         self,

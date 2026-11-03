@@ -78,11 +78,10 @@ def chunk_service(chunks, edits, chunker):
 
 
 @pytest.fixture
-def version_service(chunks, edits):
+def version_service(chunks):
     return VersionService(
         version_repo=SqliteDocumentVersionRepository(),
         chunk_repo=chunks,
-        chunk_edit_repo=edits,
         document_repo=SqliteDocumentRepository(),
     )
 
@@ -289,11 +288,6 @@ class TestSequenceShift:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="each chunk write commits on its own connection (#audit-12): "
-    "a failure halfway leaves the chunkset half replaced",
-)
 class TestAtomicity:
     @pytest.mark.parametrize(
         ("table", "when"),

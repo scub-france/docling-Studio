@@ -9,7 +9,6 @@ import pytest
 
 from domain.models import Chunk, Document, DocumentVersionKind
 from domain.value_objects import ChunkBbox, ChunkDocItem
-from persistence.chunk_edit_repo import SqliteChunkEditRepository
 from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
@@ -34,7 +33,6 @@ def repos():
     return {
         "documents": SqliteDocumentRepository(),
         "chunks": SqliteChunkRepository(),
-        "chunk_edits": SqliteChunkEditRepository(),
         "versions": SqliteDocumentVersionRepository(),
     }
 
@@ -44,7 +42,6 @@ def service(repos):
     return VersionService(
         version_repo=repos["versions"],
         chunk_repo=repos["chunks"],
-        chunk_edit_repo=repos["chunk_edits"],
         document_repo=repos["documents"],
     )
 
