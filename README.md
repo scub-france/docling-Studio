@@ -9,7 +9,7 @@
 
 See what [Docling](https://github.com/docling-project/docling) extracts from your PDFs: every title, paragraph, table and picture, with its box drawn on the page.
 
-![Docling Studio](docs/screenshots/presentation.gif)
+![Docling Studio parses a PDF, then Claude answers from it over MCP, with cited sources](docs/screenshots/mcp-demo.gif)
 
 ## Run it
 
@@ -29,8 +29,6 @@ To build from source with Docker Compose, or to turn on Ask with a local model, 
 - Answers questions about a document with a local model (Ollama), and shows the steps it took.
 - Exports the result as Markdown or Docling JSON.
 - Lets AI agents read and cite your documents over MCP (on by default, no authentication: keep port 3000 private; switchable in Settings).
-
-![Docling Studio parses a PDF, then Claude answers from it over MCP, with cited sources](docs/screenshots/mcp-demo.gif)
 
 ## Documentation
 
