@@ -1,0 +1,13 @@
+scripts:
+  setup: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SOURCE_CHECKOUT_PATH="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" \
+      WORKTREE_PATH="$PWD" \
+      ./.development_scripts/worktree_setup.sh
+  archive: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    workspace_name="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
+    COMPOSE_PROJECT_NAME="docling-$workspace_name" \
+      docker compose -f docker-compose.dev.yml down -v
