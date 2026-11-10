@@ -4,6 +4,13 @@ All notable changes to Docling Studio will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Analysis editor saved history**: saved edits can be reverted and reapplied from the editor history or with Undo and Redo. The original edits stay in the audit trail. Downloads in editor mode use the rebuilt saved result.
+- **Analysis editor reading order**: a page preview toggle shows numbered boxes that match the structure tree and update as elements move.
+
 ## [0.7.3] - 2026-11-02
 
 ### Added

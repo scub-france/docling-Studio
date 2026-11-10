@@ -113,6 +113,9 @@
             :hidden-types="hiddenTypes"
             :highlighted-refs="highlightedRefs"
             :show-labels="showLabels"
+            :reading-order-by-ref="readingOrderByRef"
+            :selected-ref="selectedRef"
+            :next-ref="nextRef"
             @hover-element="(el) => emit('hoverElement', el)"
             @click-element="onClickElement"
           />
@@ -155,6 +158,9 @@ const props = defineProps<{
   hiddenTypes: ReadonlySet<string>
   showLabels: boolean
   highlightedRefs?: ReadonlySet<string>
+  readingOrderByRef?: ReadonlyMap<string, number>
+  selectedRef?: string | null
+  nextRef?: string | null
   /**
    * Bumped by the document store on every `focusElement` call (#303). The
    * highlight watcher below only fires when the *set* changes, so re-selecting
@@ -166,7 +172,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:currentPage': [page: number]
   hoverElement: [el: PageElement | null]
-  clickElement: [el: PageElement, pageNumber: number]
+  clickElement: [el: PageElement, pageNumber: number, event?: MouseEvent]
 }>()
 
 const stageRef = ref<HTMLDivElement | null>(null)
@@ -259,10 +265,10 @@ function onImageLoad(pageNumber: number): void {
   if (highlightTarget()?.page.page_number === pageNumber) requestScroll('focus')
 }
 
-function onClickElement(el: PageElement, pageNumber: number): void {
+function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent): void {
   // No re-scroll guard needed: a bbox the user just clicked is on screen, and
   // `centerHighlighted` leaves an already-visible target alone.
-  emit('clickElement', el, pageNumber)
+  emit('clickElement', el, pageNumber, event)
 }
 
 function shouldRenderPage(pageNumber: number): boolean {

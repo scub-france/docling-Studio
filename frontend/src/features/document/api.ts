@@ -46,14 +46,16 @@ export async function fetchDocumentPages(id: string): Promise<Page[]> {
   }))
 }
 
-/** Markdown / JSON come from `analysisId` when given, else from the latest analysis. */
+/** Markdown / JSON use the saved editor result when `edited` is true. */
 export function getExportUrl(
   id: string,
   format: 'pdf' | 'md' | 'json',
   analysisId?: string,
+  edited = false,
 ): string {
   const analysis = analysisId ? `&analysisId=${encodeURIComponent(analysisId)}` : ''
-  return `/api/documents/${id}/export?format=${format}${analysis}`
+  const editor = edited ? '&edited=true' : ''
+  return `/api/documents/${id}/export?format=${format}${analysis}${editor}`
 }
 
 /** Rechunk the canonical chunkset. Backend runs synchronously and returns

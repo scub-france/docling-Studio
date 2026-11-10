@@ -33,6 +33,14 @@ def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) 
         created_at=str(doc.created_at),
         lifecycle_state=doc.lifecycle_state.value,
         lifecycle_state_at=(str(doc.lifecycle_state_at) if doc.lifecycle_state_at else None),
+        active_analysis_id=doc.active_analysis_id,
+        active_edit_stream_id=doc.active_edit_stream_id,
+        chunks_source_analysis_id=doc.chunks_source_analysis_id,
+        chunks_source_edit_sequence=doc.chunks_source_edit_sequence,
+        # Exact parse/edit freshness is resolved by AnalysisEditService,
+        # which owns the edit stream sequence.  The document endpoint keeps
+        # this conservative default for callers that do not load that service.
+        chunks_stale=False,
         store_links=store_links,
     )
 
@@ -134,16 +142,20 @@ async def delete_document(doc_id: str, service: deps.DocumentServiceDep) -> None
 async def export_document(
     doc_id: str,
     service: deps.ExportServiceDep,
+    state: deps.AppStateDep,
     format: ExportFormat = Query(ExportFormat.PDF, description="Format to export"),
     analysis_id: str | None = Query(
         default=None,
         alias="analysisId",
         description="Analysis to export for md/json (defaults to the latest completed)",
     ),
+    edited: bool = Query(False, description="Export the saved analysis editor result"),
 ) -> Response:
     """Export the document in the specified format."""
+    if edited and not state.analysis_editor_enabled:
+        raise HTTPException(status_code=404, detail="Analysis editor is disabled")
     try:
-        export = await service.export(doc_id, format, analysis_id)
+        export = await service.export(doc_id, format, analysis_id, edited=edited)
     except ExportNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

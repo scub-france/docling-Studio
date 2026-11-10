@@ -121,6 +121,9 @@ class Settings:
     # Empty: citations carry no deep link — a bare path is no link for a
     # reader outside Studio.
     mcp_studio_base_url: str = ""
+    # Independent rollout switch for analysis editing; existing installs
+    # retain the current enabled-by-default behavior.
+    analysis_editor_enabled: bool = True
 
     def __post_init__(self) -> None:
         errors: list[str] = []
@@ -273,6 +276,8 @@ class Settings:
             mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
             mcp_max_rounds=int(os.environ.get("MCP_MAX_ROUNDS", "5")),
             mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
+            analysis_editor_enabled=os.environ.get("ANALYSIS_EDITOR_ENABLED", "true").lower()
+            in ("1", "true", "yes", "on"),
         )
 
 

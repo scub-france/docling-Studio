@@ -115,6 +115,17 @@ class TestHealthEndpoint:
         assert data["inspectModeEnabled"] is True
         assert data["linkedModeEnabled"] is True
 
+    def test_health_exposes_analysis_editor_flag(self, client):
+        data = client.get("/api/health").json()
+        assert data["analysisEditorEnabled"] is True
+
+    def test_health_exposes_disabled_analysis_editor_flag(self, client, monkeypatch):
+        import main
+
+        monkeypatch.setattr(main, "settings", replace(main.settings, analysis_editor_enabled=False))
+        data = client.get("/api/health").json()
+        assert data["analysisEditorEnabled"] is False
+
 
 class TestDocumentEndpoints:
     def test_list_documents(self, client, mock_document_service):
@@ -331,7 +342,31 @@ class TestDocumentEndpoints:
         resp = client.get(f"/api/documents/d1/export?{query}")
 
         assert resp.status_code == 200
-        mock_export_service.export.assert_awaited_once_with("d1", ExportFormat.MD, analysis_id)
+        mock_export_service.export.assert_awaited_once_with(
+            "d1", ExportFormat.MD, analysis_id, edited=False
+        )
+
+    def test_export_document_supports_editor_result_when_enabled(self, client, mock_export_service):
+        from services.export_service import ExportFormat
+
+        mock_export_service.export.return_value.file_path = None
+        mock_export_service.export.return_value.content = "# Edited"
+        mock_export_service.export.return_value.media_type = "text/markdown"
+        mock_export_service.export.return_value.filename = "report.md"
+
+        resp = client.get("/api/documents/d1/export?format=md&analysisId=a1&edited=true")
+
+        assert resp.status_code == 200
+        mock_export_service.export.assert_awaited_once_with(
+            "d1", ExportFormat.MD, "a1", edited=True
+        )
+
+    def test_editor_export_is_flagged(self, client, mock_export_service):
+        with state_override(app, analysis_editor_enabled=False):
+            resp = client.get("/api/documents/d1/export?format=md&analysisId=a1&edited=true")
+
+        assert resp.status_code == 404
+        mock_export_service.export.assert_not_awaited()
 
     def test_export_document_unsupported_format_returns_422(self, client, mock_export_service):
         resp = client.get("/api/documents/d1/export?format=docx")
