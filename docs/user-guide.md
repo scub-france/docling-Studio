@@ -79,6 +79,8 @@ Click **Show all**, at the right end of the LAYERS bar, to see every box again.
 
 On a completed result, click **Edit analysis** to correct extracted text and structure. Select an element in the tree or page view, then edit its text or heading level in the properties panel. You can also merge selected paragraphs, move elements, and delete them. The preview updates as you work; click **Save** to keep the changes or **Discard changes** to abandon the draft.
 
+Click **Show reading order** above the page preview to see matching sequence numbers on page boxes and in the structure tree. The selected element and the next one are highlighted. The numbers follow unsaved moves so you can check the new order before saving.
+
 Use **Undo** and **Redo** for pending changes. To change a saved edit, open **History** and choose **Revert** or **Reapply**. Save or discard pending changes first. A revert that would make later edits invalid is rejected without changing the saved result.
 
 In edit mode, **Download** uses the saved edited Markdown or Docling JSON. Save your draft first if you want it in the download. **Inspect analysis** returns to the original result and downloads that original analysis. The PDF download always returns the source PDF.

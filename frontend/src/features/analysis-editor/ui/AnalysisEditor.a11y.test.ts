@@ -4,6 +4,7 @@ import { createPinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import axe from 'axe-core'
 import AnalysisEditor from './AnalysisEditor.vue'
+import PagePreviewWithOverlay from '../../document/ui/PagePreviewWithOverlay.vue'
 import { fetchAnalysisEditHistory, fetchAnalysisEditor, setAnalysisEditActive } from '../api'
 import { useAnalysisEditorStore } from '../store'
 
@@ -141,6 +142,90 @@ describe('AnalysisEditor accessibility', () => {
     expect(store.mergeSelection).toEqual([editorResponse.model.elements[0].id, second.id])
     await rows[1].trigger('click', { ctrlKey: true })
     expect(store.mergeSelection).toEqual([editorResponse.model.elements[0].id])
+    wrapper.unmount()
+  })
+
+  it('shows matching page and tree numbers from the current preview order', async () => {
+    const first = editorResponse.model.elements[0]
+    const second = {
+      ...first,
+      id: 'analysis-1:#/texts/1',
+      selfRef: '#/texts/1',
+      text: 'Second paragraph',
+    }
+    const response = {
+      ...editorResponse,
+      model: { ...editorResponse.model, elements: [first, second] },
+      tree: [
+        editorResponse.tree[0],
+        { elementId: second.id, type: 'text', label: second.text, children: [] },
+      ],
+      readingOrder: [first.id, second.id],
+      result: {
+        ...editorResponse.result,
+        pagesJson: JSON.stringify([
+          {
+            page_number: 1,
+            width: 100,
+            height: 100,
+            elements: [
+              {
+                type: 'text',
+                bbox: [0, 0, 20, 20],
+                content: first.text,
+                level: 0,
+                self_ref: first.selfRef,
+              },
+              {
+                type: 'text',
+                bbox: [30, 30, 50, 50],
+                content: second.text,
+                level: 0,
+                self_ref: second.selfRef,
+              },
+            ],
+          },
+        ]),
+      },
+    }
+    vi.mocked(fetchAnalysisEditor).mockResolvedValue(response as never)
+    vi.mocked(fetchAnalysisEditHistory).mockResolvedValue([])
+    const pinia = createPinia()
+    const wrapper = mount(AnalysisEditor, {
+      props: { documentId: 'doc-1', analysisId: 'analysis-1' },
+      global: { plugins: [pinia], stubs: { PagePreviewWithOverlay: true } },
+    })
+    await flushPromises()
+
+    const toggle = wrapper.get('[data-e2e="analysis-editor-reading-order-toggle"]')
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.findAll('.order-number').map((number) => number.text())).toEqual(['1', '2'])
+    expect(wrapper.findAll('[role="treeitem"]')[0].attributes('aria-label')).toContain('Ordre 1')
+    const preview = wrapper.getComponent(PagePreviewWithOverlay)
+    expect(preview.props('readingOrderByRef')).toEqual(
+      new Map([
+        [first.selfRef, 1],
+        [second.selfRef, 2],
+      ]),
+    )
+    expect(preview.props('selectedRef')).toBe(first.selfRef)
+    expect(preview.props('nextRef')).toBe(second.selfRef)
+
+    const store = useAnalysisEditorStore(pinia)
+    store.preview = { ...response, readingOrder: [second.id, first.id] } as never
+    await flushPromises()
+    expect(wrapper.findAll('.order-number').map((number) => number.text())).toEqual(['2', '1'])
+    expect(preview.props('readingOrderByRef')).toEqual(
+      new Map([
+        [second.selfRef, 1],
+        [first.selfRef, 2],
+      ]),
+    )
+    await toggle.trigger('click')
+    expect(wrapper.find('.order-number').exists()).toBe(false)
+    expect(preview.props('readingOrderByRef')).toBeUndefined()
     wrapper.unmount()
   })
 })

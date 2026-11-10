@@ -10,6 +10,8 @@ The analysis editor lets you correct the text and structure that Docling extract
 4. Review the updated tree, page view, and Markdown. **Preview** refreshes the server's validation; the editor also requests previews as you work. A preview is still a draft.
 5. Click **Save** to make the edits durable, or **Discard changes** to throw away the current draft. **Undo** and **Redo** work on pending edits before you save.
 
+In the page preview, click **Show reading order** to place sequence numbers on visible element boxes. The same numbers appear in the structure tree. The selected element is orange and the next element is green, so you can follow the flow before and after a move. The numbers update with the current preview, including unsaved moves. Elements without a page box have no number.
+
 The editor keeps an unsaved draft in the current browser session so it can offer to restore it after a reload. If another tab or user saves first, the editor reports a conflict. Reload the saved result before trying again; copy your pending edits from the conflict notice if you need to keep them.
 
 ## Revert or reapply a saved edit

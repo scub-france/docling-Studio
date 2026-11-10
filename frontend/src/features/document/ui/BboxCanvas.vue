@@ -36,6 +36,9 @@ const props = defineProps<{
   hiddenTypes: ReadonlySet<string>
   highlightedRefs?: ReadonlySet<string>
   showLabels?: boolean
+  readingOrderByRef?: ReadonlyMap<string, number>
+  selectedRef?: string | null
+  nextRef?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -57,6 +60,21 @@ function scheduleDraw(): void {
 
 function visibleElements(): PageElement[] {
   return props.elements.filter((e) => !props.hiddenTypes.has(e.type))
+}
+
+function badgeRect(
+  rect: { x: number; y: number },
+  order: number,
+  canvas: HTMLCanvasElement,
+): { x: number; y: number; w: number; h: number } {
+  const w = Math.max(18, String(order).length * 7 + 10)
+  const h = 18
+  return {
+    x: Math.max(0, Math.min(rect.x + 2, canvas.width - w)),
+    y: Math.max(0, Math.min(rect.y + 2, canvas.height - h)),
+    w,
+    h,
+  }
 }
 
 function draw(): void {
@@ -133,6 +151,51 @@ function draw(): void {
       }
     }
   }
+
+  const styles = props.nextRef || props.readingOrderByRef?.size ? getComputedStyle(canvas) : null
+  const success = styles?.getPropertyValue('--success').trim() || '#22c55e'
+  if (props.nextRef) {
+    for (const el of visibleElements()) {
+      if (el.self_ref !== props.nextRef) continue
+      const rect = bboxToRect(el.bbox, scale)
+      if (rect.w <= 0 || rect.h <= 0) continue
+      ctx.setLineDash([4, 3])
+      ctx.lineWidth = 2
+      ctx.strokeStyle = success
+      ctx.strokeRect(rect.x - 2, rect.y - 2, rect.w + 4, rect.h + 4)
+      ctx.setLineDash([])
+    }
+  }
+
+  const order = props.readingOrderByRef
+  if (order?.size) {
+    const accent = styles?.getPropertyValue('--accent').trim() || '#f97316'
+    const background = styles?.getPropertyValue('--bg-elevated').trim() || '#1a1a1d'
+    const foreground = styles?.getPropertyValue('--text').trim() || '#ececef'
+    const border = styles?.getPropertyValue('--border-light').trim() || '#3f3f46'
+    ctx.save()
+    ctx.font = '600 11px "IBM Plex Mono", monospace'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    for (const el of visibleElements()) {
+      if (!el.self_ref) continue
+      const number = order.get(el.self_ref)
+      if (number === undefined) continue
+      const rect = bboxToRect(el.bbox, scale)
+      if (rect.w <= 0 || rect.h <= 0) continue
+      const badge = badgeRect(rect, number, canvas)
+      const selected = el.self_ref === props.selectedRef
+      const next = el.self_ref === props.nextRef
+      ctx.fillStyle = selected ? accent : next ? success : background
+      ctx.fillRect(badge.x, badge.y, badge.w, badge.h)
+      ctx.lineWidth = 1
+      ctx.strokeStyle = selected ? accent : next ? success : border
+      ctx.strokeRect(badge.x, badge.y, badge.w, badge.h)
+      ctx.fillStyle = selected || next ? '#18181b' : foreground
+      ctx.fillText(String(number), badge.x + badge.w / 2, badge.y + badge.h / 2 + 0.5)
+    }
+    ctx.restore()
+  }
 }
 
 function elementAt(e: MouseEvent): PageElement | null {
@@ -143,6 +206,16 @@ function elementAt(e: MouseEvent): PageElement | null {
   const mx = e.clientX - r.left
   const my = e.clientY - r.top
   const scale = computeScale(img.clientWidth, img.clientHeight, props.pageWidth, props.pageHeight)
+  if (props.readingOrderByRef?.size) {
+    for (const el of [...visibleElements()].reverse()) {
+      if (!el.self_ref) continue
+      const number = props.readingOrderByRef.get(el.self_ref)
+      if (number === undefined) continue
+      const rect = bboxToRect(el.bbox, scale)
+      if (rect.w <= 0 || rect.h <= 0) continue
+      if (pointInRect(mx, my, badgeRect(rect, number, canvas))) return el
+    }
+  }
   for (const el of visibleElements()) {
     if (pointInRect(mx, my, bboxToRect(el.bbox, scale))) return el
   }
@@ -169,6 +242,9 @@ watch(
     props.hiddenTypes,
     props.highlightedRefs,
     props.showLabels,
+    props.readingOrderByRef,
+    props.selectedRef,
+    props.nextRef,
   ],
   scheduleDraw,
   { deep: true, immediate: true },

@@ -8,14 +8,25 @@
       class="editor-node-row"
       role="treeitem"
       :data-e2e="`analysis-editor-tree-item-${itemToken(node.label)}`"
-      :aria-label="node.label"
+      :aria-label="
+        orderIndexById?.has(node.elementId)
+          ? t('analysisEditor.orderItem', {
+              n: orderIndexById.get(node.elementId)!,
+              label: node.label,
+            })
+          : node.label
+      "
       tabindex="0"
       :aria-selected="selectedId === node.elementId"
+      :aria-description="
+        nextId === node.elementId ? t('analysisEditor.nextInReadingOrder') : undefined
+      "
       :aria-expanded="node.children.length ? open : undefined"
       :class="{
         selected: selectedId === node.elementId,
         checked: checkedIds.includes(node.elementId),
         heading: isHeading,
+        next: nextId === node.elementId,
       }"
       :draggable="isMovable(node.elementId)"
       @click="$emit('select', node.elementId, $event.metaKey || $event.ctrlKey)"
@@ -48,6 +59,13 @@
         @change="$emit('toggle-merge', node.elementId)"
       />
       <span v-if="isMovable(node.elementId)" class="drag-handle" title="Reorder">::</span>
+      <span
+        v-if="orderIndexById?.has(node.elementId)"
+        class="order-number"
+        :title="nextId === node.elementId ? t('analysisEditor.nextInReadingOrder') : undefined"
+        aria-hidden="true"
+        >{{ orderIndexById.get(node.elementId) }}</span
+      >
       <span class="node-type">{{ isHeading ? '§' : node.type }}</span>
       <span class="node-label" :title="node.label">{{ node.label }}</span>
       <input
@@ -107,6 +125,8 @@
         :is-movable="isMovable"
         :dragging="dragging"
         :default-open="defaultOpen"
+        :order-index-by-id="orderIndexById"
+        :next-id="nextId"
         :depth="depth + 1"
         @select="(id, additive) => $emit('select', id, additive)"
         @toggle-merge="$emit('toggle-merge', $event)"
@@ -132,6 +152,8 @@ const props = defineProps<{
   dragging: boolean
   defaultOpen?: boolean
   depth?: number
+  orderIndexById?: ReadonlyMap<string, number>
+  nextId?: string | null
 }>()
 
 const open = ref(props.defaultOpen ?? true)
@@ -191,6 +213,10 @@ defineEmits<{
 }
 .editor-node-row.selected {
   color: var(--accent);
+}
+.editor-node-row.next {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 9%, transparent);
 }
 .editor-node-row:focus-visible {
   outline: 2px solid var(--accent);
@@ -254,6 +280,28 @@ defineEmits<{
   font:
     10px 'IBM Plex Mono',
     monospace;
+}
+.order-number {
+  display: inline-grid;
+  min-width: 20px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font:
+    600 10px 'IBM Plex Mono',
+    monospace;
+}
+.editor-node-row.selected .order-number {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.editor-node-row.next .order-number {
+  border-color: var(--success);
+  color: var(--success);
 }
 .node-label {
   overflow: hidden;

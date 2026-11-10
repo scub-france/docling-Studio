@@ -113,6 +113,9 @@
             :hidden-types="hiddenTypes"
             :highlighted-refs="highlightedRefs"
             :show-labels="showLabels"
+            :reading-order-by-ref="readingOrderByRef"
+            :selected-ref="selectedRef"
+            :next-ref="nextRef"
             @hover-element="(el) => emit('hoverElement', el)"
             @click-element="onClickElement"
           />
@@ -155,6 +158,9 @@ const props = defineProps<{
   hiddenTypes: ReadonlySet<string>
   showLabels: boolean
   highlightedRefs?: ReadonlySet<string>
+  readingOrderByRef?: ReadonlyMap<string, number>
+  selectedRef?: string | null
+  nextRef?: string | null
   /**
    * Bumped by the document store on every `focusElement` call (#303). The
    * highlight watcher below only fires when the *set* changes, so re-selecting

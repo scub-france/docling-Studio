@@ -220,6 +220,8 @@
               :is-movable="isMovable"
               :dragging="Boolean(draggedId)"
               :default-open="treeDefaultOpen"
+              :order-index-by-id="showReadingOrder ? orderIndexById : undefined"
+              :next-id="showReadingOrder ? nextElementId : null"
               @select="select"
               @toggle-merge="toggleMerge"
               @toggle-subtree="toggleMergeSubtree"
@@ -240,6 +242,21 @@
             >
               {{ t('analysisEditor.markdown') }}
             </button>
+            <button
+              v-if="previewMode === 'page' && store.pages.length"
+              type="button"
+              class="reading-order-toggle"
+              :aria-pressed="showReadingOrder"
+              :title="t('analysisEditor.readingOrderHint')"
+              data-e2e="analysis-editor-reading-order-toggle"
+              @click="showReadingOrder = !showReadingOrder"
+            >
+              {{
+                showReadingOrder
+                  ? t('analysisEditor.hideReadingOrder')
+                  : t('analysisEditor.showReadingOrder')
+              }}
+            </button>
           </div>
           <div v-if="previewMode === 'page'" class="page-preview">
             <PagePreviewWithOverlay
@@ -249,7 +266,10 @@
               :current-page="currentPage"
               :hidden-types="new Set<string>()"
               :highlighted-refs="highlightedRefs"
-              :show-labels="true"
+              :show-labels="!showReadingOrder"
+              :reading-order-by-ref="showReadingOrder ? orderIndexByRef : undefined"
+              :selected-ref="showReadingOrder ? selectedRef : null"
+              :next-ref="showReadingOrder ? nextRef : null"
               @update:current-page="currentPage = $event"
               @click-element="onPageElement"
             />
@@ -288,6 +308,7 @@ const store = useAnalysisEditorStore()
 const { t } = useI18n()
 const currentPage = ref(1)
 const previewMode = ref<'page' | 'markdown'>('page')
+const showReadingOrder = ref(false)
 const historyOpen = ref(false)
 const draggedId = ref<string | null>(null)
 const treeDefaultOpen = ref(true)
@@ -298,6 +319,36 @@ const selectionCount = computed(
   () => store.mergeSelection.length || (store.selectedElementId ? 1 : 0),
 )
 const elementsById = computed(() => new Map(store.elements.map((element) => [element.id, element])))
+const orderedVisibleIds = computed(() => {
+  const refsOnPages = new Set(
+    store.pages.flatMap((page) => page.elements.map((item) => item.self_ref)),
+  )
+  return (store.effective?.readingOrder ?? []).filter((id) => {
+    const ref = elementsById.value.get(id)?.selfRef
+    return Boolean(ref && refsOnPages.has(ref))
+  })
+})
+const orderIndexById = computed(
+  () => new Map(orderedVisibleIds.value.map((id, index) => [id, index + 1])),
+)
+const orderIndexByRef = computed(
+  () =>
+    new Map(
+      orderedVisibleIds.value.map((id, index) => [elementsById.value.get(id)!.selfRef, index + 1]),
+    ),
+)
+const nextElementId = computed(() => {
+  const index = orderedVisibleIds.value.indexOf(store.selectedElementId ?? '')
+  return index >= 0 ? (orderedVisibleIds.value[index + 1] ?? null) : null
+})
+const selectedRef = computed(() =>
+  store.selectedElementId
+    ? (elementsById.value.get(store.selectedElementId)?.selfRef ?? null)
+    : null,
+)
+const nextRef = computed(() =>
+  nextElementId.value ? (elementsById.value.get(nextElementId.value)?.selfRef ?? null) : null,
+)
 const isMergeable = (id: string) => {
   const type = elementsById.value.get(id)?.type
   return type === 'text' || type === 'paragraph'
@@ -656,6 +707,13 @@ button.primary {
   border-bottom: 1px solid var(--border);
 }
 .preview-tabs button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.reading-order-toggle {
+  margin-left: auto;
+}
+.reading-order-toggle[aria-pressed='true'] {
   color: var(--accent);
   border-color: var(--accent);
 }
