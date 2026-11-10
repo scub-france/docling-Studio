@@ -1,0 +1,16 @@
+{
+  "name": "docling-studio",
+  "description": "Claude plugins for Docling Studio: connect Claude to the documents parsed in your Studio.",
+  "owner": {
+    "name": "SCUB",
+    "url": "https://github.com/scub-france"
+  },
+  "plugins": [
+    {
+      "name": "docling-studio",
+      "source": "./plugins/docling-studio",
+      "category": "documents",
+      "tags": ["docling", "pdf", "rag", "citations", "mcp"]
+    }
+  ]
+}

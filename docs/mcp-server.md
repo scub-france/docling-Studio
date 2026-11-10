@@ -102,7 +102,22 @@ The routes behind it: `GET/PUT/DELETE /api/config/mcp` for the budgets,
 
 ## Connect a client
 
-Claude Code, over HTTP:
+Claude Code, with the Docling Studio plugin. The repository is also a plugin
+marketplace, so two commands install it:
+
+```
+/plugin marketplace add scub-france/Docling-Studio
+/plugin install docling-studio@docling-studio
+```
+
+Claude Code then asks for the MCP URL, `http://localhost:3000/mcp` by
+default; change it later in `/config`. The plugin declares that one HTTP
+server and nothing else: no code, no script. If you added the server by hand
+before, `claude mcp remove docling-studio`, or Claude sees every tool twice.
+The plugin lives in
+[`plugins/docling-studio/`](https://github.com/scub-france/Docling-Studio/tree/main/plugins/docling-studio).
+
+Claude Code, over HTTP, by hand:
 
 ```bash
 claude mcp add --transport http docling-studio http://localhost:3000/mcp

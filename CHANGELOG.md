@@ -4,6 +4,12 @@ All notable changes to Docling Studio will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Claude plugin** (#370): the MCP document server used to be added by hand, with `claude mcp add` or a JSON block. The repository is now a Claude plugin marketplace, and `plugins/docling-studio/` a plugin that declares the server: `/plugin marketplace add scub-france/Docling-Studio`, then `/plugin install docling-studio@docling-studio`. Claude Code asks for the MCP URL at install (`http://localhost:3000/mcp` by default). The plugin holds no code: one HTTP server entry, a README and an icon. Its `version` follows Studio's. It is also what Anthropic's plugin directory takes, since the directory no longer lists local servers packaged as desktop extensions. See [docs/mcp-server.md](docs/mcp-server.md#connect-a-client).
+
 ## [0.7.3] - 2026-11-02
 
 ### Added
