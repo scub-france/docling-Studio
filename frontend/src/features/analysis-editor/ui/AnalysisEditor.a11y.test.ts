@@ -4,7 +4,7 @@ import { createPinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import axe from 'axe-core'
 import AnalysisEditor from './AnalysisEditor.vue'
-import { fetchAnalysisEditHistory, fetchAnalysisEditor } from '../api'
+import { fetchAnalysisEditHistory, fetchAnalysisEditor, setAnalysisEditActive } from '../api'
 import { useAnalysisEditorStore } from '../store'
 
 vi.mock('../api', () => ({
@@ -12,6 +12,7 @@ vi.mock('../api', () => ({
   fetchAnalysisEditHistory: vi.fn(),
   previewAnalysisEdits: vi.fn(),
   saveAnalysisEdits: vi.fn(),
+  setAnalysisEditActive: vi.fn(),
 }))
 vi.mock('vue-router', () => ({ onBeforeRouteLeave: vi.fn() }))
 
@@ -70,6 +71,43 @@ describe('AnalysisEditor accessibility', () => {
     })
 
     expect(results.violations).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('offers revert and reapply for a saved history entry', async () => {
+    const entry = {
+      id: 'command-1',
+      sequence: 1,
+      commandVersion: 1,
+      commandType: 'replaceText',
+      payload: { elementId: 'analysis-1:#/texts/0', text: 'Accessible paragraph' },
+      commandHash: 'hash',
+      createdAt: '2026-01-01T00:00:00Z',
+      active: true,
+    }
+    vi.mocked(fetchAnalysisEditor).mockResolvedValue({
+      ...editorResponse,
+      appliedThroughSequence: 1,
+    } as never)
+    vi.mocked(fetchAnalysisEditHistory)
+      .mockResolvedValueOnce([entry])
+      .mockResolvedValueOnce([{ ...entry, active: false }])
+    vi.mocked(setAnalysisEditActive).mockResolvedValue({
+      ...editorResponse,
+      appliedThroughSequence: 2,
+    } as never)
+    const wrapper = mount(AnalysisEditor, {
+      props: { documentId: 'doc-1', analysisId: 'analysis-1' },
+      global: { plugins: [createPinia()], stubs: { PagePreviewWithOverlay: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-e2e="analysis-editor-history"]').trigger('click')
+    await wrapper.get('[data-e2e="analysis-editor-history-toggle-1"]').trigger('click')
+    await flushPromises()
+
+    expect(setAnalysisEditActive).toHaveBeenCalledWith('doc-1', 1, false, 1, 'analysis-1')
+    expect(wrapper.get('[data-e2e="analysis-editor-history-toggle-1"]').text()).toBe('Réappliquer')
     wrapper.unmount()
   })
 

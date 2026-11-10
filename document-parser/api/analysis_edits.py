@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from api import deps  # noqa: TC001
 from api.schemas import (
+    AnalysisEditHistoryActionRequest,
     AnalysisEditHistoryEntryResponse,
     AnalysisEditorResponse,
     AnalysisEditRequest,
@@ -20,6 +21,7 @@ from domain.analysis_editing import (
     AnalysisEditError,
     AnalysisEditUnavailableError,
     EditCommand,
+    active_edit_commands,
 )
 
 router = APIRouter(prefix="/api/documents", tags=["analysis-editor"])
@@ -68,7 +70,7 @@ def _response(snapshot) -> AnalysisEditorResponse:
     )
 
 
-def _history_entry(record) -> AnalysisEditHistoryEntryResponse:
+def _history_entry(record, active: bool | None) -> AnalysisEditHistoryEntryResponse:
     return AnalysisEditHistoryEntryResponse(
         id=record.id,
         sequence=record.sequence,
@@ -77,6 +79,7 @@ def _history_entry(record) -> AnalysisEditHistoryEntryResponse:
         payload=record.command.payload,
         command_hash=record.command_hash,
         created_at=str(record.created_at),
+        active=active,
     )
 
 
@@ -149,7 +152,31 @@ async def edit_history(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> list[AnalysisEditHistoryEntryResponse]:
     try:
-        return [_history_entry(record) for record in await service.history(doc_id, analysis_id)]
+        records = await service.history(doc_id, analysis_id)
+        _, states = active_edit_commands(records)
+        return [_history_entry(record, states.get(record.sequence)) for record in records]
+    except Exception as exc:
+        _raise(exc)
+
+
+@router.patch("/{doc_id}/analysis-edits/history/{sequence}", response_model=AnalysisEditorResponse)
+async def set_edit_active(
+    doc_id: str,
+    sequence: int,
+    body: AnalysisEditHistoryActionRequest,
+    service: deps.AnalysisEditServiceDep,
+    analysis_id: str | None = Query(default=None, alias="analysisId"),
+) -> AnalysisEditorResponse:
+    try:
+        return _response(
+            await service.set_command_active(
+                doc_id,
+                sequence,
+                body.active,
+                body.expected_applied_through_sequence,
+                analysis_id,
+            )
+        )
     except Exception as exc:
         _raise(exc)
 

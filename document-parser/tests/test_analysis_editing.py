@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -18,7 +19,12 @@ from docling_core.types.doc import (
     TableData,
 )
 
-from domain.analysis_editing import AnalysisEditConflictError, AnalysisEditError, EditCommand
+from domain.analysis_editing import (
+    AnalysisEditConflictError,
+    AnalysisEditError,
+    EditCommand,
+    active_edit_commands,
+)
 from domain.models import AnalysisJob, AnalysisStatus, Document
 from infra.docling_editor import DoclingDocumentEditor
 from infra.docling_projector import DoclingAnalysisProjector
@@ -27,6 +33,7 @@ from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from services.analysis_edit_service import AnalysisEditService
+from services.export_service import ExportFormat, ExportService
 
 
 def _document() -> tuple[str, str, str]:
@@ -505,6 +512,143 @@ async def test_save_persists_commands_and_rebuilds_working_copy(edit_service):
     assert commands[0].command.payload["text"] == "Edited"
     rebuilt = await service.rebuild("doc-1")
     assert rebuilt.job.document_json == saved.job.document_json
+
+
+@pytest.mark.asyncio
+async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
+    service, edits, analyses = edit_service
+    exports = ExportService(SqliteDocumentRepository(), analyses, active_result_service=service)
+    initial = await service.load_editor("doc-1")
+    ids = {element.text: element.id for element in initial.projection.elements if element.text}
+    saved = await service.save(
+        "doc-1",
+        [
+            EditCommand("replaceText", {"elementId": ids["First"], "text": "First edited"}),
+            EditCommand("replaceText", {"elementId": ids["Second"], "text": "Second edited"}),
+        ],
+        expected_sequence=0,
+    )
+    assert "First edited" in saved.job.content_markdown
+
+    reverted = await service.set_command_active("doc-1", 1, False, expected_sequence=2)
+    assert reverted.applied_through_sequence == 3
+    assert "First edited" not in reverted.job.content_markdown
+    assert "Second edited" in reverted.job.content_markdown
+    assert (
+        await service.active_result("doc-1")
+    ).job.content_markdown == reverted.job.content_markdown
+    assert (await exports.export("doc-1", ExportFormat.MD)).content == reverted.job.content_markdown
+    assert (await exports.export("doc-1", ExportFormat.JSON)).content == reverted.job.document_json
+    assert (
+        await exports.export("doc-1", ExportFormat.MD, "analysis-1", edited=True)
+    ).content == reverted.job.content_markdown
+    assert (
+        await exports.export("doc-1", ExportFormat.MD, "analysis-1")
+    ).content != reverted.job.content_markdown
+
+    stream = await edits.find_stream("doc-1", "analysis-1")
+    assert stream is not None
+    records = await edits.list_commands(stream.id)
+    commands, states = active_edit_commands(records)
+    assert [command.payload["text"] for command in commands] == ["Second edited"]
+    assert states == {1: False, 2: True}
+    assert records[2].command.command_type == "setCommandActive"
+    assert records[2].command.payload == {"targetSequence": 1, "active": False}
+    assert (await service.rebuild("doc-1")).job.document_json == reverted.job.document_json
+
+    reapplied = await service.set_command_active("doc-1", 1, True, expected_sequence=3)
+    assert reapplied.applied_through_sequence == 4
+    assert "First edited" in reapplied.job.content_markdown
+    assert "Second edited" in reapplied.job.content_markdown
+    assert (
+        await exports.export("doc-1", ExportFormat.MD)
+    ).content == reapplied.job.content_markdown
+    assert (
+        await exports.export("doc-1", ExportFormat.JSON, "analysis-1", edited=True)
+    ).content == reapplied.job.document_json
+    assert (await service.rebuild("doc-1")).job.document_json == reapplied.job.document_json
+    assert len(await edits.list_commands(stream.id)) == 4
+
+
+@pytest.mark.asyncio
+async def test_saved_history_action_rejects_stale_and_invalid_targets(edit_service):
+    service, edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
+    )
+    with pytest.raises(AnalysisEditConflictError):
+        await service.set_command_active("doc-1", 1, False, expected_sequence=0)
+    with pytest.raises(AnalysisEditError, match="does not exist"):
+        await service.set_command_active("doc-1", 99, False, expected_sequence=1)
+
+    stream = await edits.find_stream("doc-1", "analysis-1")
+    assert stream is not None
+    assert len(await edits.list_commands(stream.id)) == 1
+    assert "Edited" in (await service.load_editor("doc-1")).job.content_markdown
+
+
+@pytest.mark.asyncio
+async def test_reverting_an_edit_needed_by_a_later_edit_keeps_history_unchanged(edit_service):
+    service, edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    ids = {element.text: element.id for element in initial.projection.elements if element.text}
+    saved = await service.save(
+        "doc-1",
+        [
+            EditCommand("setHeadingLevel", {"elementId": ids["Heading"], "level": -1}),
+            EditCommand(
+                "mergeText",
+                {"elementIds": [ids["Heading"], ids["First"]], "separator": " "},
+            ),
+        ],
+        expected_sequence=0,
+    )
+
+    with pytest.raises(AnalysisEditError, match="Cannot revert edit #1"):
+        await service.set_command_active("doc-1", 1, False, expected_sequence=2)
+
+    stream = await edits.find_stream("doc-1", "analysis-1")
+    assert stream is not None
+    assert len(await edits.list_commands(stream.id)) == 2
+    assert (await service.load_editor("doc-1")).job.document_json == saved.job.document_json
+
+
+@pytest.mark.asyncio
+async def test_editor_command_constraint_migration_preserves_saved_history(edit_service):
+    service, edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
+    )
+    stream = await edits.find_stream("doc-1", "analysis-1")
+    assert stream is not None
+    original = (await edits.list_commands(stream.id))[0]
+
+    async with database.get_connection() as connection:
+        cursor = await connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'analysis_edit_commands'"
+        )
+        schema = (await cursor.fetchone())["sql"]
+        old_schema = re.sub(r",\s*'setCommandActive'", "", schema)
+        await connection.execute(
+            "ALTER TABLE analysis_edit_commands RENAME TO analysis_edit_commands_new"
+        )
+        await connection.execute(old_schema)
+        await connection.execute(
+            "INSERT INTO analysis_edit_commands SELECT * FROM analysis_edit_commands_new"
+        )
+        await connection.execute("DROP TABLE analysis_edit_commands_new")
+        await connection.commit()
+
+    await database.init_db()
+    preserved = (await edits.list_commands(stream.id))[0]
+    assert preserved.id == original.id
+    assert preserved.command_hash == original.command_hash
+    reverted = await service.set_command_active("doc-1", 1, False, expected_sequence=1)
+    assert "Edited" not in reverted.job.content_markdown
 
 
 @pytest.mark.asyncio

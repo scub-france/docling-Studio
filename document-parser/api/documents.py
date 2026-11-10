@@ -142,16 +142,20 @@ async def delete_document(doc_id: str, service: deps.DocumentServiceDep) -> None
 async def export_document(
     doc_id: str,
     service: deps.ExportServiceDep,
+    state: deps.AppStateDep,
     format: ExportFormat = Query(ExportFormat.PDF, description="Format to export"),
     analysis_id: str | None = Query(
         default=None,
         alias="analysisId",
         description="Analysis to export for md/json (defaults to the latest completed)",
     ),
+    edited: bool = Query(False, description="Export the saved analysis editor result"),
 ) -> Response:
     """Export the document in the specified format."""
+    if edited and not state.analysis_editor_enabled:
+        raise HTTPException(status_code=404, detail="Analysis editor is disabled")
     try:
-        export = await service.export(doc_id, format, analysis_id)
+        export = await service.export(doc_id, format, analysis_id, edited=edited)
     except ExportNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -1,5 +1,6 @@
 # Analysis Editor Design
-# Analysis Editor Design
+
+For the current user workflow and editing model, see [Analysis editor](../analysis-editor.md).
 
 ## Objective
 
@@ -352,12 +353,12 @@ Add an append-only `analysis_edit_commands` table:
 | `stream_id` | Owning edit stream |
 | `sequence` | Strict replay order, unique within the stream |
 | `command_version` | Payload schema and behavior version |
-| `command_type` | `replaceText`, `mergeText`, `setHeadingLevel`, or `moveElement` |
+| `command_type` | A document edit command, or `setCommandActive` for saved history |
 | `payload_json` | Complete command payload using logical element IDs |
 | `command_hash` | Hash chained with the previous command for integrity |
 | `created_at` | Time the user saved the command |
 
-Command rows are never updated or deleted as part of normal editing. A correction is another command. Undo, if added later, should append a compensating command rather than rewriting history.
+Command rows are never updated or deleted as part of normal editing. A correction is another command. Saved undo and redo append `setCommandActive` history events that refer to an earlier edit sequence. Replay resolves these events to the active edit list before applying Docling mutations. A reverted edit remains visible in history and can be reapplied. The full stream, including history events, remains hash chained.
 
 ### Materialized Working Copy
 
@@ -421,7 +422,7 @@ stateDiagram-v2
 
 After saving an analysis edit:
 
-- The analysis preview, exports, tree, graph, and reasoning use the updated working result.
+- The analysis preview, editor-mode exports, tree, and graph use the updated working result. Ask still reads the latest completed conversion analysis.
 - Existing chunks remain available.
 - The UI shows that chunks were generated from an older analysis.
 - The user explicitly selects "Generate chunks" to synchronize them.
@@ -486,6 +487,10 @@ POST /api/documents/{documentId}/analysis-edits
 ```
 
 Uses the same command payload as preview. The request contains only pending commands; the backend combines them with the persisted stream.
+
+Saved history can be changed with `PATCH /api/documents/{documentId}/analysis-edits/history/{sequence}`. Its body contains `active` and `expectedAppliedThroughSequence`. The backend validates the replay, appends the history event, and replaces the working copy in the same transaction. If a later edit depends on the target, the request fails without changing the stream. The history response marks edit commands as active or reverted; history events remain visible in the audit trail.
+
+`GET /api/documents/{documentId}/export?format=md&analysisId={baseAnalysisId}&edited=true` exports the saved working copy for that base analysis. JSON uses the same selector. The analysis detail page sends `edited=true` only while edit mode is open; its inspect mode continues to export the immutable analysis. An unsaved preview is not included in an export.
 
 Returns:
 
@@ -694,7 +699,7 @@ The editor should:
 
 - Track the base analysis and edit sequence that produced the chunks.
 - Surface `chunksStale`.
-- Update exports, tree, reasoning, graph, and rechunking to use the active analysis.
+- Update exports, tree, graph, and rechunking to use the active analysis. Connecting Ask to the active edited result remains a follow-up.
 
 ### Phase 7: Hardening
 
@@ -725,7 +730,7 @@ The feature is complete when:
 - At most one materialized edited result exists per base analysis.
 - Saved changes survive a reload.
 - The saved `document_json` validates as a `DoclingDocument`.
-- Markdown, HTML, pages, tree, exports, and reasoning reflect the edit.
+- Markdown, HTML, pages, tree, and editor-mode exports reflect the edit. Ask integration remains a follow-up.
 - Original conversion analyses remain unchanged and restorable.
 - Existing chunks are clearly marked stale until regenerated.
 - Local and remote conversion deployments behave consistently.
@@ -746,10 +751,10 @@ The first implementation makes the following concrete choices:
 - The active document workspace uses a dedicated `/api/documents/{id}/analysis-editor` contract. Historical `/analyses/{id}` rows remain read-only and are not silently replaced by the working copy.
 - The editor endpoints accept an optional `analysisId` query parameter for analysis-specific loading, preview, save, and rebuild. Saving a non-active analysis does not change the document's active analysis pointer.
 - Complete `document_json` retention is mandatory for editor-capable analyses. When page batching is configured, the analysis service skips batching because Docling's internal references cannot safely be merged from independent page documents.
-- Downstream document-scoped consumers resolve the active materialized result. Explicit historical analysis requests retain their existing behavior.
+- Document-scoped tree, export, and rechunking consumers resolve the active materialized result. Ask currently reads the latest completed conversion analysis. Explicit historical analysis requests retain their existing behavior.
 - Chunks are not silently regenerated after an edit. The result reports parse-to-chunk staleness, and explicit rechunking records the base analysis and edit sequence it consumed.
 - Graph refresh is a post-commit projection. A graph failure cannot roll back user commands or the working copy.
-- The schema remains authoritative for this release. Fresh databases receive the editor tables and columns; existing databases receive additive editor-column migrations at startup. Destructive legacy enum migrations remain out of scope.
+- The schema remains authoritative for this release. Fresh databases receive the editor tables and columns; existing databases receive editor-column updates and a transactional command-table constraint migration at startup. Destructive legacy enum migrations remain out of scope.
 - Rebuild is a first-class maintenance operation. Deleting the working copy must not delete commands, and replay must recreate an equivalent normalized Docling document.
 - Docling-native mutation APIs are preferred: `replace_item`, `delete_items`, and `insert_*` methods keep collections and hierarchy references synchronized.
 - `_move_subtree` is an intentional private-API dependency because Docling has no public subtree move operation. All calls are routed through `DoclingDocumentEditor._move_subtree`, which verifies the keyword contract (`old_subroot`, `new_subroot`, `pos`) before mutation and raises an actionable edit error if it is missing or incompatible. Any Docling dependency upgrade must retain the focused move, merge, and insert editor regressions before its lockfile update is accepted.

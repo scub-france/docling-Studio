@@ -6,6 +6,7 @@ import {
   fetchAnalysisEditor,
   previewAnalysisEdits,
   saveAnalysisEdits,
+  setAnalysisEditActive,
 } from './api'
 
 vi.mock('./api', () => ({
@@ -13,6 +14,7 @@ vi.mock('./api', () => ({
   fetchAnalysisEditHistory: vi.fn(),
   previewAnalysisEdits: vi.fn(),
   saveAnalysisEdits: vi.fn(),
+  setAnalysisEditActive: vi.fn(),
 }))
 
 describe('analysis editor selection state', () => {
@@ -170,5 +172,48 @@ describe('analysis editor selection state', () => {
     expect(store.preview).toBeNull()
     expect(store.effective).toBe(store.saved)
     expect(store.previewing).toBe(false)
+  })
+
+  it('undoes and redoes saved edits through the history endpoint', async () => {
+    const store = useAnalysisEditorStore()
+    store.documentId = 'doc-1'
+    store.baseAnalysisId = 'analysis-1'
+    store.saved = {
+      appliedThroughSequence: 1,
+      model: { baseAnalysisId: 'analysis-1', elements: [] },
+    } as never
+    const original = {
+      id: 'command-1',
+      sequence: 1,
+      commandType: 'replaceText',
+      commandVersion: 1,
+      payload: { text: 'Edited' },
+      commandHash: 'hash',
+      createdAt: '2026-01-01T00:00:00Z',
+      active: true,
+    }
+    store.history = [original]
+    vi.mocked(setAnalysisEditActive).mockResolvedValueOnce({
+      appliedThroughSequence: 2,
+      model: { baseAnalysisId: 'analysis-1', elements: [] },
+    } as never)
+    vi.mocked(fetchAnalysisEditHistory).mockResolvedValueOnce([{ ...original, active: false }])
+
+    await store.undo()
+
+    expect(setAnalysisEditActive).toHaveBeenCalledWith('doc-1', 1, false, 1, 'analysis-1')
+    expect(store.history[0]?.active).toBe(false)
+    expect(store.canRedo).toBe(true)
+
+    vi.mocked(setAnalysisEditActive).mockResolvedValueOnce({
+      appliedThroughSequence: 3,
+      model: { baseAnalysisId: 'analysis-1', elements: [] },
+    } as never)
+    vi.mocked(fetchAnalysisEditHistory).mockResolvedValueOnce([{ ...original, active: true }])
+
+    await store.redo()
+
+    expect(setAnalysisEditActive).toHaveBeenLastCalledWith('doc-1', 1, true, 2, 'analysis-1')
+    expect(store.history[0]?.active).toBe(true)
   })
 })

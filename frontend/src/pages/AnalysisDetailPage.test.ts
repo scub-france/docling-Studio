@@ -52,8 +52,10 @@ describe('AnalysisDetailPage analysis editor flag', () => {
     flags.analysisEditorEnabled = true
 
     const wrapper = await render()
+    expect(wrapper.get('download-dropdown-stub').attributes('edited')).toBe('false')
     await wrapper.get('[data-e2e="analysis-edit-toggle"]').trigger('click')
     expect(wrapper.find('analysis-editor-stub').exists()).toBe(true)
+    expect(wrapper.get('download-dropdown-stub').attributes('edited')).toBe('true')
     flags.analysisEditorEnabled = false
     await flushPromises()
     expect(wrapper.find('analysis-editor-stub').exists()).toBe(false)

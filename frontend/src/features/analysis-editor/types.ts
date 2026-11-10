@@ -71,6 +71,7 @@ export interface AnalysisEditHistoryEntry {
   payload: Record<string, unknown>
   commandHash: string
   createdAt: string
+  active: boolean | null
 }
 
 export interface AnalysisEditRequest {

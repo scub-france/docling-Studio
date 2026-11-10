@@ -47,12 +47,14 @@ class ExportService:
         doc_id: str,
         format: ExportFormat,
         analysis_id: str | None = None,
+        *,
+        edited: bool = False,
     ) -> ExportResult:
         """Export the source PDF, or the Markdown / JSON of an analysis.
 
-        Markdown and JSON come from `analysis_id` when given, else from the
-        latest completed analysis. The PDF is the source file, so
-        `analysis_id` does not apply to it.
+        Markdown and JSON use the saved editor result when `edited` is set.
+        Otherwise, `analysis_id` selects an immutable analysis and omission
+        selects the active document result. The PDF is always the source file.
         """
         doc = await self._document_repo.find_by_id(doc_id)
         if not doc:
@@ -68,7 +70,9 @@ class ExportService:
             )
 
         if format is ExportFormat.MD:
-            if analysis_id:
+            if edited:
+                analysis = await self._edited_analysis(doc_id, analysis_id)
+            elif analysis_id:
                 analysis = await self._requested_analysis(doc_id, analysis_id)
             elif self._active_result_service is not None:
                 analysis = (await self._active_result_service.active_result(doc_id)).job
@@ -84,7 +88,9 @@ class ExportService:
                 filename=_build_export_filename(doc.filename, doc_id, ExportFormat.MD),
             )
 
-        if analysis_id:
+        if edited:
+            analysis = await self._edited_analysis(doc_id, analysis_id)
+        elif analysis_id:
             analysis = await self._requested_analysis(doc_id, analysis_id)
         elif self._active_result_service is not None:
             analysis = (await self._active_result_service.active_result(doc_id)).job
@@ -110,6 +116,12 @@ class ExportService:
         ):
             raise ExportNotFoundError(f"Analysis not found: {analysis_id}")
         return analysis
+
+    async def _edited_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:
+        if not analysis_id or self._active_result_service is None:
+            raise ExportNotFoundError("Edited analysis export is unavailable")
+        await self._requested_analysis(doc_id, analysis_id)
+        return (await self._active_result_service.load_editor(doc_id, analysis_id)).job
 
 
 class ExportNotFoundError(Exception):

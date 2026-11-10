@@ -21,6 +21,7 @@
             {{ t('analyses.openDocument') }}
           </RouterLink>
           <button
+            class="analysis-editor-toggle"
             v-if="!editMode && editorEnabled"
             type="button"
             data-e2e="analysis-edit-toggle"
@@ -30,6 +31,7 @@
             {{ t('workspace.editAnalysis') }}
           </button>
           <button
+            class="analysis-editor-toggle"
             v-else-if="editMode && editorEnabled"
             type="button"
             data-e2e="analysis-inspect-toggle"
@@ -37,7 +39,11 @@
           >
             {{ t('workspace.inspectAnalysis') }}
           </button>
-          <DownloadDropdown :doc-id="analysis.documentId" :analysis-id="analysis.id" />
+          <DownloadDropdown
+            :doc-id="analysis.documentId"
+            :analysis-id="analysis.id"
+            :edited="editMode && editorEnabled"
+          />
         </div>
       </header>
       <AnalysisEditor
@@ -164,6 +170,26 @@ h1 {
 .open-document-link:hover {
   color: var(--accent);
   border-color: var(--accent);
+}
+.analysis-editor-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.analysis-editor-toggle:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.analysis-editor-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .analysis-detail :deep(.parse-tab) {
   min-height: 0;

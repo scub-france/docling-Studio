@@ -33,6 +33,7 @@ Then open <http://localhost:3000>.
 |------------|------|
 | Install and run it | [Get started](getting-started.md) |
 | Learn the screens | [User guide](user-guide.md) |
+| Correct an analysis | [Analysis editor](analysis-editor.md) |
 | Change a setting | [Configuration](configuration.md) |
 | Fix a problem | [Troubleshooting](troubleshooting.md) |
 | Change the code | [Contributing](https://github.com/scub-france/Docling-Studio/blob/main/CONTRIBUTING.md), then [Architecture](architecture.md) |

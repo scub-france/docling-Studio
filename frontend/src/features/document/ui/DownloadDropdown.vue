@@ -62,6 +62,8 @@ const props = withDefaults(
     docId: string
     /** Export this analysis's Markdown / JSON instead of the latest one. */
     analysisId?: string
+    /** Download the saved editor projection for this analysis. */
+    edited?: boolean
     buttonClass?: string
     iconOnly?: boolean
     pdfOnly?: boolean
@@ -129,7 +131,7 @@ function focusPreviousItem() {
 
 async function downloadFormat(format: ExportFormat) {
   try {
-    const url = getExportUrl(props.docId, format, props.analysisId)
+    const url = getExportUrl(props.docId, format, props.analysisId, props.edited)
     const response = await fetch(url)
 
     if (!response.ok) {

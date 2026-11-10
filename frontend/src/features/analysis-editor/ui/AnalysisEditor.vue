@@ -109,6 +109,9 @@
       <div v-if="store.previewError" class="editor-error" role="alert">
         {{ store.previewError }}
       </div>
+      <div v-if="store.historyError" class="editor-error" role="alert">
+        {{ store.historyError }}
+      </div>
       <div v-if="store.conflict" class="editor-conflict" role="alert">
         <span>{{ t('analysisEditor.conflict') }}</span>
         <button type="button" @click="store.reloadAfterConflict()">
@@ -157,12 +160,43 @@
           v-for="entry in [...store.history].reverse()"
           :key="entry.id"
           class="history-entry"
+          :class="{ 'history-entry--reverted': entry.active === false }"
         >
           <div class="history-entry-head">
-            <strong>#{{ entry.sequence }} {{ entry.commandType }}</strong>
+            <strong v-if="entry.commandType === 'setCommandActive'">
+              #{{ entry.sequence }}
+              {{
+                entry.payload.active ? t('analysisEditor.reapplied') : t('analysisEditor.reverted')
+              }}
+              #{{ entry.payload.targetSequence }}
+            </strong>
+            <strong v-else>#{{ entry.sequence }} {{ entry.commandType }}</strong>
             <time>{{ formatHistoryDate(entry.createdAt) }}</time>
           </div>
-          <code>{{ formatHistoryPayload(entry.payload) }}</code>
+          <code v-if="entry.commandType !== 'setCommandActive'">{{
+            formatHistoryPayload(entry.payload)
+          }}</code>
+          <div v-if="entry.active !== null" class="history-entry-actions">
+            <span>{{
+              entry.active ? t('analysisEditor.activeEdit') : t('analysisEditor.revertedEdit')
+            }}</span>
+            <button
+              type="button"
+              :data-e2e="`analysis-editor-history-toggle-${entry.sequence}`"
+              :disabled="!store.canChangeSavedHistory"
+              :aria-label="
+                entry.active
+                  ? t('analysisEditor.revertEditNumber', { n: entry.sequence })
+                  : t('analysisEditor.reapplyEditNumber', { n: entry.sequence })
+              "
+              :title="
+                store.canChangeSavedHistory ? undefined : t('analysisEditor.resolveDraftFirst')
+              "
+              @click="store.setSavedCommandActive(entry.sequence, !entry.active)"
+            >
+              {{ entry.active ? t('analysisEditor.revertEdit') : t('analysisEditor.reapplyEdit') }}
+            </button>
+          </div>
         </article>
       </section>
       <div class="editor-grid">
@@ -368,9 +402,14 @@ function onKeydown(event: KeyboardEvent): void {
     return
   }
   if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return
+  if (
+    event.target instanceof HTMLElement &&
+    event.target.closest('input, textarea, [contenteditable="true"]')
+  )
+    return
   event.preventDefault()
-  if (event.shiftKey) store.redo()
-  else store.undo()
+  if (event.shiftKey) void store.redo()
+  else void store.undo()
 }
 
 function confirmLeave(): boolean {
@@ -533,6 +572,9 @@ button.primary {
 .history-entry:last-child {
   border-bottom: 0;
 }
+.history-entry--reverted {
+  opacity: 0.7;
+}
 .history-entry-head {
   display: flex;
   justify-content: space-between;
@@ -552,6 +594,18 @@ button.primary {
     10px 'IBM Plex Mono',
     monospace;
   white-space: pre-wrap;
+}
+.history-entry-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.history-entry-actions button {
+  padding: 3px 8px;
 }
 .history-empty {
   padding: 12px 0;

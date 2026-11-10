@@ -214,6 +214,11 @@ class AnalysisEditSaveResponse(_CamelModel):
     chunks_stale: bool
 
 
+class AnalysisEditHistoryActionRequest(_CamelModel):
+    active: bool
+    expected_applied_through_sequence: int
+
+
 class AnalysisEditHistoryEntryResponse(_CamelModel):
     id: str
     sequence: int
@@ -222,6 +227,7 @@ class AnalysisEditHistoryEntryResponse(_CamelModel):
     payload: dict
     command_hash: str
     created_at: str | datetime
+    active: bool | None = None
 
 
 class AnalysisSummaryResponse(_CamelModel):

@@ -17,8 +17,12 @@ def test_all_editor_endpoints_return_not_found_when_disabled():
             client.get("/api/documents/doc-1/analysis-editor"),
             client.post("/api/documents/doc-1/analysis-edits/preview", json={"commands": []}),
             client.get("/api/documents/doc-1/analysis-edits/history"),
+            client.patch(
+                "/api/documents/doc-1/analysis-edits/history/1",
+                json={"active": False, "expectedAppliedThroughSequence": 1},
+            ),
             client.post("/api/documents/doc-1/analysis-edits", json={"commands": []}),
             client.post("/api/documents/doc-1/analysis-edits/rebuild"),
         ]
 
-    assert [response.status_code for response in responses] == [404] * 5
+    assert [response.status_code for response in responses] == [404] * 6

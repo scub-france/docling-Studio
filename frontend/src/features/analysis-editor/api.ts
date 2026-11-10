@@ -52,6 +52,23 @@ export function fetchAnalysisEditHistory(
   )
 }
 
+export function setAnalysisEditActive(
+  documentId: string,
+  sequence: number,
+  active: boolean,
+  expectedAppliedThroughSequence: number,
+  analysisId?: string,
+): Promise<AnalysisEditorResponse> {
+  const query = analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : ''
+  return apiFetch<AnalysisEditorResponse>(
+    `/api/documents/${documentId}/analysis-edits/history/${sequence}${query}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ active, expectedAppliedThroughSequence }),
+    },
+  )
+}
+
 export function rebuildAnalysisEdits(
   documentId: string,
   analysisId?: string,

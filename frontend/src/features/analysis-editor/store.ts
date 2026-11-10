@@ -28,6 +28,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const error = ref<string | null>(null)
   const conflict = ref<string | null>(null)
   const previewError = ref<string | null>(null)
+  const historyError = ref<string | null>(null)
   const abortController = ref<AbortController | null>(null)
   let previewTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -41,8 +42,31 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const hasUnsavedChanges = computed(() => pendingCommands.value.length > 0)
   const recoveredPendingCount = computed(() => recoveredPendingCommands.value?.length ?? 0)
   const conflictDetails = computed(() => JSON.stringify(pendingCommands.value, null, 2))
-  const canUndo = computed(() => pendingCommands.value.length > 0)
-  const canRedo = computed(() => redoCommands.value.length > 0)
+  const savedUndoTarget = computed(() =>
+    [...history.value].reverse().find((entry) => entry.active === true),
+  )
+  const savedRedoTarget = computed(() =>
+    [...history.value].reverse().find((entry) => entry.active === false),
+  )
+  const canChangeSavedHistory = computed(
+    () =>
+      !saving.value &&
+      !loading.value &&
+      !pendingCommands.value.length &&
+      !redoCommands.value.length &&
+      !recoveredPendingCommands.value?.length,
+  )
+  const canUndo = computed(
+    () =>
+      !saving.value &&
+      (pendingCommands.value.length > 0 ||
+        (canChangeSavedHistory.value && !!savedUndoTarget.value)),
+  )
+  const canRedo = computed(
+    () =>
+      !saving.value &&
+      (redoCommands.value.length > 0 || (canChangeSavedHistory.value && !!savedRedoTarget.value)),
+  )
   const mergeAllowed = computed(() => canMerge(elements.value, mergeSelection.value))
   const mergeValidationError = computed(() =>
     mergeValidationMessage(elements.value, mergeSelection.value),
@@ -53,6 +77,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     baseAnalysisId.value = analysisId ?? null
     loading.value = true
     error.value = null
+    historyError.value = null
     try {
       saved.value = await api.fetchAnalysisEditor(id, undefined, analysisId)
       baseAnalysisId.value = saved.value.model.baseAnalysisId
@@ -73,6 +98,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   }
 
   function queue(command: AnalysisEditCommand): void {
+    if (saving.value) return
     pendingCommands.value = coalesceCommands([...pendingCommands.value, command])
     redoCommands.value = []
     conflict.value = null
@@ -90,18 +116,28 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     if (pendingCommands.value.length) void previewNow()
   }
 
-  function undo(): void {
+  async function undo(): Promise<void> {
+    if (saving.value) return
     const command = pendingCommands.value.at(-1)
-    if (!command) return
+    if (!command) {
+      if (canChangeSavedHistory.value && savedUndoTarget.value)
+        await setSavedCommandActive(savedUndoTarget.value.sequence, false)
+      return
+    }
     pendingCommands.value = pendingCommands.value.slice(0, -1)
     redoCommands.value = [command, ...redoCommands.value]
     persistPendingCommands()
     refreshPreview()
   }
 
-  function redo(): void {
+  async function redo(): Promise<void> {
+    if (saving.value) return
     const command = redoCommands.value[0]
-    if (!command) return
+    if (!command) {
+      if (canChangeSavedHistory.value && savedRedoTarget.value)
+        await setSavedCommandActive(savedRedoTarget.value.sequence, true)
+      return
+    }
     redoCommands.value = redoCommands.value.slice(1)
     pendingCommands.value = coalesceCommands([...pendingCommands.value, command])
     persistPendingCommands()
@@ -194,6 +230,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     saving.value = true
     if (previewTimer) clearTimeout(previewTimer)
     error.value = null
+    historyError.value = null
     conflict.value = null
     try {
       await api.saveAnalysisEdits(
@@ -223,6 +260,40 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
       const message = (e as Error).message || 'Failed to save analysis edits'
       if (message.startsWith('409:')) conflict.value = message
       else error.value = message
+    } finally {
+      saving.value = false
+    }
+  }
+
+  async function setSavedCommandActive(sequence: number, active: boolean): Promise<void> {
+    if (!documentId.value || !saved.value || !canChangeSavedHistory.value) return
+    saving.value = true
+    historyError.value = null
+    conflict.value = null
+    abortController.value?.abort()
+    preview.value = null
+    try {
+      const next = await api.setAnalysisEditActive(
+        documentId.value,
+        sequence,
+        active,
+        saved.value.appliedThroughSequence,
+        baseAnalysisId.value ?? undefined,
+      )
+      saved.value = next
+      history.value = await api.fetchAnalysisEditHistory(
+        documentId.value,
+        baseAnalysisId.value ?? undefined,
+      )
+      mergeSelection.value = []
+      if (!next.model.elements.some((element) => element.id === selectedElementId.value)) {
+        selectedElementId.value =
+          next.model.elements.find((element) => element.editable)?.id ?? null
+      }
+    } catch (e) {
+      const message = (e as Error).message || 'Failed to change saved edit history'
+      if (message.startsWith('409:')) conflict.value = message
+      else historyError.value = message
     } finally {
       saving.value = false
     }
@@ -333,6 +404,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     recoveredPendingCount,
     canUndo,
     canRedo,
+    canChangeSavedHistory,
     loading,
     previewing,
     saving,
@@ -340,6 +412,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     conflict,
     conflictDetails,
     previewError,
+    historyError,
     load,
     queueReplaceText,
     queueHeadingLevel,
@@ -354,6 +427,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     moveElement,
     previewNow,
     save,
+    setSavedCommandActive,
     discard,
     restoreRecoveredPending,
     discardRecoveredPending,

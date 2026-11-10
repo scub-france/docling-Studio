@@ -11,7 +11,13 @@ from datetime import datetime
 from typing import Any, Literal
 
 CommandType = Literal[
-    "replaceText", "mergeText", "setHeadingLevel", "moveElement", "deleteElement", "deleteElements"
+    "replaceText",
+    "mergeText",
+    "setHeadingLevel",
+    "moveElement",
+    "deleteElement",
+    "deleteElements",
+    "setCommandActive",
 ]
 
 
@@ -112,3 +118,32 @@ class AnalysisEditConflictError(AnalysisEditError):
 
 class AnalysisEditUnavailableError(AnalysisEditError):
     """Raised when a document has no editable canonical Docling JSON."""
+
+
+def active_edit_commands(
+    stored: list[StoredEditCommand], pending: list[EditCommand] | None = None
+) -> tuple[list[EditCommand], dict[int, bool]]:
+    """Resolve append-only history events into the edits to replay."""
+    operations: list[tuple[int, EditCommand]] = []
+    active: dict[int, bool] = {}
+    next_sequence = stored[-1].sequence if stored else 0
+    entries = [(record.sequence, record.command) for record in stored]
+    entries.extend(
+        (next_sequence + offset, command) for offset, command in enumerate(pending or [], start=1)
+    )
+    for sequence, command in entries:
+        if command.command_type == "setCommandActive":
+            target = command.payload.get("targetSequence")
+            enabled = command.payload.get("active")
+            if (
+                command.command_version != 1
+                or type(target) is not int
+                or target not in active
+                or type(enabled) is not bool
+            ):
+                raise AnalysisEditError(f"Invalid saved edit state at sequence {sequence}")
+            active[target] = enabled
+        else:
+            operations.append((sequence, command))
+            active[sequence] = True
+    return [command for sequence, command in operations if active[sequence]], active

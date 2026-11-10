@@ -75,6 +75,16 @@ Click a box on the page or a row in the tree. The element is selected in the thr
 
 Click **Show all**, at the right end of the LAYERS bar, to see every box again.
 
+## Edit an analysis
+
+On a completed result, click **Edit analysis** to correct extracted text and structure. Select an element in the tree or page view, then edit its text or heading level in the properties panel. You can also merge selected paragraphs, move elements, and delete them. The preview updates as you work; click **Save** to keep the changes or **Discard changes** to abandon the draft.
+
+Use **Undo** and **Redo** for pending changes. To change a saved edit, open **History** and choose **Revert** or **Reapply**. Save or discard pending changes first. A revert that would make later edits invalid is rejected without changing the saved result.
+
+In edit mode, **Download** uses the saved edited Markdown or Docling JSON. Save your draft first if you want it in the download. **Inspect analysis** returns to the original result and downloads that original analysis. The PDF download always returns the source PDF.
+
+See [Analysis editor](analysis-editor.md) for the full workflow, recovery and conflict behavior, and how saved edit history works.
+
 ## Ask a question
 
 **Ask** sends a question about the document to a local model (through [Ollama](https://ollama.com)) and shows how the answer was built, step by step. It is hidden and off by default: see [Enable Ask](getting-started.md#enable-ask).
@@ -98,6 +108,8 @@ How it behaves:
 |------|---------|
 | A result page (**Analyses**, then a row) | **Download**: PDF Document, Markdown, Docling JSON |
 | The **Docs** list | PDF only |
+
+On a result page, the Markdown and JSON download follows the current mode: the saved edited result in **Edit analysis**, or the original result in **Inspect analysis**.
 
 ## Delete
 

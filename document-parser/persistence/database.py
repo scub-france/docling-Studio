@@ -234,7 +234,8 @@ CREATE TABLE IF NOT EXISTS analysis_edit_commands (
     sequence INTEGER NOT NULL CHECK(sequence > 0),
     command_version INTEGER NOT NULL CHECK(command_version > 0),
     command_type TEXT NOT NULL CHECK(command_type IN
-        ('replaceText','mergeText','setHeadingLevel','moveElement','deleteElement','deleteElements')),
+        ('replaceText','mergeText','setHeadingLevel','moveElement','deleteElement','deleteElements',
+         'setCommandActive')),
     payload_json TEXT NOT NULL,
     previous_hash TEXT,
     command_hash TEXT NOT NULL,
@@ -267,7 +268,7 @@ CREATE INDEX IF NOT EXISTS idx_analysis_working_copies_doc
 async def init_db() -> None:
     """Create database file and tables if they don't exist.
 
-    Runs the canonical schema, applies additive editor columns, and seeds the
+    Runs the canonical schema, applies editor schema updates, and seeds the
     default store.
     """
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
@@ -280,7 +281,7 @@ async def init_db() -> None:
 
 
 async def _apply_additive_migrations(db: aiosqlite.Connection) -> None:
-    """Add editor columns to databases created before the editor existed."""
+    """Update editor tables in databases created by older releases."""
     cursor = await db.execute("PRAGMA table_info(documents)")
     columns = {row[1] for row in await cursor.fetchall()}
     additions = {
@@ -295,6 +296,21 @@ async def _apply_additive_migrations(db: aiosqlite.Connection) -> None:
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_documents_active_analysis ON documents(active_analysis_id)"
     )
+    cursor = await db.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'analysis_edit_commands'"
+    )
+    command_table = await cursor.fetchone()
+    if command_table and "setCommandActive" not in command_table[0]:
+        # SQLite cannot add a value to a CHECK constraint. Preserve the
+        # append-only command log and its hashes while widening the constraint.
+        await db.execute("SAVEPOINT edit_command_migration")
+        try:
+            await _migrate_edit_command_constraint(db)
+            await db.execute("RELEASE SAVEPOINT edit_command_migration")
+        except Exception:
+            await db.execute("ROLLBACK TO SAVEPOINT edit_command_migration")
+            await db.execute("RELEASE SAVEPOINT edit_command_migration")
+            raise
     cursor = await db.execute("PRAGMA table_info(analysis_working_copies)")
     working_columns = await cursor.fetchall()
     working_pk = next((row[1] for row in working_columns if row[5] == 1), None)
@@ -333,6 +349,37 @@ async def _apply_additive_migrations(db: aiosqlite.Connection) -> None:
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_analysis_working_copies_doc "
         "ON analysis_working_copies(document_id)"
+    )
+
+
+async def _migrate_edit_command_constraint(db: aiosqlite.Connection) -> None:
+    """Allow history events without changing any existing command row."""
+    await db.execute("ALTER TABLE analysis_edit_commands RENAME TO analysis_edit_commands_legacy")
+    await db.execute(
+        """CREATE TABLE analysis_edit_commands (
+            id TEXT PRIMARY KEY,
+            stream_id TEXT NOT NULL REFERENCES analysis_edit_streams(id) ON DELETE CASCADE,
+            sequence INTEGER NOT NULL CHECK(sequence > 0),
+            command_version INTEGER NOT NULL CHECK(command_version > 0),
+            command_type TEXT NOT NULL CHECK(command_type IN
+                ('replaceText','mergeText','setHeadingLevel','moveElement','deleteElement',
+                 'deleteElements','setCommandActive')),
+            payload_json TEXT NOT NULL,
+            previous_hash TEXT,
+            command_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(stream_id, sequence),
+            UNIQUE(stream_id, command_hash)
+        )"""
+    )
+    await db.execute(
+        """INSERT INTO analysis_edit_commands
+           SELECT * FROM analysis_edit_commands_legacy"""
+    )
+    await db.execute("DROP TABLE analysis_edit_commands_legacy")
+    await db.execute(
+        "CREATE INDEX idx_edit_commands_stream_sequence "
+        "ON analysis_edit_commands(stream_id, sequence)"
     )
 
 

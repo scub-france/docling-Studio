@@ -23,7 +23,7 @@ The server checks most values when it starts. If one is invalid, it does not sta
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
-| `ANALYSIS_EDITOR_ENABLED` | `true` | Enables the analysis editor UI and its API. Set to `false` to hide editing and return `404` from all analysis-editor endpoints while keeping read-only analysis inspection available. |
+| `ANALYSIS_EDITOR_ENABLED` | `true` | Enables the analysis editor UI, its API, and edited-result downloads. Set to `false` to hide editing and return `404` from editor routes and `edited=true` exports while keeping read-only analysis inspection available. See [Analysis editor](analysis-editor.md). |
 
 Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT` (300). The server only starts if `DOCUMENT_TIMEOUT` < `LOCK_TIMEOUT` < `CONVERSION_TIMEOUT`. So a `CONVERSION_TIMEOUT` of 300 or less needs a lower `LOCK_TIMEOUT` as well.
 

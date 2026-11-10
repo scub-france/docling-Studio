@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiFetch } from '../../shared/api/http'
-import { previewAnalysisEdits, saveAnalysisEdits } from './api'
+import { previewAnalysisEdits, saveAnalysisEdits, setAnalysisEditActive } from './api'
 
 vi.mock('../../shared/api/http', () => ({ apiFetch: vi.fn() }))
 
@@ -36,5 +36,17 @@ describe('analysis editor API', () => {
         expectedAppliedThroughSequence: 0,
       }),
     })
+  })
+
+  it('changes a saved edit with the expected stream sequence', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({} as never)
+    await setAnalysisEditActive('doc-1', 2, false, 5, 'analysis-1')
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/api/documents/doc-1/analysis-edits/history/2?analysisId=analysis-1',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ active: false, expectedAppliedThroughSequence: 5 }),
+      },
+    )
   })
 })

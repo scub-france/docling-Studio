@@ -35,6 +35,7 @@ nav:
   - Home: index.md
   - Get started: getting-started.md
   - User guide: user-guide.md
+  - Analysis editor: analysis-editor.md
   - Configuration: configuration.md
   - MCP server: mcp-server.md
   - Troubleshooting: troubleshooting.md

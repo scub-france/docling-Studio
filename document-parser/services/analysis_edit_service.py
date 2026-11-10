@@ -12,11 +12,13 @@ from typing import TYPE_CHECKING
 
 from domain.analysis_editing import (
     AnalysisEditConflictError,
+    AnalysisEditError,
     AnalysisEditUnavailableError,
     EditCommand,
     EditStream,
     ProjectedAnalysis,
     WorkingCopy,
+    active_edit_commands,
 )
 from domain.models import AnalysisJob, AnalysisStatus
 
@@ -110,7 +112,7 @@ class AnalysisEditService:
         base = await self._base_analysis(document, analysis_id)
         stream = await self._edits.find_stream(document_id, base.id)
         stored = await self._edits.list_commands(stream.id) if stream else []
-        commands = [record.command for record in stored] + pending_commands
+        commands, _ = active_edit_commands(stored, pending_commands)
         projection = self._project(base, commands, operation="preview")
         sequence = (stored[-1].sequence if stored else 0) + len(pending_commands)
         return self._snapshot(document, base, projection, sequence)
@@ -153,7 +155,7 @@ class AnalysisEditService:
             raise AnalysisEditConflictError(
                 f"The editor stream changed: expected {expected_sequence}, actual {actual_sequence}"
             )
-        all_commands = [record.command for record in stored] + pending_commands
+        all_commands, _ = active_edit_commands(stored, pending_commands)
         projection = self._project(base, all_commands, operation="save")
         sequence = actual_sequence + len(pending_commands)
         stream_hash = _stream_hash(stored, pending_commands)
@@ -192,6 +194,45 @@ class AnalysisEditService:
                 # projection and must not make a saved user edit disappear.
                 logger.exception("Graph refresh failed after analysis edit for %s", document_id)
         return self._snapshot(document, base, projection, sequence)
+
+    async def set_command_active(
+        self,
+        document_id: str,
+        target_sequence: int,
+        active: bool,
+        expected_sequence: int,
+        analysis_id: str | None = None,
+    ) -> EditorSnapshot:
+        stored = await self.history(document_id, analysis_id)
+        actual_sequence = stored[-1].sequence if stored else 0
+        if actual_sequence != expected_sequence:
+            raise AnalysisEditConflictError(
+                f"The editor stream changed: expected {expected_sequence}, actual {actual_sequence}"
+            )
+        _, states = active_edit_commands(stored)
+        if target_sequence not in states:
+            raise AnalysisEditError(f"Saved edit #{target_sequence} does not exist")
+        if states[target_sequence] == active:
+            raise AnalysisEditError(f"Saved edit #{target_sequence} is already in that state")
+        action = "reapply" if active else "revert"
+        try:
+            return await self.save(
+                document_id,
+                [
+                    EditCommand(
+                        "setCommandActive",
+                        {"targetSequence": target_sequence, "active": active},
+                    )
+                ],
+                expected_sequence,
+                analysis_id,
+            )
+        except AnalysisEditConflictError:
+            raise
+        except AnalysisEditError as exc:
+            raise AnalysisEditError(
+                f"Cannot {action} edit #{target_sequence}; a remaining edit cannot be replayed: {exc}"
+            ) from exc
 
     async def rebuild(self, document_id: str, analysis_id: str | None = None) -> EditorSnapshot:
         document = await self._require_document(document_id)
@@ -243,7 +284,8 @@ class AnalysisEditService:
         return base
 
     def _replay(self, base, stored) -> ProjectedAnalysis:
-        return self._project(base, [record.command for record in stored], operation="replay")
+        commands, _ = active_edit_commands(stored)
+        return self._project(base, commands, operation="replay")
 
     def _project(self, base, commands: list[EditCommand], *, operation: str) -> ProjectedAnalysis:
         try:

@@ -98,6 +98,12 @@ describe('document API', () => {
     )
   })
 
+  it('getExportUrl requests the saved editor result when editing', () => {
+    expect(getExportUrl('abc', 'md', 'analysis 1', true)).toBe(
+      '/api/documents/abc/export?format=md&analysisId=analysis%201&edited=true',
+    )
+  })
+
   it('rechunkDocument calls POST /api/documents/:id/rechunk and returns chunks', async () => {
     const chunks = [{ id: 'c1' }, { id: 'c2' }]
     apiFetch.mockResolvedValue(chunks)
