@@ -77,7 +77,7 @@ Click **Show all**, at the right end of the LAYERS bar, to see every box again.
 
 ## Edit an analysis
 
-On a completed result, click **Edit analysis** to correct extracted text and structure. Select an element in the tree or page view, then edit its text or heading level in the properties panel. You can also merge selected paragraphs, move elements, and delete them. The preview updates as you work; click **Save** to keep the changes or **Discard changes** to abandon the draft.
+On a completed result, click **Edit analysis** to correct extracted text and structure. Select an element in the tree or page view, then edit its text or heading level in the properties panel. You can also merge selected paragraphs, delete one or several elements, and change reading order by moving elements in the tree. The preview updates as you work; click **Save** to keep the changes or **Discard changes** to abandon the draft. See [Analysis editor](analysis-editor.md#available-actions) for the controls and limits of each action.
 
 Click **Show reading order** above the page preview to see matching sequence numbers on page boxes and in the structure tree. The selected element and the next one are highlighted. The numbers follow unsaved moves so you can check the new order before saving.
 

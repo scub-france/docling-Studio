@@ -5,10 +5,24 @@ The analysis editor lets you correct the text and structure that Docling extract
 ## Edit an analysis
 
 1. Open **Analyses**, open a completed result, and click **Edit analysis**. If the button is unavailable, that analysis has no Docling document to edit.
-2. Select an element in the structure tree or on the page. Edit supported text in the properties panel. For a heading, you can also change its level or turn it into body text or a title.
-3. To merge paragraphs, select them with their checkboxes (or use Ctrl/Cmd-click in the tree), then click **Merge selected**. You can delete selected elements or move an element with **Choose move destination** or drag and drop. Tables, pictures, and other unsupported elements stay read-only.
-4. Review the updated tree, page view, and Markdown. **Preview** refreshes the server's validation; the editor also requests previews as you work. A preview is still a draft.
-5. Click **Save** to make the edits durable, or **Discard changes** to throw away the current draft. **Undo** and **Redo** work on pending edits before you save.
+2. Select an element in the structure tree or on the page, then make a change using the properties panel or toolbar. Available controls depend on the selected element.
+3. Review the updated tree, page view, and Markdown. **Preview** refreshes the server's validation; the editor also requests previews as you work. A preview is still a draft.
+4. Click **Save** to make the edits durable, or **Discard changes** to throw away the current draft. **Undo** and **Redo** work on pending edits before you save.
+
+### Available actions
+
+| Action | How to use it | What changes |
+| --- | --- | --- |
+| Replace text | Select an editable element and type in **Text** in the properties panel. | The extracted text changes. The source PDF and its box stay in their original position. |
+| Change heading level | Select a section heading and choose **Body text**, **Title**, or level 1–6 under **Heading level**. | The heading changes role or level. A second document title is rejected. |
+| Merge paragraphs | Select at least two text or paragraph elements with their tree checkboxes or Ctrl/Cmd-click, then click **Merge selected**. | Their text joins in selection order under the first selected element. The other selected elements are removed. The server rejects incompatible paragraph types. |
+| Delete one element | Select it and click **Delete element** in the properties panel, if available. | The element is removed from the edited document. Deleting a section also removes its children. |
+| Delete several elements | Select them with tree checkboxes or Ctrl/Cmd-click, then click **Delete N selected** in the toolbar. A section's checkbox selects its descendants. | The selected elements are removed together. |
+| Change reading order | Select a movable element and click **Choose destination**, then choose **Before**, **After**, or **Inside section** on a tree row. You can also drag a movable row onto another row to place it before that row. | The element moves in the document structure. Moving a heading moves its section with it; **Inside section** works only on a section heading. The PDF page image and original box positions do not move. |
+
+Individual editing controls appear only for operations the selected element supports. For example, tables and pictures have no text editor. Invalid changes show a validation error in the preview or when saving; they are not saved until corrected.
+
+You can collapse or expand the structure tree with **Collapse all** and **Expand all**, and switch between **PDF layout** and **Markdown** in the preview. These controls only change what you see.
 
 In the page preview, click **Show reading order** to place sequence numbers on visible element boxes. The same numbers appear in the structure tree. The selected element is orange and the next element is green, so you can follow the flow before and after a move. The numbers update with the current preview, including unsaved moves. Elements without a page box have no number.
 
