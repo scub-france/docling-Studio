@@ -13,6 +13,8 @@ dependencies = [
   "google-colab-cli==0.7.5",
   "pypdf>=4.0.0",
   "docling-core>=2.65.2,<3.0.0",
+  "pydantic>=2.0.0,<3.0.0",
+  "pydantic-settings>=2.0.0,<3.0.0",
 ]
 
 [project.optional-dependencies]

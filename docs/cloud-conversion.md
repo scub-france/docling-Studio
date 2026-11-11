@@ -26,6 +26,28 @@ compute-unit balance first:
 uvx --from google-colab-cli==0.7.5 colab --auth=oauth2 usage
 ```
 
+## Configure Default Settings (`pydantic-settings`)
+
+The CLI uses `pydantic-settings` (`CliSettings`) so you can persist your default
+Studio URL, provider, GPU, parallel worker count, and page batch size once
+instead of passing flags on every command:
+
+```bash
+# Save defaults to ~/.config/docling-studio/settings.json:
+docling-studio config set \
+  --studio-url http://localhost:3000 \
+  --gpu T4 \
+  --workers 3 \
+  --batch-pages 25
+
+# Inspect effective settings (merged from CLI, DOCLING_STUDIO_* env vars, .env, and settings.json):
+docling-studio config show
+
+# Convert or import using saved defaults:
+docling-studio convert /path/to/document.pdf
+docling-studio import /path/to/document.pdf
+```
+
 ## Convert and Upload to Docling Studio
 
 Convert a PDF using a Colab GPU and upload directly to Studio:

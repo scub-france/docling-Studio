@@ -7,19 +7,17 @@ import os
 import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
+
+from docling_studio_cli.models import (
+    ColabAuthMethod,
+    ConversionOptions,
+    GpuType,
+    ProviderDescriptor,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-@dataclass(frozen=True)
-class ConversionOptions:
-    gpu: str | None = None
-    colab_auth: str = "oauth2"
-    batch_pages: int | None = None
-    workers: int = 1
 
 
 class ConversionProvider(Protocol):
@@ -57,8 +55,8 @@ def _execute(runtime, code: str, expected_marker: str, *, timeout: int = 900) ->
 def convert_single_colab(
     pdf: Path,
     result_path: Path,
-    gpu: str | None,
-    auth: str = "oauth2",
+    gpu: GpuType | str | None,
+    auth: ColabAuthMethod | str = ColabAuthMethod.OAUTH2,
     batch_pages: int | None = None,
 ) -> None:
     page_count = None
@@ -72,7 +70,12 @@ def convert_single_colab(
             ) from exc
         page_count = len(PdfReader(str(pdf)).pages)
 
-    client, accelerator_cls, variant_cls, contents_cls, runtime_cls, state_cls = _colab_api(auth)
+    auth_str = str(auth.value if isinstance(auth, ColabAuthMethod) else auth)
+    gpu_str = str(gpu.value if isinstance(gpu, GpuType) else gpu) if gpu else None
+
+    client, accelerator_cls, variant_cls, contents_cls, runtime_cls, state_cls = _colab_api(
+        auth_str
+    )
     run_id = f"docling-{uuid.uuid4().hex[:10]}"
     remote_pdf = f"/content/{run_id}-{pdf.name}"
     remote_json = f"/content/{run_id}.docling.json"
@@ -82,8 +85,8 @@ def convert_single_colab(
         print("Allocating Colab runtime...", flush=True)
         assigned = client.assign(
             uuid.uuid4(),
-            variant=variant_cls.GPU if gpu else variant_cls.DEFAULT,
-            accelerator=accelerator_cls(gpu.upper()) if gpu else accelerator_cls.NONE,
+            variant=variant_cls.GPU if gpu_str else variant_cls.DEFAULT,
+            accelerator=(accelerator_cls(gpu_str.upper()) if gpu_str else accelerator_cls.NONE),
         )
         endpoint = assigned.endpoint
         info = assigned.runtime_proxy_info
@@ -106,13 +109,13 @@ def convert_single_colab(
             "import torch\n"
             "if not torch.cuda.is_available():\n"
             "    raise RuntimeError('Colab GPU is unavailable')\n"
-            if gpu
+            if gpu_str
             else ""
         )
         setup = (
             "import json, os, gc\n"
             "from pathlib import Path\n"
-            f"os.environ['DOCLING_DEVICE'] = {'cuda' if gpu else 'cpu'!r}\n"
+            f"os.environ['DOCLING_DEVICE'] = {'cuda' if gpu_str else 'cpu'!r}\n"
             f"{gpu_check}"
             "from docling.document_converter import DocumentConverter\n"
             "converter = DocumentConverter()\n"
@@ -191,8 +194,8 @@ def split_pdf(pdf: Path, output_dir: Path, workers: int) -> list[tuple[int, int,
 
 def _convert_colab_part(
     part: tuple[int, int, Path],
-    gpu: str | None,
-    auth: str,
+    gpu: GpuType | str | None,
+    auth: ColabAuthMethod | str,
     batch_pages: int | None,
 ) -> tuple[int, int, Path]:
     from docling_core.types.doc import DoclingDocument
@@ -344,3 +347,7 @@ def get_provider(name: str) -> ConversionProvider:
 
 def list_providers() -> list[ConversionProvider]:
     return [_PROVIDERS[name] for name in sorted(_PROVIDERS)]
+
+
+def list_provider_descriptors() -> list[ProviderDescriptor]:
+    return [ProviderDescriptor(name=p.name, description=p.description) for p in list_providers()]

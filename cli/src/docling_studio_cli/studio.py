@@ -8,8 +8,16 @@ import uuid
 from http.client import IncompleteRead
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError
-from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
+
+from docling_studio_cli.models import (
+    StudioAnalysisImportPayload,
+    StudioAnalysisResponse,
+    StudioDocumentUploadResponse,
+    StudioHealthResponse,
+    StudioImportResult,
+    validate_http_url,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,35 +38,43 @@ def request_json(
         return json.load(response)
 
 
-def _import_analysis_payload(base: str, doc_id: str, document: dict) -> str:
+def _import_analysis_payload(base: str, doc_id: str, document: dict, *, timeout: int = 600) -> str:
+    payload = StudioAnalysisImportPayload(document_id=doc_id, document=document)
     try:
-        imported = request_json(
+        imported_raw = request_json(
             f"{base}/api/analyses/import",
-            data=json.dumps({"documentId": doc_id, "document": document}).encode(),
+            data=payload.model_dump_json(by_alias=True).encode("utf-8"),
             content_type="application/json",
+            timeout=timeout,
         )
     except IncompleteRead:
-        analyses = request_json(f"{base}/api/analyses?documentId={doc_id}", timeout=60)
-        for item in analyses if isinstance(analyses, list) else []:
-            if item.get("status") == "COMPLETED" and item.get("id"):
-                return str(item["id"])
+        analyses_raw = request_json(f"{base}/api/analyses?documentId={doc_id}", timeout=60)
+        for item in analyses_raw if isinstance(analyses_raw, list) else []:
+            parsed_item = StudioAnalysisResponse.model_validate(item)
+            if parsed_item.status == "COMPLETED" and (parsed_item.id or parsed_item.analysis_id):
+                return parsed_item.resolved_id
         raise
-    assert isinstance(imported, dict)
-    analysis_id = imported.get("id") or imported.get("analysisId")
-    if not analysis_id:
-        raise KeyError("id")
-    return str(analysis_id)
+    parsed = StudioAnalysisResponse.model_validate(imported_raw)
+    return parsed.resolved_id
 
 
-def import_into_studio(studio_url: str, pdf: Path, document: dict) -> tuple[str, str]:
-    base = studio_url.rstrip("/")
-    parsed = urlsplit(base)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("--studio-url must be an http:// or https:// URL")
+def import_into_studio(
+    studio_url: str,
+    pdf: Path,
+    document: dict,
+    *,
+    timeout: int = 600,
+) -> StudioImportResult:
+    try:
+        base = validate_http_url(studio_url)
+    except ValueError as exc:
+        raise ValueError("--studio-url must be an http:// or https:// URL") from exc
 
     # A connection failure is distinct from an HTTP rejection. Callers may
     # fall back to local files for the former; the latter needs investigation.
-    request_json(f"{base}/api/health", timeout=5)
+    health_raw = request_json(f"{base}/api/health", timeout=5)
+    StudioHealthResponse.model_validate(health_raw)
+
     boundary = f"docling-{uuid.uuid4().hex}"
     filename = pdf.name.replace('"', "_").replace("\r", "_").replace("\n", "_")
     body = (
@@ -70,15 +86,16 @@ def import_into_studio(studio_url: str, pdf: Path, document: dict) -> tuple[str,
         + pdf.read_bytes()
         + f"\r\n--{boundary}--\r\n".encode()
     )
-    uploaded = request_json(
+    uploaded_raw = request_json(
         f"{base}/api/documents/upload",
         data=body,
         content_type=f"multipart/form-data; boundary={boundary}",
+        timeout=timeout,
     )
-    assert isinstance(uploaded, dict)
-    doc_id = str(uploaded["id"])
+    uploaded = StudioDocumentUploadResponse.model_validate(uploaded_raw)
+    doc_id = uploaded.id
     try:
-        analysis_id = _import_analysis_payload(base, doc_id, document)
+        analysis_id = _import_analysis_payload(base, doc_id, document, timeout=timeout)
     except HTTPError as err:
         err_body = err.read().decode("utf-8", errors="replace") if err.fp else ""
         match = re.search(r"version\s+['\"]?(\d+\.\d+\.\d+)['\"]?", err_body) or (
@@ -87,7 +104,7 @@ def import_into_studio(studio_url: str, pdf: Path, document: dict) -> tuple[str,
         if err.code == 400 and match and match.group(1) != document.get("version"):
             compat_doc = dict(document)
             compat_doc["version"] = match.group(1)
-            analysis_id = _import_analysis_payload(base, doc_id, compat_doc)
+            analysis_id = _import_analysis_payload(base, doc_id, compat_doc, timeout=timeout)
         else:
             raise
-    return doc_id, analysis_id
+    return StudioImportResult(studio_url=base, document_id=doc_id, analysis_id=analysis_id)

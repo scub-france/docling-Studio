@@ -1,10 +1,11 @@
-"""Unit tests for the installable `docling-studio-cli` package."""
+"""Unit tests for the installable `docling-studio-cli` package, Pydantic models, and settings."""
 
 from __future__ import annotations
 
 import importlib.util
 import io
 import json
+import os
 import re
 import sys
 import tempfile
@@ -15,20 +16,108 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.error import URLError
 
+from pydantic import ValidationError
+
 CLI_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(CLI_SRC) not in sys.path:
     sys.path.insert(0, str(CLI_SRC))
 
 from docling_studio_cli import (  # noqa: E402
+    CliSettings,
+    ColabAuthMethod,
+    ConversionOptions,
     ConversionProvider,
+    GpuType,
+    StudioImportResult,
     cli,
     get_provider,
     import_into_studio,
     list_providers,
+    load_settings,
     providers,
     register_provider,
     studio,
 )
+
+
+class SettingsAndModelsTests(unittest.TestCase):
+    def test_pydantic_settings_loads_from_json_config_env_and_cli_overrides(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_file = Path(temp_dir) / "settings.json"
+            saved = CliSettings(
+                studio_url="https://studio.example.com/",
+                gpu=GpuType.T4,
+                workers=2,
+                batch_pages=25,
+                colab_auth=ColabAuthMethod.ADC,
+            )
+            saved.save(config_file)
+
+            loaded = load_settings(config_path=config_file)
+            self.assertEqual(loaded.studio_url, "https://studio.example.com")
+            self.assertEqual(loaded.gpu, GpuType.T4)
+            self.assertEqual(loaded.workers, 2)
+            self.assertEqual(loaded.batch_pages, 25)
+            self.assertEqual(loaded.colab_auth, ColabAuthMethod.ADC)
+
+            with patch.dict(
+                os.environ,
+                {
+                    "DOCLING_STUDIO_GPU": "L4",
+                    "DOCLING_STUDIO_WORKERS": "4",
+                },
+                clear=False,
+            ):
+                env_loaded = load_settings(config_path=config_file)
+                self.assertEqual(env_loaded.gpu, GpuType.L4)
+                self.assertEqual(env_loaded.workers, 4)
+
+                cli_override = load_settings(
+                    config_path=config_file,
+                    gpu="A100",
+                    workers=1,
+                )
+                self.assertEqual(cli_override.gpu, GpuType.A100)
+                self.assertEqual(cli_override.workers, 1)
+
+    def test_config_subcommand_set_show_and_reset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_file = Path(temp_dir) / "settings.json"
+            code = cli.main(
+                [
+                    "--config",
+                    str(config_file),
+                    "config",
+                    "set",
+                    "--studio-url",
+                    "http://localhost:3000/",
+                    "--gpu",
+                    "T4",
+                    "--workers",
+                    "3",
+                    "--batch-pages",
+                    "20",
+                ]
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue(config_file.is_file())
+            loaded = load_settings(config_path=config_file)
+            self.assertEqual(loaded.studio_url, "http://localhost:3000")
+            self.assertEqual(loaded.gpu, GpuType.T4)
+            self.assertEqual(loaded.workers, 3)
+            self.assertEqual(loaded.batch_pages, 20)
+
+            self.assertEqual(cli.main(["--config", str(config_file), "config", "show"]), 0)
+            self.assertEqual(cli.main(["--config", str(config_file), "config", "reset"]), 0)
+            self.assertFalse(config_file.is_file())
+
+    def test_models_reject_invalid_values(self):
+        with self.assertRaises(ValidationError):
+            ConversionOptions(workers=0)
+        with self.assertRaises(ValidationError):
+            ConversionOptions(batch_pages=0)
+        with self.assertRaises(ValidationError):
+            CliSettings(studio_url="not-a-valid-url")
 
 
 class ProviderRegistryTests(unittest.TestCase):
@@ -150,29 +239,33 @@ class ColabProviderTests(unittest.TestCase):
             SimpleNamespace,
         )
 
-    def test_colab_cli_convert_and_import(self):
+    def test_colab_cli_convert_uses_saved_settings_and_imports(self):
         with tempfile.TemporaryDirectory() as temp_dir:
+            config_file = Path(temp_dir) / "settings.json"
+            CliSettings(
+                studio_url="http://localhost:3000",
+                gpu=GpuType.T4,
+                output_dir=Path(temp_dir),
+            ).save(config_file)
+
             pdf = Path(temp_dir) / "paper.pdf"
             pdf.write_bytes(b"%PDF-1.4\n")
             events, api = self.fake_api()
+            fake_result = StudioImportResult(
+                studio_url="http://localhost:3000",
+                document_id="doc-1",
+                analysis_id="analysis-1",
+            )
             with (
                 patch.object(providers, "_colab_api", return_value=api),
-                patch.object(
-                    cli, "import_into_studio", return_value=("doc-1", "analysis-1")
-                ) as mock_import,
+                patch.object(cli, "import_into_studio", return_value=fake_result) as mock_import,
             ):
                 code = cli.main(
                     [
+                        "--config",
+                        str(config_file),
                         "convert",
                         str(pdf),
-                        "--provider",
-                        "colab",
-                        "--gpu",
-                        "T4",
-                        "--output-dir",
-                        temp_dir,
-                        "--studio-url",
-                        "http://localhost:3000",
                     ]
                 )
             self.assertEqual(code, 0)
@@ -180,6 +273,7 @@ class ColabProviderTests(unittest.TestCase):
                 [event[0] for event in events],
                 ["assign", "upload", "download", "stop", "unassign"],
             )
+            self.assertEqual(events[0][2], api[1].T4)
             mock_import.assert_called_once()
 
     @unittest.skipUnless(
