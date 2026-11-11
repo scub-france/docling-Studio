@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from importlib.metadata import version as pkg_version
+from typing import TYPE_CHECKING, Any
+
+from docling_studio_cli.models import LocalProviderSettings, ProviderCheckResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from docling_studio_cli.providers.base import ProviderSession
+    from docling_studio_cli.providers.base import PromptFn, ProviderSession
     from docling_studio_cli.settings import CliSettings
 
 
@@ -64,3 +68,36 @@ class LocalProvider:
 
     def is_transient_capacity_error(self, error: Exception) -> bool:
         return False
+
+    def configure_interactive(
+        self,
+        current: CliSettings,
+        prompt: PromptFn,
+    ) -> dict[str, Any]:
+        default_dev = current.local.device or "auto"
+        dev_val = prompt(
+            "Local Docling device [auto/cpu/cuda/mps]",
+            default_dev,
+        )
+        cleaned = dev_val.strip().lower()
+        validated = LocalProviderSettings(
+            device=None if cleaned in {"", "auto", "none"} else cleaned,
+        )
+        return {"local": validated.model_dump(mode="json")}
+
+    def verify(self, settings: CliSettings) -> ProviderCheckResult:
+        if importlib.util.find_spec("docling") is None:
+            return ProviderCheckResult(
+                provider=self.name,
+                ok=False,
+                summary="Local `docling` package is not installed (install with `uv tool install './cli[local]'`)",
+                details={"device": settings.local.device or "auto"},
+            )
+        ver = pkg_version("docling")
+        dev = settings.local.device or "auto"
+        return ProviderCheckResult(
+            provider=self.name,
+            ok=True,
+            summary=f"Local Docling {ver} is installed (device={dev})",
+            details={"version": ver, "device": dev},
+        )

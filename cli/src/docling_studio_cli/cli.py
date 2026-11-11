@@ -8,7 +8,7 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.error import HTTPError, URLError
 
 from pydantic import ValidationError
@@ -30,7 +30,19 @@ from docling_studio_cli.settings import (
     default_config_path,
     load_settings,
 )
-from docling_studio_cli.studio import import_into_studio
+from docling_studio_cli.studio import check_studio_health, import_into_studio
+
+if TYPE_CHECKING:
+    from docling_studio_cli.providers.base import PromptFn
+
+
+def _default_prompt(label: str, default: str = "") -> str:
+    suffix = f" ({default})" if default != "" else ""
+    try:
+        answer = input(f"{label}{suffix}: ").strip()
+    except EOFError:
+        return default
+    return answer if answer != "" else default
 
 
 def _build_provider_overrides(args: argparse.Namespace) -> dict[str, Any]:
@@ -207,6 +219,135 @@ def _cmd_providers(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_verification(provider_name: str, settings: CliSettings) -> bool:
+    provider = get_provider(provider_name)
+    check = provider.verify(settings)
+    status_label = "OK" if check.ok else "FAILED"
+    stream = sys.stdout if check.ok else sys.stderr
+    print(f"[{status_label}] Provider '{provider.name}': {check.summary}", file=stream)
+    all_ok = check.ok
+
+    if settings.studio_url:
+        studio_check = check_studio_health(settings.studio_url)
+        studio_label = "OK" if studio_check.ok else "FAILED"
+        studio_stream = sys.stdout if studio_check.ok else sys.stderr
+        print(
+            f"[{studio_label}] Docling Studio: {studio_check.summary}",
+            file=studio_stream,
+        )
+        all_ok = all_ok and studio_check.ok
+    return all_ok
+
+
+def _cmd_verify(args: argparse.Namespace) -> int:
+    try:
+        settings = load_settings(
+            config_path=args.config,
+            provider=args.provider_name,
+            studio_url=args.studio_url,
+            **_build_provider_overrides(args),
+        )
+    except ValidationError as exc:
+        for err in exc.errors():
+            loc = ".".join(str(part) for part in err["loc"])
+            print(f"Error ({loc}): {err['msg']}", file=sys.stderr)
+        return 2
+
+    ok = _run_verification(settings.provider, settings)
+    return 0 if ok else 1
+
+
+def run_configure_flow(
+    args: argparse.Namespace,
+    prompt: PromptFn = _default_prompt,
+) -> int:
+    """Guided or flag-driven flow to configure a conversion provider and verify it."""
+    config_path = (args.config or default_config_path()).expanduser().resolve()
+    current = load_settings(config_path=config_path)
+    existing = current.model_dump(mode="json")
+
+    available_names = [p.name for p in list_providers()]
+    chosen_provider = args.provider_name
+    interactive = not getattr(args, "no_input", False)
+
+    if interactive:
+        if not chosen_provider:
+            choices_str = "/".join(available_names)
+            chosen_provider = (
+                prompt(f"Conversion provider [{choices_str}]", current.provider).strip().lower()
+            )
+        provider = get_provider(chosen_provider)
+        existing["provider"] = provider.name
+        try:
+            provider_updates = provider.configure_interactive(current, prompt)
+            for key, value in provider_updates.items():
+                existing[key] = value
+
+            workers_ans = prompt(
+                "Default parallel workers",
+                str(current.workers),
+            ).strip()
+            existing["workers"] = int(workers_ans)
+
+            batch_default = str(current.batch_pages) if current.batch_pages is not None else "25"
+            batch_ans = (
+                prompt(
+                    "Default page batch size ('none' for full PDF at once)",
+                    batch_default,
+                )
+                .strip()
+                .lower()
+            )
+            existing["batch_pages"] = (
+                None if batch_ans in {"none", "null", "0", ""} else int(batch_ans)
+            )
+
+            studio_ans = prompt(
+                "Default Docling Studio URL (leave empty if none)",
+                current.studio_url or "",
+            ).strip()
+            existing["studio_url"] = studio_ans or None
+        except (ValidationError, ValueError) as exc:
+            print(f"Configuration error: {exc}", file=sys.stderr)
+            return 2
+
+    # Apply any explicit CLI flags on top of interactive answers or existing config
+    if chosen_provider:
+        existing["provider"] = chosen_provider
+    if args.studio_url is not None:
+        existing["studio_url"] = args.studio_url
+    if args.workers is not None:
+        existing["workers"] = args.workers
+    if args.batch_pages is not None:
+        existing["batch_pages"] = args.batch_pages
+    if args.output_dir is not None:
+        existing["output_dir"] = str(args.output_dir)
+
+    for section, values in _build_provider_overrides(args).items():
+        nested = dict(existing.get(section) or {})
+        for k, v in values.items():
+            if v is not None:
+                nested[k] = v
+        existing[section] = nested
+
+    try:
+        validated = CliSettings.model_validate(existing)
+    except ValidationError as exc:
+        for err in exc.errors():
+            loc = ".".join(str(part) for part in err["loc"])
+            print(f"Error ({loc}): {err['msg']}", file=sys.stderr)
+        return 2
+
+    saved_path = validated.save(config_path)
+    print(f"Saved provider '{validated.provider}' configuration to {saved_path}")
+
+    if not args.no_verify:
+        ok = _run_verification(validated.provider, validated)
+        if not ok:
+            return 1
+    return 0
+
+
 def _cmd_config(args: argparse.Namespace) -> int:
     config_path = (args.config or default_config_path()).expanduser().resolve()
     if args.config_action == "path":
@@ -346,6 +487,72 @@ def build_parser() -> argparse.ArgumentParser:
     provider_names = [p.name for p in list_providers()]
     gpu_choices = tuple(g.value for g in ColabGpuType)
     auth_choices = tuple(a.value for a in ColabAuthMethod)
+
+    configure_parser = subparsers.add_parser(
+        "configure",
+        help="Guided interactive (or flag-based) flow to configure a provider, save defaults, and verify connectivity/auth",
+    )
+    configure_parser.add_argument(
+        "provider_name",
+        nargs="?",
+        choices=provider_names,
+        default=None,
+        help="Provider to configure (colab, docling-serve, local); prompted if omitted",
+    )
+    configure_parser.add_argument(
+        "--no-input",
+        action="store_true",
+        help="Run non-interactively using only passed flags and existing settings",
+    )
+    configure_parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="Skip provider authentication / endpoint health verification after saving",
+    )
+    configure_parser.add_argument(
+        "--studio-url",
+        default=None,
+        help="Default Docling Studio base URL",
+    )
+    configure_parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Default number of parallel worker sessions",
+    )
+    configure_parser.add_argument(
+        "--batch-pages",
+        type=int,
+        default=None,
+        help="Default page batch size",
+    )
+    configure_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Default directory for saved PDFs and Docling JSONs",
+    )
+    _add_provider_option_groups(configure_parser, gpu_choices, auth_choices)
+    configure_parser.set_defaults(func=run_configure_flow)
+
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify authentication, dependencies, or endpoint reachability for a provider and Studio",
+    )
+    verify_parser.add_argument(
+        "provider_name",
+        nargs="?",
+        choices=provider_names,
+        default=None,
+        help="Provider to verify (defaults to the configured default provider)",
+    )
+    verify_parser.add_argument(
+        "--studio-url",
+        default=None,
+        help="Docling Studio URL to verify (overrides settings/env)",
+    )
+    _add_provider_option_groups(verify_parser, gpu_choices, auth_choices)
+    verify_parser.set_defaults(func=_cmd_verify)
 
     convert_parser = subparsers.add_parser(
         "convert",

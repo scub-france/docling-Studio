@@ -135,6 +135,17 @@ class ProviderDescriptor(BaseModel):
     settings_model: str = Field(min_length=1)
 
 
+class ProviderCheckResult(BaseModel):
+    """Result of verifying a provider's credentials, dependencies, or endpoint health."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str = Field(min_length=1)
+    ok: bool
+    summary: str = Field(min_length=1)
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class StudioHealthResponse(BaseModel):
     """Response from Docling Studio `GET /api/health`."""
 

@@ -5,14 +5,20 @@ from __future__ import annotations
 import sys
 import uuid
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from docling_studio_cli.models import (
+    ColabAuthMethod,
+    ColabGpuType,
+    ColabProviderSettings,
+    ProviderCheckResult,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from docling_studio_cli.models import ColabProviderSettings
-    from docling_studio_cli.providers.base import ProviderSession
+    from docling_studio_cli.providers.base import PromptFn, ProviderSession
     from docling_studio_cli.settings import CliSettings
 
 
@@ -162,3 +168,68 @@ class ColabProvider:
 
     def is_transient_capacity_error(self, error: Exception) -> bool:
         return "Precondition Failed" in str(error)
+
+    def configure_interactive(
+        self,
+        current: CliSettings,
+        prompt: PromptFn,
+    ) -> dict[str, Any]:
+        auth_choices = "/".join(a.value for a in ColabAuthMethod)
+        gpu_choices = "/".join([*(g.value for g in ColabGpuType), "cpu"])
+        default_auth = current.colab.auth.value
+        default_gpu = current.colab.gpu.value if current.colab.gpu else "T4"
+
+        auth_val = prompt(
+            f"Colab authentication method [{auth_choices}]",
+            default_auth,
+        )
+        gpu_val = prompt(
+            f"Default Colab accelerator [{gpu_choices}]",
+            default_gpu,
+        )
+        validated = ColabProviderSettings(
+            auth=ColabAuthMethod(auth_val.strip().lower()),
+            gpu=None if gpu_val.strip().lower() in {"cpu", "none", ""} else gpu_val.strip().upper(),
+            docling_version_spec=current.colab.docling_version_spec,
+        )
+        return {"colab": validated.model_dump(mode="json")}
+
+    def verify(self, settings: CliSettings) -> ProviderCheckResult:
+        cfg = settings.colab
+        try:
+            client, *_ = _colab_api(cfg.auth.value)
+            details: dict[str, Any] = {
+                "auth": cfg.auth.value,
+                "gpu": cfg.gpu.value if cfg.gpu else "CPU",
+            }
+            if hasattr(client, "list_assignments"):
+                assignments = client.list_assignments()
+                details["active_runtimes"] = len(assignments)
+            if hasattr(client, "get_consumption_user_info"):
+                info = client.get_consumption_user_info()
+                balance = getattr(info, "paid_compute_units_balance", None)
+                if balance is not None:
+                    details["compute_units_balance"] = round(float(balance), 3)
+            balance_str = (
+                f", balance={details['compute_units_balance']} compute units"
+                if "compute_units_balance" in details
+                else ""
+            )
+            active_str = (
+                f", active_runtimes={details['active_runtimes']}"
+                if "active_runtimes" in details
+                else ""
+            )
+            return ProviderCheckResult(
+                provider=self.name,
+                ok=True,
+                summary=f"Authenticated with Google Colab ({cfg.auth.value}, default accelerator={details['gpu']}{balance_str}{active_str})",
+                details=details,
+            )
+        except Exception as exc:
+            return ProviderCheckResult(
+                provider=self.name,
+                ok=False,
+                summary=f"Google Colab verification failed: {exc}",
+                details={"auth": cfg.auth.value},
+            )

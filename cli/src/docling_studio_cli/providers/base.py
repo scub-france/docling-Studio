@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from docling_studio_cli.models import ProviderDescriptor
+from docling_studio_cli.models import ProviderCheckResult, ProviderDescriptor
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from docling_studio_cli.settings import CliSettings
+
+
+PromptFn = Callable[[str, str], str]
 
 
 class ProviderSession(Protocol):
@@ -45,6 +49,18 @@ class ConversionProvider(Protocol):
 
     def is_transient_capacity_error(self, error: Exception) -> bool:
         """Return True if a parallel worker failure was due to temporary capacity limits and can be retried."""
+        ...
+
+    def configure_interactive(
+        self,
+        current: CliSettings,
+        prompt: PromptFn,
+    ) -> dict[str, Any]:
+        """Prompt the user for this provider's specific settings and return a settings update dict."""
+        ...
+
+    def verify(self, settings: CliSettings) -> ProviderCheckResult:
+        """Verify credentials, local dependencies, or remote endpoint reachability for this provider."""
         ...
 
 

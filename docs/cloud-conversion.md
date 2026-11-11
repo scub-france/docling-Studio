@@ -26,23 +26,25 @@ compute-unit balance first:
 uvx --from google-colab-cli==0.7.5 colab --auth=oauth2 usage
 ```
 
-## Configure Default Settings (`pydantic-settings`)
+## Configure & Verify a Provider (`docling-studio configure` / `verify`)
 
-The CLI uses `pydantic-settings` (`CliSettings`) with top-level pipeline options
-(`studio_url`, `provider`, `workers`, `batch_pages`, `output_dir`) and isolated
-nested provider models (`colab`, `local`, `docling_serve` using
-`DOCLING_STUDIO_<PROVIDER>__<FIELD>` environment variables):
+Run `docling-studio configure` for an interactive wizard that walks through
+selecting a provider (`colab`, `docling-serve`, or `local`), configuring its
+provider-specific settings, setting pipeline defaults (`workers`, `batch_pages`,
+`studio_url`), saving them via `pydantic-settings` (`CliSettings`) to
+`~/.config/docling-studio/settings.json`, and immediately verifying provider
+authentication/health and Studio connectivity:
 
 ```bash
-# Save defaults to ~/.config/docling-studio/settings.json:
-docling-studio config set \
-  --studio-url http://localhost:3000 \
-  --provider colab \
-  --colab-gpu T4 \
-  --workers 3 \
-  --batch-pages 25
+# Guided interactive wizard:
+docling-studio configure
 
-# Inspect effective settings (merged from CLI, DOCLING_STUDIO_* env vars, .env, and settings.json):
+# Or configure a specific provider (interactively or with --no-input):
+docling-studio configure colab
+docling-studio configure docling-serve
+
+# Re-check provider auth/balance and Studio reachability at any time:
+docling-studio verify
 docling-studio config show
 
 # Convert or import using saved defaults:

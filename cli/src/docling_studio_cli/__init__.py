@@ -9,6 +9,7 @@ from docling_studio_cli.models import (
     ImportJobConfig,
     LocalProviderSettings,
     PipelineOptions,
+    ProviderCheckResult,
     ProviderDescriptor,
     ProviderName,
     StudioAnalysisImportPayload,
@@ -38,7 +39,11 @@ from docling_studio_cli.settings import (
     default_config_path,
     load_settings,
 )
-from docling_studio_cli.studio import import_into_studio, request_json
+from docling_studio_cli.studio import (
+    check_studio_health,
+    import_into_studio,
+    request_json,
+)
 
 __all__ = [
     "CliSettings",
@@ -54,6 +59,7 @@ __all__ = [
     "LocalProvider",
     "LocalProviderSettings",
     "PipelineOptions",
+    "ProviderCheckResult",
     "ProviderDescriptor",
     "ProviderName",
     "ProviderSession",
@@ -62,6 +68,7 @@ __all__ = [
     "StudioDocumentUploadResponse",
     "StudioHealthResponse",
     "StudioImportResult",
+    "check_studio_health",
     "default_config_path",
     "get_provider",
     "import_into_studio",

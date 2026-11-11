@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 import uuid
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.request import Request, urlopen
+
+from docling_studio_cli.models import (
+    DoclingServeProviderSettings,
+    ProviderCheckResult,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from docling_studio_cli.models import DoclingServeProviderSettings
-    from docling_studio_cli.providers.base import ProviderSession
+    from docling_studio_cli.providers.base import PromptFn, ProviderSession
     from docling_studio_cli.settings import CliSettings
 
 
@@ -111,3 +115,48 @@ class DoclingServeProvider:
 
     def is_transient_capacity_error(self, error: Exception) -> bool:
         return "429" in str(error) or "503" in str(error)
+
+    def configure_interactive(
+        self,
+        current: CliSettings,
+        prompt: PromptFn,
+    ) -> dict[str, Any]:
+        default_url = current.docling_serve.url or "http://localhost:5001"
+        default_key = current.docling_serve.api_key or ""
+        url_val = prompt("Docling Serve base URL", default_url)
+        key_val = prompt("Docling Serve API key (leave empty if none)", default_key)
+        validated = DoclingServeProviderSettings(
+            url=url_val.strip(),
+            api_key=key_val.strip() or None,
+            timeout_seconds=current.docling_serve.timeout_seconds,
+        )
+        return {"docling_serve": validated.model_dump(mode="json")}
+
+    def verify(self, settings: CliSettings) -> ProviderCheckResult:
+        cfg = settings.docling_serve
+        if not cfg.url:
+            return ProviderCheckResult(
+                provider=self.name,
+                ok=False,
+                summary="Docling Serve URL is not configured (run `docling-studio configure docling-serve`)",
+            )
+        headers = {"Accept": "application/json"}
+        if cfg.api_key:
+            headers["Authorization"] = f"Bearer {cfg.api_key}"
+        try:
+            req = Request(f"{cfg.url.rstrip('/')}/health", headers=headers, method="GET")
+            with urlopen(req, timeout=10) as response:
+                data = json.load(response)
+            return ProviderCheckResult(
+                provider=self.name,
+                ok=True,
+                summary=f"Reachable Docling Serve endpoint at {cfg.url}",
+                details={"url": cfg.url, "health": data},
+            )
+        except Exception as exc:
+            return ProviderCheckResult(
+                provider=self.name,
+                ok=False,
+                summary=f"Docling Serve health check failed at {cfg.url}: {exc}",
+                details={"url": cfg.url},
+            )

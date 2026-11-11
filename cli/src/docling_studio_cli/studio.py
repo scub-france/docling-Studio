@@ -11,6 +11,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from docling_studio_cli.models import (
+    ProviderCheckResult,
     StudioAnalysisImportPayload,
     StudioAnalysisResponse,
     StudioDocumentUploadResponse,
@@ -108,3 +109,29 @@ def import_into_studio(
         else:
             raise
     return StudioImportResult(studio_url=base, document_id=doc_id, analysis_id=analysis_id)
+
+
+def check_studio_health(studio_url: str) -> ProviderCheckResult:
+    """Verify reachability and health of a Docling Studio instance."""
+    try:
+        base = validate_http_url(studio_url)
+        health_raw = request_json(f"{base}/api/health", timeout=5)
+        health = StudioHealthResponse.model_validate(health_raw)
+        version_str = f" (version={health.version})" if health.version else ""
+        return ProviderCheckResult(
+            provider="studio",
+            ok=health.status == "ok",
+            summary=f"Reachable Docling Studio at {base}{version_str}",
+            details={
+                "studio_url": base,
+                "status": health.status,
+                "version": health.version,
+            },
+        )
+    except Exception as exc:
+        return ProviderCheckResult(
+            provider="studio",
+            ok=False,
+            summary=f"Docling Studio health check failed at {studio_url}: {exc}",
+            details={"studio_url": studio_url},
+        )

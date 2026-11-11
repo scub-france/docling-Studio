@@ -30,6 +30,38 @@ uv tool install "git+https://github.com/scub-france/docling-Studio.git#subdirect
 uv tool install "./cli[local]"
 ```
 
+## Guided Provider Setup & Verification (`docling-studio configure` / `verify`)
+
+Run the interactive setup wizard to choose a provider, configure its provider-specific settings, set pipeline defaults, save to `~/.config/docling-studio/settings.json`, and immediately verify authentication/connectivity:
+
+```bash
+# Interactive wizard (prompts for provider, provider settings, workers, batch size, and Studio URL):
+docling-studio configure
+
+# Or configure a specific provider directly:
+docling-studio configure colab
+docling-studio configure docling-serve
+docling-studio configure local
+
+# Non-interactive setup + verification:
+docling-studio configure colab \
+  --no-input \
+  --colab-gpu T4 \
+  --workers 3 \
+  --batch-pages 25 \
+  --studio-url https://your-studio.example.com
+
+# Verify provider credentials/balance and Studio reachability at any time:
+docling-studio verify
+docling-studio verify colab
+```
+
+When verifying `colab`, the CLI authenticates via `google-colab-cli` (opening the OAuth browser login if needed) and reports your remaining Colab compute units and active runtime count:
+```text
+[OK] Provider 'colab': Authenticated with Google Colab (oauth2, default accelerator=T4, balance=1344.0 compute units, active_runtimes=0)
+[OK] Docling Studio: Reachable Docling Studio at https://your-studio.example.com (version=0.8.0)
+```
+
 ## Persistent Defaults & Nested Provider Settings (`pydantic-settings`)
 
 `CliSettings` separates provider-agnostic pipeline settings (`studio_url`, `provider`, `workers`, `batch_pages`, `output_dir`) from nested provider-specific settings (`colab`, `local`, `docling_serve`) using `env_nested_delimiter="__"`:
@@ -44,14 +76,6 @@ uv tool install "./cli[local]"
 4. Persistent JSON settings file (`~/.config/docling-studio/settings.json`, or override path with `--config` / `DOCLING_STUDIO_CONFIG`)
 
 ```bash
-# Save your preferred defaults once:
-docling-studio config set \
-  --studio-url https://your-studio.example.com \
-  --provider colab \
-  --colab-gpu T4 \
-  --workers 3 \
-  --batch-pages 25
-
 # Inspect effective merged settings:
 docling-studio config show
 

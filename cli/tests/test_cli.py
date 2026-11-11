@@ -137,6 +137,59 @@ class SettingsAndModelsTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             CliSettings(studio_url="not-a-valid-url")
 
+    def test_interactive_configure_flow_prompts_provider_saves_and_verifies(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_file = Path(temp_dir) / "settings.json"
+            answers = iter(
+                [
+                    "colab",  # Conversion provider
+                    "oauth2",  # Colab authentication method
+                    "L4",  # Default Colab accelerator
+                    "3",  # Default parallel workers
+                    "25",  # Default page batch size
+                    "http://localhost:3000",  # Default Docling Studio URL
+                ]
+            )
+
+            def fake_prompt(_label: str, _default: str = "") -> str:
+                return next(answers)
+
+            class FakeColabClient:
+                def list_assignments(self):
+                    return []
+
+                def get_consumption_user_info(self):
+                    return SimpleNamespace(paid_compute_units_balance=1344.0)
+
+            with (
+                patch.object(cli, "_default_prompt", side_effect=fake_prompt),
+                patch.object(
+                    colab_module,
+                    "_colab_api",
+                    return_value=(FakeColabClient(), None, None, None, None, None),
+                ),
+                patch.object(
+                    studio,
+                    "urlopen",
+                    side_effect=lambda *_a, **_kw: io.BytesIO(b'{"status":"ok","version":"0.8.0"}'),
+                ),
+            ):
+                parser = cli.build_parser()
+                args = parser.parse_args(["--config", str(config_file), "configure"])
+                code = cli.run_configure_flow(args, prompt=fake_prompt)
+                self.assertEqual(code, 0)
+
+                loaded = load_settings(config_path=config_file)
+                self.assertEqual(loaded.provider, "colab")
+                self.assertEqual(loaded.colab.gpu, ColabGpuType.L4)
+                self.assertEqual(loaded.colab.auth, ColabAuthMethod.OAUTH2)
+                self.assertEqual(loaded.workers, 3)
+                self.assertEqual(loaded.batch_pages, 25)
+                self.assertEqual(loaded.studio_url, "http://localhost:3000")
+
+                verify_code = cli.main(["--config", str(config_file), "verify", "colab"])
+                self.assertEqual(verify_code, 0)
+
 
 class ProviderAgnosticPipelineTests(unittest.TestCase):
     @unittest.skipUnless(
@@ -176,6 +229,14 @@ class ProviderAgnosticPipelineTests(unittest.TestCase):
 
             def is_transient_capacity_error(self, _error: Exception) -> bool:
                 return False
+
+            def configure_interactive(self, _current: CliSettings, _prompt):
+                return {}
+
+            def verify(self, _settings: CliSettings):
+                from docling_studio_cli.models import ProviderCheckResult
+
+                return ProviderCheckResult(provider=self.name, ok=True, summary="Dummy OK")
 
         provider: ConversionProvider = DummyProvider()
         register_provider(provider)
