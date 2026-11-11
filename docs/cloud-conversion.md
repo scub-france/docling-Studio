@@ -1,39 +1,67 @@
-# Convert a PDF with Colab
+# Convert a PDF with Colab (`docling-studio` CLI)
 
-`scripts/docling-cloud.py` runs Docling on a temporary Google Colab runtime and
-saves the PDF and its Docling JSON together in a new folder. You can optionally
-send both to a running Docling Studio instance. The command runs on your own
-machine; Google authentication stays in the official Colab CLI package and is
-never passed to Studio. It calls that package's Python classes directly.
+The installable `docling-studio` CLI (in [`cli/`](https://github.com/scub-france/docling-Studio/tree/main/cli))
+converts PDFs on a temporary Google Colab runtime (or local Docling) and saves
+the PDF and its Docling JSON together in a new folder. You can optionally
+upload both directly to a running Docling Studio instance. The command runs on
+your own machine; Google authentication stays in the official Colab CLI package
+and is never passed to Studio.
 
-Use the [Google Colab CLI package](https://github.com/googlecolab/google-colab-cli)
-in the same Python environment as the script. The first run prompts for Google
-OAuth login if needed. To check your compute-unit balance first:
+## Install the CLI
+
+Install with `uv` (or `pipx`):
+
+```bash
+# From a local checkout:
+uv tool install ./cli
+
+# Or directly from GitHub:
+uv tool install "git+https://github.com/scub-france/docling-Studio.git#subdirectory=cli"
+```
+
+The first Colab run prompts for Google OAuth login if needed. To check your
+compute-unit balance first:
 
 ```bash
 uvx --from google-colab-cli==0.7.5 colab --auth=oauth2 usage
 ```
 
-Convert a PDF using a CPU runtime:
+## Convert and Upload to Docling Studio
+
+Convert a PDF using a Colab GPU and upload directly to Studio:
 
 ```bash
-uv run --with google-colab-cli==0.7.5 python scripts/docling-cloud.py /path/to/document.pdf
+docling-studio convert /path/to/document.pdf \
+  --provider colab --gpu T4 --studio-url http://localhost:3000
 ```
 
-Request a GPU and import into Studio if it is reachable:
+For a large PDF, process smaller page ranges (`--batch-pages`) and/or split the
+book across multiple concurrent Colab runtimes (`--workers`):
 
 ```bash
-uv run --with google-colab-cli==0.7.5 python scripts/docling-cloud.py /path/to/document.pdf \
-  --gpu T4 --studio-url http://localhost:3000
+docling-studio convert /path/to/large-document.pdf \
+  --provider colab --workers 4 --gpu T4 --batch-pages 25 \
+  --studio-url http://localhost:3000
 ```
 
-For a large PDF, process smaller page ranges to limit peak memory use. This
-requires `pypdf` and `docling-core` in the local Python environment:
+To upload an already-converted PDF and Docling JSON pair into a Studio instance
+without running compute again:
+
+```bash
+docling-studio import /path/to/document.pdf \
+  --json /path/to/document.docling.json \
+  --studio-url http://localhost:3000
+```
+
+## Standalone Scripts (`scripts/`)
+
+You can also run the standalone scripts directly via `uv run` without installing
+the CLI globally:
 
 ```bash
 uv run --with google-colab-cli==0.7.5 --with pypdf --with docling-core \
   python scripts/docling-cloud.py /path/to/large-document.pdf \
-  --gpu T4 --batch-pages 25
+  --gpu T4 --batch-pages 25 --studio-url http://localhost:3000
 ```
 
 The command saves each completed range under `parts/` as it runs, then
@@ -56,7 +84,7 @@ can increase with `--workers`.
 The command saves both files under `~/Downloads/<document>-<run-id>/` by
 default. Use `--output-dir` to choose another parent directory. If Studio is
 unreachable, the files remain there for import through Studio's UI or with
-`--import-json`:
+`docling-studio import` / `--import-json`:
 
 ```bash
 python3 scripts/docling-cloud.py /path/to/document.pdf \
