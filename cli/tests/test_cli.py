@@ -1,4 +1,4 @@
-"""Unit tests for the installable `docling-studio-cli` package, Pydantic models, and settings."""
+"""Unit tests for the provider-agnostic pipeline, pluggable providers, Pydantic models, and settings."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import re
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,62 +23,73 @@ CLI_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(CLI_SRC) not in sys.path:
     sys.path.insert(0, str(CLI_SRC))
 
+import docling_studio_cli.providers.base as provider_base  # noqa: E402
+import docling_studio_cli.providers.colab as colab_module  # noqa: E402
+import docling_studio_cli.providers.docling_serve as serve_module  # noqa: E402
 from docling_studio_cli import (  # noqa: E402
     CliSettings,
     ColabAuthMethod,
-    ConversionOptions,
+    ColabGpuType,
+    ColabProviderSettings,
     ConversionProvider,
-    GpuType,
+    DoclingServeProviderSettings,
+    PipelineOptions,
     StudioImportResult,
     cli,
     get_provider,
     import_into_studio,
     list_providers,
     load_settings,
-    providers,
     register_provider,
     studio,
 )
 
 
 class SettingsAndModelsTests(unittest.TestCase):
-    def test_pydantic_settings_loads_from_json_config_env_and_cli_overrides(self):
+    def test_nested_provider_settings_load_from_json_env_and_cli_overrides(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_file = Path(temp_dir) / "settings.json"
             saved = CliSettings(
                 studio_url="https://studio.example.com/",
-                gpu=GpuType.T4,
+                provider="colab",
                 workers=2,
                 batch_pages=25,
-                colab_auth=ColabAuthMethod.ADC,
+                colab=ColabProviderSettings(
+                    gpu=ColabGpuType.T4,
+                    auth=ColabAuthMethod.ADC,
+                ),
+                docling_serve=DoclingServeProviderSettings(
+                    url="http://gpu-box:5001/",
+                ),
             )
             saved.save(config_file)
 
             loaded = load_settings(config_path=config_file)
             self.assertEqual(loaded.studio_url, "https://studio.example.com")
-            self.assertEqual(loaded.gpu, GpuType.T4)
+            self.assertEqual(loaded.colab.gpu, ColabGpuType.T4)
+            self.assertEqual(loaded.colab.auth, ColabAuthMethod.ADC)
+            self.assertEqual(loaded.docling_serve.url, "http://gpu-box:5001")
             self.assertEqual(loaded.workers, 2)
             self.assertEqual(loaded.batch_pages, 25)
-            self.assertEqual(loaded.colab_auth, ColabAuthMethod.ADC)
 
             with patch.dict(
                 os.environ,
                 {
-                    "DOCLING_STUDIO_GPU": "L4",
+                    "DOCLING_STUDIO_COLAB__GPU": "L4",
                     "DOCLING_STUDIO_WORKERS": "4",
                 },
                 clear=False,
             ):
                 env_loaded = load_settings(config_path=config_file)
-                self.assertEqual(env_loaded.gpu, GpuType.L4)
+                self.assertEqual(env_loaded.colab.gpu, ColabGpuType.L4)
                 self.assertEqual(env_loaded.workers, 4)
 
                 cli_override = load_settings(
                     config_path=config_file,
-                    gpu="A100",
                     workers=1,
+                    colab={"gpu": "A100"},
                 )
-                self.assertEqual(cli_override.gpu, GpuType.A100)
+                self.assertEqual(cli_override.colab.gpu, ColabGpuType.A100)
                 self.assertEqual(cli_override.workers, 1)
 
     def test_config_subcommand_set_show_and_reset(self):
@@ -91,8 +103,12 @@ class SettingsAndModelsTests(unittest.TestCase):
                     "set",
                     "--studio-url",
                     "http://localhost:3000/",
-                    "--gpu",
+                    "--colab-gpu",
                     "T4",
+                    "--docling-serve-url",
+                    "http://serve.local:5001/",
+                    "--local-device",
+                    "mps",
                     "--workers",
                     "3",
                     "--batch-pages",
@@ -103,7 +119,9 @@ class SettingsAndModelsTests(unittest.TestCase):
             self.assertTrue(config_file.is_file())
             loaded = load_settings(config_path=config_file)
             self.assertEqual(loaded.studio_url, "http://localhost:3000")
-            self.assertEqual(loaded.gpu, GpuType.T4)
+            self.assertEqual(loaded.colab.gpu, ColabGpuType.T4)
+            self.assertEqual(loaded.docling_serve.url, "http://serve.local:5001")
+            self.assertEqual(loaded.local.device, "mps")
             self.assertEqual(loaded.workers, 3)
             self.assertEqual(loaded.batch_pages, 20)
 
@@ -113,48 +131,120 @@ class SettingsAndModelsTests(unittest.TestCase):
 
     def test_models_reject_invalid_values(self):
         with self.assertRaises(ValidationError):
-            ConversionOptions(workers=0)
+            PipelineOptions(workers=0)
         with self.assertRaises(ValidationError):
-            ConversionOptions(batch_pages=0)
+            PipelineOptions(batch_pages=0)
         with self.assertRaises(ValidationError):
             CliSettings(studio_url="not-a-valid-url")
 
 
-class ProviderRegistryTests(unittest.TestCase):
-    def test_lists_builtin_providers_and_allows_custom_registration(self):
-        names = [p.name for p in list_providers()]
-        self.assertIn("colab", names)
-        self.assertIn("local", names)
+class ProviderAgnosticPipelineTests(unittest.TestCase):
+    @unittest.skipUnless(
+        importlib.util.find_spec("pypdf") and importlib.util.find_spec("docling_core"),
+        "batch dependencies are not installed",
+    )
+    def test_custom_provider_gets_parallel_workers_and_page_batching_automatically(self):
+        from docling_core.types.doc import DoclingDocument, PageItem, Size
+        from pypdf import PdfWriter
 
-        class CustomProvider:
-            name = "custom-test"
-            description = "Custom provider for testing"
+        session_calls: list[tuple[str, tuple[int, int] | None]] = []
 
-            def convert(self, pdf: Path, result_path: Path, options) -> None:
-                result_path.write_text('{"schema_name":"DoclingDocument"}')
+        class FakeSession:
+            def __init__(self, pdf_name: str) -> None:
+                self.pdf_name = pdf_name
 
-        custom: ConversionProvider = CustomProvider()
-        register_provider(custom)
+            def convert_range(self, page_range: tuple[int, int] | None, output_path: Path) -> None:
+                session_calls.append((self.pdf_name, page_range))
+                start, end = page_range or (1, 1)
+                doc = DoclingDocument(
+                    name="part",
+                    pages={
+                        page: PageItem(page_no=page, size=Size(width=1, height=1))
+                        for page in range(start, end + 1)
+                    },
+                )
+                output_path.write_text(json.dumps(doc.export_to_dict()))
+
+        class DummyProvider:
+            name = "dummy-cloud"
+            description = "Provider with zero batching/merging code of its own"
+            settings_model = "DummySettings"
+
+            @contextmanager
+            def open_session(self, pdf: Path, _settings: CliSettings):
+                yield FakeSession(pdf.name)
+
+            def is_transient_capacity_error(self, _error: Exception) -> bool:
+                return False
+
+        provider: ConversionProvider = DummyProvider()
+        register_provider(provider)
         try:
-            self.assertIs(get_provider("custom-test"), custom)
+            self.assertIs(get_provider("dummy-cloud"), provider)
             with tempfile.TemporaryDirectory() as temp_dir:
-                pdf = Path(temp_dir) / "sample.pdf"
-                pdf.write_bytes(b"%PDF-1.4\n")
+                pdf = Path(temp_dir) / "book.pdf"
+                writer = PdfWriter()
+                for _ in range(4):
+                    writer.add_blank_page(width=100, height=100)
+                with pdf.open("wb") as stream:
+                    writer.write(stream)
+
                 code = cli.main(
                     [
                         "convert",
                         str(pdf),
                         "--provider",
-                        "custom-test",
+                        "dummy-cloud",
+                        "--workers",
+                        "2",
+                        "--batch-pages",
+                        "1",
                         "--output-dir",
                         temp_dir,
                     ]
                 )
                 self.assertEqual(code, 0)
-                saved = list(Path(temp_dir).glob("sample-*/sample.docling.json"))
-                self.assertEqual(len(saved), 1)
+                merged_files = list(Path(temp_dir).glob("book-parallel-*/book.docling.json"))
+                self.assertEqual(len(merged_files), 1)
+                merged = json.loads(merged_files[0].read_text())
+                self.assertEqual(list(merged["pages"]), ["1", "2", "3", "4"])
+                self.assertEqual(len(session_calls), 4)
         finally:
-            providers._PROVIDERS.pop("custom-test", None)
+            provider_base._PROVIDERS.pop("dummy-cloud", None)
+
+    def test_docling_serve_provider_converts_via_http(self):
+        names = [p.name for p in list_providers()]
+        self.assertEqual(names, ["colab", "docling-serve", "local"])
+        captured_requests = []
+
+        def fake_urlopen(request, *, timeout):
+            captured_requests.append((request.full_url, request.headers, timeout))
+            return io.BytesIO(b'{"document":{"json_content":{"schema_name":"DoclingDocument"}}}')
+
+        with (
+            patch.object(serve_module, "urlopen", side_effect=fake_urlopen),
+            tempfile.TemporaryDirectory() as temp_dir,
+        ):
+            pdf = Path(temp_dir) / "paper.pdf"
+            pdf.write_bytes(b"%PDF-1.4\n")
+            code = cli.main(
+                [
+                    "convert",
+                    str(pdf),
+                    "--provider",
+                    "docling-serve",
+                    "--docling-serve-url",
+                    "http://gpu-box:5001",
+                    "--docling-serve-api-key",
+                    "secret-token",
+                    "--output-dir",
+                    temp_dir,
+                ]
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(len(captured_requests), 1)
+            self.assertEqual(captured_requests[0][0], "http://gpu-box:5001/v1/convert/file")
+            self.assertEqual(captured_requests[0][1].get("Authorization"), "Bearer secret-token")
 
 
 class ColabProviderTests(unittest.TestCase):
@@ -244,7 +334,7 @@ class ColabProviderTests(unittest.TestCase):
             config_file = Path(temp_dir) / "settings.json"
             CliSettings(
                 studio_url="http://localhost:3000",
-                gpu=GpuType.T4,
+                colab=ColabProviderSettings(gpu=ColabGpuType.T4),
                 output_dir=Path(temp_dir),
             ).save(config_file)
 
@@ -257,7 +347,7 @@ class ColabProviderTests(unittest.TestCase):
                 analysis_id="analysis-1",
             )
             with (
-                patch.object(providers, "_colab_api", return_value=api),
+                patch.object(colab_module, "_colab_api", return_value=api),
                 patch.object(cli, "import_into_studio", return_value=fake_result) as mock_import,
             ):
                 code = cli.main(
@@ -275,42 +365,6 @@ class ColabProviderTests(unittest.TestCase):
             )
             self.assertEqual(events[0][2], api[1].T4)
             mock_import.assert_called_once()
-
-    @unittest.skipUnless(
-        importlib.util.find_spec("pypdf") and importlib.util.find_spec("docling_core"),
-        "batch dependencies are not installed",
-    )
-    def test_parallel_workers_split_and_merge(self):
-        from pypdf import PdfWriter
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            pdf = Path(temp_dir) / "book.pdf"
-            writer = PdfWriter()
-            for _ in range(4):
-                writer.add_blank_page(width=100, height=100)
-            with pdf.open("wb") as stream:
-                writer.write(stream)
-            _events, api = self.fake_api(batched=True)
-            with patch.object(providers, "_colab_api", return_value=api):
-                code = cli.main(
-                    [
-                        "convert",
-                        str(pdf),
-                        "--provider",
-                        "colab",
-                        "--workers",
-                        "2",
-                        "--batch-pages",
-                        "1",
-                        "--output-dir",
-                        temp_dir,
-                    ]
-                )
-            self.assertEqual(code, 0)
-            merged_files = list(Path(temp_dir).glob("book-parallel-*/book.docling.json"))
-            self.assertEqual(len(merged_files), 1)
-            merged = json.loads(merged_files[0].read_text())
-            self.assertEqual(list(merged["pages"]), ["1", "2", "3", "4"])
 
 
 class StudioImportSubcommandTests(unittest.TestCase):
@@ -368,7 +422,7 @@ class StudioImportSubcommandTests(unittest.TestCase):
             pdf.write_bytes(b"%PDF-1.4\n")
             _events, api = ColabProviderTests().fake_api()
             with (
-                patch.object(providers, "_colab_api", return_value=api),
+                patch.object(colab_module, "_colab_api", return_value=api),
                 patch.object(cli, "import_into_studio", side_effect=URLError("offline")),
             ):
                 code = cli.main(

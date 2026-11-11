@@ -15,9 +15,10 @@ from pydantic_settings import (
 )
 
 from docling_studio_cli.models import (
-    ColabAuthMethod,
-    ConversionOptions,
-    GpuType,
+    ColabProviderSettings,
+    DoclingServeProviderSettings,
+    LocalProviderSettings,
+    PipelineOptions,
     ProviderName,
     validate_http_url,
 )
@@ -59,13 +60,16 @@ class _JsonConfigFileSettingsSource(PydanticBaseSettingsSource):
 class CliSettings(BaseSettings):
     """Default settings for `docling-studio`, loaded from CLI overrides, env vars, `.env`, and `settings.json`.
 
-    Environment variables use the `DOCLING_STUDIO_` prefix (for example:
-    `DOCLING_STUDIO_STUDIO_URL` or `DOCLING_STUDIO_URL`, `DOCLING_STUDIO_PROVIDER`,
-    `DOCLING_STUDIO_GPU`, `DOCLING_STUDIO_BATCH_PAGES`, `DOCLING_STUDIO_WORKERS`).
+    Top-level settings are provider-agnostic (`studio_url`, `provider`, `workers`,
+    `batch_pages`, `output_dir`, `request_timeout_seconds`), while provider-specific
+    settings are cleanly isolated under nested models (`colab`, `local`, `docling_serve`)
+    configurable via `DOCLING_STUDIO_<PROVIDER>__<FIELD>` (e.g. `DOCLING_STUDIO_COLAB__GPU=T4`,
+    `DOCLING_STUDIO_DOCLING_SERVE__URL=http://gpu-host:5001`).
     """
 
     model_config = SettingsConfigDict(
         env_prefix="DOCLING_STUDIO_",
+        env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -79,25 +83,17 @@ class CliSettings(BaseSettings):
     provider: str = Field(
         default=ProviderName.COLAB.value,
         min_length=1,
-        description="Default conversion provider (e.g. colab, local)",
-    )
-    gpu: GpuType | None = Field(
-        default=None,
-        description="Default GPU accelerator on Colab (T4, L4, G4, H100, A100)",
+        description="Default conversion provider (colab, local, docling-serve)",
     )
     workers: int = Field(
         default=1,
         ge=1,
-        description="Default number of parallel Colab runtimes",
+        description="Default number of parallel worker sessions to split a PDF across",
     )
     batch_pages: int | None = Field(
         default=None,
         ge=1,
         description="Default page batch size per conversion step",
-    )
-    colab_auth: ColabAuthMethod = Field(
-        default=ColabAuthMethod.OAUTH2,
-        description="Default Colab CLI auth method (oauth2 or adc)",
     )
     output_dir: Path = Field(
         default_factory=lambda: Path.home() / "Downloads",
@@ -109,6 +105,19 @@ class CliSettings(BaseSettings):
         description="Default HTTP timeout in seconds for Studio API requests",
     )
 
+    colab: ColabProviderSettings = Field(
+        default_factory=ColabProviderSettings,
+        description="Google Colab provider settings",
+    )
+    local: LocalProviderSettings = Field(
+        default_factory=LocalProviderSettings,
+        description="Local Docling provider settings",
+    )
+    docling_serve: DoclingServeProviderSettings = Field(
+        default_factory=DoclingServeProviderSettings,
+        description="Remote Docling Serve HTTP provider settings",
+    )
+
     @field_validator("studio_url", mode="before")
     @classmethod
     def _normalize_studio_url(cls, value: Any) -> str | None:
@@ -118,16 +127,6 @@ class CliSettings(BaseSettings):
         if not text:
             return None
         return validate_http_url(text)
-
-    @field_validator("gpu", mode="before")
-    @classmethod
-    def _normalize_gpu(cls, value: Any) -> GpuType | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        if not text or text.lower() in {"none", "cpu", "null"}:
-            return None
-        return GpuType(text.upper())
 
     @field_validator("output_dir", mode="after")
     @classmethod
@@ -152,27 +151,15 @@ class CliSettings(BaseSettings):
             file_secret_settings,
         )
 
-    def to_conversion_options(
+    def to_pipeline_options(
         self,
         *,
-        gpu: GpuType | str | None = None,
-        colab_auth: ColabAuthMethod | str | None = None,
-        batch_pages: int | None = None,
         workers: int | None = None,
-    ) -> ConversionOptions:
-        resolved_gpu = (
-            GpuType(gpu.upper()) if isinstance(gpu, str) else (gpu if gpu is not None else self.gpu)
-        )
-        resolved_auth = (
-            ColabAuthMethod(colab_auth)
-            if isinstance(colab_auth, str)
-            else (colab_auth if colab_auth is not None else self.colab_auth)
-        )
-        return ConversionOptions(
-            gpu=resolved_gpu,
-            colab_auth=resolved_auth,
-            batch_pages=batch_pages if batch_pages is not None else self.batch_pages,
+        batch_pages: int | None = None,
+    ) -> PipelineOptions:
+        return PipelineOptions(
             workers=workers if workers is not None else self.workers,
+            batch_pages=batch_pages if batch_pages is not None else self.batch_pages,
         )
 
     def save(self, config_path: Path | None = None) -> Path:
@@ -189,7 +176,7 @@ def load_settings(
     **overrides: Any,
 ) -> CliSettings:
     """Load `CliSettings` combining explicit overrides, environment variables, `.env`, and JSON config."""
-    clean_overrides = {k: v for k, v in overrides.items() if v is not None}
+    clean_overrides: dict[str, Any] = {k: v for k, v in overrides.items() if v is not None}
     if (
         "studio_url" not in clean_overrides
         and "DOCLING_STUDIO_STUDIO_URL" not in os.environ
@@ -201,6 +188,19 @@ def load_settings(
     prev_path = getattr(CliSettings, "_active_config_path", None)
     CliSettings._active_config_path = resolved_path  # type: ignore[attr-defined]
     try:
-        return CliSettings(**clean_overrides)
+        base = CliSettings()
+        if not clean_overrides:
+            return base
+        merged = base.model_dump()
+        for key, value in clean_overrides.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                nested = dict(merged[key])
+                for nk, nv in value.items():
+                    if nv is not None:
+                        nested[nk] = nv
+                merged[key] = nested
+            else:
+                merged[key] = value
+        return CliSettings.model_validate(merged)
     finally:
         CliSettings._active_config_path = prev_path  # type: ignore[attr-defined]

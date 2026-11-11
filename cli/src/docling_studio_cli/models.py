@@ -1,9 +1,10 @@
-"""Pydantic domain models for CLI conversion options, Studio API responses, and provider metadata."""
+"""Pydantic domain models for CLI conversion jobs, provider settings, and Studio API payloads."""
 
 from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -12,9 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class ProviderName(StrEnum):
     COLAB = "colab"
     LOCAL = "local"
+    DOCLING_SERVE = "docling-serve"
 
 
-class GpuType(StrEnum):
+class ColabGpuType(StrEnum):
     T4 = "T4"
     L4 = "L4"
     G4 = "G4"
@@ -35,15 +37,92 @@ def validate_http_url(url: str) -> str:
     return cleaned
 
 
-class ConversionOptions(BaseModel):
-    """Validated options passed to a conversion provider."""
+class ColabProviderSettings(BaseModel):
+    """Configuration specific to the Google Colab provider."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    gpu: GpuType | None = None
-    colab_auth: ColabAuthMethod = ColabAuthMethod.OAUTH2
-    batch_pages: int | None = Field(default=None, ge=1)
-    workers: int = Field(default=1, ge=1)
+    gpu: ColabGpuType | None = Field(
+        default=None,
+        description="Colab GPU accelerator (T4, L4, G4, H100, A100); None uses CPU",
+    )
+    auth: ColabAuthMethod = Field(
+        default=ColabAuthMethod.OAUTH2,
+        description="google-colab-cli authentication method (oauth2 or adc)",
+    )
+    docling_version_spec: str = Field(
+        default="docling>=2.80,<3.0",
+        min_length=1,
+        description="Pip requirement specifier installed on the remote Colab runtime",
+    )
+
+    @field_validator("gpu", mode="before")
+    @classmethod
+    def _normalize_gpu(cls, value: Any) -> ColabGpuType | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text or text.lower() in {"none", "cpu", "null"}:
+            return None
+        return ColabGpuType(text.upper())
+
+
+class LocalProviderSettings(BaseModel):
+    """Configuration specific to the local Docling provider."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device: str | None = Field(
+        default=None,
+        description="Device override for local Docling (e.g. cpu, cuda, mps)",
+    )
+
+
+class DoclingServeProviderSettings(BaseModel):
+    """Configuration specific to a remote Docling Serve HTTP endpoint provider."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    url: str | None = Field(
+        default=None,
+        description="Base URL of a remote docling-serve instance (e.g. http://gpu-box:5001)",
+    )
+    api_key: str | None = Field(
+        default=None,
+        description="Optional Bearer / API key header for the docling-serve endpoint",
+    )
+    timeout_seconds: int = Field(
+        default=1800,
+        ge=1,
+        description="HTTP timeout in seconds for remote conversion requests",
+    )
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _normalize_url(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        return validate_http_url(text)
+
+
+class PipelineOptions(BaseModel):
+    """Provider-agnostic execution options (parallel workers and page batching)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workers: int = Field(
+        default=1,
+        ge=1,
+        description="Number of parallel PDF parts/sessions to run concurrently",
+    )
+    batch_pages: int | None = Field(
+        default=None,
+        ge=1,
+        description="Number of pages per conversion batch within a worker session",
+    )
 
 
 class ProviderDescriptor(BaseModel):
@@ -53,6 +132,7 @@ class ProviderDescriptor(BaseModel):
 
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
+    settings_model: str = Field(min_length=1)
 
 
 class StudioHealthResponse(BaseModel):
@@ -127,7 +207,7 @@ class ConversionJobConfig(BaseModel):
 
     pdf: Path
     provider: str = Field(default=ProviderName.COLAB.value, min_length=1)
-    options: ConversionOptions = Field(default_factory=ConversionOptions)
+    pipeline: PipelineOptions = Field(default_factory=PipelineOptions)
     output_dir: Path
     studio_url: str | None = None
     request_timeout_seconds: int = Field(default=600, ge=1)

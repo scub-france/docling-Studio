@@ -1,11 +1,11 @@
-# Convert a PDF with Colab (`docling-studio` CLI)
+# Convert PDFs with Cloud or Remote Providers (`docling-studio` CLI)
 
 The installable `docling-studio` CLI (in [`cli/`](https://github.com/scub-france/docling-Studio/tree/main/cli))
-converts PDFs on a temporary Google Colab runtime (or local Docling) and saves
-the PDF and its Docling JSON together in a new folder. You can optionally
-upload both directly to a running Docling Studio instance. The command runs on
-your own machine; Google authentication stays in the official Colab CLI package
-and is never passed to Studio.
+converts PDFs using pluggable compute providers (**Google Colab**, **Remote
+Docling Serve HTTP**, or **Local Docling**), saves the PDF and its validated
+Docling JSON together in a local folder, and optionally uploads both directly
+to a running Docling Studio instance. The command runs on your own machine;
+provider credentials stay on your machine and are never passed to Studio.
 
 ## Install the CLI
 
@@ -28,15 +28,17 @@ uvx --from google-colab-cli==0.7.5 colab --auth=oauth2 usage
 
 ## Configure Default Settings (`pydantic-settings`)
 
-The CLI uses `pydantic-settings` (`CliSettings`) so you can persist your default
-Studio URL, provider, GPU, parallel worker count, and page batch size once
-instead of passing flags on every command:
+The CLI uses `pydantic-settings` (`CliSettings`) with top-level pipeline options
+(`studio_url`, `provider`, `workers`, `batch_pages`, `output_dir`) and isolated
+nested provider models (`colab`, `local`, `docling_serve` using
+`DOCLING_STUDIO_<PROVIDER>__<FIELD>` environment variables):
 
 ```bash
 # Save defaults to ~/.config/docling-studio/settings.json:
 docling-studio config set \
   --studio-url http://localhost:3000 \
-  --gpu T4 \
+  --provider colab \
+  --colab-gpu T4 \
   --workers 3 \
   --batch-pages 25
 
@@ -54,16 +56,25 @@ Convert a PDF using a Colab GPU and upload directly to Studio:
 
 ```bash
 docling-studio convert /path/to/document.pdf \
-  --provider colab --gpu T4 --studio-url http://localhost:3000
+  --provider colab --colab-gpu T4 --studio-url http://localhost:3000
 ```
 
 For a large PDF, process smaller page ranges (`--batch-pages`) and/or split the
-book across multiple concurrent Colab runtimes (`--workers`):
+book across multiple concurrent worker sessions (`--workers`). Because PDF
+splitting, batching, and `DoclingDocument.concatenate` merging live in the
+provider-agnostic pipeline (`cli/src/docling_studio_cli/pipeline.py`), `--workers`
+and `--batch-pages` work with any provider (`colab`, `docling-serve`, `local`):
 
 ```bash
+# Parallel Colab runtimes:
 docling-studio convert /path/to/large-document.pdf \
-  --provider colab --workers 4 --gpu T4 --batch-pages 25 \
+  --provider colab --workers 4 --colab-gpu T4 --batch-pages 25 \
   --studio-url http://localhost:3000
+
+# Remote docling-serve instance:
+docling-studio convert /path/to/large-document.pdf \
+  --provider docling-serve --docling-serve-url http://gpu-box:5001 \
+  --batch-pages 25 --studio-url http://localhost:3000
 ```
 
 To upload an already-converted PDF and Docling JSON pair into a Studio instance
