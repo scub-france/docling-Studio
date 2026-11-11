@@ -4,6 +4,7 @@ import { useDocumentStore } from './store'
 
 vi.mock('./api', () => ({
   fetchDocument: vi.fn(),
+  fetchDocumentEditedAnalysisResult: vi.fn(),
   fetchDocuments: vi.fn(),
   uploadDocument: vi.fn(),
   deleteDocument: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('../analysis/api', () => ({
 import * as api from './api'
 import * as chunksApi from '../chunks/api'
 import * as analysisApi from '../analysis/api'
+import { useFeatureFlagStore } from '../feature-flags'
 
 describe('useDocumentStore', () => {
   beforeEach(() => {
@@ -236,6 +238,25 @@ describe('useDocumentStore', () => {
     expect(store.workspaceLatestAnalysis?.id).toBe('a1')
     expect(store.workspaceLoading).toBe(false)
     expect(store.workspaceError).toBeNull()
+  })
+
+  it('uses saved analysis edits for the workspace when the editor is enabled', async () => {
+    const flags = useFeatureFlagStore()
+    flags.loaded = true
+    flags.analysisEditorEnabled = true
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocumentVersions.mockResolvedValue([mkVersion()])
+    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ contentMarkdown: 'Original' }))
+    api.fetchDocumentEditedAnalysisResult.mockResolvedValue(
+      mkAnalysis({ id: 'working:d1', contentMarkdown: 'Edited' }),
+    )
+
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+
+    expect(api.fetchDocumentEditedAnalysisResult).toHaveBeenCalledWith('d1', 'a1')
+    expect(store.workspaceActiveAnalysis?.id).toBe('a1')
+    expect(store.workspaceActiveAnalysis?.contentMarkdown).toBe('Edited')
   })
 
   it('loadWorkspace() exposes null active analysis when no versions exist', async () => {

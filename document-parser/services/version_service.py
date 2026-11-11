@@ -1,15 +1,13 @@
 """Document-version service (#267).
 
-Records frozen (analysis_id, chunks_snapshot) pairs at the two explicit
+Records frozen analysis selection and chunk snapshots at the two explicit
 version-creating triggers — a `+ New analysis` run completes, or a
 `+ Generate chunks` (rechunk) invocation finishes. Manual chunk edits
 between snapshots are NOT recorded as versions; they mutate the live
 chunkset and only land in History when the next explicit trigger fires.
 
 `restore(document_id, version_id)` writes the version's chunks_snapshot
-back into the live `chunks` table. The current analysis pointer is
-managed by the workspace (frontend reads `version.analysis_id` to
-re-render the OCR side).
+back into the live `chunks` table and updates the active analysis selection.
 """
 
 from __future__ import annotations
@@ -20,13 +18,21 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain.models import Chunk, ChunkEdit, DocumentVersion, DocumentVersionKind
-from domain.value_objects import ChunkEditAction
+from domain.models import (
+    AnalysisStatus,
+    Chunk,
+    DocumentAnalysisSelection,
+    DocumentChunkSource,
+    DocumentVersion,
+    DocumentVersionKind,
+)
 
 if TYPE_CHECKING:
     from domain.ports import (
-        ChunkEditRepository,
+        AnalysisRepository,
+        AnalysisSelectionRepository,
         ChunkRepository,
+        ChunkSourceRepository,
         DocumentRepository,
     )
     from persistence.document_version_repo import SqliteDocumentVersionRepository
@@ -80,19 +86,23 @@ class VersionNotFoundError(VersionServiceError):
 
 
 class VersionService:
-    """Records and restores frozen (analysis, chunks) version snapshots."""
+    """Records and restores analysis selections with chunk snapshots."""
 
     def __init__(
         self,
         version_repo: SqliteDocumentVersionRepository,
         chunk_repo: ChunkRepository,
-        chunk_edit_repo: ChunkEditRepository,
         document_repo: DocumentRepository,
+        analysis_repo: AnalysisRepository,
+        selection_repo: AnalysisSelectionRepository,
+        chunk_source_repo: ChunkSourceRepository,
     ):
         self._versions = version_repo
         self._chunks = chunk_repo
-        self._edits = chunk_edit_repo
         self._documents = document_repo
+        self._analyses = analysis_repo
+        self._selection = selection_repo
+        self._chunk_sources = chunk_source_repo
 
     async def list_for_document(self, document_id: str) -> list[DocumentVersion]:
         await self._require_doc(document_id)
@@ -112,11 +122,14 @@ class VersionService:
         JSON array.
         """
         chunks = await self._chunks.find_for_document(document_id)
+        source = await self._chunk_sources.get_chunk_source(document_id)
         version = DocumentVersion(
             id=_new_id(),
             document_id=document_id,
             kind=DocumentVersionKind.ANALYSIS,
             analysis_id=analysis_id,
+            chunks_source_analysis_id=source.analysis_id if source else None,
+            chunks_source_result_hash=source.result_hash if source else None,
             chunks_snapshot=_serialize_chunks(chunks),
             summary="Analysis run",
             created_at=_utcnow(),
@@ -127,7 +140,8 @@ class VersionService:
     async def record_on_rechunk(
         self,
         document_id: str,
-        analysis_id: str | None,
+        analysis_id: str,
+        source_result_hash: str,
     ) -> DocumentVersion:
         """Called by `ChunkService.rechunk_document` after the live
         chunkset has been replaced. Snapshots the new chunks; the
@@ -138,6 +152,8 @@ class VersionService:
             document_id=document_id,
             kind=DocumentVersionKind.CHUNKS,
             analysis_id=analysis_id,
+            chunks_source_analysis_id=analysis_id,
+            chunks_source_result_hash=source_result_hash,
             chunks_snapshot=_serialize_chunks(chunks),
             summary="Chunks generated",
             created_at=_utcnow(),
@@ -146,31 +162,28 @@ class VersionService:
         return version
 
     async def restore(self, document_id: str, version_id: str) -> DocumentVersion:
-        """Replace the live chunkset with the version's snapshot. The
-        active-analysis pointer is the caller's responsibility (the
-        frontend reads `version.analysis_id` and updates the workspace
-        store)."""
+        """Replace the live chunkset and select its source analysis."""
         await self._require_doc(document_id)
         version = await self._versions.find_by_id(version_id)
         if not version or version.document_id != document_id:
             raise VersionNotFoundError(f"Version not found: {version_id}")
+        if version.analysis_id is not None:
+            analysis = await self._analyses.find_by_id(version.analysis_id)
+            if (
+                analysis is None
+                or analysis.document_id != document_id
+                or analysis.status != AnalysisStatus.COMPLETED
+            ):
+                raise VersionServiceError(
+                    "Version analysis is no longer available", http_status=409
+                )
 
-        # Wipe live chunks (soft-delete + audit), then re-insert the
+        # Wipe live chunks (soft-delete), then re-insert the
         # snapshot's chunks under fresh ids.
         now = _utcnow()
         existing = await self._chunks.find_for_document(document_id)
         for c in existing:
             await self._chunks.soft_delete(c.id, at=now)
-            await self._edits.insert(
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=c.id,
-                    action=ChunkEditAction.DELETE,
-                    actor=f"system:restore:{version_id}",
-                    at=now,
-                )
-            )
 
         raw_chunks = json.loads(version.chunks_snapshot or "[]")
         new_chunks: list[Chunk] = []
@@ -179,22 +192,25 @@ class VersionService:
 
         if new_chunks:
             await self._chunks.insert_many(new_chunks)
-            for c in new_chunks:
-                await self._edits.insert(
-                    ChunkEdit(
-                        id=_new_id(),
-                        document_id=document_id,
-                        chunk_id=c.id,
-                        action=ChunkEditAction.INSERT,
-                        actor=f"system:restore:{version_id}",
-                        at=now,
-                    )
-                )
 
         # History restore is an aggregate operation: the backend, rather
         # than the frontend, owns which immutable analysis is active.
-        await self._documents.update_active_analysis(document_id, version.analysis_id, None)
-        await self._documents.update_chunk_source(document_id, version.analysis_id, 0)
+        if version.analysis_id is None:
+            await self._selection.clear_selection(document_id)
+        else:
+            await self._selection.select(
+                DocumentAnalysisSelection(document_id, version.analysis_id)
+            )
+        if version.chunks_source_analysis_id is None:
+            await self._chunk_sources.clear_chunk_source(document_id)
+        else:
+            await self._chunk_sources.set_chunk_source(
+                DocumentChunkSource(
+                    document_id,
+                    version.chunks_source_analysis_id,
+                    version.chunks_source_result_hash,
+                )
+            )
 
         logger.info(
             "Restored doc %s to version %s (%d chunks)",

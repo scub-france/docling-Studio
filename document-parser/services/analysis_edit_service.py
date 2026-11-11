@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -15,15 +14,21 @@ from domain.analysis_editing import (
     AnalysisEditError,
     AnalysisEditUnavailableError,
     EditCommand,
+    EditedAnalysisCache,
     EditStream,
     ProjectedAnalysis,
-    WorkingCopy,
     active_edit_commands,
 )
 from domain.models import AnalysisJob, AnalysisStatus
 
 if TYPE_CHECKING:
-    from domain.ports import AnalysisEditRepository, AnalysisRepository, DocumentRepository
+    from domain.ports import (
+        AnalysisEditRepository,
+        AnalysisRepository,
+        AnalysisSelectionRepository,
+        ChunkSourceRepository,
+        DocumentRepository,
+    )
 
 
 ENGINE_VERSION = "analysis-editor-1"
@@ -47,6 +52,8 @@ class AnalysisEditService:
         *,
         analysis_repo: AnalysisRepository,
         document_repo: DocumentRepository,
+        selection_repo: AnalysisSelectionRepository,
+        chunk_source_repo: ChunkSourceRepository,
         edit_repo: AnalysisEditRepository,
         editor,
         projector,
@@ -54,6 +61,8 @@ class AnalysisEditService:
     ) -> None:
         self._analyses = analysis_repo
         self._documents = document_repo
+        self._selection = selection_repo
+        self._chunk_sources = chunk_source_repo
         self._edits = edit_repo
         self._editor = editor
         self._projector = projector
@@ -63,44 +72,47 @@ class AnalysisEditService:
     async def load_editor(self, document_id: str, analysis_id: str | None = None) -> EditorSnapshot:
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
-        stream = await self._edits.find_stream(document_id, base.id)
-        stored = await self._edits.list_commands(stream.id) if stream else []
+        stream = await self._edits.find_stream(base.id)
+        stored = await self._edits.list_commands(base.id) if stream else []
         sequence = stored[-1].sequence if stored else 0
         if not stored:
             base_hash = _sha256(base.document_json)
             cached = self._unedited_projection
             if cached is not None and cached[0] == base.id and cached[1] == base_hash:
-                return self._snapshot(document, base, cached[2], sequence)
-        working = await self._edits.find_working_copy(document_id, base.id)
+                return await self._snapshot(document, base, cached[2], sequence)
+        cache = await self._edits.find_cache(base.id) if stream else None
         if (
             stream is not None
-            and working is not None
-            and working.stream_id == stream.id
-            and working.base_analysis_id == base.id
-            and working.applied_through_sequence == sequence
-            and working.command_stream_hash == _stream_hash(stored, [])
+            and cache is not None
+            and cache.analysis_id == base.id
+            and cache.applied_through_sequence == sequence
+            and cache.command_stream_hash == _stream_hash(stored, [])
         ):
             projection = self._projector.project_serialized(
-                working.document_json,
+                cache.document_json,
                 base_analysis_id=base.id,
-                editor_model_json=working.editor_model_json,
+                editor_model_json=cache.editor_model_json,
             )
         else:
             projection = self._replay(base, stored)
         if not stored:
             self._unedited_projection = (base.id, base_hash, projection)
-        return self._snapshot(document, base, projection, sequence)
+        return await self._snapshot(document, base, projection, sequence)
 
     async def active_result(self, document_id: str) -> EditorSnapshot:
         """Resolve the result used by document-scoped downstream features."""
-        return await self.load_editor(document_id)
+        await self._require_document(document_id)
+        selection = await self._selection.get_selection(document_id)
+        if selection is None:
+            raise AnalysisEditUnavailableError("This document has no active analysis")
+        return await self.load_editor(document_id, selection.analysis_id)
 
     async def history(self, document_id: str, analysis_id: str | None = None) -> list:
         """Return the durable command stream for one base analysis."""
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
-        stream = await self._edits.find_stream(document_id, base.id)
-        return await self._edits.list_commands(stream.id) if stream else []
+        stream = await self._edits.find_stream(base.id)
+        return await self._edits.list_commands(base.id) if stream else []
 
     async def preview(
         self,
@@ -110,12 +122,12 @@ class AnalysisEditService:
     ) -> EditorSnapshot:
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
-        stream = await self._edits.find_stream(document_id, base.id)
-        stored = await self._edits.list_commands(stream.id) if stream else []
+        stream = await self._edits.find_stream(base.id)
+        stored = await self._edits.list_commands(base.id) if stream else []
         commands, _ = active_edit_commands(stored, pending_commands)
         projection = self._project(base, commands, operation="preview")
         sequence = (stored[-1].sequence if stored else 0) + len(pending_commands)
-        return self._snapshot(document, base, projection, sequence)
+        return await self._snapshot(document, base, projection, sequence)
 
     async def save(
         self,
@@ -131,25 +143,23 @@ class AnalysisEditService:
         if not base.document_json:
             raise AnalysisEditUnavailableError("This analysis has no canonical Docling document")
         base_hash = _sha256(base.document_json)
-        stream = await self._edits.find_stream(document_id, base.id)
+        stream = await self._edits.find_stream(base.id)
         if stream is None:
             stream = EditStream(
-                id=uuid.uuid4().hex,
-                document_id=document_id,
-                base_analysis_id=base.id,
+                analysis_id=base.id,
                 base_document_hash=base_hash,
                 engine_version=ENGINE_VERSION,
                 created_at=datetime.now(UTC),
             )
             await self._edits.create_stream(stream)
             # Another writer may have created this stream first.
-            stream = await self._edits.find_stream(document_id, base.id)
+            stream = await self._edits.find_stream(base.id)
             if stream is None:
                 raise AnalysisEditConflictError("The editor stream could not be created")
         if stream.base_document_hash != base_hash:
             raise AnalysisEditConflictError("The immutable base analysis changed")
 
-        stored = await self._edits.list_commands(stream.id)
+        stored = await self._edits.list_commands(base.id)
         actual_sequence = stored[-1].sequence if stored else 0
         if actual_sequence != expected_sequence:
             raise AnalysisEditConflictError(
@@ -160,10 +170,8 @@ class AnalysisEditService:
         sequence = actual_sequence + len(pending_commands)
         stream_hash = _stream_hash(stored, pending_commands)
         result_hash = _sha256(projection.document_json)
-        working = WorkingCopy(
-            document_id=document_id,
-            stream_id=stream.id,
-            base_analysis_id=base.id,
+        cache = EditedAnalysisCache(
+            analysis_id=base.id,
             applied_through_sequence=sequence,
             document_json=projection.document_json,
             content_markdown=projection.content_markdown,
@@ -174,13 +182,13 @@ class AnalysisEditService:
             result_hash=result_hash,
             updated_at=datetime.now(UTC),
         )
-        activate = analysis_id is None or document.active_analysis_id == base.id
-        await self._edits.save_commands_and_working_copy(
+        selection = await self._selection.get_selection(document_id)
+        activate = selection is not None and selection.analysis_id == base.id
+        await self._edits.save_commands_and_cache(
             stream=stream,
             commands=pending_commands,
             expected_sequence=actual_sequence,
-            working_copy=working,
-            activate=activate,
+            cache=cache,
         )
         if activate and self._graph_writer is not None:
             try:
@@ -193,7 +201,7 @@ class AnalysisEditService:
                 # SQLite is authoritative; graph storage is a rebuildable
                 # projection and must not make a saved user edit disappear.
                 logger.exception("Graph refresh failed after analysis edit for %s", document_id)
-        return self._snapshot(document, base, projection, sequence)
+        return await self._snapshot(document, base, projection, sequence)
 
     async def set_command_active(
         self,
@@ -237,15 +245,13 @@ class AnalysisEditService:
     async def rebuild(self, document_id: str, analysis_id: str | None = None) -> EditorSnapshot:
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
-        stream = await self._edits.find_stream(document_id, base.id)
-        stored = await self._edits.list_commands(stream.id) if stream else []
+        stream = await self._edits.find_stream(base.id)
+        stored = await self._edits.list_commands(base.id) if stream else []
         projection = self._replay(base, stored)
         sequence = stored[-1].sequence if stored else 0
         if stream is not None:
-            working = WorkingCopy(
-                document_id=document_id,
-                stream_id=stream.id,
-                base_analysis_id=base.id,
+            cache = EditedAnalysisCache(
+                analysis_id=base.id,
                 applied_through_sequence=sequence,
                 document_json=projection.document_json,
                 content_markdown=projection.content_markdown,
@@ -256,8 +262,8 @@ class AnalysisEditService:
                 result_hash=_sha256(projection.document_json),
                 updated_at=datetime.now(UTC),
             )
-            await self._edits.replace_working_copy(working)
-        return self._snapshot(document, base, projection, sequence)
+            await self._edits.replace_cache(cache)
+        return await self._snapshot(document, base, projection, sequence)
 
     async def _require_document(self, document_id: str):
         document = await self._documents.find_by_id(document_id)
@@ -271,11 +277,10 @@ class AnalysisEditService:
             if base is not None and base.document_id != document.id:
                 base = None
         else:
-            base = (
-                await self._analyses.find_by_id(document.active_analysis_id)
-                if document.active_analysis_id
-                else await self._analyses.find_latest_completed_by_document(document.id)
-            )
+            selection = await self._selection.get_selection(document.id)
+            if selection is None:
+                raise AnalysisEditUnavailableError("This document has no active analysis")
+            base = await self._analyses.find_by_id(selection.analysis_id)
         if base is None or base.status != AnalysisStatus.COMPLETED or not base.document_json:
             raise AnalysisEditUnavailableError(
                 "This analysis has no canonical Docling document. Re-run the analysis to enable "
@@ -314,7 +319,7 @@ class AnalysisEditService:
             )
             raise
 
-    def _snapshot(self, document, base, projection, sequence: int) -> EditorSnapshot:
+    async def _snapshot(self, document, base, projection, sequence: int) -> EditorSnapshot:
         job = AnalysisJob(
             id=f"working:{document.id}",
             document_id=document.id,
@@ -327,10 +332,9 @@ class AnalysisEditService:
             completed_at=datetime.now(UTC),
             created_at=base.created_at,
         )
-        has_chunk_source = document.chunks_source_analysis_id is not None
-        stale = has_chunk_source and (
-            document.chunks_source_analysis_id != base.id
-            or document.chunks_source_edit_sequence != sequence
+        source = await self._chunk_sources.get_chunk_source(document.id)
+        stale = source is not None and (
+            source.analysis_id != base.id or source.result_hash != _sha256(projection.document_json)
         )
         return EditorSnapshot(job, projection, sequence, stale, base.id)
 

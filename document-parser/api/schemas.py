@@ -629,6 +629,8 @@ class DocumentVersionResponse(_CamelModel):
     document_id: str
     kind: str  # "analysis" | "chunks"
     analysis_id: str | None = None
+    chunks_source_analysis_id: str | None = None
+    chunks_source_result_hash: str | None = None
     chunks_snapshot_size: int = 0  # number of chunks captured, not the raw JSON
     summary: str = ""
     created_at: str | datetime

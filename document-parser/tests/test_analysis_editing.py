@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import re
+import sqlite3
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -22,15 +23,23 @@ from docling_core.types.doc import (
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
+    AnalysisEditUnavailableError,
     EditCommand,
     active_edit_commands,
 )
-from domain.models import AnalysisJob, AnalysisStatus, Document
+from domain.models import (
+    AnalysisJob,
+    AnalysisStatus,
+    Document,
+    DocumentAnalysisSelection,
+    DocumentChunkSource,
+)
 from infra.docling_editor import DoclingDocumentEditor
 from infra.docling_projector import DoclingAnalysisProjector
 from persistence import database
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
+from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from services.analysis_edit_service import AnalysisEditService
 from services.export_service import ExportFormat, ExportService
@@ -467,6 +476,7 @@ async def edit_service(tmp_path: Path, monkeypatch):
     await database.init_db()
     documents = SqliteDocumentRepository()
     analyses = SqliteAnalysisRepository()
+    analysis_state = SqliteDocumentAnalysisRepository()
     edits = SqliteAnalysisEditRepository()
     document = Document(id="doc-1", filename="fixture.pdf", storage_path="/tmp/fixture.pdf")
     await documents.insert(document)
@@ -482,10 +492,12 @@ async def edit_service(tmp_path: Path, monkeypatch):
     )
     await analyses.insert(job)
     await analyses.update_status(job)
-    await documents.update_active_analysis(document.id, job.id, None)
+    await analysis_state.select(DocumentAnalysisSelection(document.id, job.id))
     service = AnalysisEditService(
         analysis_repo=analyses,
         document_repo=documents,
+        selection_repo=analysis_state,
+        chunk_source_repo=analysis_state,
         edit_repo=edits,
         editor=DoclingDocumentEditor(),
         projector=DoclingAnalysisProjector(),
@@ -494,7 +506,7 @@ async def edit_service(tmp_path: Path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_save_persists_commands_and_rebuilds_working_copy(edit_service):
+async def test_save_persists_commands_and_rebuilds_edited_cache(edit_service):
     service, edits, _ = edit_service
     initial = await service.load_editor("doc-1")
     text_id = next(element.id for element in initial.projection.elements if element.type == "text")
@@ -505,13 +517,78 @@ async def test_save_persists_commands_and_rebuilds_working_copy(edit_service):
     )
     assert saved.applied_through_sequence == 1
     assert "Edited" in saved.job.content_markdown
-    stream = await edits.find_stream("doc-1", "analysis-1")
+    stream = await edits.find_stream("analysis-1")
     assert stream is not None
-    commands = await edits.list_commands(stream.id)
+    commands = await edits.list_commands(stream.analysis_id)
     assert len(commands) == 1
     assert commands[0].command.payload["text"] == "Edited"
     rebuilt = await service.rebuild("doc-1")
     assert rebuilt.job.document_json == saved.job.document_json
+
+
+@pytest.mark.asyncio
+async def test_edit_stream_and_cache_belong_to_one_analysis(edit_service):
+    service, edits, analyses = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1",
+        [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})],
+        expected_sequence=0,
+    )
+
+    stream = await edits.find_stream("analysis-1")
+    cache = await edits.find_cache("analysis-1")
+    assert stream is not None and stream.analysis_id == "analysis-1"
+    assert cache is not None and cache.analysis_id == "analysis-1"
+    assert len(await edits.list_commands("analysis-1")) == 1
+
+    async with database.get_connection() as connection:
+        with pytest.raises(sqlite3.IntegrityError):
+            await connection.execute(
+                """INSERT INTO analysis_edit_streams
+                   (analysis_id, base_document_hash, engine_version, created_at)
+                   VALUES ('missing-analysis', 'hash', 'v1', '2026-11-11')"""
+            )
+
+    await analyses.delete("analysis-1")
+    assert await edits.find_stream("analysis-1") is None
+    assert await edits.find_cache("analysis-1") is None
+    assert await edits.list_commands("analysis-1") == []
+
+
+@pytest.mark.asyncio
+async def test_active_result_always_uses_saved_edits_for_selected_analysis(edit_service):
+    service, _, _ = edit_service
+    state = SqliteDocumentAnalysisRepository()
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
+    )
+    assert (await state.get_selection("doc-1")).analysis_id == "analysis-1"
+    assert "Edited" in (await service.active_result("doc-1")).job.content_markdown
+
+    await state.select(DocumentAnalysisSelection("doc-1", "analysis-1"))
+    assert "Edited" in (await service.active_result("doc-1")).job.content_markdown
+    assert "Edited" in (await service.load_editor("doc-1")).job.content_markdown
+
+    await state.set_chunk_source(DocumentChunkSource("doc-1", "analysis-1", "0" * 64))
+    assert (await service.active_result("doc-1")).chunks_stale
+    edited_hash = hashlib.sha256(
+        (await service.active_result("doc-1")).job.document_json.encode("utf-8")
+    ).hexdigest()
+    await state.set_chunk_source(DocumentChunkSource("doc-1", "analysis-1", edited_hash))
+    assert not (await service.load_editor("doc-1")).chunks_stale
+
+    await service.set_command_active("doc-1", 1, False, 1)
+    assert (await service.active_result("doc-1")).chunks_stale
+    await service.set_command_active("doc-1", 1, True, 2)
+    assert not (await service.active_result("doc-1")).chunks_stale
+
+    await state.clear_selection("doc-1")
+    with pytest.raises(AnalysisEditUnavailableError, match="no active analysis"):
+        await service.active_result("doc-1")
 
 
 @pytest.mark.asyncio
@@ -546,9 +623,9 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
         await exports.export("doc-1", ExportFormat.MD, "analysis-1")
     ).content != reverted.job.content_markdown
 
-    stream = await edits.find_stream("doc-1", "analysis-1")
+    stream = await edits.find_stream("analysis-1")
     assert stream is not None
-    records = await edits.list_commands(stream.id)
+    records = await edits.list_commands(stream.analysis_id)
     commands, states = active_edit_commands(records)
     assert [command.payload["text"] for command in commands] == ["Second edited"]
     assert states == {1: False, 2: True}
@@ -567,7 +644,7 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
         await exports.export("doc-1", ExportFormat.JSON, "analysis-1", edited=True)
     ).content == reapplied.job.document_json
     assert (await service.rebuild("doc-1")).job.document_json == reapplied.job.document_json
-    assert len(await edits.list_commands(stream.id)) == 4
+    assert len(await edits.list_commands(stream.analysis_id)) == 4
 
 
 @pytest.mark.asyncio
@@ -583,9 +660,9 @@ async def test_saved_history_action_rejects_stale_and_invalid_targets(edit_servi
     with pytest.raises(AnalysisEditError, match="does not exist"):
         await service.set_command_active("doc-1", 99, False, expected_sequence=1)
 
-    stream = await edits.find_stream("doc-1", "analysis-1")
+    stream = await edits.find_stream("analysis-1")
     assert stream is not None
-    assert len(await edits.list_commands(stream.id)) == 1
+    assert len(await edits.list_commands(stream.analysis_id)) == 1
     assert "Edited" in (await service.load_editor("doc-1")).job.content_markdown
 
 
@@ -609,46 +686,10 @@ async def test_reverting_an_edit_needed_by_a_later_edit_keeps_history_unchanged(
     with pytest.raises(AnalysisEditError, match="Cannot revert edit #1"):
         await service.set_command_active("doc-1", 1, False, expected_sequence=2)
 
-    stream = await edits.find_stream("doc-1", "analysis-1")
+    stream = await edits.find_stream("analysis-1")
     assert stream is not None
-    assert len(await edits.list_commands(stream.id)) == 2
+    assert len(await edits.list_commands(stream.analysis_id)) == 2
     assert (await service.load_editor("doc-1")).job.document_json == saved.job.document_json
-
-
-@pytest.mark.asyncio
-async def test_editor_command_constraint_migration_preserves_saved_history(edit_service):
-    service, edits, _ = edit_service
-    initial = await service.load_editor("doc-1")
-    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
-    await service.save(
-        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
-    )
-    stream = await edits.find_stream("doc-1", "analysis-1")
-    assert stream is not None
-    original = (await edits.list_commands(stream.id))[0]
-
-    async with database.get_connection() as connection:
-        cursor = await connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'analysis_edit_commands'"
-        )
-        schema = (await cursor.fetchone())["sql"]
-        old_schema = re.sub(r",\s*'setCommandActive'", "", schema)
-        await connection.execute(
-            "ALTER TABLE analysis_edit_commands RENAME TO analysis_edit_commands_new"
-        )
-        await connection.execute(old_schema)
-        await connection.execute(
-            "INSERT INTO analysis_edit_commands SELECT * FROM analysis_edit_commands_new"
-        )
-        await connection.execute("DROP TABLE analysis_edit_commands_new")
-        await connection.commit()
-
-    await database.init_db()
-    preserved = (await edits.list_commands(stream.id))[0]
-    assert preserved.id == original.id
-    assert preserved.command_hash == original.command_hash
-    reverted = await service.set_command_active("doc-1", 1, False, expected_sequence=1)
-    assert "Edited" not in reverted.job.content_markdown
 
 
 @pytest.mark.asyncio
@@ -740,7 +781,7 @@ async def test_preview_and_save_project_the_same_document(edit_service):
 
 
 @pytest.mark.asyncio
-async def test_load_replays_saved_stream_when_working_copy_is_missing(edit_service):
+async def test_load_replays_saved_stream_when_edited_cache_is_missing(edit_service):
     service, _edits, _ = edit_service
     initial = await service.load_editor("doc-1")
     text_id = next(element.id for element in initial.projection.elements if element.type == "text")
@@ -752,8 +793,8 @@ async def test_load_replays_saved_stream_when_working_copy_is_missing(edit_servi
 
     async with database.get_connection() as connection:
         await connection.execute(
-            "DELETE FROM analysis_working_copies WHERE document_id = ? AND base_analysis_id = ?",
-            ("doc-1", "analysis-1"),
+            "DELETE FROM edited_analysis_cache WHERE analysis_id = ?",
+            ("analysis-1",),
         )
         await connection.commit()
 
@@ -798,15 +839,15 @@ async def test_save_sequence_conflict_does_not_append(edit_service):
             [EditCommand("replaceText", {"elementId": text_id, "text": "Two"})],
             expected_sequence=0,
         )
-    stream = await edits.find_stream("doc-1", "analysis-1")
+    stream = await edits.find_stream("analysis-1")
     assert stream is not None
     # A second first-save request may have observed no stream before this save.
     await edits.create_stream(stream)
-    assert len(await edits.list_commands(stream.id)) == 1
+    assert len(await edits.list_commands(stream.analysis_id)) == 1
 
 
 @pytest.mark.asyncio
-async def test_each_base_analysis_has_an_independent_working_copy(edit_service):
+async def test_each_base_analysis_has_an_independent_edited_cache(edit_service):
     service, _edits, analyses = edit_service
     service._graph_writer = AsyncMock()
     raw, _, _ = _document()

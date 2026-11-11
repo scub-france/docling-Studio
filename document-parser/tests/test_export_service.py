@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from domain.analysis_editing import AnalysisEditUnavailableError
 from domain.models import AnalysisJob, AnalysisStatus, Document
 from services.export_service import ExportFormat, ExportNotFoundError, ExportService
 
@@ -36,6 +37,18 @@ def _make_service(requested: AnalysisJob | None = None) -> ExportService:
 
 
 class TestExportAnalysisSelection:
+    @pytest.mark.asyncio
+    async def test_missing_active_selection_is_not_found(self):
+        service = _make_service()
+        active = AsyncMock()
+        active.active_result.side_effect = AnalysisEditUnavailableError(
+            "This document has no active analysis"
+        )
+        service._active_result_service = active
+
+        with pytest.raises(ExportNotFoundError, match="no active analysis"):
+            await service.export("d1", ExportFormat.MD)
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("format", "expected"),

@@ -1,4 +1,4 @@
-"""Tests for the chunk / chunk_edit / chunk_push repositories (#205)."""
+"""Tests for the chunk and chunk push repositories (#205)."""
 
 from __future__ import annotations
 
@@ -6,12 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from domain.models import Chunk, ChunkEdit, ChunkPush, Document
-from domain.value_objects import ChunkBbox, ChunkEditAction
-from persistence.chunk_edit_repo import (
-    SqliteChunkEditRepository,
-    SqliteChunkPushRepository,
-)
+from domain.models import Chunk, ChunkPush, Document
+from domain.value_objects import ChunkBbox
+from persistence.chunk_push_repo import SqliteChunkPushRepository
 from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import init_db
 from persistence.document_repo import SqliteDocumentRepository
@@ -36,11 +33,6 @@ async def doc():
 @pytest.fixture
 def chunk_repo():
     return SqliteChunkRepository()
-
-
-@pytest.fixture
-def edit_repo():
-    return SqliteChunkEditRepository()
 
 
 @pytest.fixture
@@ -109,76 +101,6 @@ class TestChunkRepo:
         await SqliteDocumentRepository().delete(doc.id)
         out = await chunk_repo.find_for_document(doc.id, include_deleted=True)
         assert out == []
-
-
-class TestChunkEditRepo:
-    async def test_insert_and_history(self, doc, edit_repo):
-        edit = ChunkEdit(
-            id="e-1",
-            document_id=doc.id,
-            chunk_id="c-1",
-            action=ChunkEditAction.UPDATE,
-            actor="user@example",
-            at=datetime(2026, 4, 29, 12, tzinfo=UTC),
-            before={"text": "old"},
-            after={"text": "new"},
-            reason="typo",
-        )
-        await edit_repo.insert(edit)
-
-        out = await edit_repo.find_for_document(doc.id)
-        assert len(out) == 1
-        assert out[0].action == ChunkEditAction.UPDATE
-        assert out[0].before == {"text": "old"}
-        assert out[0].after == {"text": "new"}
-        assert out[0].reason == "typo"
-
-    async def test_history_orders_newest_first(self, doc, edit_repo):
-        for i in range(3):
-            await edit_repo.insert(
-                ChunkEdit(
-                    id=f"e-{i}",
-                    document_id=doc.id,
-                    chunk_id=f"c-{i}",
-                    action=ChunkEditAction.INSERT,
-                    actor="system",
-                    at=datetime(2026, 4, 29, 12 + i, tzinfo=UTC),
-                )
-            )
-        out = await edit_repo.find_for_document(doc.id)
-        ids = [e.id for e in out]
-        assert ids == ["e-2", "e-1", "e-0"]
-
-    async def test_find_for_chunk_filters(self, doc, edit_repo):
-        for i in range(3):
-            await edit_repo.insert(
-                ChunkEdit(
-                    id=f"e-{i}",
-                    document_id=doc.id,
-                    chunk_id="c-target" if i == 1 else f"c-{i}",
-                    action=ChunkEditAction.UPDATE,
-                    actor="system",
-                    at=datetime(2026, 4, 29, 12 + i, tzinfo=UTC),
-                )
-            )
-        out = await edit_repo.find_for_chunk("c-target")
-        assert [e.id for e in out] == ["e-1"]
-
-    async def test_lineage_round_trips(self, doc, edit_repo):
-        edit = ChunkEdit(
-            id="e-merge",
-            document_id=doc.id,
-            chunk_id="c-merged",
-            action=ChunkEditAction.MERGE,
-            actor="system",
-            at=datetime(2026, 4, 29, 12, tzinfo=UTC),
-            parents=["c-1", "c-2"],
-            children=["c-merged"],
-        )
-        await edit_repo.insert(edit)
-        out = await edit_repo.find_for_document(doc.id)
-        assert out[0].parents == ["c-1", "c-2"]
-        assert out[0].children == ["c-merged"]
 
 
 class TestChunkPushRepo:

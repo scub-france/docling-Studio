@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
+from domain.analysis_editing import AnalysisEditUnavailableError
 from domain.models import AnalysisStatus
 
 if TYPE_CHECKING:
@@ -75,7 +76,7 @@ class ExportService:
             elif analysis_id:
                 analysis = await self._requested_analysis(doc_id, analysis_id)
             elif self._active_result_service is not None:
-                analysis = (await self._active_result_service.active_result(doc_id)).job
+                analysis = await self._active_analysis(doc_id)
             else:
                 analysis = await self._analysis_repo.find_latest_completed(doc_id)
             if not analysis:
@@ -93,7 +94,7 @@ class ExportService:
         elif analysis_id:
             analysis = await self._requested_analysis(doc_id, analysis_id)
         elif self._active_result_service is not None:
-            analysis = (await self._active_result_service.active_result(doc_id)).job
+            analysis = await self._active_analysis(doc_id)
         else:
             analysis = await self._analysis_repo.find_latest_completed_by_document(doc_id)
         if not analysis:
@@ -116,6 +117,12 @@ class ExportService:
         ):
             raise ExportNotFoundError(f"Analysis not found: {analysis_id}")
         return analysis
+
+    async def _active_analysis(self, doc_id: str) -> AnalysisJob:
+        try:
+            return (await self._active_result_service.active_result(doc_id)).job
+        except AnalysisEditUnavailableError as exc:
+            raise ExportNotFoundError(str(exc)) from exc
 
     async def _edited_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:
         if not analysis_id or self._active_result_service is None:

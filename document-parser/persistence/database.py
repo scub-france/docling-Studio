@@ -1,7 +1,6 @@
 """SQLite database management — async via aiosqlite.
 
-The schema is authoritative and `init_db()` applies the small additive
-migrations needed by the analysis editor.
+The schema is authoritative for new databases.
 """
 
 from __future__ import annotations
@@ -38,10 +37,6 @@ CREATE TABLE IF NOT EXISTS documents (
                         CHECK (lifecycle_state IN
                             ('Uploaded','Parsed','Chunked','Ingested','Stale','Failed')),
     lifecycle_state_at  TEXT,
-    active_analysis_id   TEXT,
-    active_edit_stream_id TEXT,
-    chunks_source_analysis_id TEXT,
-    chunks_source_edit_sequence INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -80,6 +75,38 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status     ON analysis_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_created_at ON analysis_jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_doc_status ON analysis_jobs(document_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_jobs_doc_id ON analysis_jobs(document_id, id);
+
+-- One document-level connection for the active analysis and the result that
+-- produced the live chunks. The chunk source is soft so deleting an analysis
+-- does not erase stale provenance; the active FK clears on analysis deletion.
+CREATE TABLE IF NOT EXISTS document_analysis_state (
+    document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    active_analysis_id TEXT REFERENCES analysis_jobs(id) ON DELETE SET NULL,
+    chunks_source_analysis_id TEXT,
+    chunks_source_result_hash TEXT,
+    CHECK ((chunks_source_analysis_id IS NULL) = (chunks_source_result_hash IS NULL))
+);
+
+CREATE TRIGGER IF NOT EXISTS document_analysis_state_validate_insert
+BEFORE INSERT ON document_analysis_state
+WHEN NEW.active_analysis_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM analysis_jobs
+    WHERE id = NEW.active_analysis_id AND document_id = NEW.document_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Active analysis must belong to the document');
+END;
+
+CREATE TRIGGER IF NOT EXISTS document_analysis_state_validate_update
+BEFORE UPDATE OF active_analysis_id ON document_analysis_state
+WHEN NEW.active_analysis_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM analysis_jobs
+    WHERE id = NEW.active_analysis_id AND document_id = NEW.document_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Active analysis must belong to the document');
+END;
 
 -- Stores — logical ingestion destinations (#203). Connection fields
 -- (#279) are introduced here in 0.6.1: URI, username, and an
@@ -149,26 +176,6 @@ CREATE TABLE IF NOT EXISTS chunks (
 CREATE INDEX IF NOT EXISTS idx_chunks_doc     ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_seq ON chunks(document_id, sequence);
 
--- Audit trail for chunk mutations. Action CHECK mirrors
--- `domain.value_objects.ChunkEditAction` (lowercase string values).
--- `chunk_id` is soft so a DELETE row survives the chunk it describes.
-CREATE TABLE IF NOT EXISTS chunk_edits (
-    id            TEXT PRIMARY KEY,
-    document_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    chunk_id      TEXT,
-    action        TEXT NOT NULL
-                  CHECK (action IN ('insert','update','delete','merge','split')),
-    actor         TEXT NOT NULL DEFAULT 'system',
-    at            TEXT NOT NULL,
-    before_json   TEXT,
-    after_json    TEXT,
-    parents_json  TEXT NOT NULL DEFAULT '[]',
-    children_json TEXT NOT NULL DEFAULT '[]',
-    reason        TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_chunk_edits_doc_at ON chunk_edits(document_id, at);
-CREATE INDEX IF NOT EXISTS idx_chunk_edits_chunk  ON chunk_edits(chunk_id);
-
 -- Immutable push audit. Compound index covers the "last push for (doc,
 -- store)" lookup that drives the diff endpoint and the link upsert.
 CREATE TABLE IF NOT EXISTS chunk_pushes (
@@ -206,31 +213,30 @@ CREATE TABLE IF NOT EXISTS document_versions (
     kind            TEXT NOT NULL
                     CHECK (kind IN ('analysis','chunks')),
     analysis_id     TEXT,
+    chunks_source_analysis_id TEXT,
+    chunks_source_result_hash TEXT,
     chunks_snapshot TEXT,
     summary         TEXT NOT NULL DEFAULT '',
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL,
+    CHECK ((chunks_source_analysis_id IS NULL) = (chunks_source_result_hash IS NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_document_versions_doc_created
     ON document_versions(document_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_document_versions_doc_kind_created
     ON document_versions(document_id, kind, created_at DESC);
 
--- Durable analysis edit streams. Commands are append-only user intent;
--- analysis_working_copies is a replaceable materialized projection.
+-- One edit stream per immutable conversion analysis. Commands are durable
+-- user intent; edited_analysis_cache is a replaceable projection.
 CREATE TABLE IF NOT EXISTS analysis_edit_streams (
-    id TEXT PRIMARY KEY,
-    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    base_analysis_id TEXT NOT NULL,
+    analysis_id TEXT PRIMARY KEY REFERENCES analysis_jobs(id) ON DELETE CASCADE,
     base_document_hash TEXT NOT NULL,
     engine_version TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    UNIQUE(document_id, base_analysis_id)
+    created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_edit_streams_doc ON analysis_edit_streams(document_id);
 
 CREATE TABLE IF NOT EXISTS analysis_edit_commands (
     id TEXT PRIMARY KEY,
-    stream_id TEXT NOT NULL REFERENCES analysis_edit_streams(id) ON DELETE CASCADE,
+    analysis_id TEXT NOT NULL REFERENCES analysis_edit_streams(analysis_id) ON DELETE CASCADE,
     sequence INTEGER NOT NULL CHECK(sequence > 0),
     command_version INTEGER NOT NULL CHECK(command_version > 0),
     command_type TEXT NOT NULL CHECK(command_type IN
@@ -240,16 +246,14 @@ CREATE TABLE IF NOT EXISTS analysis_edit_commands (
     previous_hash TEXT,
     command_hash TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    UNIQUE(stream_id, sequence),
-    UNIQUE(stream_id, command_hash)
+    UNIQUE(analysis_id, sequence),
+    UNIQUE(analysis_id, command_hash)
 );
-CREATE INDEX IF NOT EXISTS idx_edit_commands_stream_sequence
-    ON analysis_edit_commands(stream_id, sequence);
+CREATE INDEX IF NOT EXISTS idx_edit_commands_analysis_sequence
+    ON analysis_edit_commands(analysis_id, sequence);
 
-CREATE TABLE IF NOT EXISTS analysis_working_copies (
-    stream_id TEXT PRIMARY KEY REFERENCES analysis_edit_streams(id) ON DELETE CASCADE,
-    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    base_analysis_id TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS edited_analysis_cache (
+    analysis_id TEXT PRIMARY KEY REFERENCES analysis_edit_streams(analysis_id) ON DELETE CASCADE,
     applied_through_sequence INTEGER NOT NULL DEFAULT 0,
     document_json TEXT NOT NULL,
     content_markdown TEXT NOT NULL,
@@ -260,127 +264,20 @@ CREATE TABLE IF NOT EXISTS analysis_working_copies (
     result_hash TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_analysis_working_copies_doc
-    ON analysis_working_copies(document_id);
 """
 
 
 async def init_db() -> None:
     """Create database file and tables if they don't exist.
 
-    Runs the canonical schema, applies editor schema updates, and seeds the
-    default store.
+    Runs the canonical schema and seeds the default store.
     """
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(_SCHEMA)
-        await _apply_additive_migrations(db)
         await _seed_default_store(db)
         await db.commit()
     logger.info("Database initialized at %s", DB_PATH)
-
-
-async def _apply_additive_migrations(db: aiosqlite.Connection) -> None:
-    """Update editor tables in databases created by older releases."""
-    cursor = await db.execute("PRAGMA table_info(documents)")
-    columns = {row[1] for row in await cursor.fetchall()}
-    additions = {
-        "active_analysis_id": "TEXT",
-        "active_edit_stream_id": "TEXT",
-        "chunks_source_analysis_id": "TEXT",
-        "chunks_source_edit_sequence": "INTEGER NOT NULL DEFAULT 0",
-    }
-    for name, definition in additions.items():
-        if name not in columns:
-            await db.execute(f"ALTER TABLE documents ADD COLUMN {name} {definition}")
-    await db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_documents_active_analysis ON documents(active_analysis_id)"
-    )
-    cursor = await db.execute(
-        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'analysis_edit_commands'"
-    )
-    command_table = await cursor.fetchone()
-    if command_table and "setCommandActive" not in command_table[0]:
-        # SQLite cannot add a value to a CHECK constraint. Preserve the
-        # append-only command log and its hashes while widening the constraint.
-        await db.execute("SAVEPOINT edit_command_migration")
-        try:
-            await _migrate_edit_command_constraint(db)
-            await db.execute("RELEASE SAVEPOINT edit_command_migration")
-        except Exception:
-            await db.execute("ROLLBACK TO SAVEPOINT edit_command_migration")
-            await db.execute("RELEASE SAVEPOINT edit_command_migration")
-            raise
-    cursor = await db.execute("PRAGMA table_info(analysis_working_copies)")
-    working_columns = await cursor.fetchall()
-    working_pk = next((row[1] for row in working_columns if row[5] == 1), None)
-    if working_pk == "document_id":
-        # Early editor builds used document_id as the primary key. Preserve
-        # the one existing cache row while moving to one cache per stream.
-        await db.execute("DROP INDEX IF EXISTS idx_analysis_working_copies_doc")
-        await db.execute(
-            "ALTER TABLE analysis_working_copies RENAME TO analysis_working_copies_legacy"
-        )
-        await db.execute(
-            """CREATE TABLE analysis_working_copies (
-                stream_id TEXT PRIMARY KEY REFERENCES analysis_edit_streams(id) ON DELETE CASCADE,
-                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-                base_analysis_id TEXT NOT NULL,
-                applied_through_sequence INTEGER NOT NULL DEFAULT 0,
-                document_json TEXT NOT NULL,
-                content_markdown TEXT NOT NULL,
-                content_html TEXT NOT NULL,
-                pages_json TEXT NOT NULL,
-                editor_model_json TEXT NOT NULL,
-                command_stream_hash TEXT NOT NULL,
-                result_hash TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )"""
-        )
-        await db.execute(
-            """INSERT INTO analysis_working_copies
-               SELECT stream_id, document_id, base_analysis_id,
-                      applied_through_sequence, document_json, content_markdown,
-                      content_html, pages_json, editor_model_json,
-                      command_stream_hash, result_hash, updated_at
-               FROM analysis_working_copies_legacy"""
-        )
-        await db.execute("DROP TABLE analysis_working_copies_legacy")
-    await db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_analysis_working_copies_doc "
-        "ON analysis_working_copies(document_id)"
-    )
-
-
-async def _migrate_edit_command_constraint(db: aiosqlite.Connection) -> None:
-    """Allow history events without changing any existing command row."""
-    await db.execute("ALTER TABLE analysis_edit_commands RENAME TO analysis_edit_commands_legacy")
-    await db.execute(
-        """CREATE TABLE analysis_edit_commands (
-            id TEXT PRIMARY KEY,
-            stream_id TEXT NOT NULL REFERENCES analysis_edit_streams(id) ON DELETE CASCADE,
-            sequence INTEGER NOT NULL CHECK(sequence > 0),
-            command_version INTEGER NOT NULL CHECK(command_version > 0),
-            command_type TEXT NOT NULL CHECK(command_type IN
-                ('replaceText','mergeText','setHeadingLevel','moveElement','deleteElement',
-                 'deleteElements','setCommandActive')),
-            payload_json TEXT NOT NULL,
-            previous_hash TEXT,
-            command_hash TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(stream_id, sequence),
-            UNIQUE(stream_id, command_hash)
-        )"""
-    )
-    await db.execute(
-        """INSERT INTO analysis_edit_commands
-           SELECT * FROM analysis_edit_commands_legacy"""
-    )
-    await db.execute("DROP TABLE analysis_edit_commands_legacy")
-    await db.execute(
-        "CREATE INDEX idx_edit_commands_stream_sequence "
-        "ON analysis_edit_commands(stream_id, sequence)"
-    )
 
 
 async def _seed_default_store(db: aiosqlite.Connection) -> None:

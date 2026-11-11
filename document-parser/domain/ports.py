@@ -12,14 +12,20 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from domain.analysis_editing import EditCommand, EditStream, StoredEditCommand, WorkingCopy
+    from domain.analysis_editing import (
+        EditCommand,
+        EditedAnalysisCache,
+        EditStream,
+        StoredEditCommand,
+    )
     from domain.app_config import LLMHostProbeResult
     from domain.models import (
         AnalysisJob,
         Chunk,
-        ChunkEdit,
         ChunkPush,
         Document,
+        DocumentAnalysisSelection,
+        DocumentChunkSource,
         DocumentStoreLink,
         Store,
     )
@@ -132,6 +138,22 @@ class DocumentRepository(Protocol):
     async def delete(self, doc_id: str) -> bool: ...
 
 
+class AnalysisSelectionRepository(Protocol):
+    async def get_selection(self, document_id: str) -> DocumentAnalysisSelection | None: ...
+
+    async def select(self, selection: DocumentAnalysisSelection) -> None: ...
+
+    async def clear_selection(self, document_id: str) -> None: ...
+
+
+class ChunkSourceRepository(Protocol):
+    async def get_chunk_source(self, document_id: str) -> DocumentChunkSource | None: ...
+
+    async def set_chunk_source(self, source: DocumentChunkSource) -> None: ...
+
+    async def clear_chunk_source(self, document_id: str) -> None: ...
+
+
 class StoreRepository(Protocol):
     """Port for `Store` persistence (introduced by #203)."""
 
@@ -185,22 +207,6 @@ class ChunkRepository(Protocol):
     async def count_for_document(self, document_id: str) -> int: ...
 
 
-class ChunkEditRepository(Protocol):
-    """Port for the immutable chunk_edits audit log (introduced by #205)."""
-
-    async def insert(self, edit: ChunkEdit) -> None: ...
-
-    async def find_for_document(
-        self,
-        document_id: str,
-        *,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> list[ChunkEdit]: ...
-
-    async def find_for_chunk(self, chunk_id: str) -> list[ChunkEdit]: ...
-
-
 class ChunkPushRepository(Protocol):
     """Port for chunk_pushes snapshots (introduced by #205)."""
 
@@ -236,7 +242,7 @@ class AnalysisRepository(Protocol):
 
     async def parse_json(self, job_id: str) -> str | None: ...
 
-    async def update_status(self, job: AnalysisJob) -> None: ...
+    async def update_status(self, job: AnalysisJob, *, select_analysis: bool = False) -> None: ...
 
     async def update_progress(self, job_id: str, current: int, total: int) -> None: ...
 
@@ -248,27 +254,24 @@ class AnalysisRepository(Protocol):
 
 
 class AnalysisEditRepository(Protocol):
-    async def find_stream(self, document_id: str, base_analysis_id: str) -> EditStream | None: ...
+    async def find_stream(self, analysis_id: str) -> EditStream | None: ...
 
     async def create_stream(self, stream: EditStream) -> None: ...
 
-    async def list_commands(self, stream_id: str) -> list[StoredEditCommand]: ...
+    async def list_commands(self, analysis_id: str) -> list[StoredEditCommand]: ...
 
-    async def find_working_copy(
-        self, document_id: str, base_analysis_id: str
-    ) -> WorkingCopy | None: ...
+    async def find_cache(self, analysis_id: str) -> EditedAnalysisCache | None: ...
 
-    async def save_commands_and_working_copy(
+    async def save_commands_and_cache(
         self,
         *,
         stream: EditStream,
         commands: list[EditCommand],
         expected_sequence: int,
-        working_copy: WorkingCopy,
-        activate: bool = False,
+        cache: EditedAnalysisCache,
     ) -> list[StoredEditCommand]: ...
 
-    async def replace_working_copy(self, working_copy: WorkingCopy) -> None: ...
+    async def replace_cache(self, cache: EditedAnalysisCache) -> None: ...
 
 
 @runtime_checkable

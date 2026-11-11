@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Analysis editor saved history**: saved edits can be reverted and reapplied from the editor history or with Undo and Redo. The original edits stay in the audit trail. Downloads in editor mode use the rebuilt saved result.
 - **Analysis editor reading order**: a page preview toggle shows numbered boxes that match the structure tree and update as elements move.
 
+### Changed
+
+- **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
+- **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
+
 ## [0.7.3] - 2026-11-02
 
 ### Added

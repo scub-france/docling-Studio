@@ -1,4 +1,11 @@
-import type { DocChunk, Document, DocTreeNode, DocumentVersion, Page } from '../../shared/types'
+import type {
+  Analysis,
+  DocChunk,
+  Document,
+  DocTreeNode,
+  DocumentVersion,
+  Page,
+} from '../../shared/types'
 import type { RechunkOptions } from '@/shared/types'
 import { apiFetch } from '@/shared/api/http'
 
@@ -8,6 +15,17 @@ export function fetchDocuments(): Promise<Document[]> {
 
 export function fetchDocument(id: string): Promise<Document> {
   return apiFetch<Document>(`/api/documents/${id}`)
+}
+
+export async function fetchDocumentEditedAnalysisResult(
+  documentId: string,
+  analysisId: string,
+): Promise<Analysis> {
+  const query = `?analysisId=${encodeURIComponent(analysisId)}`
+  const response = await apiFetch<{ result: Analysis }>(
+    `/api/documents/${documentId}/analysis-editor${query}`,
+  )
+  return response.result
 }
 
 export async function uploadDocument(file: File): Promise<Document> {

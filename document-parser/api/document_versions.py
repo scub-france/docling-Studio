@@ -38,6 +38,8 @@ def _to_response(version) -> DocumentVersionResponse:
         document_id=version.document_id,
         kind=version.kind.value,
         analysis_id=version.analysis_id,
+        chunks_source_analysis_id=version.chunks_source_analysis_id,
+        chunks_source_result_hash=version.chunks_source_result_hash,
         chunks_snapshot_size=snapshot_size,
         summary=version.summary,
         created_at=str(version.created_at),
@@ -67,10 +69,7 @@ async def list_versions(
 async def restore_version(
     doc_id: str, version_id: str, service: deps.VersionServiceDep
 ) -> DocumentVersionResponse:
-    """Restore a frozen version — overwrites the live chunkset with the
-    version's snapshot. The active-analysis pointer is managed
-    client-side (the frontend reads `analysisId` off the response).
-    """
+    """Restore a frozen chunk snapshot and its active analysis selection."""
     try:
         version = await service.restore(doc_id, version_id)
     except VersionServiceError as e:

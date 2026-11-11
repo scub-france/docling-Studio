@@ -12,7 +12,6 @@ from domain.lifecycle import assert_transition
 from domain.value_objects import (
     ChunkBbox,
     ChunkDocItem,
-    ChunkEditAction,
     DocumentLifecycleState,
     DocumentStoreLinkState,
     StoreKind,
@@ -45,12 +44,6 @@ class Document:
     created_at: datetime = field(default_factory=_utcnow)
     lifecycle_state: DocumentLifecycleState = DocumentLifecycleState.UPLOADED
     lifecycle_state_at: datetime | None = None
-    # Active parse base and edit stream.  The working copy is resolved by the
-    # analysis-edit service when active_edit_stream_id is not null.
-    active_analysis_id: str | None = None
-    active_edit_stream_id: str | None = None
-    chunks_source_analysis_id: str | None = None
-    chunks_source_edit_sequence: int = 0
 
     def transition_to(
         self,
@@ -79,6 +72,19 @@ class Document:
             current=target,
             at=at,
         )
+
+
+@dataclass(frozen=True)
+class DocumentAnalysisSelection:
+    document_id: str
+    analysis_id: str
+
+
+@dataclass(frozen=True)
+class DocumentChunkSource:
+    document_id: str
+    analysis_id: str
+    result_hash: str
 
 
 @dataclass
@@ -235,14 +241,13 @@ class Chunk:
 
     Replaces the legacy `analysis_jobs.chunks_json` blob. The `id` is
     stable across edits except for split/merge which produce new chunks
-    with new ids; the lineage is recorded in `chunk_edits` rows.
+    with new ids.
 
     `sequence` controls ordering within a document. Gaps are allowed —
     splits push subsequent chunks' sequences without rewriting them.
 
     `deleted_at` is non-null when the chunk has been soft-deleted; the
-    row stays in the table so the audit trail keeps its before/after
-    pointers valid.
+    row stays in the table until document deletion.
     """
 
     id: str = field(default_factory=_new_id)
@@ -260,39 +265,10 @@ class Chunk:
 
 
 @dataclass(frozen=True)
-class ChunkEdit:
-    """An immutable audit record describing one mutating operation on
-    the chunkset of a document. Written atomically with the chunk
-    write it describes.
-
-    `before` and `after` are JSON-serializable snapshots of the chunk
-    state. They are `None` for the start/end of the chunk's life:
-      - `before is None` for INSERT
-      - `after  is None` for DELETE
-      - For MERGE: a single result row carries `parents = [chunk_ids…]`
-      - For SPLIT: two result rows each carry `parents = [source_id]`
-        and the source's edit row carries `children = [new_id, new_id]`
-    """
-
-    id: str
-    document_id: str
-    chunk_id: str | None
-    action: ChunkEditAction
-    actor: str
-    at: datetime
-    before: dict | None = None
-    after: dict | None = None
-    parents: list[str] = field(default_factory=list)
-    children: list[str] = field(default_factory=list)
-    reason: str | None = None
-
-
-@dataclass(frozen=True)
 class ChunkPush:
     """Snapshot of which chunks were pushed to which store, when.
 
-    Lets the API answer 'show me the chunkset that was in store X at
-    push N' without replaying the full audit log.
+    Lets the API identify the chunkset that was pushed to a store.
     """
 
     id: str
@@ -322,16 +298,17 @@ class DocumentVersion:
     a `+ Generate chunks` invocation). Manual chunk edits do NOT create
     a version — they mutate the live chunkset until the next snapshot.
 
-    `chunks_snapshot` is a JSON array of chunk records captured at the
-    moment of version creation. `analysis_id` points at the active
-    analysis at that moment. The pair is what the History drawer
-    surfaces, and what `restore` writes back into the live state.
+    `analysis_id` selects the analysis. Its saved edits are always applied. The chunk
+    snapshot and its separate source analysis/result hash record the live
+    chunkset at version creation. Restore writes both back into live state.
     """
 
     id: str = field(default_factory=_new_id)
     document_id: str = ""
     kind: DocumentVersionKind = DocumentVersionKind.ANALYSIS
     analysis_id: str | None = None
+    chunks_source_analysis_id: str | None = None
+    chunks_source_result_hash: str | None = None
     chunks_snapshot: str | None = None  # JSON-serialized list of chunk dicts
     summary: str = ""
     created_at: datetime = field(default_factory=_utcnow)
