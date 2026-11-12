@@ -53,6 +53,10 @@ async function openEditor(page, analysisId) {
   await page.goto(new URL(`/analyses/${analysisId}`, baseUrl).toString())
   await page.locator('[data-e2e=analysis-edit-toggle]').click()
   await page.locator('[data-editor=analysis-editor]').waitFor()
+  await page
+    .locator('[data-editor=analysis-editor] [role="tree"] [role="treeitem"]')
+    .first()
+    .waitFor()
 }
 
 async function showMarkdown(page) {
@@ -102,14 +106,18 @@ try {
   await showMarkdown(page)
   await page.locator('[data-e2e=analysis-editor-undo]').click()
   await waitForMarkdown(page, () => {
-    const markdown = document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
-    return markdown.includes('Editor alpha paragraph marker.') && !markdown.includes('Editor alpha revised marker.')
+    const markdown =
+      document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
+    return (
+      markdown.includes('Editor alpha paragraph marker.') &&
+      !markdown.includes('Editor alpha revised marker.')
+    )
   })
   await page.locator('[data-e2e=analysis-editor-redo]').click()
   await waitForMarkdown(page, () =>
-    document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent.includes(
-      'Editor alpha revised marker.',
-    ),
+    document
+      .querySelector('[data-e2e=analysis-editor-markdown]')
+      ?.textContent.includes('Editor alpha revised marker.'),
   )
   await pause(page, 700)
   await pause(page)
@@ -117,23 +125,30 @@ try {
   await page.reload()
   await openEditor(page, textAnalysisId)
   await page.locator('[data-e2e=analysis-editor-tree-item-editor-alpha-revised-marker]').click()
-  if ((await page.locator('[data-e2e=analysis-editor-text]').inputValue()) !== 'Editor alpha revised marker.') {
+  if (
+    (await page.locator('[data-e2e=analysis-editor-text]').inputValue()) !==
+    'Editor alpha revised marker.'
+  ) {
     throw new Error('Text replacement did not survive reload')
   }
   await showMarkdown(page)
   await waitForMarkdown(page, () =>
-    document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent.includes(
-      'Editor alpha revised marker.',
-    ),
+    document
+      .querySelector('[data-e2e=analysis-editor-markdown]')
+      ?.textContent.includes('Editor alpha revised marker.'),
   )
   await pause(page, 1000)
 
   // Merge two paragraphs, persist, reload, and show the merged projection.
   await page
-    .locator('[data-e2e=analysis-editor-item-editor-alpha-revised-marker] [data-e2e=analysis-editor-merge-select]')
+    .locator(
+      '[data-e2e=analysis-editor-item-editor-alpha-revised-marker] [data-e2e=analysis-editor-merge-select]',
+    )
     .click()
   await page
-    .locator('[data-e2e=analysis-editor-item-editor-bravo-paragraph-marker] [data-e2e=analysis-editor-merge-select]')
+    .locator(
+      '[data-e2e=analysis-editor-item-editor-bravo-paragraph-marker] [data-e2e=analysis-editor-merge-select]',
+    )
     .click()
   await page.locator('[data-e2e=analysis-editor-merge]').click()
   await page.locator('[data-e2e=analysis-editor-unsaved]').waitFor()
@@ -142,18 +157,22 @@ try {
   await openEditor(page, textAnalysisId)
   await showMarkdown(page)
   await waitForMarkdown(page, () =>
-    document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent.includes(
-      'Editor alpha revised marker. Editor bravo paragraph marker.',
-    ),
+    document
+      .querySelector('[data-e2e=analysis-editor-markdown]')
+      ?.textContent.includes('Editor alpha revised marker. Editor bravo paragraph marker.'),
   )
   await pause(page, 1000)
 
   // Confirm and persist a range deletion.
   await page
-    .locator('[data-e2e=analysis-editor-item-editor-charlie-paragraph-marker] [data-e2e=analysis-editor-merge-select]')
+    .locator(
+      '[data-e2e=analysis-editor-item-editor-charlie-paragraph-marker] [data-e2e=analysis-editor-merge-select]',
+    )
     .click()
   await page
-    .locator('[data-e2e=analysis-editor-item-editor-delta-paragraph-marker] [data-e2e=analysis-editor-merge-select]')
+    .locator(
+      '[data-e2e=analysis-editor-item-editor-delta-paragraph-marker] [data-e2e=analysis-editor-merge-select]',
+    )
     .click()
   await page.locator('[data-e2e=analysis-editor-delete-range]').click()
   await page.locator('[data-e2e=analysis-editor-unsaved]').waitFor()
@@ -162,8 +181,12 @@ try {
   await openEditor(page, textAnalysisId)
   await showMarkdown(page)
   await waitForMarkdown(page, () => {
-    const markdown = document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
-    return !markdown.includes('Editor charlie paragraph marker.') && !markdown.includes('Editor delta paragraph marker.')
+    const markdown =
+      document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
+    return (
+      !markdown.includes('Editor charlie paragraph marker.') &&
+      !markdown.includes('Editor delta paragraph marker.')
+    )
   })
   await pause(page, 1000)
 
@@ -174,28 +197,61 @@ try {
   await page.locator('[data-e2e=analysis-editor-discard]').click()
   await showMarkdown(page)
   await waitForMarkdown(page, () =>
-    document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent.includes(
-      'Editor alpha revised marker. Editor bravo paragraph marker.',
-    ),
+    document
+      .querySelector('[data-e2e=analysis-editor-markdown]')
+      ?.textContent.includes('Editor alpha revised marker. Editor bravo paragraph marker.'),
   )
-  await pause(page, 1000)
+  await pause(page, 800)
 
-  // Move a paragraph into a section, change its heading level, then reload.
+  // Open History to revert and reapply a saved edit.
+  await page.locator('[data-e2e=analysis-editor-history]').click()
+  await page.locator('[data-e2e=analysis-edit-history]').waitFor()
+  await pause(page, 600)
+  await page.locator('[data-e2e=analysis-editor-history-toggle-2]').click()
+  await waitForMarkdown(page, () => {
+    const markdown =
+      document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
+    return (
+      markdown.includes('Editor alpha revised marker.') &&
+      !markdown.includes('Editor alpha revised marker. Editor bravo paragraph marker.')
+    )
+  })
+  await pause(page, 600)
+  await page.locator('[data-e2e=analysis-editor-history-toggle-2]').click()
+  await waitForMarkdown(page, () =>
+    document
+      .querySelector('[data-e2e=analysis-editor-markdown]')
+      ?.textContent.includes('Editor alpha revised marker. Editor bravo paragraph marker.'),
+  )
+  await pause(page, 900)
+
+  // Move a paragraph into a section with reading order shown, change its heading level, then reload.
   await openEditor(page, structureAnalysisId)
-  await page.locator('[data-e2e=analysis-editor-tree-item-structure-one-alpha-paragraph-marker]').click()
+  await page.locator('[data-e2e=analysis-editor-reading-order-toggle]').click()
+  await pause(page, 600)
+  await page
+    .locator('[data-e2e=analysis-editor-tree-item-structure-one-alpha-paragraph-marker]')
+    .click()
+  await pause(page, 500)
   await page.locator('[data-e2e=analysis-editor-choose-move]').click()
   await page
-    .locator('[data-e2e=analysis-editor-item-structure-section-two] [data-e2e=analysis-editor-move-inside]')
+    .locator(
+      '[data-e2e=analysis-editor-item-structure-section-two] [data-e2e=analysis-editor-move-inside]',
+    )
     .click()
+  await pause(page, 600)
   await page.locator('[data-e2e=analysis-editor-tree-item-structure-section-two]').click()
   await page.locator('[data-e2e=analysis-editor-heading-level]').selectOption('2')
   await page.locator('[data-e2e=analysis-editor-unsaved]').waitFor()
   await saveAndWait(page)
   await page.reload()
   await openEditor(page, structureAnalysisId)
+  await page.locator('[data-e2e=analysis-editor-reading-order-toggle]').click()
+  await pause(page, 700)
   await showMarkdown(page)
   await waitForMarkdown(page, () => {
-    const markdown = document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
+    const markdown =
+      document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
     return (
       markdown.includes('### Structure section two') &&
       markdown.indexOf('### Structure section two') <
