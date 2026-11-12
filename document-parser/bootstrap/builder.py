@@ -46,9 +46,10 @@ from infra.settings import settings
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.app_settings_repo import SqliteAppSettingsRepository
-from persistence.chunk_edit_repo import SqliteChunkEditRepository, SqliteChunkPushRepository
+from persistence.chunk_push_repo import SqliteChunkPushRepository
 from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import init_db
+from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
@@ -104,11 +105,11 @@ class AppStateBuilder:
         await check_store_secret_key()
 
         document_repo = SqliteDocumentRepository()
+        document_analysis_repo = SqliteDocumentAnalysisRepository()
         analysis_repo = SqliteAnalysisRepository()
         store_repo = SqliteStoreRepository()
         link_repo = SqliteDocumentStoreLinkRepository()
         chunk_repo = SqliteChunkRepository()
-        chunk_edit_repo = SqliteChunkEditRepository()
         chunk_push_repo = SqliteChunkPushRepository()
 
         graph_writer, graph_reader = await self._build_graph_adapters()
@@ -123,6 +124,8 @@ class AppStateBuilder:
         analysis_edit_service = AnalysisEditService(
             analysis_repo=analysis_repo,
             document_repo=document_repo,
+            selection_repo=document_analysis_repo,
+            chunk_source_repo=document_analysis_repo,
             edit_repo=SqliteAnalysisEditRepository(),
             editor=DoclingDocumentEditor(),
             projector=DoclingAnalysisProjector(),
@@ -130,9 +133,9 @@ class AppStateBuilder:
         )
         chunk_service = build_chunk_service(
             document_repo=document_repo,
+            chunk_source_repo=document_analysis_repo,
             analysis_repo=analysis_repo,
             chunk_repo=chunk_repo,
-            chunk_edit_repo=chunk_edit_repo,
             chunk_push_repo=chunk_push_repo,
             store_repo=store_repo,
             link_repo=link_repo,
@@ -143,8 +146,10 @@ class AppStateBuilder:
         version_service = VersionService(
             version_repo=SqliteDocumentVersionRepository(),
             chunk_repo=chunk_repo,
-            chunk_edit_repo=chunk_edit_repo,
             document_repo=document_repo,
+            analysis_repo=analysis_repo,
+            selection_repo=document_analysis_repo,
+            chunk_source_repo=document_analysis_repo,
         )
 
         # The analysis service still carries the chunk promoter wiring for

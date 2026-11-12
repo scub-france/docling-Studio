@@ -2,9 +2,7 @@
 
 These functions take a chunkset as input and return a new chunkset
 (plus, where appropriate, the chunks that were created). They do not
-touch the database, do not record audit rows, and do not raise
-infrastructure errors. The `ChunkEditingService` (in `services/`)
-wraps each call with audit-record generation and atomic persistence.
+touch the database or raise infrastructure errors.
 
 All operations preserve `sequence` ordering: insertions and splits
 shift subsequent sequences upward; deletions / merges leave gaps.
@@ -122,9 +120,8 @@ def merge(
     """Merge `chunk_ids` (in order) into a single new chunk.
 
     The new chunk takes the headings of the first source and the
-    smallest source page. The `id`s of the sources are returned in
-    the new chunk's lineage via the audit row written by the service
-    layer.
+    smallest source page. The source chunks are removed from the
+    returned active chunkset.
 
     Returns the updated chunkset and the new merged chunk. The sources
     are removed from the chunkset (hard-removed from the list — the

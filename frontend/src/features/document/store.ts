@@ -4,6 +4,7 @@ import type { Analysis, Document, DocumentVersion, Page } from '../../shared/typ
 import { appMaxFileSizeMb } from '../../shared/appConfig'
 import { fetchAnalysis } from '@/features/analysis'
 import { pushChunksToStore } from '@/features/chunks'
+import { useFeatureFlagStore } from '@/features/feature-flags'
 import * as api from './api'
 
 export const useDocumentStore = defineStore('document', () => {
@@ -20,6 +21,18 @@ export const useDocumentStore = defineStore('document', () => {
   const workspaceActiveAnalysis = ref<Analysis | null>(null)
   const workspaceLoading = ref(false)
   const workspaceError = ref<string | null>(null)
+
+  async function fetchWorkspaceAnalysis(docId: string, analysisId: string): Promise<Analysis> {
+    const base = await fetchAnalysis(analysisId)
+    if (!useFeatureFlagStore().isEnabled('analysisEditor') || !base.hasDocumentJson) return base
+    const result = await api.fetchDocumentEditedAnalysisResult(docId, analysisId)
+    return {
+      ...base,
+      contentMarkdown: result.contentMarkdown,
+      contentHtml: result.contentHtml,
+      pagesJson: result.pagesJson,
+    }
+  }
 
   // #303 — Citation focus, shared across the Parse-view surfaces. The
   // reasoning feature writes it (clicking a trace step); the PDF preview,
@@ -146,7 +159,7 @@ export const useDocumentStore = defineStore('document', () => {
       const latest = versions[0] ?? null
       workspaceCurrentVersionId.value = latest?.id ?? null
       if (latest?.analysisId) {
-        workspaceActiveAnalysis.value = await fetchAnalysis(latest.analysisId)
+        workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, latest.analysisId)
       }
     } catch (e) {
       workspaceError.value = (e as Error).message || 'Failed to load workspace'
@@ -175,7 +188,7 @@ export const useDocumentStore = defineStore('document', () => {
       if (latest) {
         workspaceCurrentVersionId.value = latest.id
         if (latest.analysisId) {
-          workspaceActiveAnalysis.value = await fetchAnalysis(latest.analysisId)
+          workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, latest.analysisId)
         }
       }
     } catch (e) {
@@ -199,7 +212,7 @@ export const useDocumentStore = defineStore('document', () => {
       await api.restoreDocumentVersion(docId, versionId)
       workspaceCurrentVersionId.value = versionId
       workspaceActiveAnalysis.value = version.analysisId
-        ? await fetchAnalysis(version.analysisId)
+        ? await fetchWorkspaceAnalysis(docId, version.analysisId)
         : null
       return true
     } catch (e) {

@@ -16,7 +16,9 @@ const documentIds = []
 async function api(path, options = {}) {
   const response = await fetch(new URL(path, baseUrl), options)
   if (!response.ok) {
-    throw new Error(`${options.method || 'GET'} ${path}: ${response.status} ${await response.text()}`)
+    throw new Error(
+      `${options.method || 'GET'} ${path}: ${response.status} ${await response.text()}`,
+    )
   }
   return response.status === 204 ? null : response.json()
 }
@@ -25,7 +27,9 @@ async function createAnalysis(filename) {
   const form = new FormData()
   form.set(
     'file',
-    new File([await readFile(resolve(fixtureDir, filename))], filename, { type: 'application/pdf' }),
+    new File([await readFile(resolve(fixtureDir, filename))], filename, {
+      type: 'application/pdf',
+    }),
   )
   const document = await api('/api/documents/upload', { method: 'POST', body: form })
   documentIds.push(document.id)
@@ -52,10 +56,18 @@ async function showMarkdown(page) {
   await page.locator('[data-e2e=analysis-editor-markdown]').waitFor()
 }
 
+async function showPdf(page) {
+  await page.locator('.preview-tabs button').first().click()
+}
+
 async function openEditor(page, analysisId) {
   await page.goto(new URL(`/analyses/${analysisId}`, baseUrl).toString())
   await page.locator('[data-e2e=analysis-edit-toggle]').click()
   await page.locator('[data-editor=analysis-editor]').waitFor()
+  await page
+    .locator('[data-editor=analysis-editor] [role="tree"] [role="treeitem"]')
+    .first()
+    .waitFor()
 }
 
 async function save(page) {
@@ -87,7 +99,20 @@ async function recordClip(browser, name, workflow) {
       await rename(source, webm)
       const result = spawnSync(
         'ffmpeg',
-        ['-y', '-loglevel', 'error', '-i', webm, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4],
+        [
+          '-y',
+          '-loglevel',
+          'error',
+          '-i',
+          webm,
+          '-c:v',
+          'libx264',
+          '-pix_fmt',
+          'yuv420p',
+          '-movflags',
+          '+faststart',
+          mp4,
+        ],
         { stdio: 'inherit' },
       )
       if (result.status === 0) {
@@ -103,13 +128,54 @@ async function recordClip(browser, name, workflow) {
 
 await mkdir(videoDir, { recursive: true })
 const browser = await chromium.launch({ headless: true, executablePath: chromePath })
+let quickEditAnalysis
 let textAnalysis
 let structureAnalysis
 let failure
 
 try {
+  quickEditAnalysis = await createAnalysis('editor-text.pdf')
   textAnalysis = await createAnalysis('editor-text.pdf')
   structureAnalysis = await createAnalysis('editor-structure.pdf')
+
+  await recordClip(browser, 'analysis-editor-edit-save-reload', async (page) => {
+    const analysisId = quickEditAnalysis.analysisId
+    await openEditor(page, analysisId)
+    await page.waitForTimeout(700)
+
+    await page.locator('[data-e2e=analysis-editor-tree-item-editor-alpha-paragraph-marker]').click()
+    await page.locator('[data-e2e=analysis-editor-text]').fill('Editor alpha revised marker.')
+    await page.locator('[data-e2e=analysis-editor-unsaved]').waitFor()
+    await save(page)
+    await page.reload()
+    await openEditor(page, analysisId)
+    await page.locator('[data-e2e=analysis-editor-tree-item-editor-alpha-revised-marker]').click()
+    await showMarkdown(page)
+    await waitForMarkdown(page, () =>
+      document
+        .querySelector('[data-e2e=analysis-editor-markdown]')
+        ?.textContent.includes('Editor alpha revised marker.'),
+    )
+    await page.locator('[data-e2e=analysis-editor-history]').click()
+    await page.locator('[data-e2e=analysis-edit-history]').waitFor()
+    await page.waitForTimeout(700)
+
+    // Revert the saved edit from History and reapply it.
+    await page.locator('[data-e2e=analysis-editor-history-toggle-1]').click()
+    await waitForMarkdown(page, () =>
+      document
+        .querySelector('[data-e2e=analysis-editor-markdown]')
+        ?.textContent.includes('Editor alpha paragraph marker.'),
+    )
+    await page.waitForTimeout(700)
+    await page.locator('[data-e2e=analysis-editor-history-toggle-1]').click()
+    await waitForMarkdown(page, () =>
+      document
+        .querySelector('[data-e2e=analysis-editor-markdown]')
+        ?.textContent.includes('Editor alpha revised marker.'),
+    )
+    await page.waitForTimeout(1000)
+  })
 
   await recordClip(browser, 'analysis-editor-text-actions', async (page) => {
     const analysisId = textAnalysis.analysisId
@@ -124,32 +190,39 @@ try {
     await page.locator('[data-e2e=analysis-editor-undo]').click()
     await waitForMarkdown(page, () => {
       const text = document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
-      return text.includes('Editor alpha paragraph marker.') && !text.includes('Editor alpha showcase marker.')
+      return (
+        text.includes('Editor alpha paragraph marker.') &&
+        !text.includes('Editor alpha showcase marker.')
+      )
     })
     await page.waitForTimeout(600)
     await page.locator('[data-e2e=analysis-editor-redo]').click()
     await waitForMarkdown(page, () =>
-      document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent.includes(
-        'Editor alpha showcase marker.',
-      ),
+      document
+        .querySelector('[data-e2e=analysis-editor-markdown]')
+        ?.textContent.includes('Editor alpha showcase marker.'),
     )
     await save(page)
     await page.reload()
     await openEditor(page, analysisId)
     await showMarkdown(page)
     await waitForMarkdown(page, () =>
-      document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent.includes(
-        'Editor alpha showcase marker.',
-      ),
+      document
+        .querySelector('[data-e2e=analysis-editor-markdown]')
+        ?.textContent.includes('Editor alpha showcase marker.'),
     )
     await page.waitForTimeout(900)
 
     // Merge adjacent text selections and save the merged projection.
     await page
-      .locator('[data-e2e=analysis-editor-item-editor-alpha-showcase-marker] [data-e2e=analysis-editor-merge-select]')
+      .locator(
+        '[data-e2e=analysis-editor-item-editor-alpha-showcase-marker] [data-e2e=analysis-editor-merge-select]',
+      )
       .click()
     await page
-      .locator('[data-e2e=analysis-editor-item-editor-bravo-paragraph-marker] [data-e2e=analysis-editor-merge-select]')
+      .locator(
+        '[data-e2e=analysis-editor-item-editor-bravo-paragraph-marker] [data-e2e=analysis-editor-merge-select]',
+      )
       .click()
     await page.locator('[data-e2e=analysis-editor-merge]').click()
     await page.locator('[data-e2e=analysis-editor-unsaved]').waitFor()
@@ -158,18 +231,22 @@ try {
     await openEditor(page, analysisId)
     await showMarkdown(page)
     await waitForMarkdown(page, () =>
-      document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent.includes(
-        'Editor alpha showcase marker. Editor bravo paragraph marker.',
-      ),
+      document
+        .querySelector('[data-e2e=analysis-editor-markdown]')
+        ?.textContent.includes('Editor alpha showcase marker. Editor bravo paragraph marker.'),
     )
     await page.waitForTimeout(900)
 
     // Select-range deletion asks for confirmation before queuing the command.
     await page
-      .locator('[data-e2e=analysis-editor-item-editor-charlie-paragraph-marker] [data-e2e=analysis-editor-merge-select]')
+      .locator(
+        '[data-e2e=analysis-editor-item-editor-charlie-paragraph-marker] [data-e2e=analysis-editor-merge-select]',
+      )
       .click()
     await page
-      .locator('[data-e2e=analysis-editor-item-editor-delta-paragraph-marker] [data-e2e=analysis-editor-merge-select]')
+      .locator(
+        '[data-e2e=analysis-editor-item-editor-delta-paragraph-marker] [data-e2e=analysis-editor-merge-select]',
+      )
       .click()
     await page.locator('[data-e2e=analysis-editor-delete-range]').click()
     await page.locator('[data-e2e=analysis-editor-unsaved]').waitFor()
@@ -179,7 +256,10 @@ try {
     await showMarkdown(page)
     await waitForMarkdown(page, () => {
       const text = document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
-      return !text.includes('Editor charlie paragraph marker.') && !text.includes('Editor delta paragraph marker.')
+      return (
+        !text.includes('Editor charlie paragraph marker.') &&
+        !text.includes('Editor delta paragraph marker.')
+      )
     })
     await page.waitForTimeout(900)
 
@@ -190,9 +270,9 @@ try {
     await page.locator('[data-e2e=analysis-editor-discard]').click()
     await showMarkdown(page)
     await waitForMarkdown(page, () =>
-      document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent.includes(
-        'Editor alpha showcase marker. Editor bravo paragraph marker.',
-      ),
+      document
+        .querySelector('[data-e2e=analysis-editor-markdown]')
+        ?.textContent.includes('Editor alpha showcase marker. Editor bravo paragraph marker.'),
     )
     await page.waitForTimeout(1200)
   })
@@ -202,12 +282,22 @@ try {
     await openEditor(page, analysisId)
     await page.waitForTimeout(700)
 
+    // Show reading-order numbers on the PDF preview and structure tree.
+    await page.locator('[data-e2e=analysis-editor-reading-order-toggle]').click()
+    await page.waitForTimeout(700)
+
     // Move a paragraph into another section and change that heading's level.
-    await page.locator('[data-e2e=analysis-editor-tree-item-structure-one-alpha-paragraph-marker]').click()
+    await page
+      .locator('[data-e2e=analysis-editor-tree-item-structure-one-alpha-paragraph-marker]')
+      .click()
+    await page.waitForTimeout(600)
     await page.locator('[data-e2e=analysis-editor-choose-move]').click()
     await page
-      .locator('[data-e2e=analysis-editor-item-structure-section-two] [data-e2e=analysis-editor-move-inside]')
+      .locator(
+        '[data-e2e=analysis-editor-item-structure-section-two] [data-e2e=analysis-editor-move-inside]',
+      )
       .click()
+    await page.waitForTimeout(700)
     await page.locator('[data-e2e=analysis-editor-tree-item-structure-section-two]').click()
     await page.locator('[data-e2e=analysis-editor-heading-level]').selectOption('2')
     await page.locator('[data-e2e=analysis-editor-unsaved]').waitFor()
@@ -215,12 +305,15 @@ try {
     await save(page)
     await page.reload()
     await openEditor(page, analysisId)
+    await page.locator('[data-e2e=analysis-editor-reading-order-toggle]').click()
+    await page.waitForTimeout(800)
     await showMarkdown(page)
     await waitForMarkdown(page, () => {
       const text = document.querySelector('[data-e2e=analysis-editor-markdown]')?.textContent ?? ''
       return (
         text.includes('### Structure section two') &&
-        text.indexOf('### Structure section two') < text.indexOf('Structure one alpha paragraph marker.')
+        text.indexOf('### Structure section two') <
+          text.indexOf('Structure one alpha paragraph marker.')
       )
     })
     await page.waitForTimeout(1200)
@@ -229,7 +322,7 @@ try {
   failure = error
 } finally {
   await browser.close()
-  for (const item of [textAnalysis, structureAnalysis]) {
+  for (const item of [quickEditAnalysis, textAnalysis, structureAnalysis]) {
     if (!item) continue
     try {
       await api(`/api/documents/${item.documentId}`, { method: 'DELETE' })

@@ -11,19 +11,16 @@ import pytest
 from domain.models import AnalysisJob, AnalysisStatus, Chunk, Document, Store
 from domain.value_objects import (
     ChunkDocItem,
-    ChunkEditAction,
     ChunkResult,
     DocumentStoreLinkState,
     StoreKind,
 )
 from infra.docling_tree import DoclingTreeReader
 from persistence.analysis_repo import SqliteAnalysisRepository
-from persistence.chunk_edit_repo import (
-    SqliteChunkEditRepository,
-    SqliteChunkPushRepository,
-)
+from persistence.chunk_push_repo import SqliteChunkPushRepository
 from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import init_db
+from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.store_repo import SqliteStoreRepository
@@ -65,9 +62,9 @@ async def doc():
 def repos():
     return {
         "chunks": SqliteChunkRepository(),
-        "edits": SqliteChunkEditRepository(),
         "pushes": SqliteChunkPushRepository(),
         "documents": SqliteDocumentRepository(),
+        "analysis_state": SqliteDocumentAnalysisRepository(),
         "analyses": SqliteAnalysisRepository(),
     }
 
@@ -76,9 +73,9 @@ def repos():
 def service(repos):
     return ChunkService(
         chunk_repo=repos["chunks"],
-        chunk_edit_repo=repos["edits"],
         chunk_push_repo=repos["pushes"],
         document_repo=repos["documents"],
+        chunk_source_repo=repos["analysis_state"],
         analysis_repo=repos["analyses"],
         tree_reader=_TREE_READER,
         chunker=None,
@@ -118,10 +115,6 @@ class TestAddChunk:
         assert new.sequence == 0
         chunks = await service.list_chunks(doc.id)
         assert [c.text for c in chunks] == ["hello"]
-        edits = await repos["edits"].find_for_document(doc.id)
-        assert len(edits) == 1
-        assert edits[0].action == ChunkEditAction.INSERT
-        assert edits[0].after is not None
 
     async def test_append_after_anchor_shifts_sequences(self, service, repos, doc):
         first = await service.add_chunk(doc.id, text="a")
@@ -149,15 +142,10 @@ class TestAddChunk:
 
 
 class TestUpdateChunk:
-    async def test_update_text_records_audit(self, service, repos, doc):
+    async def test_update_text(self, service, repos, doc):
         new = await service.add_chunk(doc.id, text="hi")
         updated = await service.update_chunk(doc.id, new.id, text="hi there")
         assert updated.text == "hi there"
-        edits = await repos["edits"].find_for_document(doc.id)
-        assert {e.action for e in edits} == {ChunkEditAction.INSERT, ChunkEditAction.UPDATE}
-        update_edit = next(e for e in edits if e.action == ChunkEditAction.UPDATE)
-        assert update_edit.before["text"] == "hi"
-        assert update_edit.after["text"] == "hi there"
 
     async def test_404_on_missing_chunk(self, service, doc):
         with pytest.raises(ChunkNotFoundError):
@@ -177,13 +165,13 @@ class TestUpdateChunk:
 
 
 class TestDeleteChunk:
-    async def test_soft_deletes_and_records_audit(self, service, repos, doc):
+    async def test_soft_deletes(self, service, repos, doc):
         new = await service.add_chunk(doc.id, text="x")
         await service.delete_chunk(doc.id, new.id)
         # Soft-deleted: still in repo with deleted_at set, list filters it.
         assert await service.list_chunks(doc.id) == []
-        edits = await repos["edits"].find_for_document(doc.id)
-        assert any(e.action == ChunkEditAction.DELETE for e in edits)
+        deleted = await repos["chunks"].find_by_id(new.id)
+        assert deleted is not None and deleted.deleted_at is not None
 
 
 # ---------------------------------------------------------------------------
@@ -199,10 +187,6 @@ class TestSplitChunk:
         assert tail.text == "def"
         chunks = await service.list_chunks(doc.id)
         assert [c.text for c in chunks] == ["abc", "def"]
-        edits = await repos["edits"].find_for_document(doc.id)
-        split_edit = next(e for e in edits if e.action == ChunkEditAction.SPLIT)
-        assert split_edit.children == [head.id, tail.id]
-        assert split_edit.before is not None
 
     async def test_split_400_on_offset_out_of_range(self, service, doc):
         src = await service.add_chunk(doc.id, text="abc")
@@ -237,12 +221,6 @@ class TestMergeChunks:
         chunks = await service.list_chunks(doc.id)
         # New chunk at sequence 0, then `c` still at 2 (gap is allowed)
         assert {c2.text for c2 in chunks} == {"a\nb", "c"}
-        edit = next(
-            e
-            for e in await repos["edits"].find_for_document(doc.id)
-            if e.action == ChunkEditAction.MERGE
-        )
-        assert set(edit.parents) == {a.id, b.id}
 
     async def test_merge_409_on_non_contiguous(self, service, doc):
         a = await service.add_chunk(doc.id, text="a")
@@ -350,9 +328,6 @@ class TestPromote:
         assert promoted == 2
         chunks = await service.list_chunks(doc.id)
         assert [c.text for c in chunks] == ["first", "second"]
-        # Audit should record both INSERTs
-        edits = await repos["edits"].find_for_document(doc.id)
-        assert sum(1 for e in edits if e.action == ChunkEditAction.INSERT) == 2
 
     async def test_idempotent_when_canonical_not_empty(self, service, doc):
         await service.add_chunk(doc.id, text="manual")
@@ -444,9 +419,9 @@ class TestPushToStore:
     def service_with_store(self, repos, store_repo, link_repo, mock_ingestion):
         return ChunkService(
             chunk_repo=repos["chunks"],
-            chunk_edit_repo=repos["edits"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
+            chunk_source_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
             tree_reader=_TREE_READER,
             chunker=None,
@@ -495,9 +470,9 @@ class TestPushToStore:
         # 503, not a generic 500.
         service = ChunkService(
             chunk_repo=repos["chunks"],
-            chunk_edit_repo=repos["edits"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
+            chunk_source_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
             tree_reader=_TREE_READER,
             chunker=None,
@@ -573,9 +548,9 @@ class TestPushToStore:
         failing.ingest.side_effect = RuntimeError("opensearch unreachable")
         service = ChunkService(
             chunk_repo=repos["chunks"],
-            chunk_edit_repo=repos["edits"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
+            chunk_source_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
             tree_reader=_TREE_READER,
             chunker=None,
@@ -608,9 +583,9 @@ class TestPushToStore:
         resolver.resolve = AsyncMock(return_value=resolved)
         service = ChunkService(
             chunk_repo=repos["chunks"],
-            chunk_edit_repo=repos["edits"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
+            chunk_source_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
             tree_reader=_TREE_READER,
             chunker=None,
@@ -645,9 +620,9 @@ class TestPushToStore:
         resolver.resolve = AsyncMock(side_effect=StoreBackendNotConfiguredError("no NEO4J_URI"))
         service = ChunkService(
             chunk_repo=repos["chunks"],
-            chunk_edit_repo=repos["edits"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
+            chunk_source_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
             tree_reader=_TREE_READER,
             chunker=None,
@@ -698,9 +673,9 @@ class TestListPushes:
     def service_with_pushes(self, repos, store_repo, doc):
         return ChunkService(
             chunk_repo=repos["chunks"],
-            chunk_edit_repo=repos["edits"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
+            chunk_source_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
             tree_reader=_TREE_READER,
             chunker=None,

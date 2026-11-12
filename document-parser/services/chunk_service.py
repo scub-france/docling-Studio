@@ -1,11 +1,10 @@
 """Chunk service — canonical chunk lifecycle for a document (#256).
 
-Sits between the API layer and the chunk / chunk_edit / chunk_push
+Sits between the API layer and the chunk / chunk_push
 repositories. Owns the invariants of the canonical chunkset:
 
 - ordering by `sequence` (dense ascending, gaps allowed after split)
-- soft-delete (audit log keeps before/after pointers valid)
-- atomic mutation + audit row (one ChunkEdit per mutation)
+- soft-delete (removed chunks remain available for history inspection)
 - promotion from the first completed analysis (idempotent)
 
 Re-uses `DocumentChunker` for rechunk (same port that
@@ -15,27 +14,33 @@ duplicated.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import uuid
-from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain.models import AnalysisStatus, Chunk, ChunkEdit, ChunkPush, DocumentStoreLink
+from domain.analysis_editing import AnalysisEditUnavailableError
+from domain.models import (
+    AnalysisStatus,
+    Chunk,
+    ChunkPush,
+    DocumentChunkSource,
+    DocumentStoreLink,
+)
 from domain.value_objects import (
     ChunkBbox,
     ChunkDocItem,
-    ChunkEditAction,
     ChunkingOptions,
 )
 
 if TYPE_CHECKING:
     from domain.ports import (
         AnalysisRepository,
-        ChunkEditRepository,
         ChunkPushRepository,
         ChunkRepository,
+        ChunkSourceRepository,
         DocumentChunker,
         DocumentRepository,
         DocumentTreeReader,
@@ -83,7 +88,7 @@ class ChunkValidationError(ChunkServiceError):
 
 
 # ---------------------------------------------------------------------------
-# Helpers — chunk ↔ dict conversions for audit log + analysis chunks_json.
+# Helpers — chunk ↔ dict conversions for analysis chunks_json.
 # ---------------------------------------------------------------------------
 
 
@@ -93,20 +98,6 @@ def _utcnow() -> datetime:
 
 def _new_id() -> str:
     return str(uuid.uuid4())
-
-
-def _chunk_to_audit_dict(c: Chunk) -> dict:
-    """Serializable snapshot for ChunkEdit.before / .after."""
-    return {
-        "id": c.id,
-        "sequence": c.sequence,
-        "text": c.text,
-        "headings": list(c.headings),
-        "sourcePage": c.source_page,
-        "tokenCount": c.token_count,
-        "bboxes": [asdict(b) for b in c.bboxes],
-        "docItems": [asdict(d) for d in c.doc_items],
-    }
 
 
 def _bbox_from_dict(d: dict) -> ChunkBbox:
@@ -149,9 +140,9 @@ class ChunkService:
     def __init__(
         self,
         chunk_repo: ChunkRepository,
-        chunk_edit_repo: ChunkEditRepository,
         chunk_push_repo: ChunkPushRepository,
         document_repo: DocumentRepository,
+        chunk_source_repo: ChunkSourceRepository,
         analysis_repo: AnalysisRepository,
         tree_reader: DocumentTreeReader,
         chunker: DocumentChunker | None = None,
@@ -160,12 +151,11 @@ class ChunkService:
         link_repo: SqliteDocumentStoreLinkRepository | None = None,
         backend_resolver: StoreBackendResolver | None = None,
         active_result_service=None,
-        actor: str = "user",
     ) -> None:
         self._chunks = chunk_repo
-        self._edits = chunk_edit_repo
         self._pushes = chunk_push_repo
         self._documents = document_repo
+        self._chunk_sources = chunk_source_repo
         self._analyses = analysis_repo
         # `DocumentTreeReader` port (#audit-01) — replaces the local
         # `from infra.docling_tree import ...` smell hiding inside two
@@ -191,7 +181,6 @@ class ChunkService:
         # behaviour).
         self._backend_resolver = backend_resolver
         self._active_result_service = active_result_service
-        self._actor = actor
         # Duck-typed recorder for document versions (#267). Wired in
         # main.py to `VersionService.record_on_rechunk` so each
         # `+ Generate chunks` call appends a frozen pair to History.
@@ -229,18 +218,6 @@ class ChunkService:
             return 0
 
         await self._chunks.insert_many(canonical)
-        for c in canonical:
-            await self._edits.insert(
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=c.id,
-                    action=ChunkEditAction.INSERT,
-                    actor="system:initial-analysis",
-                    at=_utcnow(),
-                    after=_chunk_to_audit_dict(c),
-                )
-            )
         logger.info(
             "chunk.promote docId=%s count=%d (initial-analysis)", document_id, len(canonical)
         )
@@ -268,17 +245,6 @@ class ChunkService:
             updated_at=_utcnow(),
         )
         await self._chunks.insert(new_chunk)
-        await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=new_chunk.id,
-                action=ChunkEditAction.INSERT,
-                actor=self._actor,
-                at=_utcnow(),
-                after=_chunk_to_audit_dict(new_chunk),
-            )
-        )
         logger.info(
             "chunk.add docId=%s chunkId=%s sequence=%d", document_id, new_chunk.id, sequence
         )
@@ -293,45 +259,20 @@ class ChunkService:
         headings: list[str] | None = None,
     ) -> Chunk:
         chunk = await self._require_chunk(document_id, chunk_id)
-        before = _chunk_to_audit_dict(chunk)
         if text is not None:
             chunk.text = text
         if headings is not None:
             chunk.headings = list(headings)
         chunk.updated_at = _utcnow()
         await self._chunks.update(chunk)
-        await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=chunk.id,
-                action=ChunkEditAction.UPDATE,
-                actor=self._actor,
-                at=_utcnow(),
-                before=before,
-                after=_chunk_to_audit_dict(chunk),
-            )
-        )
         logger.info("chunk.update docId=%s chunkId=%s", document_id, chunk.id)
         return chunk
 
     async def delete_chunk(self, document_id: str, chunk_id: str) -> None:
         chunk = await self._require_chunk(document_id, chunk_id)
-        before = _chunk_to_audit_dict(chunk)
         deleted = await self._chunks.soft_delete(chunk_id, at=_utcnow())
         if not deleted:
             raise ChunkNotFoundError(f"Chunk not found: {chunk_id}")
-        await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=chunk_id,
-                action=ChunkEditAction.DELETE,
-                actor=self._actor,
-                at=_utcnow(),
-                before=before,
-            )
-        )
         logger.info("chunk.delete docId=%s chunkId=%s", document_id, chunk.id)
 
     async def split_chunk(self, document_id: str, chunk_id: str, cursor_offset: int) -> list[Chunk]:
@@ -341,7 +282,6 @@ class ChunkService:
                 f"cursorOffset {cursor_offset} out of range for chunk of length {len(source.text)}"
             )
         existing = await self._chunks.find_for_document(document_id)
-        before = _chunk_to_audit_dict(source)
 
         # Both halves inherit headings, source_page, bboxes, doc_items.
         # Token counts are unknown post-split; leave as None.
@@ -371,18 +311,6 @@ class ChunkService:
         await self._chunks.soft_delete(source.id, at=_utcnow())
         await self._chunks.insert_many([head, tail])
 
-        await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=source.id,
-                action=ChunkEditAction.SPLIT,
-                actor=self._actor,
-                at=_utcnow(),
-                before=before,
-                children=[head.id, tail.id],
-            )
-        )
         logger.info(
             "chunk.split docId=%s sourceId=%s newIds=[%s,%s]",
             document_id,
@@ -430,18 +358,6 @@ class ChunkService:
             await self._chunks.soft_delete(c.id, at=_utcnow())
         await self._chunks.insert(merged)
 
-        await self._edits.insert(
-            ChunkEdit(
-                id=_new_id(),
-                document_id=document_id,
-                chunk_id=merged.id,
-                action=ChunkEditAction.MERGE,
-                actor=self._actor,
-                at=_utcnow(),
-                parents=[c.id for c in ordered],
-                after=_chunk_to_audit_dict(merged),
-            )
-        )
         logger.info(
             "chunk.merge docId=%s sourceIds=%s newId=%s",
             document_id,
@@ -451,19 +367,20 @@ class ChunkService:
         return merged
 
     async def rechunk_document(self, document_id: str, options: dict | None = None) -> list[Chunk]:
-        """Re-run the chunker on the latest completed analysis JSON and
-        replace the canonical chunkset.
-
-        Emits one INSERT edit per new chunk and one DELETE per old chunk
-        — keeps the audit log within the existing `ChunkEditAction` enum.
-        """
+        """Re-run the chunker on the active analysis JSON and replace the chunkset."""
         await self._require_doc(document_id)
         if not self._chunker:
             raise ChunkServiceError("Chunker not configured", http_status=503)
 
+        active = None
+        if self._active_result_service is not None:
+            try:
+                active = await self._active_result_service.active_result(document_id)
+            except AnalysisEditUnavailableError as exc:
+                raise ChunkServiceError(str(exc), http_status=409) from exc
         job = (
-            (await self._active_result_service.active_result(document_id)).job
-            if self._active_result_service is not None
+            active.job
+            if active is not None
             else await self._analyses.find_latest_completed_by_document(document_id)
         )
         if not job or not job.document_json:
@@ -479,17 +396,6 @@ class ChunkService:
         now = _utcnow()
         for c in existing:
             await self._chunks.soft_delete(c.id, at=now)
-            await self._edits.insert(
-                ChunkEdit(
-                    id=_new_id(),
-                    document_id=document_id,
-                    chunk_id=c.id,
-                    action=ChunkEditAction.DELETE,
-                    actor="system:rechunk",
-                    at=now,
-                    before=_chunk_to_audit_dict(c),
-                )
-            )
 
         new_chunks = [
             Chunk(
@@ -506,18 +412,6 @@ class ChunkService:
         ]
         if new_chunks:
             await self._chunks.insert_many(new_chunks)
-            for c in new_chunks:
-                await self._edits.insert(
-                    ChunkEdit(
-                        id=_new_id(),
-                        document_id=document_id,
-                        chunk_id=c.id,
-                        action=ChunkEditAction.INSERT,
-                        actor="system:rechunk",
-                        at=now,
-                        after=_chunk_to_audit_dict(c),
-                    )
-                )
         logger.info(
             "chunk.rechunk docId=%s oldCount=%d newCount=%d",
             document_id,
@@ -526,21 +420,21 @@ class ChunkService:
         )
 
         source_analysis_id = job.id
-        if self._active_result_service is not None:
-            active = await self._active_result_service.active_result(document_id)
+        if active is not None:
             source_analysis_id = active.base_analysis_id
-            await self._documents.update_chunk_source(
-                document_id, active.base_analysis_id, active.applied_through_sequence
-            )
-        else:
-            await self._documents.update_chunk_source(document_id, job.id, 0)
+        source_result_hash = hashlib.sha256(job.document_json.encode("utf-8")).hexdigest()
+        await self._chunk_sources.set_chunk_source(
+            DocumentChunkSource(document_id, source_analysis_id, source_result_hash)
+        )
 
         # Record a frozen (analysis, chunks_snapshot) pair in the
         # workspace History timeline (#267). Snapshots the chunks we
         # just wrote, paired with the analysis they came from.
         if self._version_recorder is not None:
             try:
-                await self._version_recorder.record_on_rechunk(document_id, source_analysis_id)
+                await self._version_recorder.record_on_rechunk(
+                    document_id, source_analysis_id, source_result_hash
+                )
             except Exception:
                 # Best-effort hook — never fail the rechunk if the
                 # version snapshot write hits a snag.
@@ -803,7 +697,7 @@ class ChunkService:
     # -- tree (read from an analysis document_json)
 
     async def get_tree(self, document_id: str, analysis_id: str | None = None) -> list[dict]:
-        """Build a doc tree from the requested or latest completed analysis.
+        """Build a doc tree from the requested or active analysis.
 
         Returns a list of `DocTreeNode`-shaped dicts (camelCase). Empty
         list if no analysis is available yet — caller decides if that is
@@ -815,11 +709,13 @@ class ChunkService:
             if not job or job.document_id != document_id or job.status != AnalysisStatus.COMPLETED:
                 raise ChunkNotFoundError(f"Analysis not found: {analysis_id}")
         else:
-            job = (
-                (await self._active_result_service.active_result(document_id)).job
-                if self._active_result_service is not None
-                else await self._analyses.find_latest_completed_by_document(document_id)
-            )
+            if self._active_result_service is not None:
+                try:
+                    job = (await self._active_result_service.active_result(document_id)).job
+                except AnalysisEditUnavailableError:
+                    return []
+            else:
+                job = await self._analyses.find_latest_completed_by_document(document_id)
         if not job or not job.document_json:
             return []
         try:

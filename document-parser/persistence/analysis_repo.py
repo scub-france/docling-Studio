@@ -172,8 +172,10 @@ class SqliteAnalysisRepository:
             row = await cursor.fetchone()
             return row["document_json"] if row else None
 
-    async def update_status(self, job: AnalysisJob) -> None:
+    async def update_status(self, job: AnalysisJob, *, select_analysis: bool = False) -> None:
         """Persist all mutable fields of an analysis job (status, results, timestamps)."""
+        if select_analysis and job.status != AnalysisStatus.COMPLETED:
+            raise ValueError("Only a completed analysis can become active")
         async with get_connection() as db:
             await db.execute(
                 """UPDATE analysis_jobs
@@ -197,6 +199,14 @@ class SqliteAnalysisRepository:
                     job.id,
                 ),
             )
+            if select_analysis:
+                await db.execute(
+                    """INSERT INTO document_analysis_state
+                       (document_id, active_analysis_id) VALUES (?, ?)
+                       ON CONFLICT(document_id) DO UPDATE SET
+                         active_analysis_id = excluded.active_analysis_id""",
+                    (job.document_id, job.id),
+                )
             await db.commit()
 
     async def update_progress(self, job_id: str, current: int, total: int) -> None:

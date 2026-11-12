@@ -7,11 +7,20 @@ from datetime import UTC, datetime
 
 import pytest
 
-from domain.models import Chunk, Document, DocumentVersionKind
+from domain.models import (
+    AnalysisJob,
+    AnalysisStatus,
+    Chunk,
+    Document,
+    DocumentAnalysisSelection,
+    DocumentChunkSource,
+    DocumentVersionKind,
+)
 from domain.value_objects import ChunkBbox, ChunkDocItem
-from persistence.chunk_edit_repo import SqliteChunkEditRepository
+from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.chunk_repo import SqliteChunkRepository
 from persistence.database import init_db
+from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
 from services.version_service import (
@@ -33,8 +42,9 @@ async def setup_db(monkeypatch, tmp_path):
 def repos():
     return {
         "documents": SqliteDocumentRepository(),
+        "analyses": SqliteAnalysisRepository(),
+        "analysis_state": SqliteDocumentAnalysisRepository(),
         "chunks": SqliteChunkRepository(),
-        "chunk_edits": SqliteChunkEditRepository(),
         "versions": SqliteDocumentVersionRepository(),
     }
 
@@ -44,8 +54,10 @@ def service(repos):
     return VersionService(
         version_repo=repos["versions"],
         chunk_repo=repos["chunks"],
-        chunk_edit_repo=repos["chunk_edits"],
         document_repo=repos["documents"],
+        analysis_repo=repos["analyses"],
+        selection_repo=repos["analysis_state"],
+        chunk_source_repo=repos["analysis_state"],
     )
 
 
@@ -64,6 +76,10 @@ class TestRecordOnAnalysis:
         assert json.loads(version.chunks_snapshot or "[]") == []
 
     async def test_snapshot_carries_existing_chunks(self, service, repos, doc):
+        await repos["analysis_state"].set_chunk_source(DocumentChunkSource(doc.id, "old", "a" * 64))
+        await repos["analyses"].insert(
+            AnalysisJob(id="a2", document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        )
         await repos["chunks"].insert_many(
             [
                 Chunk(
@@ -83,12 +99,18 @@ class TestRecordOnAnalysis:
         snapshot = json.loads(version.chunks_snapshot)
         assert [s["text"] for s in snapshot] == ["t1", "t2"]
         assert snapshot[0]["docItems"][0]["selfRef"] == "#/texts/0"
+        assert version.analysis_id == "a2"
+        assert version.chunks_source_analysis_id == "old"
+        assert version.chunks_source_result_hash == "a" * 64
+        await service.restore(doc.id, version.id)
+        assert (await repos["analysis_state"].get_selection(doc.id)).analysis_id == "a2"
+        assert (await repos["analysis_state"].get_chunk_source(doc.id)).analysis_id == "old"
 
 
 class TestRecordOnRechunk:
     async def test_records_kind_chunks(self, service, repos, doc):
         await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="new")])
-        version = await service.record_on_rechunk(doc.id, "a1")
+        version = await service.record_on_rechunk(doc.id, "a1", "a" * 64)
         assert version.kind is DocumentVersionKind.CHUNKS
         assert version.analysis_id == "a1"
         assert json.loads(version.chunks_snapshot)[0]["text"] == "new"
@@ -96,6 +118,9 @@ class TestRecordOnRechunk:
 
 class TestRestore:
     async def test_restore_overwrites_live_chunks(self, service, repos, doc):
+        await repos["analyses"].insert(
+            AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        )
         # V1 — two chunks
         await repos["chunks"].insert_many(
             [
@@ -103,19 +128,34 @@ class TestRestore:
                 Chunk(document_id=doc.id, sequence=1, text="v1-b"),
             ]
         )
-        v1 = await service.record_on_rechunk(doc.id, "a1")
+        v1 = await service.record_on_rechunk(doc.id, "a1", "a" * 64)
 
         # Move to V2 state — soft-delete V1's chunks, insert a single new
         now = datetime.now(UTC)
         for c in await repos["chunks"].find_for_document(doc.id):
             await repos["chunks"].soft_delete(c.id, at=now)
         await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="v2-only")])
-        await service.record_on_rechunk(doc.id, "a1")
+        await service.record_on_rechunk(doc.id, "a1", "b" * 64)
 
         # Restore V1 → live should match V1's two chunks
         await service.restore(doc.id, v1.id)
         live = await repos["chunks"].find_for_document(doc.id)
         assert sorted(c.text for c in live) == ["v1-a", "v1-b"]
+        assert (await repos["analysis_state"].get_selection(doc.id)).analysis_id == "a1"
+        assert (await repos["analysis_state"].get_chunk_source(doc.id)).result_hash == "a" * 64
+
+    async def test_restores_analysis_selection_and_chunk_provenance(self, service, repos, doc):
+        await repos["analyses"].insert(
+            AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        )
+        await repos["analysis_state"].select(DocumentAnalysisSelection(doc.id, "a1"))
+        version = await service.record_on_rechunk(doc.id, "a1", "c" * 64)
+        await service.restore(doc.id, version.id)
+        selection = await repos["analysis_state"].get_selection(doc.id)
+        source = await repos["analysis_state"].get_chunk_source(doc.id)
+        assert selection.analysis_id == "a1"
+        assert source.analysis_id == "a1"
+        assert source.result_hash == "c" * 64
 
     async def test_restore_unknown_version_raises(self, service, doc):
         with pytest.raises(VersionNotFoundError):
@@ -132,7 +172,7 @@ class TestRestore:
 class TestListForDocument:
     async def test_returns_newest_first(self, service, doc):
         await service.record_on_analysis(doc.id, "a1")
-        await service.record_on_rechunk(doc.id, "a1")
+        await service.record_on_rechunk(doc.id, "a1", "a" * 64)
         await service.record_on_analysis(doc.id, "a2")
         versions = await service.list_for_document(doc.id)
         # 3 entries, newest first (analysis a2 wins)

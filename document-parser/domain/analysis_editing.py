@@ -33,7 +33,7 @@ class EditCommand:
 @dataclass(frozen=True)
 class StoredEditCommand:
     id: str
-    stream_id: str
+    analysis_id: str
     sequence: int
     command: EditCommand
     command_hash: str
@@ -42,9 +42,7 @@ class StoredEditCommand:
 
 @dataclass(frozen=True)
 class EditStream:
-    id: str
-    document_id: str
-    base_analysis_id: str
+    analysis_id: str
     base_document_hash: str
     engine_version: str
     created_at: datetime
@@ -93,10 +91,8 @@ class ProjectedAnalysis:
 
 
 @dataclass(frozen=True)
-class WorkingCopy:
-    document_id: str
-    stream_id: str
-    base_analysis_id: str
+class EditedAnalysisCache:
+    analysis_id: str
     applied_through_sequence: int
     document_json: str
     content_markdown: str

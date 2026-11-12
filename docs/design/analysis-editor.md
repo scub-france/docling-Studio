@@ -52,7 +52,7 @@ These fields can drift if the frontend projections are edited independently. The
 
 The immutable conversion analysis and its serialized `DoclingDocument` are the base source. The ordered, append-only edit command stream is the authoritative record of user intent.
 
-The backend replays the command stream against the selected immutable base document, validates the result, and regenerates every affected projection. It stores one materialized working copy per base analysis so normal reads do not need to replay the stream. Each working copy is replaceable and can always be rebuilt from its base analysis and commands.
+The backend replays the command stream against the selected immutable base document, validates the result, and regenerates every affected projection. It stores one materialized edited result cache per base analysis so normal reads do not need to replay the stream. Each edited result cache is replaceable and can always be rebuilt from its base analysis and commands.
 
 ```mermaid
 flowchart TD
@@ -62,7 +62,7 @@ flowchart TD
     Mutator --> Validation[Docling validation]
     Validation --> Projector[Analysis projector]
 
-    Projector --> Working[Single materialized working copy]
+    Projector --> Working[Single materialized edited result cache]
     Working --> NewDoc[Edited document_json]
     Working --> NewMarkdown[Edited Markdown and HTML]
     Working --> NewPages[Edited pages and tree]
@@ -255,7 +255,7 @@ Local state provides immediate interaction feedback. The backend response remain
 
 ## Save Flow
 
-Saving appends commands and replaces the single materialized working copy. It does not create another full analysis row.
+Saving appends commands and replaces the single materialized edited result cache. It does not create another full analysis row.
 
 ```mermaid
 sequenceDiagram
@@ -275,7 +275,7 @@ sequenceDiagram
 
     Service->>DB: Begin transaction
     Service->>DB: Append sequenced command rows
-    Service->>DB: Replace materialized working copy
+    Service->>DB: Replace materialized edited result cache
     Service->>DB: Commit transaction
 
     Service->>Graph: Refresh graph projection
@@ -285,13 +285,13 @@ sequenceDiagram
 
 All projections must be produced successfully before beginning the database transaction.
 
-The command append and working-copy replacement must be atomic. A command must never be reported as saved unless the corresponding materialized result was persisted, and a working copy must never include commands absent from the stream.
+The command append and cache replacement must be atomic. A command must never be reported as saved unless the corresponding materialized result was persisted, and an edited result cache must never include commands absent from the stream.
 
 Graph storage is a rebuildable projection and can be updated after commit. A graph refresh failure should be logged and retried without losing the saved commands.
 
-## Durable Stream and Working Copy
+## Durable Stream and Edited Result Cache
 
-Each conversion analysis remains immutable. Commands are append-only and small. Exactly one materialized edited result is stored for each conversion analysis.
+Each conversion analysis remains immutable. Commands are append-only and small. At most one materialized edited result is cached for each conversion analysis.
 
 ```mermaid
 flowchart LR
@@ -309,11 +309,11 @@ flowchart LR
     Working -.corrupt or missing.-> Replay
 ```
 
-The command sequence is sufficient to rebuild the working copy from scratch. The materialized copy exists for performance and availability, not as the authoritative edit history.
+The command sequence is sufficient to rebuild the edited result cache from scratch. The materialized copy exists for performance and availability, not as the authoritative edit history.
 
 Each command record includes a schema version. The replay engine must retain handlers for supported command versions or migrate old commands before dropping a handler. The stream also records the base analysis and editor-engine version so upgrades can be tested for replay compatibility.
 
-A new conversion creates a new base analysis and a new edit stream because element identities may differ. Previous command streams remain archived as lightweight user data. Restoring an older base can rebuild its edited state from its associated stream without retaining another full working copy.
+A new conversion creates a new base analysis and a new edit stream because element identities may differ. Previous command streams remain archived as lightweight user data. Restoring an older base can rebuild its edited state from its associated stream without retaining another full edited result cache.
 
 ### Reconstruction Guarantee
 
@@ -338,11 +338,9 @@ Add an `analysis_edit_streams` table:
 
 | Column | Purpose |
 |---|---|
-| `id` | Stable stream identifier |
-| `document_id` | Owning document |
-| `base_analysis_id` | Immutable conversion analysis used for replay |
+| `analysis_id` | Primary key and foreign key to the immutable `analysis_jobs` row; the document is reached through that job |
 | `base_document_hash` | Integrity hash of the immutable replay input |
-| `editor_engine_version` | Replay semantics version |
+| `engine_version` | Replay semantics version |
 | `created_at` | Stream creation time |
 
 Add an append-only `analysis_edit_commands` table:
@@ -350,7 +348,7 @@ Add an append-only `analysis_edit_commands` table:
 | Column | Purpose |
 |---|---|
 | `id` | Stable command identifier |
-| `stream_id` | Owning edit stream |
+| `analysis_id` | Owning edit stream; foreign key to `analysis_edit_streams.analysis_id` |
 | `sequence` | Strict replay order, unique within the stream |
 | `command_version` | Payload schema and behavior version |
 | `command_type` | A document edit command, or `setCommandActive` for saved history |
@@ -360,20 +358,19 @@ Add an append-only `analysis_edit_commands` table:
 
 Command rows are never updated or deleted as part of normal editing. A correction is another command. Saved undo and redo append `setCommandActive` history events that refer to an earlier edit sequence. Replay resolves these events to the active edit list before applying Docling mutations. A reverted edit remains visible in history and can be reapplied. The full stream, including history events, remains hash chained.
 
-### Materialized Working Copy
+### Materialized Edited Result Cache
 
-Add an `analysis_working_copies` table with one row per edit stream/base analysis:
+Add an `edited_analysis_cache` table with at most one row per edit stream. Its large projections stay separate from the small stream metadata:
 
 | Column | Purpose |
 |---|---|
-| `stream_id` | Primary key; stream used to build the copy |
-| `document_id` | Owning document |
-| `base_analysis_id` | Immutable replay base |
+| `analysis_id` | Primary key and foreign key to `analysis_edit_streams.analysis_id` |
 | `applied_through_sequence` | Last included command |
 | `document_json` | Materialized edited `DoclingDocument` |
 | `content_markdown` | Materialized Markdown projection |
 | `content_html` | Materialized HTML projection |
 | `pages_json` | Materialized page projection |
+| `editor_model_json` | Materialized editor model |
 | `command_stream_hash` | Hash of the stream used to build this row |
 | `result_hash` | Hash of the normalized edited result |
 | `updated_at` | Last successful rebuild or save |
@@ -382,9 +379,9 @@ The row is updated in place after successful validation. It may be deleted and r
 
 ### Active Result
 
-Add `active_analysis_id` to `documents` to identify the immutable base analysis. The active displayed result is the working copy when it belongs to that base; otherwise it is the base analysis itself.
+`analysis_jobs.document_id` remains the ownership relationship. `document_analysis_state` contains one row per document. Its `active_analysis_id` selects the analysis used for document reads and future chunking. A foreign key clears this pointer if that analysis is deleted, and database triggers ensure it belongs to the document. The edit stream is found by analysis ID; no edit-stream pointer is stored on `Document`.
 
-This replaces relying on "latest completed by timestamp" when a service needs the active result.
+Completing a new analysis selects that analysis. Document-scoped reads always apply its saved edits, rebuilding the edited result cache from the command stream when necessary; if it has no saved edits, they read the immutable original. Saving edits to an unselected historical analysis leaves the selection unchanged. Document-scoped reads resolve the selected analysis explicitly and do not infer one from timestamps.
 
 Services that should use the active result include:
 
@@ -395,7 +392,7 @@ Services that should use the active result include:
 - In-memory graph projection.
 - Workspace loading.
 
-Restoring a History version must update `active_analysis_id` on the backend, not only in frontend memory. If that base has an edit stream, the user can activate its latest replayed state or the untouched base. A save does not create a heavy `document_versions` snapshot.
+Restoring a History version updates the backend selection. Each version records its selected analysis separately from the analysis ID and result hash that produced its chunks. This matters when a new analysis is paired with existing chunks from an older analysis. If subsequent edits change the result, its restored chunks are marked stale. Restoring an exact historical editor revision would require a separate replay and branching design. A save does not create a heavy `document_versions` snapshot.
 
 ## Chunks and Downstream State
 
@@ -405,10 +402,13 @@ Automatic rechunking would be surprising, potentially slow, and cannot currently
 
 Instead, track the exact result that produced the live chunkset:
 
-- Store `chunks_source_analysis_id` and `chunks_source_edit_sequence` on the document or canonical chunkset metadata.
-- Set it when chunks are generated.
-- Compare it with the active base analysis and working-copy sequence.
-- Expose `chunksStale` through the document API.
+- Store the live chunkset's source analysis ID and result hash beside `active_analysis_id` in `document_analysis_state`. Keep the chunk-source analysis reference soft so deletion does not erase stale provenance.
+- Hash the exact `document_json` passed to the chunker and store that hash when chunks are generated. The active analysis always resolves its latest saved edits, but the existing chunks do not change until an explicit rechunk.
+- Compare the stored source analysis ID and result hash with the active edited result. A command sequence alone would mark chunks stale even if undo and reapply produced the same result; the hash reflects the content that matters to the chunker.
+- Record the chunk source analysis ID and result hash in `document_versions` so a History restore preserves provenance independently of its active analysis selection.
+- Expose `chunksStale` through the editor result API.
+
+The unused `chunk_edits` audit table is removed. Manual chunk changes update the live `chunks` rows; `document_versions` keeps snapshots only at analysis and rechunk milestones. Individual chunk changes cannot be replayed from an audit stream.
 
 ```mermaid
 stateDiagram-v2
@@ -488,9 +488,9 @@ POST /api/documents/{documentId}/analysis-edits
 
 Uses the same command payload as preview. The request contains only pending commands; the backend combines them with the persisted stream.
 
-Saved history can be changed with `PATCH /api/documents/{documentId}/analysis-edits/history/{sequence}`. Its body contains `active` and `expectedAppliedThroughSequence`. The backend validates the replay, appends the history event, and replaces the working copy in the same transaction. If a later edit depends on the target, the request fails without changing the stream. The history response marks edit commands as active or reverted; history events remain visible in the audit trail.
+Saved history can be changed with `PATCH /api/documents/{documentId}/analysis-edits/history/{sequence}`. Its body contains `active` and `expectedAppliedThroughSequence`. The backend validates the replay, appends the history event, and replaces the edited result cache in the same transaction. If a later edit depends on the target, the request fails without changing the stream. The history response marks edit commands as active or reverted; history events remain visible in the audit trail.
 
-`GET /api/documents/{documentId}/export?format=md&analysisId={baseAnalysisId}&edited=true` exports the saved working copy for that base analysis. JSON uses the same selector. The analysis detail page sends `edited=true` only while edit mode is open; its inspect mode continues to export the immutable analysis. An unsaved preview is not included in an export.
+`GET /api/documents/{documentId}/export?format=md&analysisId={baseAnalysisId}&edited=true` exports the saved edited result cache for that base analysis. JSON uses the same selector. The analysis detail page sends `edited=true` only while edit mode is open; its inspect mode continues to export the immutable analysis. An unsaved preview is not included in an export.
 
 Returns:
 
@@ -503,13 +503,13 @@ interface AnalysisEditSaveResponse {
 }
 ```
 
-### Rebuild Working Copy
+### Rebuild Edited Result Cache
 
 ```http
 POST /api/documents/{documentId}/analysis-edits/rebuild
 ```
 
-This maintenance operation deletes no user data. It replays the full stream against the immutable base, validates the result, and replaces the materialized working copy.
+This maintenance operation deletes no user data. It replays the full stream against the immutable base, validates the result, and replaces the materialized edited result cache.
 
 ## Backend Components
 
@@ -522,7 +522,7 @@ Recommended additions:
 | `infra/docling_projector.py` | Produce JSON, Markdown, HTML, pages, and editor tree |
 | `services/analysis_edit_service.py` | Preview, command append, replay, and materialization orchestration |
 | `api/analysis_edits.py` | Editor, preview, and save endpoints |
-| `persistence/analysis_edit_repo.py` | Append-only streams and working-copy persistence |
+| `persistence/analysis_edit_repo.py` | Append-only streams and cache persistence |
 
 The projector should replace the duplicated projection logic currently found in `infra/local_converter.py` and `infra/serve_converter.py`.
 
@@ -625,12 +625,12 @@ The editor should:
 ### Service and Persistence Tests
 
 - Save appends immutable command rows.
-- Save replaces, rather than duplicates, the working-copy row.
+- Save replaces, rather than duplicates, the cache row.
 - Base analysis remains unchanged.
-- Command append and working-copy update are atomic.
-- Deleting the working copy and rebuilding it reproduces the saved result.
+- Command append and cache update are atomic.
+- Deleting the edited result cache and rebuilding it reproduces the saved result.
 - Commands remain available after rebuilding or switching base analyses.
-- Active-result consumers use the working copy when it matches `active_analysis_id`.
+- Active-result consumers use the selected analysis with its saved edits applied.
 - Chunk freshness changes after edits and rechunking.
 - Graph failures do not roll back committed commands.
 
@@ -655,7 +655,7 @@ The editor should:
 7. Save.
 8. Reload the application.
 9. Confirm the edited analysis persists.
-10. Delete the materialized working copy through the rebuild test fixture.
+10. Delete the materialized edited result cache through the rebuild test fixture.
 11. Rebuild it from the original analysis and saved commands.
 12. Confirm the reconstructed result matches the saved result.
 13. Regenerate chunks and confirm stale state clears.
@@ -678,9 +678,9 @@ The editor should:
 ### Phase 3: Command Stream Persistence
 
 - Add edit stream and append-only command tables.
-- Add the single-row materialized working-copy table.
+- Add the single-row materialized cache table.
 - Persist the active base analysis.
-- Make command append and working-copy replacement transactional.
+- Make command append and cache replacement transactional.
 - Add full replay and rebuild tests.
 
 ### Phase 4: Text and Heading Editor
@@ -697,7 +697,7 @@ The editor should:
 
 ### Phase 6: Downstream Synchronization
 
-- Track the base analysis and edit sequence that produced the chunks.
+- Track the base analysis and result hash that produced the chunks.
 - Surface `chunksStale`.
 - Update exports, tree, graph, and rechunking to use the active analysis. Connecting Ask to the active edited result remains a follow-up.
 
@@ -739,23 +739,23 @@ The feature is complete when:
 
 The first implementation makes the following concrete choices:
 
-- There is one edit stream per `(document, base analysis)` pair. A new conversion starts a new stream because its Docling references are a different identity space.
-- The working copy is also keyed by base analysis. Editing analysis A never overwrites the edited result for analysis B on the same document.
-- Commands are persisted in an append-only SQLite table. They are the authoritative user record; the working copy is only a materialized cache.
+- There is one edit stream per analysis, keyed by `analysis_id`. A new conversion starts a new stream because its Docling references are a different identity space.
+- The edited result cache is also keyed by analysis ID. Editing analysis A never overwrites the cached result for analysis B on the same document.
+- Commands are persisted in an append-only SQLite table. They are the authoritative user record; the edited result is only a materialized cache.
 - A command payload is schema-versioned and uses logical element IDs. Mutable Docling `self_ref` values are never sent by the frontend as durable command identity.
-- The working copy is one row per base analysis and is replaced transactionally with newly appended commands. It contains the full edited Docling JSON and all frontend projections.
+- The cache is one row per analysis and is replaced transactionally with newly appended commands. It contains the full edited Docling JSON and all frontend projections.
 - A save requires `expectedAppliedThroughSequence`. This provides optimistic concurrency protection even though the initial product targets one user.
 - Preview replays persisted commands plus pending commands but does not write them. Save replays again before committing, so preview and save cannot diverge.
 - Text merging accepts compatible paragraph text items across positions and parents. Selected items are normalized under the first item's parent before they are merged; headings, tables, pictures, and lists are rejected rather than guessed.
 - Reading-order changes can move an element and its subtree to the parent of the drop target. PDF provenance and page boxes remain unchanged.
-- The active document workspace uses a dedicated `/api/documents/{id}/analysis-editor` contract. Historical `/analyses/{id}` rows remain read-only and are not silently replaced by the working copy.
-- The editor endpoints accept an optional `analysisId` query parameter for analysis-specific loading, preview, save, and rebuild. Saving a non-active analysis does not change the document's active analysis pointer.
+- The active document workspace uses a dedicated `/api/documents/{id}/analysis-editor` contract. Historical `/analyses/{id}` rows remain read-only and are not silently replaced by the edited result cache.
+- The editor endpoints accept an optional `analysisId` query parameter for analysis-specific loading, preview, save, and rebuild. Saving a non-active analysis does not change the document's active selection.
 - Complete `document_json` retention is mandatory for editor-capable analyses. When page batching is configured, the analysis service skips batching because Docling's internal references cannot safely be merged from independent page documents.
 - Document-scoped tree, export, and rechunking consumers resolve the active materialized result. Ask currently reads the latest completed conversion analysis. Explicit historical analysis requests retain their existing behavior.
-- Chunks are not silently regenerated after an edit. The result reports parse-to-chunk staleness, and explicit rechunking records the base analysis and edit sequence it consumed.
-- Graph refresh is a post-commit projection. A graph failure cannot roll back user commands or the working copy.
-- The schema remains authoritative for this release. Fresh databases receive the editor tables and columns; existing databases receive editor-column updates and a transactional command-table constraint migration at startup. Destructive legacy enum migrations remain out of scope.
-- Rebuild is a first-class maintenance operation. Deleting the working copy must not delete commands, and replay must recreate an equivalent normalized Docling document.
+- Chunks are not silently regenerated after an edit. The result reports parse-to-chunk staleness, and explicit rechunking records the base analysis and result hash it consumed.
+- Graph refresh is a post-commit projection. A graph failure cannot roll back user commands or the edited result cache.
+- The schema remains authoritative for this unreleased feature. `document_analysis_state` holds active selection and chunk provenance outside `documents`; no compatibility migration for earlier editor builds is retained.
+- Rebuild is a first-class maintenance operation. Deleting the edited result cache must not delete commands, and replay must recreate an equivalent normalized Docling document.
 - Docling-native mutation APIs are preferred: `replace_item`, `delete_items`, and `insert_*` methods keep collections and hierarchy references synchronized.
 - `_move_subtree` is an intentional private-API dependency because Docling has no public subtree move operation. All calls are routed through `DoclingDocumentEditor._move_subtree`, which verifies the keyword contract (`old_subroot`, `new_subroot`, `pos`) before mutation and raises an actionable edit error if it is missing or incompatible. Any Docling dependency upgrade must retain the focused move, merge, and insert editor regressions before its lockfile update is accepted.
 - AI generation and LLM-based editing are explicitly out of scope for the deterministic editor phases. Any future AI feature must produce validated commands or typed document fragments before mutation.

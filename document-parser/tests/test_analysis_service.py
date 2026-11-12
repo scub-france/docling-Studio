@@ -540,8 +540,10 @@ class TestBatchedConversion:
 
         saved_jobs: list[AnalysisJob] = []
 
-        async def capture_update_status(job):
+        async def capture_update_status(job, *, select_analysis=False):
             saved_jobs.append(job)
+            if select_analysis:
+                assert job.status == AnalysisStatus.COMPLETED
 
         mock_analysis_repo = MagicMock()
         mock_analysis_repo.find_by_id = AsyncMock(
@@ -569,6 +571,7 @@ class TestBatchedConversion:
         # The last update_status call is the COMPLETED one
         completed_job = saved_jobs[-1]
         assert completed_job.status == AnalysisStatus.COMPLETED
+        assert mock_analysis_repo.update_status.await_args.kwargs == {"select_analysis": True}
         assert completed_job.progress_current == 8, (
             "progress_current must be preserved (was the bug: got None)"
         )

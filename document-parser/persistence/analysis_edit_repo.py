@@ -1,4 +1,4 @@
-"""SQLite adapter for durable analysis edit streams."""
+"""SQLite adapter for durable analysis edit streams and their cache."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     EditCommand,
+    EditedAnalysisCache,
     EditStream,
     StoredEditCommand,
-    WorkingCopy,
 )
 from persistence.database import get_connection
 
@@ -23,9 +23,7 @@ def _dt(value: str) -> datetime:
 
 def _stream(row) -> EditStream:
     return EditStream(
-        id=row["id"],
-        document_id=row["document_id"],
-        base_analysis_id=row["base_analysis_id"],
+        analysis_id=row["analysis_id"],
         base_document_hash=row["base_document_hash"],
         engine_version=row["engine_version"],
         created_at=_dt(row["created_at"]),
@@ -35,7 +33,7 @@ def _stream(row) -> EditStream:
 def _command(row) -> StoredEditCommand:
     return StoredEditCommand(
         id=row["id"],
-        stream_id=row["stream_id"],
+        analysis_id=row["analysis_id"],
         sequence=row["sequence"],
         command=EditCommand(
             command_type=row["command_type"],
@@ -47,11 +45,9 @@ def _command(row) -> StoredEditCommand:
     )
 
 
-def _working(row) -> WorkingCopy:
-    return WorkingCopy(
-        document_id=row["document_id"],
-        stream_id=row["stream_id"],
-        base_analysis_id=row["base_analysis_id"],
+def _cache(row) -> EditedAnalysisCache:
+    return EditedAnalysisCache(
+        analysis_id=row["analysis_id"],
         applied_through_sequence=row["applied_through_sequence"],
         document_json=row["document_json"],
         content_markdown=row["content_markdown"],
@@ -64,15 +60,45 @@ def _working(row) -> WorkingCopy:
     )
 
 
-class SqliteAnalysisEditRepository:
-    """One transaction owns command sequencing and projection replacement."""
+_CACHE_UPSERT = """INSERT INTO edited_analysis_cache
+    (analysis_id, applied_through_sequence, document_json, content_markdown,
+     content_html, pages_json, editor_model_json, command_stream_hash,
+     result_hash, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(analysis_id) DO UPDATE SET
+      applied_through_sequence=excluded.applied_through_sequence,
+      document_json=excluded.document_json,
+      content_markdown=excluded.content_markdown,
+      content_html=excluded.content_html,
+      pages_json=excluded.pages_json,
+      editor_model_json=excluded.editor_model_json,
+      command_stream_hash=excluded.command_stream_hash,
+      result_hash=excluded.result_hash,
+      updated_at=excluded.updated_at"""
 
-    async def find_stream(self, document_id: str, base_analysis_id: str) -> EditStream | None:
+
+def _cache_values(cache: EditedAnalysisCache) -> tuple:
+    return (
+        cache.analysis_id,
+        cache.applied_through_sequence,
+        cache.document_json,
+        cache.content_markdown,
+        cache.content_html,
+        cache.pages_json,
+        cache.editor_model_json,
+        cache.command_stream_hash,
+        cache.result_hash,
+        str(cache.updated_at),
+    )
+
+
+class SqliteAnalysisEditRepository:
+    """One transaction owns command sequencing and cache replacement."""
+
+    async def find_stream(self, analysis_id: str) -> EditStream | None:
         async with get_connection() as db:
             cursor = await db.execute(
-                """SELECT * FROM analysis_edit_streams
-                   WHERE document_id = ? AND base_analysis_id = ?""",
-                (document_id, base_analysis_id),
+                "SELECT * FROM analysis_edit_streams WHERE analysis_id = ?", (analysis_id,)
             )
             row = await cursor.fetchone()
             return _stream(row) if row else None
@@ -81,13 +107,10 @@ class SqliteAnalysisEditRepository:
         async with get_connection() as db:
             await db.execute(
                 """INSERT OR IGNORE INTO analysis_edit_streams
-                   (id, document_id, base_analysis_id, base_document_hash,
-                    engine_version, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (analysis_id, base_document_hash, engine_version, created_at)
+                   VALUES (?, ?, ?, ?)""",
                 (
-                    stream.id,
-                    stream.document_id,
-                    stream.base_analysis_id,
+                    stream.analysis_id,
                     stream.base_document_hash,
                     stream.engine_version,
                     str(stream.created_at),
@@ -95,44 +118,41 @@ class SqliteAnalysisEditRepository:
             )
             await db.commit()
 
-    async def list_commands(self, stream_id: str) -> list[StoredEditCommand]:
+    async def list_commands(self, analysis_id: str) -> list[StoredEditCommand]:
         async with get_connection() as db:
             cursor = await db.execute(
                 """SELECT * FROM analysis_edit_commands
-                   WHERE stream_id = ? ORDER BY sequence""",
-                (stream_id,),
+                   WHERE analysis_id = ? ORDER BY sequence""",
+                (analysis_id,),
             )
             return [_command(row) for row in await cursor.fetchall()]
 
-    async def find_working_copy(
-        self, document_id: str, base_analysis_id: str
-    ) -> WorkingCopy | None:
+    async def find_cache(self, analysis_id: str) -> EditedAnalysisCache | None:
         async with get_connection() as db:
             cursor = await db.execute(
-                """SELECT * FROM analysis_working_copies
-                   WHERE document_id = ? AND base_analysis_id = ?""",
-                (document_id, base_analysis_id),
+                "SELECT * FROM edited_analysis_cache WHERE analysis_id = ?", (analysis_id,)
             )
             row = await cursor.fetchone()
-            return _working(row) if row else None
+            return _cache(row) if row else None
 
-    async def save_commands_and_working_copy(
+    async def save_commands_and_cache(
         self,
         *,
         stream: EditStream,
         commands: list[EditCommand],
         expected_sequence: int,
-        working_copy: WorkingCopy,
-        activate: bool = False,
+        cache: EditedAnalysisCache,
     ) -> list[StoredEditCommand]:
-        """Append commands and replace the projection under one write lock."""
+        """Append commands and replace the cache under one write lock."""
+        if cache.analysis_id != stream.analysis_id:
+            raise ValueError("Cache and stream must belong to the same analysis")
         async with get_connection() as db:
             try:
                 await db.execute("BEGIN IMMEDIATE")
                 cursor = await db.execute(
                     """SELECT sequence, command_hash FROM analysis_edit_commands
-                       WHERE stream_id = ? ORDER BY sequence DESC LIMIT 1""",
-                    (stream.id,),
+                       WHERE analysis_id = ? ORDER BY sequence DESC LIMIT 1""",
+                    (stream.analysis_id,),
                 )
                 last = await cursor.fetchone()
                 actual_sequence = int(last["sequence"]) if last else 0
@@ -157,12 +177,12 @@ class SqliteAnalysisEditRepository:
                     created = datetime.now(UTC)
                     await db.execute(
                         """INSERT INTO analysis_edit_commands
-                           (id, stream_id, sequence, command_version, command_type,
+                           (id, analysis_id, sequence, command_version, command_type,
                             payload_json, previous_hash, command_hash, created_at)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             record_id,
-                            stream.id,
+                            stream.analysis_id,
                             sequence,
                             command.command_version,
                             command.command_type,
@@ -174,87 +194,21 @@ class SqliteAnalysisEditRepository:
                     )
                     saved.append(
                         StoredEditCommand(
-                            record_id, stream.id, sequence, command, command_hash, created
+                            record_id, stream.analysis_id, sequence, command, command_hash, created
                         )
                     )
                     previous_hash = command_hash
 
-                await db.execute(
-                    """INSERT INTO analysis_working_copies
-                       (document_id, stream_id, base_analysis_id, applied_through_sequence,
-                        document_json, content_markdown, content_html, pages_json,
-                        editor_model_json, command_stream_hash, result_hash, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                       ON CONFLICT(stream_id) DO UPDATE SET
-                         base_analysis_id=excluded.base_analysis_id,
-                         applied_through_sequence=excluded.applied_through_sequence,
-                         document_json=excluded.document_json,
-                         content_markdown=excluded.content_markdown,
-                         content_html=excluded.content_html,
-                         pages_json=excluded.pages_json,
-                         editor_model_json=excluded.editor_model_json,
-                         command_stream_hash=excluded.command_stream_hash,
-                         result_hash=excluded.result_hash,
-                         updated_at=excluded.updated_at""",
-                    (
-                        working_copy.document_id,
-                        working_copy.stream_id,
-                        working_copy.base_analysis_id,
-                        working_copy.applied_through_sequence,
-                        working_copy.document_json,
-                        working_copy.content_markdown,
-                        working_copy.content_html,
-                        working_copy.pages_json,
-                        working_copy.editor_model_json,
-                        working_copy.command_stream_hash,
-                        working_copy.result_hash,
-                        str(working_copy.updated_at),
-                    ),
-                )
-                if activate:
-                    await db.execute(
-                        """UPDATE documents
-                           SET active_analysis_id = ?, active_edit_stream_id = ?
-                           WHERE id = ?""",
-                        (stream.base_analysis_id, stream.id, stream.document_id),
-                    )
+                await db.execute(_CACHE_UPSERT, _cache_values(cache))
                 await db.commit()
                 return saved
             except Exception:
                 await db.rollback()
                 raise
 
-    async def replace_working_copy(self, working_copy: WorkingCopy) -> None:
+    async def replace_cache(self, cache: EditedAnalysisCache) -> None:
         async with get_connection() as db:
-            await db.execute(
-                """INSERT INTO analysis_working_copies
-                   (document_id, stream_id, base_analysis_id, applied_through_sequence,
-                    document_json, content_markdown, content_html, pages_json,
-                    editor_model_json, command_stream_hash, result_hash, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(stream_id) DO UPDATE SET
-                    base_analysis_id=excluded.base_analysis_id,
-                    applied_through_sequence=excluded.applied_through_sequence,
-                    document_json=excluded.document_json, content_markdown=excluded.content_markdown,
-                    content_html=excluded.content_html, pages_json=excluded.pages_json,
-                    editor_model_json=excluded.editor_model_json,
-                    command_stream_hash=excluded.command_stream_hash,
-                    result_hash=excluded.result_hash, updated_at=excluded.updated_at""",
-                (
-                    working_copy.document_id,
-                    working_copy.stream_id,
-                    working_copy.base_analysis_id,
-                    working_copy.applied_through_sequence,
-                    working_copy.document_json,
-                    working_copy.content_markdown,
-                    working_copy.content_html,
-                    working_copy.pages_json,
-                    working_copy.editor_model_json,
-                    working_copy.command_stream_hash,
-                    working_copy.result_hash,
-                    str(working_copy.updated_at),
-                ),
-            )
+            await db.execute(_CACHE_UPSERT, _cache_values(cache))
             await db.commit()
 
 

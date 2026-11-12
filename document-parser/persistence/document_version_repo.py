@@ -23,6 +23,8 @@ def _row_to_version(row) -> DocumentVersion:
         document_id=row["document_id"],
         kind=DocumentVersionKind(row["kind"]),
         analysis_id=row["analysis_id"],
+        chunks_source_analysis_id=row["chunks_source_analysis_id"],
+        chunks_source_result_hash=row["chunks_source_result_hash"],
         chunks_snapshot=row["chunks_snapshot"],
         summary=row["summary"] or "",
         created_at=_parse_iso(row["created_at"]),
@@ -30,8 +32,9 @@ def _row_to_version(row) -> DocumentVersion:
 
 
 _INSERT_SQL = """INSERT INTO document_versions
-    (id, document_id, kind, analysis_id, chunks_snapshot, summary, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)"""
+    (id, document_id, kind, analysis_id, chunks_source_analysis_id, chunks_source_result_hash,
+     chunks_snapshot, summary, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
 
 class SqliteDocumentVersionRepository:
@@ -46,6 +49,8 @@ class SqliteDocumentVersionRepository:
                     version.document_id,
                     version.kind.value,
                     version.analysis_id,
+                    version.chunks_source_analysis_id,
+                    version.chunks_source_result_hash,
                     version.chunks_snapshot,
                     version.summary,
                     str(version.created_at),
