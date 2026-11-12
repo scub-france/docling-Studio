@@ -249,8 +249,6 @@ CREATE TABLE IF NOT EXISTS analysis_edit_commands (
     UNIQUE(analysis_id, sequence),
     UNIQUE(analysis_id, command_hash)
 );
-CREATE INDEX IF NOT EXISTS idx_edit_commands_analysis_sequence
-    ON analysis_edit_commands(analysis_id, sequence);
 
 CREATE TABLE IF NOT EXISTS edited_analysis_cache (
     analysis_id TEXT PRIMARY KEY REFERENCES analysis_edit_streams(analysis_id) ON DELETE CASCADE,
