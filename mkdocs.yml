@@ -37,6 +37,7 @@ nav:
   - User guide: user-guide.md
   - Analysis editor: analysis-editor.md
   - Configuration: configuration.md
+  - Cloud conversion: cloud-conversion.md
   - MCP server: mcp-server.md
   - Troubleshooting: troubleshooting.md
   - Contribute:
