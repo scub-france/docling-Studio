@@ -15,7 +15,7 @@ The analysis editor lets you correct the text and structure that Docling extract
 | --- | --- | --- |
 | Replace text | Select an editable element and type in **Text** in the properties panel. | The extracted text changes. The source PDF and its box stay in their original position. |
 | Change heading level | Select a section heading and choose **Body text**, **Title**, or level 1–6 under **Heading level**. | The heading changes role or level. A second document title is rejected. |
-| Merge paragraphs | Select at least two text or paragraph elements with their tree checkboxes or Ctrl/Cmd-click, then click **Merge selected**. | Their text joins in selection order under the first selected element. The other selected elements are removed. The server rejects incompatible paragraph types. |
+| Merge paragraphs | Select at least two text or paragraph elements with their tree checkboxes or Ctrl/Cmd-click, then click **Merge selected**. | Their text joins in reading order under the element that comes first in the document, whatever order you selected them in. The other selected elements are removed. Text and paragraph elements cannot be mixed in one merge. |
 | Delete one element | Select it and click **Delete element** in the properties panel, if available. | The element is removed from the edited document. Deleting a section also removes its children. |
 | Delete several elements | Select them with tree checkboxes or Ctrl/Cmd-click, then click **Delete N selected** in the toolbar. A section's checkbox selects its descendants. | The selected elements are removed together. |
 | Change reading order | Select a movable element and click **Choose destination**, then choose **Before**, **After**, or **Inside section** on a tree row. You can also drag a movable row onto another row to place it before that row. | The element moves in the document structure. Moving a heading moves its section with it; **Inside section** works only on a section heading. The PDF page image and original box positions do not move. |
@@ -38,9 +38,9 @@ Save or discard your current draft before changing saved history. If a later edi
 
 While **Edit analysis** is open, **Download** exports the *saved* edited Markdown or Docling JSON. Save a draft before downloading if you want it included. **Inspect analysis** shows the original conversion result, and its Download action exports that original analysis. PDF download always returns the source PDF.
 
-Each analysis has its own edit history. Starting a new conversion creates a new analysis and a new edit stream; it does not rewrite an older analysis. Document-scoped reads such as the active tree and rechunking use the active saved result. Existing chunks become stale after an edit and need explicit rechunking. **Ask** currently reads the latest completed conversion analysis, so it may not include editor changes.
+Each analysis has its own edit history. Starting a new conversion creates a new analysis and a new edit stream; it does not rewrite an older analysis. Document-scoped reads such as the active tree and rechunking use the active saved result. Existing chunks become stale after an edit and need explicit rechunking. **Ask** and the MCP server currently read the latest completed conversion analysis, so they may not include editor changes.
 
-The editor is controlled by `ANALYSIS_EDITOR_ENABLED` (on by default). When it is off, editing controls and editor API routes are unavailable; you can still inspect the original analyses.
+The editor is controlled by `ANALYSIS_EDITOR_ENABLED` (on by default). When it is off, editing controls, editor API routes and `edited=true` exports are unavailable; you can still inspect the original analyses. Turning it off does not discard saved edits: they keep applying to the document's active result, so default exports, the document tree and rechunking still include them.
 
 ## How the pattern works
 

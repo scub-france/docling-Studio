@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Analysis editor** (#319, #388): correct what Docling extracted without re-running the conversion. On a completed analysis that kept its Docling document, **Edit analysis** lets you replace text, change a heading level, merge paragraphs, delete one or several elements and move elements in the reading order, with a live preview of the tree, the page and the Markdown. Edits are saved as a command history on top of the immutable original analysis, which stays available under **Inspect analysis**. A save made against an outdated history is refused with a conflict (409) instead of overwriting another tab's work. Routes: `GET /api/documents/{id}/analysis-editor`, `POST .../analysis-edits/preview`, `POST .../analysis-edits`, `GET .../analysis-edits/history`, `PATCH .../analysis-edits/history/{sequence}`, `POST .../analysis-edits/rebuild`; `GET /api/documents/{id}/export?edited=true` downloads the saved edited Markdown or JSON. `ANALYSIS_EDITOR_ENABLED` (default `true`) turns the editor off. See [docs/analysis-editor.md](docs/analysis-editor.md).
 - **Analysis editor saved history**: saved edits can be reverted and reapplied from the editor history or with Undo and Redo. The original edits stay in the audit trail. Downloads in editor mode use the rebuilt saved result.
 - **Analysis editor reading order**: a page preview toggle shows numbered boxes that match the structure tree and update as elements move.
 
@@ -15,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
 - **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
-
+- **Default Markdown and JSON export**: without `analysisId`, the export now returns the document's active analysis with its saved edits, instead of the latest completed conversion.
 - **MCP cards in English by default** (#397): the citation and sources cards follow the browser language, English unless it is French. The analysis editor's remaining hard-coded labels are translated.
 
 ### Fixed
