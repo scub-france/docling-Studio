@@ -34,6 +34,7 @@ from domain.value_objects import (
     ChunkDocItem,
     ChunkingOptions,
 )
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -58,17 +59,12 @@ _UNSET = object()
 
 
 # ---------------------------------------------------------------------------
-# Errors — carry an http_status hint, mirrors store_service.py convention.
+# Errors — `ServiceError` carries the http_status hint (#396).
 # ---------------------------------------------------------------------------
 
 
-class ChunkServiceError(Exception):
+class ChunkServiceError(ServiceError):
     http_status: int = 400
-
-    def __init__(self, message: str, *, http_status: int | None = None):
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
 
 
 class ChunkNotFoundError(ChunkServiceError):

@@ -38,12 +38,16 @@ def test_errors_map_to_their_status_and_keep_their_message(error, status):
 
 
 def test_every_service_family_shares_the_base():
+    from services.chunk_service import ChunkServiceError
     from services.graph_service import GraphServiceError
     from services.navigation_errors import NavigationServiceError
     from services.reasoning_service import ReasoningServiceError
     from services.store_service import StoreServiceError
+    from services.version_service import VersionServiceError
 
     for family in (
+        ChunkServiceError,
+        VersionServiceError,
         GraphServiceError,
         NavigationServiceError,
         ReasoningServiceError,
