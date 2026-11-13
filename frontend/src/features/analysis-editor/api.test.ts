@@ -40,7 +40,11 @@ describe('analysis editor API', () => {
 
   it('changes a saved edit with the expected stream sequence', async () => {
     vi.mocked(apiFetch).mockResolvedValue({} as never)
-    await setAnalysisEditActive('doc-1', 2, false, 5, 'analysis-1')
+    await setAnalysisEditActive(
+      'doc-1',
+      { sequence: 2, active: false, expectedAppliedThroughSequence: 5 },
+      'analysis-1',
+    )
     expect(apiFetch).toHaveBeenCalledWith(
       '/api/documents/doc-1/analysis-edits/history/2?analysisId=analysis-1',
       {

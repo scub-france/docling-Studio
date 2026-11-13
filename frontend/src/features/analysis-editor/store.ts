@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as api from './api'
-import { canMerge, coalesceCommands, inReadingOrder, mergeValidationMessage } from './commands'
+import { canMerge, coalesceCommands, inReadingOrder, validateMerge } from './commands'
 import type {
   AnalysisEditCommand,
   AnalysisEditHistoryEntry,
@@ -9,7 +9,7 @@ import type {
   EditorElement,
   EditorTreeNode,
 } from './types'
-import { pagesFromAnalysis } from './types'
+import { parseAnalysisPages } from './types'
 
 export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const documentId = ref<string | null>(null)
@@ -35,7 +35,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const effective = computed(() => preview.value ?? saved.value)
   const elements = computed(() => effective.value?.model.elements ?? [])
   const tree = computed<EditorTreeNode[]>(() => effective.value?.tree ?? [])
-  const pages = computed(() => pagesFromAnalysis(effective.value?.result ?? null))
+  const pages = computed(() => parseAnalysisPages(effective.value?.result ?? null))
   const selectedElement = computed<EditorElement | null>(
     () => elements.value.find((element) => element.id === selectedElementId.value) ?? null,
   )
@@ -68,9 +68,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
       (redoCommands.value.length > 0 || (canChangeSavedHistory.value && !!savedRedoTarget.value)),
   )
   const mergeAllowed = computed(() => canMerge(elements.value, mergeSelection.value))
-  const mergeValidationError = computed(() =>
-    mergeValidationMessage(elements.value, mergeSelection.value),
-  )
+  const mergeValidationKey = computed(() => validateMerge(elements.value, mergeSelection.value))
 
   async function load(id: string, analysisId?: string): Promise<void> {
     documentId.value = id
@@ -279,9 +277,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     try {
       const next = await api.setAnalysisEditActive(
         documentId.value,
-        sequence,
-        active,
-        saved.value.appliedThroughSequence,
+        { sequence, active, expectedAppliedThroughSequence: saved.value.appliedThroughSequence },
         baseAnalysisId.value ?? undefined,
       )
       saved.value = next
@@ -403,7 +399,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     selectedElementId,
     mergeSelection,
     mergeAllowed,
-    mergeValidationError,
+    mergeValidationKey,
     hasUnsavedChanges,
     recoveredPendingCount,
     canUndo,

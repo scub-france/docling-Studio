@@ -333,6 +333,7 @@ class TestServiceForwardsPipelineOptions:
         mock_analysis_repo.find_by_id = AsyncMock()
         mock_analysis_repo.insert = AsyncMock()
         mock_analysis_repo.update_status = AsyncMock()
+        mock_analysis_repo.complete_and_select = AsyncMock()
         mock_document_repo = MagicMock()
         mock_document_repo.find_by_id = AsyncMock()
         mock_document_repo.update_page_count = AsyncMock()

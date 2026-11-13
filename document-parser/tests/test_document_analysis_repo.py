@@ -59,11 +59,11 @@ async def test_completion_and_selection_roll_back_together(tmp_path, monkeypatch
     # A stale or incorrect owner cannot commit a completed job without its selection.
     invalid = AnalysisJob(id="analysis-a", document_id="doc-b", status=AnalysisStatus.COMPLETED)
     with pytest.raises(sqlite3.IntegrityError):
-        await analyses.update_status(invalid, select_analysis=True)
+        await analyses.complete_and_select(invalid)
     assert (await analyses.find_by_id("analysis-a")).status == AnalysisStatus.PENDING
 
     valid = AnalysisJob(id="analysis-a", document_id="doc-a", status=AnalysisStatus.COMPLETED)
-    await analyses.update_status(valid, select_analysis=True)
+    await analyses.complete_and_select(valid)
     assert (await analyses.find_by_id("analysis-a")).status == AnalysisStatus.COMPLETED
     assert (
         await SqliteDocumentAnalysisRepository().get_selection("doc-a")

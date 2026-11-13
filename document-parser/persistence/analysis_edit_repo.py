@@ -17,7 +17,7 @@ from persistence.database import get_connection
 from persistence.iso_datetime import require_iso
 
 
-def _stream(row) -> EditStream:
+def _to_stream(row) -> EditStream:
     return EditStream(
         analysis_id=row["analysis_id"],
         base_document_hash=row["base_document_hash"],
@@ -26,7 +26,7 @@ def _stream(row) -> EditStream:
     )
 
 
-def _command(row) -> StoredEditCommand:
+def _to_stored_command(row) -> StoredEditCommand:
     return StoredEditCommand(
         id=row["id"],
         analysis_id=row["analysis_id"],
@@ -41,7 +41,7 @@ def _command(row) -> StoredEditCommand:
     )
 
 
-def _cache(row) -> EditedAnalysisCache:
+def _to_cache(row) -> EditedAnalysisCache:
     return EditedAnalysisCache(
         analysis_id=row["analysis_id"],
         applied_through_sequence=row["applied_through_sequence"],
@@ -97,7 +97,7 @@ class SqliteAnalysisEditRepository:
                 "SELECT * FROM analysis_edit_streams WHERE analysis_id = ?", (analysis_id,)
             )
             row = await cursor.fetchone()
-            return _stream(row) if row else None
+            return _to_stream(row) if row else None
 
     async def create_stream(self, stream: EditStream) -> None:
         async with get_connection() as db:
@@ -121,7 +121,7 @@ class SqliteAnalysisEditRepository:
                    WHERE analysis_id = ? ORDER BY sequence""",
                 (analysis_id,),
             )
-            return [_command(row) for row in await cursor.fetchall()]
+            return [_to_stored_command(row) for row in await cursor.fetchall()]
 
     async def find_cache(self, analysis_id: str) -> EditedAnalysisCache | None:
         async with get_connection() as db:
@@ -129,7 +129,7 @@ class SqliteAnalysisEditRepository:
                 "SELECT * FROM edited_analysis_cache WHERE analysis_id = ?", (analysis_id,)
             )
             row = await cursor.fetchone()
-            return _cache(row) if row else None
+            return _to_cache(row) if row else None
 
     async def save_commands_and_cache(
         self,

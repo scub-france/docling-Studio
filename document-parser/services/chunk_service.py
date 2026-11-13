@@ -368,7 +368,7 @@ class ChunkService:
         active = None
         if self._active_result_service is not None:
             try:
-                active = await self._active_result_service.active_result(document_id)
+                active = await self._active_result_service.load_active_result(document_id)
             except AnalysisEditUnavailableError as exc:
                 raise ChunkServiceError(str(exc), http_status=409) from exc
         job = (
@@ -701,7 +701,7 @@ class ChunkService:
         else:
             if self._active_result_service is not None:
                 try:
-                    job = (await self._active_result_service.active_result(document_id)).job
+                    job = (await self._active_result_service.load_active_result(document_id)).job
                 except AnalysisEditUnavailableError:
                     return []
             else:

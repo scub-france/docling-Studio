@@ -25,7 +25,7 @@ from domain.analysis_editing import (
 router = APIRouter(prefix="/api/documents", tags=["analysis-editor"])
 
 
-def _analysis(job) -> AnalysisResponse:
+def _to_analysis_response(job) -> AnalysisResponse:
     return AnalysisResponse(
         id=job.id,
         document_id=job.document_id,
@@ -45,22 +45,22 @@ def _analysis(job) -> AnalysisResponse:
     )
 
 
-def _tree(node) -> dict:
+def _serialize_tree(node) -> dict:
     return {
         "elementId": node.element_id,
         "type": node.type,
         "label": node.label,
-        "children": [_tree(child) for child in node.children],
+        "children": [_serialize_tree(child) for child in node.children],
     }
 
 
-def _response(snapshot) -> AnalysisEditorResponse:
+def _to_editor_response(snapshot) -> AnalysisEditorResponse:
     model = json.loads(snapshot.projection.editor_model_json)
     return AnalysisEditorResponse(
         model=model,
-        tree=[_tree(node) for node in snapshot.projection.tree],
+        tree=[_serialize_tree(node) for node in snapshot.projection.tree],
         reading_order=[element.id for element in snapshot.projection.elements],
-        result=_analysis(snapshot.job),
+        result=_to_analysis_response(snapshot.job),
         applied_through_sequence=snapshot.applied_through_sequence,
         chunks_stale=snapshot.chunks_stale,
         warnings=list(snapshot.projection.warnings),
@@ -68,7 +68,7 @@ def _response(snapshot) -> AnalysisEditorResponse:
     )
 
 
-def _history_entry(record, active: bool | None) -> AnalysisEditHistoryEntryResponse:
+def _to_history_entry(record, active: bool | None) -> AnalysisEditHistoryEntryResponse:
     return AnalysisEditHistoryEntryResponse(
         id=record.id,
         sequence=record.sequence,
@@ -81,7 +81,7 @@ def _history_entry(record, active: bool | None) -> AnalysisEditHistoryEntryRespo
     )
 
 
-def _commands(body: AnalysisEditRequest) -> list[EditCommand]:
+def _to_edit_commands(body: AnalysisEditRequest) -> list[EditCommand]:
     commands: list[EditCommand] = []
     for command in body.commands:
         if command.type == "replaceText":
@@ -112,7 +112,7 @@ async def load_editor(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _response(await service.load_editor(doc_id, analysis_id))
+        return _to_editor_response(await service.load_editor(doc_id, analysis_id))
     except AnalysisEditError as exc:
         raise http_error(exc) from exc
 
@@ -125,7 +125,9 @@ async def preview_edits(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _response(await service.preview(doc_id, _commands(body), analysis_id))
+        return _to_editor_response(
+            await service.preview(doc_id, _to_edit_commands(body), analysis_id)
+        )
     except AnalysisEditError as exc:
         raise http_error(exc) from exc
 
@@ -140,9 +142,9 @@ async def edit_history(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> list[AnalysisEditHistoryEntryResponse]:
     try:
-        records = await service.history(doc_id, analysis_id)
+        records = await service.list_history(doc_id, analysis_id)
         _, states = active_edit_commands(records)
-        return [_history_entry(record, states.get(record.sequence)) for record in records]
+        return [_to_history_entry(record, states.get(record.sequence)) for record in records]
     except AnalysisEditError as exc:
         raise http_error(exc) from exc
 
@@ -156,7 +158,7 @@ async def set_edit_active(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _response(
+        return _to_editor_response(
             await service.set_command_active(
                 doc_id,
                 sequence,
@@ -179,12 +181,12 @@ async def save_edits(
     try:
         snapshot = await service.save(
             doc_id,
-            _commands(body),
+            _to_edit_commands(body),
             body.expected_applied_through_sequence,
             analysis_id,
         )
         return AnalysisEditSaveResponse(
-            result=_analysis(snapshot.job),
+            result=_to_analysis_response(snapshot.job),
             base_analysis_id=snapshot.base_analysis_id,
             applied_through_sequence=snapshot.applied_through_sequence,
             chunks_stale=snapshot.chunks_stale,
@@ -200,6 +202,6 @@ async def rebuild_edits(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _response(await service.rebuild(doc_id, analysis_id))
+        return _to_editor_response(await service.rebuild(doc_id, analysis_id))
     except AnalysisEditError as exc:
         raise http_error(exc) from exc

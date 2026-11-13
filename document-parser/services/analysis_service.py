@@ -505,7 +505,7 @@ class AnalysisService:
                     job_id,
                 )
 
-        await self._analysis_repo.update_status(job, select_analysis=True)
+        await self._analysis_repo.complete_and_select(job)
 
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)

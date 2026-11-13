@@ -49,7 +49,7 @@ class DoclingAnalysisProjector:
         # Same page mapping as a fresh conversion (#396): the workspace shows
         # this projection by default, so element types must match the parser's.
         pages, _ = extract_pages_detail(document)
-        tree = self._tree(document, by_ref, object_to_id)
+        tree = self._build_tree(document, by_ref, object_to_id)
         model = {
             "baseAnalysisId": base_analysis_id,
             "elements": [self._element_dict(element) for element in editor_elements],
@@ -91,7 +91,7 @@ class DoclingAnalysisProjector:
         )
 
     @staticmethod
-    def _label(item: Any) -> str:
+    def _label_of(item: Any) -> str:
         value = getattr(item, "label", "text")
         return str(getattr(value, "value", value)).lower()
 
@@ -102,7 +102,7 @@ class DoclingAnalysisProjector:
         object_to_id: dict[int, str],
         document: Any,
     ) -> EditorElement:
-        label = self._label(item)
+        label = self._label_of(item)
         parent = item.parent.resolve(doc=document) if getattr(item, "parent", None) else None
         parent_id = object_to_id.get(id(parent)) if parent is not None else None
         children = tuple(
@@ -160,14 +160,14 @@ class DoclingAnalysisProjector:
             non_editable_reason=reason,
         )
 
-    def _tree(
+    def _build_tree(
         self,
         document: Any,
         by_ref: dict[str, Any],
         object_to_id: dict[int, str],
     ) -> tuple[EditorTreeNode, ...]:
         def node(item: Any) -> EditorTreeNode:
-            label = self._label(item)
+            label = self._label_of(item)
             text = getattr(item, "text", None) or getattr(item, "name", None) or label
             children = tuple(
                 node(child)
@@ -186,7 +186,7 @@ class DoclingAnalysisProjector:
             if child is None or id(child) not in object_to_id:
                 continue
             built = node(child)
-            is_heading = isinstance(child, SectionHeaderItem) or self._label(child) == "title"
+            is_heading = isinstance(child, SectionHeaderItem) or self._label_of(child) == "title"
             if is_heading:
                 level = int(getattr(child, "level", 0) or 0)
                 while heading_stack and heading_stack[-1][0] >= level:

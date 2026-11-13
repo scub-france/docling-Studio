@@ -4,6 +4,7 @@ import type {
   AnalysisEditSaveResponse,
   AnalysisEditorResponse,
   AnalysisEditHistoryEntry,
+  AnalysisEditActiveChange,
 } from './types'
 
 export function fetchAnalysisEditor(
@@ -54,9 +55,7 @@ export function fetchAnalysisEditHistory(
 
 export function setAnalysisEditActive(
   documentId: string,
-  sequence: number,
-  active: boolean,
-  expectedAppliedThroughSequence: number,
+  { sequence, active, expectedAppliedThroughSequence }: AnalysisEditActiveChange,
   analysisId?: string,
 ): Promise<AnalysisEditorResponse> {
   const query = analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : ''

@@ -88,6 +88,7 @@ class TestDefaultTableMode:
         mock_analysis_repo = MagicMock()
         mock_analysis_repo.find_by_id = AsyncMock()
         mock_analysis_repo.update_status = AsyncMock()
+        mock_analysis_repo.complete_and_select = AsyncMock()
         mock_document_repo = MagicMock()
         mock_document_repo.update_page_count = AsyncMock()
         config = AnalysisConfig(default_table_mode=default_table_mode)

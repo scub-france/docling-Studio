@@ -147,7 +147,11 @@ async def export_document(
     if edited and not state.analysis_editor_enabled:
         raise HTTPException(status_code=404, detail="Analysis editor is disabled")
     try:
-        export = await service.export(doc_id, format, analysis_id, edited=edited)
+        export = (
+            await service.export_edited(doc_id, format, analysis_id)
+            if edited
+            else await service.export(doc_id, format, analysis_id)
+        )
     except ExportNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

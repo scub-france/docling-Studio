@@ -233,7 +233,11 @@ describe('analysis editor selection state', () => {
 
     await store.undo()
 
-    expect(setAnalysisEditActive).toHaveBeenCalledWith('doc-1', 1, false, 1, 'analysis-1')
+    expect(setAnalysisEditActive).toHaveBeenCalledWith(
+      'doc-1',
+      { sequence: 1, active: false, expectedAppliedThroughSequence: 1 },
+      'analysis-1',
+    )
     expect(store.history[0]?.active).toBe(false)
     expect(store.canRedo).toBe(true)
 
@@ -245,7 +249,11 @@ describe('analysis editor selection state', () => {
 
     await store.redo()
 
-    expect(setAnalysisEditActive).toHaveBeenLastCalledWith('doc-1', 1, true, 2, 'analysis-1')
+    expect(setAnalysisEditActive).toHaveBeenLastCalledWith(
+      'doc-1',
+      { sequence: 1, active: true, expectedAppliedThroughSequence: 2 },
+      'analysis-1',
+    )
     expect(store.history[0]?.active).toBe(true)
   })
 })

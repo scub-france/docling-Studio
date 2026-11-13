@@ -19,19 +19,19 @@
           type="button"
           data-e2e="analysis-editor-undo"
           :disabled="!store.canUndo"
-          title="Undo (Cmd/Ctrl+Z)"
+          :title="t('analysisEditor.undoHint')"
           @click="store.undo()"
         >
-          Undo
+          {{ t('analysisEditor.undo') }}
         </button>
         <button
           type="button"
           data-e2e="analysis-editor-redo"
           :disabled="!store.canRedo"
-          title="Redo (Cmd/Ctrl+Shift+Z)"
+          :title="t('analysisEditor.redoHint')"
           @click="store.redo()"
         >
-          Redo
+          {{ t('analysisEditor.redo') }}
         </button>
         <button
           type="button"
@@ -48,13 +48,13 @@
           type="button"
           class="merge-toolbar-button"
           :disabled="!store.mergeAllowed"
-          :title="store.mergeValidationError ?? undefined"
+          :title="store.mergeValidationKey ? t(store.mergeValidationKey) : undefined"
           @click="store.mergeSelected()"
         >
           {{ t('analysisEditor.mergeSelected', { n: store.mergeSelection.length }) }}
         </button>
-        <span v-if="store.mergeValidationError" class="operation-feedback">{{
-          store.mergeValidationError
+        <span v-if="store.mergeValidationKey" class="operation-feedback">{{
+          t(store.mergeValidationKey)
         }}</span>
         <button
           v-if="store.mergeSelection.length > 1"
@@ -63,7 +63,7 @@
           class="delete-range-button"
           @click="store.queueDeleteElements(store.mergeSelection)"
         >
-          Delete {{ store.mergeSelection.length }} selected
+          {{ t('analysisEditor.deleteSelected', { n: store.mergeSelection.length }) }}
         </button>
         <button
           v-if="store.selectedElement && isMovable(store.selectedElement.id)"
@@ -170,7 +170,7 @@
               }}
               #{{ entry.payload.targetSequence }}
             </strong>
-            <strong v-else>#{{ entry.sequence }} {{ entry.commandType }}</strong>
+            <strong v-else>#{{ entry.sequence }} {{ describeCommand(entry.commandType) }}</strong>
             <time>{{ formatHistoryDate(entry.createdAt) }}</time>
           </div>
           <code v-if="entry.commandType !== 'setCommandActive'">{{
@@ -223,6 +223,7 @@
               :order-index-by-id="showReadingOrder ? orderIndexById : undefined"
               :next-id="showReadingOrder ? nextElementId : null"
               @select="select"
+              @extend-selection="extendSelection"
               @toggle-merge="toggleMerge"
               @toggle-subtree="toggleMergeSubtree"
               @drag-start="(id) => (draggedId = id)"
@@ -373,17 +374,30 @@ function focusPage(id: string): void {
   const page = element?.provenance[0]?.page
   if (page) currentPage.value = page
 }
-function select(id: string, additive = false): void {
-  if (additive && isMergeable(id)) {
-    if (!store.mergeSelection.length && store.selectedElementId && store.selectedElementId !== id) {
-      if (isMergeable(store.selectedElementId)) store.selectMergeSelection(store.selectedElementId)
-    }
-    store.toggleMergeSelection(id)
-  } else {
-    store.mergeSelection = []
-  }
+/** Select one element and clear the merge selection. */
+function select(id: string): void {
+  store.mergeSelection = []
   store.selectedElementId = id
   focusPage(id)
+}
+/** Cmd/Ctrl-click: add the element to (or remove it from) the merge selection. */
+function extendSelection(id: string): void {
+  if (!isMergeable(id)) {
+    select(id)
+    return
+  }
+  if (!store.mergeSelection.length && store.selectedElementId && store.selectedElementId !== id) {
+    if (isMergeable(store.selectedElementId)) store.selectMergeSelection(store.selectedElementId)
+  }
+  store.toggleMergeSelection(id)
+  store.selectedElementId = id
+  focusPage(id)
+}
+/** The translated command type, or the raw type when no translation exists. */
+function describeCommand(commandType: string): string {
+  const key = `analysisEditor.commandType.${commandType}`
+  const label = t(key)
+  return label === key ? commandType : label
 }
 function formatHistoryDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
@@ -394,7 +408,7 @@ function formatHistoryPayload(payload: Record<string, unknown>): string {
   const values = Object.entries(payload)
     .filter(([key]) => key !== 'elementId' && key !== 'elementIds')
     .map(([key, value]) => `${key}: ${String(value)}`)
-  return values.join(' · ') || 'Structural change'
+  return values.join(' · ') || t('analysisEditor.structuralChange')
 }
 function toggleMerge(id: string): void {
   store.toggleMergeSelection(id)
@@ -441,9 +455,12 @@ function toggleMoveDestination(): void {
 function onPageElement(element: PageElement, _pageNumber: number, event?: MouseEvent): void {
   const match = store.elements.find((candidate) => candidate.selfRef === element.self_ref)
   if (!match) return
-  const additive = Boolean(event?.metaKey || event?.ctrlKey)
-  select(match.id, additive)
-  if (!additive && isMergeable(match.id)) store.selectMergeSelection(match.id)
+  if (event?.metaKey || event?.ctrlKey) {
+    extendSelection(match.id)
+    return
+  }
+  select(match.id)
+  if (isMergeable(match.id)) store.selectMergeSelection(match.id)
 }
 
 function onKeydown(event: KeyboardEvent): void {

@@ -166,41 +166,29 @@ class SqliteAnalysisRepository:
             row = await cursor.fetchone()
             return row["document_json"] if row else None
 
-    async def update_status(self, job: AnalysisJob, *, select_analysis: bool = False) -> None:
+    async def update_status(self, job: AnalysisJob) -> None:
         """Persist all mutable fields of an analysis job (status, results, timestamps)."""
-        if select_analysis and job.status != AnalysisStatus.COMPLETED:
+        async with get_connection() as db:
+            await _write_job_state(db, job)
+            await db.commit()
+
+    async def complete_and_select(self, job: AnalysisJob) -> None:
+        """Persist a completed analysis and make it the document's active one.
+
+        Both writes share one transaction: a completed job never exists
+        without its selection, and a failed selection rolls the job back.
+        """
+        if job.status != AnalysisStatus.COMPLETED:
             raise ValueError("Only a completed analysis can become active")
         async with get_connection() as db:
+            await _write_job_state(db, job)
             await db.execute(
-                """UPDATE analysis_jobs
-                   SET status = ?, content_markdown = ?, content_html = ?,
-                       pages_json = ?, document_json = ?, chunks_json = ?,
-                       error_message = ?, progress_current = ?, progress_total = ?,
-                       started_at = ?, completed_at = ?
-                   WHERE id = ?""",
-                (
-                    job.status.value,
-                    job.content_markdown,
-                    job.content_html,
-                    job.pages_json,
-                    job.document_json,
-                    job.chunks_json,
-                    job.error_message,
-                    job.progress_current,
-                    job.progress_total,
-                    str(job.started_at) if job.started_at else None,
-                    str(job.completed_at) if job.completed_at else None,
-                    job.id,
-                ),
+                """INSERT INTO document_analysis_state
+                   (document_id, active_analysis_id) VALUES (?, ?)
+                   ON CONFLICT(document_id) DO UPDATE SET
+                     active_analysis_id = excluded.active_analysis_id""",
+                (job.document_id, job.id),
             )
-            if select_analysis:
-                await db.execute(
-                    """INSERT INTO document_analysis_state
-                       (document_id, active_analysis_id) VALUES (?, ?)
-                       ON CONFLICT(document_id) DO UPDATE SET
-                         active_analysis_id = excluded.active_analysis_id""",
-                    (job.document_id, job.id),
-                )
             await db.commit()
 
     async def update_progress(self, job_id: str, current: int, total: int) -> None:
@@ -237,3 +225,28 @@ class SqliteAnalysisRepository:
             )
             await db.commit()
             return cursor.rowcount
+
+
+async def _write_job_state(db, job: AnalysisJob) -> None:
+    await db.execute(
+        """UPDATE analysis_jobs
+           SET status = ?, content_markdown = ?, content_html = ?,
+               pages_json = ?, document_json = ?, chunks_json = ?,
+               error_message = ?, progress_current = ?, progress_total = ?,
+               started_at = ?, completed_at = ?
+           WHERE id = ?""",
+        (
+            job.status.value,
+            job.content_markdown,
+            job.content_html,
+            job.pages_json,
+            job.document_json,
+            job.chunks_json,
+            job.error_message,
+            job.progress_current,
+            job.progress_total,
+            str(job.started_at) if job.started_at else None,
+            str(job.completed_at) if job.completed_at else None,
+            job.id,
+        ),
+    )

@@ -745,28 +745,28 @@ async def test_active_result_always_uses_saved_edits_for_selected_analysis(edit_
         "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
     )
     assert (await state.get_selection("doc-1")).analysis_id == "analysis-1"
-    assert "Edited" in (await service.active_result("doc-1")).job.content_markdown
+    assert "Edited" in (await service.load_active_result("doc-1")).job.content_markdown
 
     await state.select(DocumentAnalysisSelection("doc-1", "analysis-1"))
-    assert "Edited" in (await service.active_result("doc-1")).job.content_markdown
+    assert "Edited" in (await service.load_active_result("doc-1")).job.content_markdown
     assert "Edited" in (await service.load_editor("doc-1")).job.content_markdown
 
     await state.set_chunk_source(DocumentChunkSource("doc-1", "analysis-1", "0" * 64))
-    assert (await service.active_result("doc-1")).chunks_stale
+    assert (await service.load_active_result("doc-1")).chunks_stale
     edited_hash = hashlib.sha256(
-        (await service.active_result("doc-1")).job.document_json.encode("utf-8")
+        (await service.load_active_result("doc-1")).job.document_json.encode("utf-8")
     ).hexdigest()
     await state.set_chunk_source(DocumentChunkSource("doc-1", "analysis-1", edited_hash))
     assert not (await service.load_editor("doc-1")).chunks_stale
 
     await service.set_command_active("doc-1", 1, False, 1)
-    assert (await service.active_result("doc-1")).chunks_stale
+    assert (await service.load_active_result("doc-1")).chunks_stale
     await service.set_command_active("doc-1", 1, True, 2)
-    assert not (await service.active_result("doc-1")).chunks_stale
+    assert not (await service.load_active_result("doc-1")).chunks_stale
 
     await state.clear_selection("doc-1")
     with pytest.raises(AnalysisEditUnavailableError, match="no active analysis"):
-        await service.active_result("doc-1")
+        await service.load_active_result("doc-1")
 
 
 @pytest.mark.asyncio
@@ -790,12 +790,12 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     assert "First edited" not in reverted.job.content_markdown
     assert "Second edited" in reverted.job.content_markdown
     assert (
-        await service.active_result("doc-1")
+        await service.load_active_result("doc-1")
     ).job.content_markdown == reverted.job.content_markdown
     assert (await exports.export("doc-1", ExportFormat.MD)).content == reverted.job.content_markdown
     assert (await exports.export("doc-1", ExportFormat.JSON)).content == reverted.job.document_json
     assert (
-        await exports.export("doc-1", ExportFormat.MD, "analysis-1", edited=True)
+        await exports.export_edited("doc-1", ExportFormat.MD, "analysis-1")
     ).content == reverted.job.content_markdown
     assert (
         await exports.export("doc-1", ExportFormat.MD, "analysis-1")

@@ -79,7 +79,14 @@ export interface AnalysisEditRequest {
   expectedAppliedThroughSequence: number
 }
 
-export function pagesFromAnalysis(analysis: Analysis | null): Page[] {
+/** Revert (`active: false`) or reapply a saved edit, checked against the stream head. */
+export interface AnalysisEditActiveChange {
+  sequence: number
+  active: boolean
+  expectedAppliedThroughSequence: number
+}
+
+export function parseAnalysisPages(analysis: Analysis | null): Page[] {
   if (!analysis?.pagesJson) return []
   try {
     return JSON.parse(analysis.pagesJson) as Page[]

@@ -41,7 +41,7 @@ class TestExportAnalysisSelection:
     async def test_missing_active_selection_is_not_found(self):
         service = _make_service()
         active = AsyncMock()
-        active.active_result.side_effect = AnalysisEditUnavailableError(
+        active.load_active_result.side_effect = AnalysisEditUnavailableError(
             "This document has no active analysis"
         )
         service._active_result_service = active

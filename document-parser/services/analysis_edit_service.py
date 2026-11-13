@@ -80,7 +80,7 @@ class AnalysisEditService:
         stored = await self._edits.list_commands(base.id) if stream else []
         sequence = stored[-1].sequence if stored else 0
         if not stored:
-            base_hash = _sha256(base.document_json)
+            base_hash = _hash_text(base.document_json)
             cached = self._unedited_projection
             if cached is not None and cached[0] == base.id and cached[1] == base_hash:
                 return await self._snapshot(document, base, cached[2], sequence)
@@ -90,7 +90,7 @@ class AnalysisEditService:
             and cache is not None
             and cache.analysis_id == base.id
             and cache.applied_through_sequence == sequence
-            and cache.command_stream_hash == _stream_hash(stored, [])
+            and cache.command_stream_hash == _hash_stream(stored, [])
         ):
             projection = await self._project_cache(base, cache)
         else:
@@ -101,7 +101,7 @@ class AnalysisEditService:
             self._unedited_projection = (base.id, base_hash, projection)
         return await self._snapshot(document, base, projection, sequence)
 
-    async def active_result(self, document_id: str) -> EditorSnapshot:
+    async def load_active_result(self, document_id: str) -> EditorSnapshot:
         """Resolve the result used by document-scoped downstream features."""
         await self._require_document(document_id)
         selection = await self._selection.get_selection(document_id)
@@ -109,7 +109,7 @@ class AnalysisEditService:
             raise AnalysisEditUnavailableError("This document has no active analysis")
         return await self.load_editor(document_id, selection.analysis_id)
 
-    async def history(self, document_id: str, analysis_id: str | None = None) -> list:
+    async def list_history(self, document_id: str, analysis_id: str | None = None) -> list:
         """Return the durable command stream for one base analysis."""
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
@@ -144,7 +144,7 @@ class AnalysisEditService:
         base = await self._base_analysis(document, analysis_id)
         if not base.document_json:
             raise AnalysisEditUnavailableError("This analysis has no canonical Docling document")
-        base_hash = _sha256(base.document_json)
+        base_hash = _hash_text(base.document_json)
         stream = await self._edits.find_stream(base.id)
         if stream is None:
             stream = EditStream(
@@ -170,8 +170,8 @@ class AnalysisEditService:
         all_commands, _ = active_edit_commands(stored, pending_commands)
         projection = await self._project(base, all_commands, operation="save")
         sequence = actual_sequence + len(pending_commands)
-        stream_hash = _stream_hash(stored, pending_commands)
-        result_hash = _sha256(projection.document_json)
+        stream_hash = _hash_stream(stored, pending_commands)
+        result_hash = _hash_text(projection.document_json)
         cache = EditedAnalysisCache(
             analysis_id=base.id,
             applied_through_sequence=sequence,
@@ -213,7 +213,7 @@ class AnalysisEditService:
         expected_sequence: int,
         analysis_id: str | None = None,
     ) -> EditorSnapshot:
-        stored = await self.history(document_id, analysis_id)
+        stored = await self.list_history(document_id, analysis_id)
         actual_sequence = stored[-1].sequence if stored else 0
         if actual_sequence != expected_sequence:
             raise AnalysisEditConflictError(
@@ -260,8 +260,8 @@ class AnalysisEditService:
                 content_html=projection.content_html,
                 pages_json=projection.pages_json,
                 editor_model_json=projection.editor_model_json,
-                command_stream_hash=_stream_hash(stored, []),
-                result_hash=_sha256(projection.document_json),
+                command_stream_hash=_hash_stream(stored, []),
+                result_hash=_hash_text(projection.document_json),
                 updated_at=datetime.now(UTC),
             )
             await self._edits.replace_cache(cache)
@@ -369,14 +369,14 @@ class AnalysisEditService:
             return (
                 self._chunks is not None and await self._chunks.count_for_document(document_id) > 0
             )
-        return source.analysis_id != base_id or source.result_hash != _sha256(document_json)
+        return source.analysis_id != base_id or source.result_hash != _hash_text(document_json)
 
 
-def _sha256(value: str) -> str:
+def _hash_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _stream_hash(stored, pending: list[EditCommand]) -> str:
+def _hash_stream(stored, pending: list[EditCommand]) -> str:
     digest = hashlib.sha256()
     previous = stored[-1].command_hash if stored else ""
     for record in stored:

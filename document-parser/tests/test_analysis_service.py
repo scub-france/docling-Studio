@@ -173,6 +173,7 @@ class TestDoclingDocumentImport:
         analysis_repo.insert = AsyncMock(side_effect=insert)
         analysis_repo.find_by_id = AsyncMock(side_effect=lambda job_id: stored.get(job_id))
         analysis_repo.update_status = AsyncMock()
+        analysis_repo.complete_and_select = AsyncMock()
         document_repo = MagicMock()
         document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
         document_repo.update_page_count = AsyncMock()
@@ -540,16 +541,19 @@ class TestBatchedConversion:
 
         saved_jobs: list[AnalysisJob] = []
 
-        async def capture_update_status(job, *, select_analysis=False):
+        async def capture_update_status(job):
             saved_jobs.append(job)
-            if select_analysis:
-                assert job.status == AnalysisStatus.COMPLETED
+
+        async def capture_completion(job):
+            assert job.status == AnalysisStatus.COMPLETED
+            saved_jobs.append(job)
 
         mock_analysis_repo = MagicMock()
         mock_analysis_repo.find_by_id = AsyncMock(
             side_effect=[initial_job, batch_check_job, batch_check_job, refreshed_job]
         )
         mock_analysis_repo.update_status = AsyncMock(side_effect=capture_update_status)
+        mock_analysis_repo.complete_and_select = AsyncMock(side_effect=capture_completion)
         mock_analysis_repo.update_progress = AsyncMock()
 
         mock_document_repo = MagicMock()
@@ -568,10 +572,10 @@ class TestBatchedConversion:
         with patch("services.analysis_service._count_pdf_pages", return_value=8):
             await service._run_analysis_inner("job-progress", "/fake.pdf", "fake.pdf")
 
-        # The last update_status call is the COMPLETED one
+        # The last write is the COMPLETED one, which also selects the analysis
         completed_job = saved_jobs[-1]
         assert completed_job.status == AnalysisStatus.COMPLETED
-        assert mock_analysis_repo.update_status.await_args.kwargs == {"select_analysis": True}
+        mock_analysis_repo.complete_and_select.assert_awaited_once()
         assert completed_job.progress_current == 8, (
             "progress_current must be preserved (was the bug: got None)"
         )

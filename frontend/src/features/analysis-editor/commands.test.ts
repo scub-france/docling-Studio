@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canMerge, coalesceCommands, inReadingOrder, mergeValidationMessage } from './commands'
+import { canMerge, coalesceCommands, inReadingOrder, validateMerge } from './commands'
 import type { EditorElement } from './types'
 
 const text = (id: string, parentId = 'parent'): EditorElement => ({
@@ -85,12 +85,12 @@ describe('analysis editor commands', () => {
     expect(canMerge([text('a'), text('b', 'other')], ['a', 'b'])).toBe(true)
   })
 
-  it('explains invalid merge selections', () => {
-    expect(mergeValidationMessage([text('a')], ['a'])).toBe(
-      'Select at least two elements to merge.',
+  it('explains invalid merge selections with i18n keys', () => {
+    expect(validateMerge([text('a')], ['a'])).toBe('analysisEditor.merge.needTwo')
+    expect(validateMerge([text('a')], ['a', 'gone'])).toBe('analysisEditor.merge.unavailable')
+    expect(validateMerge([{ ...text('a'), type: 'table' }, text('b')], ['a', 'b'])).toBe(
+      'analysisEditor.merge.textOnly',
     )
-    expect(mergeValidationMessage([{ ...text('a'), type: 'table' }, text('b')], ['a', 'b'])).toBe(
-      'Only text and paragraph elements can be merged.',
-    )
+    expect(validateMerge([text('a'), text('b')], ['a', 'b'])).toBeNull()
   })
 })

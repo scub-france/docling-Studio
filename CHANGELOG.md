@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
 - **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
 
+- **MCP cards in English by default** (#397): the citation and sources cards follow the browser language, English unless it is French. The analysis editor's remaining hard-coded labels are translated.
+
 ### Fixed
 
 - **Upgrade from 0.7.3** (#391): booting on a 0.7.3 database now adds the two new `document_versions` columns and selects an active analysis for each already-analysed document, so versions, chunking, exports and the editor keep working without re-analysing anything.

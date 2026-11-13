@@ -7,7 +7,7 @@ function isFoldable(command: AnalysisEditCommand): command is FoldableCommand {
 }
 
 /** Element ids a structural command reads or changes. */
-function structuralElementIds(command: AnalysisEditCommand): string[] {
+function listStructuralElementIds(command: AnalysisEditCommand): string[] {
   switch (command.type) {
     case 'mergeText':
     case 'deleteElements':
@@ -31,20 +31,20 @@ function structuralElementIds(command: AnalysisEditCommand): string[] {
 export function coalesceCommands(commands: AnalysisEditCommand[]): AnalysisEditCommand[] {
   const result: AnalysisEditCommand[] = []
   for (const command of commands) {
-    const index = isFoldable(command) ? foldTargetIndex(result, command) : -1
+    const index = isFoldable(command) ? findFoldTarget(result, command) : -1
     if (index >= 0) result[index] = command
     else result.push(command)
   }
   return result
 }
 
-function foldTargetIndex(queue: AnalysisEditCommand[], command: FoldableCommand): number {
+function findFoldTarget(queue: AnalysisEditCommand[], command: FoldableCommand): number {
   for (let index = queue.length - 1; index >= 0; index--) {
     const candidate = queue[index]
     if (isFoldable(candidate)) {
       if (candidate.type === command.type && candidate.elementId === command.elementId)
         return index
-    } else if (structuralElementIds(candidate).includes(command.elementId)) {
+    } else if (listStructuralElementIds(candidate).includes(command.elementId)) {
       return -1
     }
   }
@@ -64,19 +64,25 @@ export function inReadingOrder(ids: string[], readingOrder: string[]): string[] 
     .map(({ id }) => id)
 }
 
+/** i18n keys (`shared/i18n.ts`) explaining why a merge selection is refused. */
+export type MergeValidationKey =
+  | 'analysisEditor.merge.needTwo'
+  | 'analysisEditor.merge.unavailable'
+  | 'analysisEditor.merge.textOnly'
+
 export function canMerge(elements: EditorElement[], ids: string[]): boolean {
-  return mergeValidationMessage(elements, ids) === null
+  return validateMerge(elements, ids) === null
 }
 
-export function mergeValidationMessage(elements: EditorElement[], ids: string[]): string | null {
-  if (ids.length < 2) return 'Select at least two elements to merge.'
+/** The i18n key of the first rule the selection breaks, or null when it can be merged. */
+export function validateMerge(elements: EditorElement[], ids: string[]): MergeValidationKey | null {
+  if (ids.length < 2) return 'analysisEditor.merge.needTwo'
   const selected = ids
     .map((id) => elements.find((element) => element.id === id))
     .filter((element): element is EditorElement => !!element)
-  if (selected.length !== ids.length)
-    return 'One or more selected elements are no longer available.'
+  if (selected.length !== ids.length) return 'analysisEditor.merge.unavailable'
   if (selected.some((element) => element.type !== 'text' && element.type !== 'paragraph')) {
-    return 'Only text and paragraph elements can be merged.'
+    return 'analysisEditor.merge.textOnly'
   }
   return null
 }
