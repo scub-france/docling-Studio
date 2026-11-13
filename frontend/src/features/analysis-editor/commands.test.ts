@@ -93,4 +93,11 @@ describe('analysis editor commands', () => {
     )
     expect(validateMerge([text('a'), text('b')], ['a', 'b'])).toBeNull()
   })
+
+  it('refuses mixing text and paragraph, as the backend does (#395)', () => {
+    const paragraph = { ...text('p'), type: 'paragraph' }
+
+    expect(validateMerge([text('a'), paragraph], ['a', 'p'])).toBe('analysisEditor.merge.sameType')
+    expect(canMerge([text('a'), paragraph], ['a', 'p'])).toBe(false)
+  })
 })

@@ -569,6 +569,8 @@ const messages: Messages = {
       'Un ou plusieurs éléments sélectionnés ne sont plus disponibles.',
     'analysisEditor.merge.textOnly':
       'Seuls les éléments texte et paragraphe peuvent être fusionnés.',
+    'analysisEditor.merge.sameType':
+      "Fusionnez des éléments d'un même type : texte avec texte, paragraphe avec paragraphe.",
 
     // Parse view (#264) \u2014 Docling extraction graph
     'parse.layers': 'LAYERS',
@@ -1369,6 +1371,8 @@ const messages: Messages = {
     'analysisEditor.merge.needTwo': 'Select at least two elements to merge.',
     'analysisEditor.merge.unavailable': 'One or more selected elements are no longer available.',
     'analysisEditor.merge.textOnly': 'Only text and paragraph elements can be merged.',
+    'analysisEditor.merge.sameType':
+      'Merge elements of one type: text with text, paragraph with paragraph.',
 
     // Parse view (#264) — Docling extraction graph
     'parse.layers': 'LAYERS',

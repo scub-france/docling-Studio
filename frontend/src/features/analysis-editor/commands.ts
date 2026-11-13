@@ -69,6 +69,7 @@ export type MergeValidationKey =
   | 'analysisEditor.merge.needTwo'
   | 'analysisEditor.merge.unavailable'
   | 'analysisEditor.merge.textOnly'
+  | 'analysisEditor.merge.sameType'
 
 export function canMerge(elements: EditorElement[], ids: string[]): boolean {
   return validateMerge(elements, ids) === null
@@ -83,6 +84,11 @@ export function validateMerge(elements: EditorElement[], ids: string[]): MergeVa
   if (selected.length !== ids.length) return 'analysisEditor.merge.unavailable'
   if (selected.some((element) => element.type !== 'text' && element.type !== 'paragraph')) {
     return 'analysisEditor.merge.textOnly'
+  }
+  // The backend merges one Docling label at a time (#395): text with
+  // paragraph would enable the button and then fail with a 400.
+  if (new Set(selected.map((element) => element.type)).size > 1) {
+    return 'analysisEditor.merge.sameType'
   }
   return null
 }
