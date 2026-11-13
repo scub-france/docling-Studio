@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -23,6 +24,7 @@ from domain.models import AnalysisJob, AnalysisStatus
 
 if TYPE_CHECKING:
     from domain.ports import (
+        AnalysisDocumentEngine,
         AnalysisEditRepository,
         AnalysisRepository,
         AnalysisSelectionRepository,
@@ -56,8 +58,7 @@ class AnalysisEditService:
         selection_repo: AnalysisSelectionRepository,
         chunk_source_repo: ChunkSourceRepository,
         edit_repo: AnalysisEditRepository,
-        editor,
-        projector,
+        engine: AnalysisDocumentEngine,
         graph_writer=None,
         chunk_repo: ChunkRepository | None = None,
     ) -> None:
@@ -66,8 +67,7 @@ class AnalysisEditService:
         self._selection = selection_repo
         self._chunk_sources = chunk_source_repo
         self._edits = edit_repo
-        self._editor = editor
-        self._projector = projector
+        self._engine = engine
         self._graph_writer = graph_writer
         self._chunks = chunk_repo
         self._unedited_projection: tuple[str, str, ProjectedAnalysis] | None = None
@@ -91,13 +91,14 @@ class AnalysisEditService:
             and cache.applied_through_sequence == sequence
             and cache.command_stream_hash == _stream_hash(stored, [])
         ):
-            projection = self._projector.project_serialized(
+            projection = await asyncio.to_thread(
+                self._engine.project_serialized,
                 cache.document_json,
                 base_analysis_id=base.id,
                 editor_model_json=cache.editor_model_json,
             )
         else:
-            projection = self._replay(base, stored)
+            projection = await self._replay(base, stored)
         if not stored:
             self._unedited_projection = (base.id, base_hash, projection)
         return await self._snapshot(document, base, projection, sequence)
@@ -128,7 +129,7 @@ class AnalysisEditService:
         stream = await self._edits.find_stream(base.id)
         stored = await self._edits.list_commands(base.id) if stream else []
         commands, _ = active_edit_commands(stored, pending_commands)
-        projection = self._project(base, commands, operation="preview")
+        projection = await self._project(base, commands, operation="preview")
         sequence = (stored[-1].sequence if stored else 0) + len(pending_commands)
         return await self._snapshot(document, base, projection, sequence)
 
@@ -169,7 +170,7 @@ class AnalysisEditService:
                 f"The editor stream changed: expected {expected_sequence}, actual {actual_sequence}"
             )
         all_commands, _ = active_edit_commands(stored, pending_commands)
-        projection = self._project(base, all_commands, operation="save")
+        projection = await self._project(base, all_commands, operation="save")
         sequence = actual_sequence + len(pending_commands)
         stream_hash = _stream_hash(stored, pending_commands)
         result_hash = _sha256(projection.document_json)
@@ -250,7 +251,7 @@ class AnalysisEditService:
         base = await self._base_analysis(document, analysis_id)
         stream = await self._edits.find_stream(base.id)
         stored = await self._edits.list_commands(base.id) if stream else []
-        projection = self._replay(base, stored)
+        projection = await self._replay(base, stored)
         sequence = stored[-1].sequence if stored else 0
         if stream is not None:
             cache = EditedAnalysisCache(
@@ -291,23 +292,20 @@ class AnalysisEditService:
             )
         return base
 
-    def _replay(self, base, stored) -> ProjectedAnalysis:
+    async def _replay(self, base, stored) -> ProjectedAnalysis:
         commands, _ = active_edit_commands(stored)
-        return self._project(base, commands, operation="replay")
+        return await self._project(base, commands, operation="replay")
 
-    def _project(self, base, commands: list[EditCommand], *, operation: str) -> ProjectedAnalysis:
+    async def _project(
+        self, base, commands: list[EditCommand], *, operation: str
+    ) -> ProjectedAnalysis:
+        """Replay and project in a worker thread: the engine is CPU-bound (#394)."""
         try:
-            mutation = self._editor.apply(
+            return await asyncio.to_thread(
+                self._engine.project,
                 base.document_json,
                 base_analysis_id=base.id,
                 commands=commands,
-            )
-            return self._projector.project(
-                mutation.document,
-                base_analysis_id=base.id,
-                logical_ids=mutation.logical_ids,
-                reference_changes=mutation.reference_changes,
-                warnings=mutation.warnings,
             )
         except Exception:
             logger.exception(

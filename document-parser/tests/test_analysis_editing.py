@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import sqlite3
+import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -34,6 +35,7 @@ from domain.models import (
     DocumentAnalysisSelection,
     DocumentChunkSource,
 )
+from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.docling_editor import DoclingDocumentEditor
 from infra.docling_projector import DoclingAnalysisProjector
 from persistence import database
@@ -520,8 +522,7 @@ async def edit_service(tmp_path: Path, monkeypatch):
         selection_repo=analysis_state,
         chunk_source_repo=analysis_state,
         edit_repo=edits,
-        editor=DoclingDocumentEditor(),
-        projector=DoclingAnalysisProjector(),
+        engine=DoclingAnalysisEngine(),
     )
     return service, edits, analyses
 
@@ -578,7 +579,7 @@ async def test_edit_stream_and_cache_belong_to_one_analysis(edit_service):
     assert await edits.list_commands("analysis-1") == []
 
 
-def _service_with_chunks(chunk_count: int) -> AnalysisEditService:
+def _service_with_chunks(chunk_count: int, engine=None) -> AnalysisEditService:
     """A service on the fixture database whose document has `chunk_count` live chunks."""
     state = SqliteDocumentAnalysisRepository()
     return AnalysisEditService(
@@ -587,10 +588,42 @@ def _service_with_chunks(chunk_count: int) -> AnalysisEditService:
         selection_repo=state,
         chunk_source_repo=state,
         edit_repo=SqliteAnalysisEditRepository(),
-        editor=DoclingDocumentEditor(),
-        projector=DoclingAnalysisProjector(),
+        engine=engine or DoclingAnalysisEngine(),
         chunk_repo=Mock(count_for_document=AsyncMock(return_value=chunk_count)),
     )
+
+
+class _ThreadRecordingEngine:
+    """Delegate to the real engine and record the thread each call runs in."""
+
+    def __init__(self) -> None:
+        self.engine = DoclingAnalysisEngine()
+        self.threads: list[int] = []
+
+    def project(self, *args, **kwargs):
+        self.threads.append(threading.get_ident())
+        return self.engine.project(*args, **kwargs)
+
+    def project_serialized(self, *args, **kwargs):
+        self.threads.append(threading.get_ident())
+        return self.engine.project_serialized(*args, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_engine_never_runs_on_the_event_loop_thread(edit_service):
+    """#394: replay and projection are CPU-bound, so they run in a worker thread."""
+    engine = _ThreadRecordingEngine()
+    service = _service_with_chunks(0, engine=engine)
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    command = EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})
+
+    await service.preview("doc-1", [command])
+    await service.save("doc-1", [command], 0)
+    await service.load_editor("doc-1")
+
+    assert len(engine.threads) >= 4
+    assert threading.get_ident() not in engine.threads
 
 
 @pytest.mark.asyncio

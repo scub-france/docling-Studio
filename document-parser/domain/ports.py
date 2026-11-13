@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         EditCommand,
         EditedAnalysisCache,
         EditStream,
+        ProjectedAnalysis,
         StoredEditCommand,
     )
     from domain.app_config import LLMHostProbeResult
@@ -272,6 +273,35 @@ class AnalysisEditRepository(Protocol):
     ) -> list[StoredEditCommand]: ...
 
     async def replace_cache(self, cache: EditedAnalysisCache) -> None: ...
+
+
+class AnalysisDocumentEngine(Protocol):
+    """Apply editor commands to a canonical document and project the result (#394).
+
+    The engine owns the document model (Docling): services only exchange the
+    serialized base document, commands and `ProjectedAnalysis`. Both methods
+    are CPU-bound and synchronous; callers run them in a worker thread.
+    """
+
+    def project(
+        self,
+        document_json: str,
+        *,
+        base_analysis_id: str,
+        commands: list[EditCommand],
+    ) -> ProjectedAnalysis:
+        """Replay `commands` on the base document and project the edited result."""
+        ...
+
+    def project_serialized(
+        self,
+        document_json: str,
+        *,
+        base_analysis_id: str,
+        editor_model_json: str,
+    ) -> ProjectedAnalysis:
+        """Project an already edited working copy without replaying commands."""
+        ...
 
 
 @runtime_checkable

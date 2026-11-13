@@ -39,8 +39,7 @@ from bootstrap.factories import (
 from bootstrap.mcp_mount import describe_mcp_server
 from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import deps_present, deps_provenance
-from infra.docling_editor import DoclingDocumentEditor
-from infra.docling_projector import DoclingAnalysisProjector
+from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.llm.ollama_probe import OllamaProbe
 from infra.settings import settings
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
@@ -127,8 +126,7 @@ class AppStateBuilder:
             selection_repo=document_analysis_repo,
             chunk_source_repo=document_analysis_repo,
             edit_repo=SqliteAnalysisEditRepository(),
-            editor=DoclingDocumentEditor(),
-            projector=DoclingAnalysisProjector(),
+            engine=DoclingAnalysisEngine(),
             graph_writer=graph_writer,
             chunk_repo=chunk_repo,
         )

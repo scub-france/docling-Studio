@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Upgrade from 0.7.3** (#391): booting on a 0.7.3 database now adds the two new `document_versions` columns and selects an active analysis for each already-analysed document, so versions, chunking, exports and the editor keep working without re-analysing anything.
 - **Analysis editor merge order** (#392): merging keeps the document's reading order whatever order the paragraphs were clicked in, and an edit typed after a merge is no longer folded into an edit made before it, which duplicated the merged text.
 - **Stale chunks warning** (#393): chunks with no recorded source analysis, such as chunks generated before 0.7.4, are now reported as possibly stale instead of silently trusted, and saving an empty set of editor changes answers for the analysis being edited rather than the active one.
+- **Analysis editor responsiveness** (#394): replaying and projecting edits (editor load, preview, save, default export, rechunk) now runs in a worker thread instead of blocking the server; the Docling engine sits behind a domain port.
 
 ## [0.7.3] - 2026-11-02
 
