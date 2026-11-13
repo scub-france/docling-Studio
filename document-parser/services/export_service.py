@@ -128,7 +128,10 @@ class ExportService:
         if not analysis_id or self._active_result_service is None:
             raise ExportNotFoundError("Edited analysis export is unavailable")
         await self._requested_analysis(doc_id, analysis_id)
-        return (await self._active_result_service.load_editor(doc_id, analysis_id)).job
+        try:
+            return (await self._active_result_service.load_editor(doc_id, analysis_id)).job
+        except AnalysisEditUnavailableError as exc:
+            raise ExportNotFoundError(str(exc)) from exc
 
 
 class ExportNotFoundError(Exception):

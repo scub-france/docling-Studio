@@ -5,6 +5,7 @@ import json
 import logging
 import sqlite3
 import threading
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -24,6 +25,7 @@ from docling_core.types.doc import (
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
+    AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
     EditCommand,
     active_edit_commands,
@@ -624,6 +626,45 @@ async def test_engine_never_runs_on_the_event_loop_thread(edit_service):
 
     assert len(engine.threads) >= 4
     assert threading.get_ident() not in engine.threads
+
+
+@pytest.mark.asyncio
+async def test_missing_document_or_analysis_is_not_found(edit_service):
+    """#395: a missing resource is a 404 for the API, not an edit conflict."""
+    service, _, _ = edit_service
+
+    with pytest.raises(AnalysisEditNotFoundError, match="Document not found"):
+        await service.load_editor("missing-doc")
+    with pytest.raises(AnalysisEditNotFoundError, match="Analysis not found"):
+        await service.load_editor("doc-1", "missing-analysis")
+
+
+@pytest.mark.asyncio
+async def test_working_result_id_names_its_base_analysis(edit_service):
+    """#395: two analyses of one document no longer share a working id."""
+    service, _, _ = edit_service
+
+    snapshot = await service.load_editor("doc-1")
+
+    assert snapshot.job.id == "working:doc-1:analysis-1"
+
+
+@pytest.mark.asyncio
+async def test_corrupt_edited_cache_is_replayed_instead_of_failing(edit_service):
+    """#395: the cache is rebuildable, so an unreadable one falls back to the stream."""
+    service, edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
+    )
+    cache = await edits.find_cache("analysis-1")
+    assert cache is not None
+    await edits.replace_cache(replace(cache, document_json="{not json"))
+
+    reloaded = await _service_with_chunks(0).load_editor("doc-1")
+
+    assert "Edited" in reloaded.job.content_markdown
 
 
 @pytest.mark.asyncio

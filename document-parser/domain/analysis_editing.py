@@ -116,6 +116,14 @@ class AnalysisEditUnavailableError(AnalysisEditError):
     """Raised when a document has no editable canonical Docling JSON."""
 
 
+class AnalysisEditNotFoundError(AnalysisEditUnavailableError):
+    """Raised when the document or the requested analysis does not exist (#395).
+
+    It stays an `AnalysisEditUnavailableError` so callers that only need "no
+    editable result" keep working; the editor API answers 404 for it.
+    """
+
+
 def active_edit_commands(
     stored: list[StoredEditCommand], pending: list[EditCommand] | None = None
 ) -> tuple[list[EditCommand], dict[int, bool]]:

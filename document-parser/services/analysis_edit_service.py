@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
+    AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
     EditCommand,
     EditedAnalysisCache,
@@ -91,13 +92,10 @@ class AnalysisEditService:
             and cache.applied_through_sequence == sequence
             and cache.command_stream_hash == _stream_hash(stored, [])
         ):
-            projection = await asyncio.to_thread(
-                self._engine.project_serialized,
-                cache.document_json,
-                base_analysis_id=base.id,
-                editor_model_json=cache.editor_model_json,
-            )
+            projection = await self._project_cache(base, cache)
         else:
+            projection = None
+        if projection is None:
             projection = await self._replay(base, stored)
         if not stored:
             self._unedited_projection = (base.id, base_hash, projection)
@@ -272,14 +270,14 @@ class AnalysisEditService:
     async def _require_document(self, document_id: str):
         document = await self._documents.find_by_id(document_id)
         if document is None:
-            raise AnalysisEditUnavailableError(f"Document not found: {document_id}")
+            raise AnalysisEditNotFoundError(f"Document not found: {document_id}")
         return document
 
     async def _base_analysis(self, document, analysis_id: str | None = None):
         if analysis_id is not None:
             base = await self._analyses.find_by_id(analysis_id)
-            if base is not None and base.document_id != document.id:
-                base = None
+            if base is None or base.document_id != document.id:
+                raise AnalysisEditNotFoundError(f"Analysis not found: {analysis_id}")
         else:
             selection = await self._selection.get_selection(document.id)
             if selection is None:
@@ -291,6 +289,27 @@ class AnalysisEditService:
                 "the editor and document tree."
             )
         return base
+
+    async def _project_cache(self, base, cache: EditedAnalysisCache) -> ProjectedAnalysis | None:
+        """Project the stored working copy, or None when it cannot be read (#395).
+
+        The cache is a rebuildable projection of the command stream: a corrupt
+        one must not fail the request, the caller replays the stream instead.
+        """
+        try:
+            return await asyncio.to_thread(
+                self._engine.project_serialized,
+                cache.document_json,
+                base_analysis_id=base.id,
+                editor_model_json=cache.editor_model_json,
+            )
+        except Exception:
+            logger.warning(
+                "Edited analysis cache unreadable, replaying the edit stream",
+                extra={"document_id": base.document_id, "base_analysis_id": base.id},
+                exc_info=True,
+            )
+            return None
 
     async def _replay(self, base, stored) -> ProjectedAnalysis:
         commands, _ = active_edit_commands(stored)
@@ -322,7 +341,9 @@ class AnalysisEditService:
 
     async def _snapshot(self, document, base, projection, sequence: int) -> EditorSnapshot:
         job = AnalysisJob(
-            id=f"working:{document.id}",
+            # One working result per base analysis: the id must not collide
+            # between two analyses of the same document (#395).
+            id=f"working:{document.id}:{base.id}",
             document_id=document.id,
             status=AnalysisStatus.COMPLETED,
             content_markdown=projection.content_markdown,
