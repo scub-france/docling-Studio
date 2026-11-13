@@ -1,6 +1,11 @@
 """SQLite database management — async via aiosqlite.
 
-The schema is authoritative for new databases.
+The schema is authoritative for new databases. `init_db()` also upgrades a
+database created by 0.7.3 in place (#391): `CREATE TABLE IF NOT EXISTS` adds
+the new tables but never touches an existing one, so the columns 0.7.4 added
+to an existing table are added here, and the new per-document analysis state
+is backfilled. Every step is idempotent, so it runs on each boot.
+Databases older than 0.6.1 are not upgraded: delete the file and re-boot.
 """
 
 from __future__ import annotations
@@ -268,14 +273,61 @@ CREATE TABLE IF NOT EXISTS edited_analysis_cache (
 async def init_db() -> None:
     """Create database file and tables if they don't exist.
 
-    Runs the canonical schema and seeds the default store.
+    Runs the canonical schema, upgrades a 0.7.3 database in place and seeds
+    the default store.
     """
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(_SCHEMA)
+        await _upgrade_from_0_7_3(db)
         await _seed_default_store(db)
         await db.commit()
     logger.info("Database initialized at %s", DB_PATH)
+
+
+# Columns 0.7.4 added to tables that already existed in 0.7.3. SQLite cannot
+# add a table-level CHECK to an existing table: on an upgraded database the
+# "both or neither" rule on these two columns is kept by their only writer,
+# `services/version_service.py`, not by the database.
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("document_versions", "chunks_source_analysis_id", "TEXT"),
+    ("document_versions", "chunks_source_result_hash", "TEXT"),
+)
+
+# One active analysis per document that has none yet: the latest COMPLETED
+# analysis, preferring one that kept its Docling document (the editor, chunks
+# and JSON export need it), as 0.7.3 picked it for chunking.
+_BACKFILL_ACTIVE_ANALYSIS = """
+INSERT INTO document_analysis_state (document_id, active_analysis_id)
+SELECT d.id,
+       (SELECT aj.id FROM analysis_jobs aj
+        WHERE aj.document_id = d.id AND aj.status = 'COMPLETED'
+        ORDER BY aj.document_json IS NOT NULL DESC, aj.completed_at DESC, aj.created_at DESC
+        LIMIT 1)
+FROM documents d
+WHERE NOT EXISTS (SELECT 1 FROM document_analysis_state s WHERE s.document_id = d.id)
+  AND EXISTS (SELECT 1 FROM analysis_jobs aj
+              WHERE aj.document_id = d.id AND aj.status = 'COMPLETED')
+"""
+
+
+async def _upgrade_from_0_7_3(db: aiosqlite.Connection) -> None:
+    """Bring a 0.7.3 database to the 0.7.4 shape (#391). Idempotent.
+
+    A document that already has a state row is left alone, even when its
+    active analysis is NULL: that is a choice the user made, not a gap.
+    """
+    for table, column, sql_type in _ADDED_COLUMNS:
+        cursor = await db.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in await cursor.fetchall()}
+        if column not in existing:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+            logger.info("Upgraded database: added %s.%s", table, column)
+    cursor = await db.execute(_BACKFILL_ACTIVE_ANALYSIS)
+    if cursor.rowcount > 0:
+        logger.info(
+            "Upgraded database: selected an active analysis for %d documents", cursor.rowcount
+        )
 
 
 async def _seed_default_store(db: aiosqlite.Connection) -> None:
