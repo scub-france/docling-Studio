@@ -180,10 +180,7 @@ class VersionService:
 
         # Wipe live chunks (soft-delete), then re-insert the
         # snapshot's chunks under fresh ids.
-        now = _utcnow()
-        existing = await self._chunks.find_for_document(document_id)
-        for c in existing:
-            await self._chunks.soft_delete(c.id, at=now)
+        await self._chunks.soft_delete_for_document(document_id, at=_utcnow())
 
         raw_chunks = json.loads(version.chunks_snapshot or "[]")
         new_chunks: list[Chunk] = []

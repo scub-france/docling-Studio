@@ -196,6 +196,19 @@ class ChunkRepository(Protocol):
 
     async def soft_delete(self, chunk_id: str, *, at: datetime) -> bool: ...
 
+    async def soft_delete_many(self, chunk_ids: list[str], *, at: datetime) -> int: ...
+
+    async def soft_delete_for_document(self, document_id: str, *, at: datetime) -> int: ...
+
+    async def shift_sequences(
+        self,
+        document_id: str,
+        *,
+        from_sequence: int,
+        at: datetime,
+        by: int = 1,
+    ) -> int: ...
+
     async def find_for_document(
         self,
         document_id: str,

@@ -110,6 +110,55 @@ class SqliteChunkRepository:
             await db.commit()
             return cursor.rowcount > 0
 
+    async def soft_delete_many(self, chunk_ids: list[str], *, at: datetime) -> int:
+        """Soft-delete the given chunks in one statement; returns how many were hit."""
+        if not chunk_ids:
+            return 0
+        placeholders = ", ".join("?" for _ in chunk_ids)
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"UPDATE chunks SET deleted_at = ?, updated_at = ? WHERE id IN ({placeholders})",
+                (str(at), str(at), *chunk_ids),
+            )
+            await db.commit()
+            return cursor.rowcount
+
+    async def soft_delete_for_document(self, document_id: str, *, at: datetime) -> int:
+        """Soft-delete every live chunk of a document in one statement.
+
+        Chunks already soft-deleted keep their original `deleted_at`.
+        """
+        async with get_connection() as db:
+            cursor = await db.execute(
+                """UPDATE chunks SET deleted_at = ?, updated_at = ?
+                   WHERE document_id = ? AND deleted_at IS NULL""",
+                (str(at), str(at), document_id),
+            )
+            await db.commit()
+            return cursor.rowcount
+
+    async def shift_sequences(
+        self,
+        document_id: str,
+        *,
+        from_sequence: int,
+        at: datetime,
+        by: int = 1,
+    ) -> int:
+        """Move every live chunk at `sequence >= from_sequence` up by `by`, in one statement.
+
+        `chunks` has no UNIQUE constraint on (document_id, sequence), so the
+        rows can be shifted in place without a temporary offset.
+        """
+        async with get_connection() as db:
+            cursor = await db.execute(
+                """UPDATE chunks SET sequence = sequence + ?, updated_at = ?
+                   WHERE document_id = ? AND sequence >= ? AND deleted_at IS NULL""",
+                (by, str(at), document_id, from_sequence),
+            )
+            await db.commit()
+            return cursor.rowcount
+
     async def find_for_document(
         self,
         document_id: str,

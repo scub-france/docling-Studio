@@ -15,7 +15,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from pdf2image import convert_from_bytes
+from pdf2image import convert_from_path
 
 from domain.navigation import RasterCrop
 
@@ -24,8 +24,11 @@ class PdfPageRasterizer:
     """Stateless adapter for the `PageRasterizer` port."""
 
     def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
-        content = Path(storage_path).read_bytes()
-        images = convert_from_bytes(content, first_page=page, last_page=page, dpi=dpi)
+        # Poppler opens the file by path and renders only the requested
+        # page: the PDF is never read whole into memory (#398).
+        if not Path(storage_path).is_file():
+            raise FileNotFoundError(storage_path)
+        images = convert_from_path(storage_path, first_page=page, last_page=page, dpi=dpi)
         if not images:
             raise ValueError(f"Page {page} not found in {storage_path}")
         buffer = io.BytesIO()

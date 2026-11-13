@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pypdfium2 as pdfium
-from pdf2image import convert_from_bytes, pdfinfo_from_bytes
+from pdf2image import convert_from_path, pdfinfo_from_bytes
 
 from domain.models import Document
 from domain.value_objects import PageDetail
@@ -157,9 +157,15 @@ class DocumentService:
         return await self._document_repo.delete(doc_id)
 
     @staticmethod
-    def generate_preview(file_content: bytes, page: int = 1, dpi: int = 150) -> bytes:
-        """Generate a PNG preview of a specific PDF page."""
-        images = convert_from_bytes(file_content, first_page=page, last_page=page, dpi=dpi)
+    def generate_preview(pdf_path: str | Path, page: int = 1, dpi: int = 150) -> bytes:
+        """Generate a PNG preview of a specific PDF page.
+
+        Poppler reads the file by path: only the requested page is rendered and
+        the PDF is never loaded whole into memory (#398).
+        """
+        if not Path(pdf_path).is_file():
+            raise FileNotFoundError(str(pdf_path))
+        images = convert_from_path(pdf_path, first_page=page, last_page=page, dpi=dpi)
         if not images:
             raise ValueError(f"Page {page} not found")
 
@@ -168,12 +174,15 @@ class DocumentService:
         return buf.getvalue()
 
     @staticmethod
-    def page_sizes(file_content: bytes) -> list[PageDetail]:
+    def page_sizes(pdf_path: str | Path) -> list[PageDetail]:
         """Size of each page of a PDF, in points, without its elements (#352).
 
         Lets the page preview reserve each page's box before any analysis.
+        pdfium opens the file by path, so the PDF is not read into memory (#398).
         """
-        pdf = pdfium.PdfDocument(file_content)
+        if not Path(pdf_path).is_file():
+            raise FileNotFoundError(str(pdf_path))
+        pdf = pdfium.PdfDocument(str(pdf_path))
         try:
             sizes: list[PageDetail] = []
             for index in range(len(pdf)):

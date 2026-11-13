@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -131,9 +132,7 @@ class TestRestore:
         v1 = await service.record_on_rechunk(doc.id, "a1", "a" * 64)
 
         # Move to V2 state — soft-delete V1's chunks, insert a single new
-        now = datetime.now(UTC)
-        for c in await repos["chunks"].find_for_document(doc.id):
-            await repos["chunks"].soft_delete(c.id, at=now)
+        await repos["chunks"].soft_delete_for_document(doc.id, at=datetime.now(UTC))
         await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="v2-only")])
         await service.record_on_rechunk(doc.id, "a1", "b" * 64)
 
@@ -156,6 +155,33 @@ class TestRestore:
         assert selection.analysis_id == "a1"
         assert source.analysis_id == "a1"
         assert source.result_hash == "c" * 64
+
+    async def test_restore_soft_deletes_live_chunks_in_one_statement(
+        self, service, repos, doc, monkeypatch
+    ):
+        """#398 — one bulk UPDATE, not one soft-delete per live chunk."""
+        await repos["analyses"].insert(
+            AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        )
+        await repos["chunks"].insert_many(
+            [Chunk(document_id=doc.id, sequence=i, text=f"live-{i}") for i in range(3)]
+        )
+        version = await service.record_on_rechunk(doc.id, "a1", "d" * 64)
+        chunk_repo = repos["chunks"]
+        bulk = AsyncMock(wraps=chunk_repo.soft_delete_for_document)
+        single = AsyncMock(wraps=chunk_repo.soft_delete)
+        monkeypatch.setattr(chunk_repo, "soft_delete_for_document", bulk)
+        monkeypatch.setattr(chunk_repo, "soft_delete", single)
+
+        await service.restore(doc.id, version.id)
+
+        bulk.assert_awaited_once()
+        assert bulk.await_args.args == (doc.id,)
+        single.assert_not_awaited()
+        live = await chunk_repo.find_for_document(doc.id)
+        assert sorted(c.text for c in live) == ["live-0", "live-1", "live-2"]
+        every = await chunk_repo.find_for_document(doc.id, include_deleted=True)
+        assert sum(c.deleted_at is not None for c in every) == 3
 
     async def test_restore_unknown_version_raises(self, service, doc):
         with pytest.raises(VersionNotFoundError):

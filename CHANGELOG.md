@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Stale chunks warning** (#393): chunks with no recorded source analysis, such as chunks generated before 0.7.4, are now reported as possibly stale instead of silently trusted, and saving an empty set of editor changes answers for the analysis being edited rather than the active one.
 - **Analysis editor responsiveness** (#394): replaying and projecting edits (editor load, preview, save, default export, rechunk) now runs in a worker thread instead of blocking the server; the Docling engine sits behind a domain port.
 - **Element types in the document workspace** (#396): the page boxes of the edited result now use the same element types as a fresh conversion, so list items keep their colour and layer.
+- **Chunk edits and page rendering** (#398): inserting, splitting, merging, regenerating and restoring chunks write in one SQL statement instead of one per chunk, and page previews open the PDF by path instead of reading the whole file for every page.
 
 ## [0.7.3] - 2026-11-02
 

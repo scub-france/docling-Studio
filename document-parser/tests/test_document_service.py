@@ -117,8 +117,11 @@ class TestPageSizes:
 
         assert service.resolve_storage_path("/app/uploads/stored.pdf") == local_file
 
-    def test_reads_the_size_of_every_page(self):
-        pages = DocumentService.page_sizes(pdf_with_pages((612, 792), (842, 595)))
+    def test_reads_the_size_of_every_page(self, tmp_path):
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792), (842, 595)))
+
+        pages = DocumentService.page_sizes(pdf)
 
         assert [(p.page_number, p.width, p.height) for p in pages] == [
             (1, 612, 792),
@@ -126,29 +129,73 @@ class TestPageSizes:
         ]
         assert all(p.elements == [] for p in pages)
 
-    def test_raises_on_a_file_that_is_not_a_pdf(self):
+    def test_opens_the_pdf_by_path_not_by_bytes(self, tmp_path):
+        """pdfium gets the path, so the PDF is never read whole into memory (#398)."""
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792)))
+
+        target = "services.document_service.pdfium.PdfDocument"
+        with patch(target, wraps=pdfium.PdfDocument) as opened:
+            DocumentService.page_sizes(pdf)
+
+        assert opened.call_args.args == (str(pdf),)
+
+    def test_raises_on_a_file_that_is_not_a_pdf(self, tmp_path):
+        broken = tmp_path / "broken.pdf"
+        broken.write_bytes(b"%PDF-not really")
+
         with pytest.raises(pdfium.PdfiumError):
-            DocumentService.page_sizes(b"%PDF-not really")
+            DocumentService.page_sizes(broken)
+
+    def test_raises_file_not_found_on_a_missing_file(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            DocumentService.page_sizes(tmp_path / "gone.pdf")
 
 
 class TestGeneratePreview:
-    def test_raises_on_invalid_page(self):
+    @pytest.fixture
+    def pdf_path(self, tmp_path):
+        path = tmp_path / "doc.pdf"
+        path.write_bytes(b"%PDF-fake")
+        return path
+
+    def test_raises_on_invalid_page(self, pdf_path):
         """generate_preview should raise ValueError when page is out of range."""
         with (
-            patch("services.document_service.convert_from_bytes", return_value=[]),
+            patch("services.document_service.convert_from_path", return_value=[]),
             pytest.raises(ValueError, match="Page 1 not found"),
         ):
-            DocumentService.generate_preview(b"%PDF-fake", page=1)
+            DocumentService.generate_preview(pdf_path, page=1)
 
-    def test_returns_png_bytes(self):
+    def test_returns_png_bytes(self, pdf_path):
         """generate_preview should return PNG bytes from pdf2image."""
         mock_image = MagicMock()
         mock_image.save = MagicMock(side_effect=lambda buf, format: buf.write(b"PNG-DATA"))
 
-        with patch("services.document_service.convert_from_bytes", return_value=[mock_image]):
-            result = DocumentService.generate_preview(b"%PDF-fake", page=1, dpi=72)
+        with patch("services.document_service.convert_from_path", return_value=[mock_image]):
+            result = DocumentService.generate_preview(pdf_path, page=1, dpi=72)
 
         assert result == b"PNG-DATA"
+
+    def test_renders_only_the_requested_page_from_the_path(self, pdf_path):
+        """Poppler opens the file by path, one page at a time (#398)."""
+        mock_image = MagicMock()
+        mock_image.save = MagicMock(side_effect=lambda buf, format: buf.write(b"PNG"))
+
+        target = "services.document_service.convert_from_path"
+        with patch(target, return_value=[mock_image]) as convert:
+            DocumentService.generate_preview(pdf_path, page=3, dpi=96)
+
+        convert.assert_called_once_with(pdf_path, first_page=3, last_page=3, dpi=96)
+
+    def test_raises_file_not_found_on_a_missing_file(self, tmp_path):
+        with (
+            patch("services.document_service.convert_from_path") as convert,
+            pytest.raises(FileNotFoundError),
+        ):
+            DocumentService.generate_preview(tmp_path / "gone.pdf", page=1)
+
+        convert.assert_not_called()
 
 
 class TestCountPages:

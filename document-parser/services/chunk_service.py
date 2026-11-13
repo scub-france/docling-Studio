@@ -235,7 +235,7 @@ class ChunkService:
         await self._require_doc(document_id)
         existing = await self._chunks.find_for_document(document_id)
         sequence = self._sequence_after(existing, after_id)
-        await self._shift_sequences(existing, from_sequence=sequence)
+        await self._shift_sequences(document_id, from_sequence=sequence)
 
         new_chunk = Chunk(
             document_id=document_id,
@@ -281,8 +281,6 @@ class ChunkService:
             raise ChunkValidationError(
                 f"cursorOffset {cursor_offset} out of range for chunk of length {len(source.text)}"
             )
-        existing = await self._chunks.find_for_document(document_id)
-
         # Both halves inherit headings, source_page, bboxes, doc_items.
         # Token counts are unknown post-split; leave as None.
         head_text = source.text[:cursor_offset]
@@ -307,7 +305,7 @@ class ChunkService:
         )
 
         # Push subsequent sequences by 1 to make room for `tail`.
-        await self._shift_sequences(existing, from_sequence=source.sequence + 1)
+        await self._shift_sequences(document_id, from_sequence=source.sequence + 1)
         await self._chunks.soft_delete(source.id, at=_utcnow())
         await self._chunks.insert_many([head, tail])
 
@@ -354,8 +352,7 @@ class ChunkService:
             token_count=token_total,
         )
 
-        for c in ordered:
-            await self._chunks.soft_delete(c.id, at=_utcnow())
+        await self._chunks.soft_delete_many([c.id for c in ordered], at=_utcnow())
         await self._chunks.insert(merged)
 
         logger.info(
@@ -392,10 +389,7 @@ class ChunkService:
         chunk_opts = ChunkingOptions(**options) if options else ChunkingOptions()
         new_results = await self._chunker.chunk(job.document_json, chunk_opts)
 
-        existing = await self._chunks.find_for_document(document_id)
-        now = _utcnow()
-        for c in existing:
-            await self._chunks.soft_delete(c.id, at=now)
+        old_count = await self._chunks.soft_delete_for_document(document_id, at=_utcnow())
 
         new_chunks = [
             Chunk(
@@ -415,7 +409,7 @@ class ChunkService:
         logger.info(
             "chunk.rechunk docId=%s oldCount=%d newCount=%d",
             document_id,
-            len(existing),
+            old_count,
             len(new_chunks),
         )
 
@@ -749,13 +743,9 @@ class ChunkService:
             raise ChunkNotFoundError(f"Anchor chunk not found: {after_id}")
         return anchor.sequence + 1
 
-    async def _shift_sequences(self, existing: list[Chunk], *, from_sequence: int) -> None:
-        """Push chunks at >= from_sequence one slot up to make room."""
-        affected = [c for c in existing if c.sequence >= from_sequence]
-        for c in affected:
-            c.sequence += 1
-            c.updated_at = _utcnow()
-            await self._chunks.update(c)
+    async def _shift_sequences(self, document_id: str, *, from_sequence: int) -> None:
+        """Push live chunks at >= from_sequence one slot up to make room, in one UPDATE."""
+        await self._chunks.shift_sequences(document_id, from_sequence=from_sequence, at=_utcnow())
 
 
 # ---------------------------------------------------------------------------

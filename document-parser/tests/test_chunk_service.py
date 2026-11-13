@@ -37,6 +37,14 @@ from services.ingestion_service import IngestionResult
 # Stateless shim — safe to share across the entire test module.
 _TREE_READER = DoclingTreeReader()
 
+
+def _spy(monkeypatch, repo, name: str) -> AsyncMock:
+    """Wrap a repository coroutine so a test can count its calls (#398)."""
+    spy = AsyncMock(wraps=getattr(repo, name))
+    monkeypatch.setattr(repo, name, spy)
+    return spy
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -131,6 +139,29 @@ class TestAddChunk:
         refreshed_last = next(c for c in chunks if c.id == last.id)
         assert refreshed_last.sequence == 2
 
+    async def test_shift_is_one_bulk_update(self, service, repos, doc, monkeypatch):
+        """#398 — making room shifts every later chunk in one statement."""
+        first = await service.add_chunk(doc.id, text="a")
+        for text in ("c", "d", "e"):
+            await service.add_chunk(doc.id, text=text)
+        shift = _spy(monkeypatch, repos["chunks"], "shift_sequences")
+        update = _spy(monkeypatch, repos["chunks"], "update")
+
+        await service.add_chunk(doc.id, text="b", after_id=first.id)
+
+        shift.assert_awaited_once()
+        assert shift.await_args.args == (doc.id,)
+        assert shift.await_args.kwargs["from_sequence"] == 1
+        update.assert_not_awaited()
+        chunks = await service.list_chunks(doc.id)
+        assert [(c.text, c.sequence) for c in chunks] == [
+            ("a", 0),
+            ("b", 1),
+            ("c", 2),
+            ("d", 3),
+            ("e", 4),
+        ]
+
     async def test_anchor_not_found(self, service, doc):
         with pytest.raises(ChunkNotFoundError):
             await service.add_chunk(doc.id, text="x", after_id="no-such")
@@ -204,6 +235,27 @@ class TestSplitChunk:
         assert [c.text for c in chunks] == ["abc", "def", "next"]
         assert [c.sequence for c in chunks] == [0, 1, 2]
 
+    async def test_split_shifts_in_one_bulk_update(self, service, repos, doc, monkeypatch):
+        """#398 — no per-chunk `update` to push the later chunks down."""
+        a = await service.add_chunk(doc.id, text="abcdef")
+        for text in ("x", "y"):
+            await service.add_chunk(doc.id, text=text)
+        shift = _spy(monkeypatch, repos["chunks"], "shift_sequences")
+        update = _spy(monkeypatch, repos["chunks"], "update")
+
+        await service.split_chunk(doc.id, a.id, cursor_offset=3)
+
+        shift.assert_awaited_once()
+        assert shift.await_args.kwargs["from_sequence"] == 1
+        update.assert_not_awaited()
+        chunks = await service.list_chunks(doc.id)
+        assert [(c.text, c.sequence) for c in chunks] == [
+            ("abc", 0),
+            ("def", 1),
+            ("x", 2),
+            ("y", 3),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # merge_chunks
@@ -221,6 +273,28 @@ class TestMergeChunks:
         chunks = await service.list_chunks(doc.id)
         # New chunk at sequence 0, then `c` still at 2 (gap is allowed)
         assert {c2.text for c2 in chunks} == {"a\nb", "c"}
+
+    async def test_merge_soft_deletes_sources_in_one_statement(
+        self, service, repos, doc, monkeypatch
+    ):
+        """#398 — the merged chunks are retired together, not one by one."""
+        a = await service.add_chunk(doc.id, text="a")
+        b = await service.add_chunk(doc.id, text="b")
+        c = await service.add_chunk(doc.id, text="c")
+        bulk = _spy(monkeypatch, repos["chunks"], "soft_delete_many")
+        single = _spy(monkeypatch, repos["chunks"], "soft_delete")
+
+        merged = await service.merge_chunks(doc.id, [c.id, a.id, b.id])
+
+        bulk.assert_awaited_once()
+        assert bulk.await_args.args == ([a.id, b.id, c.id],)
+        single.assert_not_awaited()
+        chunks = await service.list_chunks(doc.id)
+        assert [x.id for x in chunks] == [merged.id]
+        every = await repos["chunks"].find_for_document(doc.id, include_deleted=True)
+        retired = {x.id: x.deleted_at for x in every if x.deleted_at is not None}
+        assert set(retired) == {a.id, b.id, c.id}
+        assert len(set(retired.values())) == 1
 
     async def test_merge_409_on_non_contiguous(self, service, doc):
         a = await service.add_chunk(doc.id, text="a")
@@ -264,6 +338,36 @@ class TestRechunkDocument:
         assert [c.text for c in result] == ["new1", "new2"]
         chunks = await service.list_chunks(doc.id)
         assert [c.text for c in chunks] == ["new1", "new2"]
+
+    async def test_rechunk_retires_old_chunks_in_one_statement(
+        self, service, repos, doc, monkeypatch
+    ):
+        """#398 — one bulk soft-delete for the whole old chunkset."""
+        for text in ("old1", "old2", "old3"):
+            await service.add_chunk(doc.id, text=text)
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = json.dumps({"texts": []})
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(return_value=[ChunkResult(text="new", source_page=1)])
+        service._chunker = chunker
+        bulk = _spy(monkeypatch, repos["chunks"], "soft_delete_for_document")
+        single = _spy(monkeypatch, repos["chunks"], "soft_delete")
+
+        await service.rechunk_document(doc.id)
+
+        bulk.assert_awaited_once()
+        assert bulk.await_args.args == (doc.id,)
+        single.assert_not_awaited()
+        assert [c.text for c in await service.list_chunks(doc.id)] == ["new"]
+        every = await repos["chunks"].find_for_document(doc.id, include_deleted=True)
+        assert sorted(c.text for c in every if c.deleted_at is not None) == [
+            "old1",
+            "old2",
+            "old3",
+        ]
 
     async def test_rechunk_409_when_no_completed_analysis(self, service, doc):
         service._chunker = MagicMock()

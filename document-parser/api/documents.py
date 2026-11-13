@@ -184,13 +184,11 @@ async def preview(
         )
 
     try:
-        # File read + PDF rasterisation are both blocking; offload to a
-        # worker thread so the event loop stays free for other requests.
-        file_content = await asyncio.to_thread(
-            service.resolve_storage_path(doc.storage_path).read_bytes
-        )
+        # PDF rasterisation is blocking; offload to a worker thread so the
+        # event loop stays free. Poppler opens the file by path (#398).
+        pdf_path = service.resolve_storage_path(doc.storage_path)
         png_bytes = await asyncio.to_thread(
-            DocumentService.generate_preview, file_content, page=page, dpi=dpi
+            DocumentService.generate_preview, pdf_path, page=page, dpi=dpi
         )
         return Response(content=png_bytes, media_type="image/png")
     except ValueError as e:
@@ -214,10 +212,8 @@ async def page_sizes(doc_id: str, service: deps.DocumentServiceDep) -> list[Page
         raise HTTPException(status_code=404, detail="Document not found")
 
     try:
-        file_content = await asyncio.to_thread(
-            service.resolve_storage_path(doc.storage_path).read_bytes
-        )
-        pages = await asyncio.to_thread(DocumentService.page_sizes, file_content)
+        pdf_path = service.resolve_storage_path(doc.storage_path)
+        pages = await asyncio.to_thread(DocumentService.page_sizes, pdf_path)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
     except Exception as exc:

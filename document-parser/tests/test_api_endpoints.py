@@ -231,6 +231,18 @@ class TestDocumentEndpoints:
         assert resp.status_code == 400
         assert "out of range" in resp.json()["detail"]
 
+    def test_preview_missing_file(self, client, mock_document_service, tmp_path):
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(
+                id="d1", filename="gone.pdf", storage_path=str(tmp_path / "gone.pdf")
+            )
+        )
+
+        resp = client.get("/api/documents/d1/preview?page=1")
+
+        assert resp.status_code == 404
+        assert "not found on disk" in resp.json()["detail"]
+
     def test_page_sizes(self, client, mock_document_service, tmp_path):
         from tests.test_document_service import pdf_with_pages
 
