@@ -86,6 +86,17 @@ class DoclingDocumentEditor:
             if getattr(item, "self_ref", None)
         }
 
+    @classmethod
+    def _in_document_order(cls, document: DoclingDocument, items: list[Any]) -> list[Any]:
+        """Sort `items` by their current reading order in `document` (#392).
+
+        A merge keeps the text in reading order, whatever order the client
+        sent the ids in: the first item in the document is the target and the
+        others follow it. Duplicate ids are kept, so validation still sees them.
+        """
+        position = {id(item): index for index, item in enumerate(cls._all_items(document))}
+        return sorted(items, key=lambda item: position.get(id(item), len(position)))
+
     @staticmethod
     def _get(logical_objects: dict[str, Any], element_id: str) -> Any:
         item = logical_objects.get(element_id)
@@ -200,7 +211,9 @@ class DoclingDocumentEditor:
         separator = payload.get("separator", " ")
         if not isinstance(raw_ids, list) or len(raw_ids) < 2 or not isinstance(separator, str):
             raise AnalysisEditError("mergeText requires at least two element IDs and a separator")
-        items = [self._get(logical_objects, str(item_id)) for item_id in raw_ids]
+        items = self._in_document_order(
+            document, [self._get(logical_objects, str(item_id)) for item_id in raw_ids]
+        )
         if any(not isinstance(item, TextItem) for item in items):
             raise AnalysisEditError("Only text items can be merged")
         labels = {str(item.label) for item in items}

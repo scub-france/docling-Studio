@@ -31,6 +31,38 @@ describe('analysis editor selection state', () => {
     store.discard()
   })
 
+  it('merges the selection in reading order whatever the click order (#392)', () => {
+    const store = useAnalysisEditorStore()
+    const element = (id: string) => ({
+      id,
+      selfRef: `#/texts/${id}`,
+      parentId: 'body',
+      type: 'text',
+      text: id,
+      headingLevel: null,
+      children: [],
+      provenance: [],
+      editable: true,
+      supportedOperations: ['mergeText'],
+      nonEditableReason: null,
+    })
+    store.saved = {
+      model: { baseAnalysisId: 'analysis-1', elements: [element('a'), element('b')] },
+      readingOrder: ['a', 'b'],
+    } as never
+    store.toggleMergeSelection('b')
+    store.toggleMergeSelection('a')
+
+    store.mergeSelected()
+
+    expect(JSON.parse(store.conflictDetails)).toEqual([
+      { type: 'mergeText', elementIds: ['a', 'b'], separator: ' ' },
+    ])
+    expect(store.selectedElementId).toBe('a')
+    expect(store.mergeSelection).toEqual(['a'])
+    store.discard()
+  })
+
   it('clears focus when a selected element is deleted as part of a range', () => {
     const store = useAnalysisEditorStore()
     store.selectedElementId = 'selected'

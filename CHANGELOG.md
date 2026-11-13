@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Fixed
 
 - **Upgrade from 0.7.3** (#391): booting on a 0.7.3 database now adds the two new `document_versions` columns and selects an active analysis for each already-analysed document, so versions, chunking, exports and the editor keep working without re-analysing anything.
+- **Analysis editor merge order** (#392): merging keeps the document's reading order whatever order the paragraphs were clicked in, and an edit typed after a merge is no longer folded into an edit made before it, which duplicated the merged text.
 
 ## [0.7.3] - 2026-11-02
 

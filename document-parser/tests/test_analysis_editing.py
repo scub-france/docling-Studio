@@ -126,6 +126,27 @@ def test_merge_moves_non_adjacent_items_before_merging():
     assert result.document.export_to_markdown().startswith("First Third")
 
 
+def test_merge_keeps_reading_order_whatever_the_id_order():
+    """#392: ids sent in click order (second, then first) still merge as "First Second"."""
+    raw, first_ref, second_ref = _document()
+    result = DoclingDocumentEditor().apply(
+        raw,
+        base_analysis_id="base",
+        commands=[
+            EditCommand(
+                "mergeText",
+                {
+                    "elementIds": [f"base:{second_ref}", f"base:{first_ref}"],
+                    "separator": " ",
+                },
+            )
+        ],
+    )
+    assert result.document.export_to_markdown().startswith("First Second")
+    assert result.logical_ids[f"base:{first_ref}"] == first_ref
+    assert f"base:{second_ref}" not in result.logical_ids
+
+
 def test_merge_moves_text_from_another_parent_before_merging():
     doc = DoclingDocument(name="cross-parent")
     first = doc.add_text(label=DocItemLabel.TEXT, text="[first]")

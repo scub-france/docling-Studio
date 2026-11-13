@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as api from './api'
-import { canMerge, coalesceCommands, mergeValidationMessage } from './commands'
+import { canMerge, coalesceCommands, inReadingOrder, mergeValidationMessage } from './commands'
 import type {
   AnalysisEditCommand,
   AnalysisEditHistoryEntry,
@@ -184,8 +184,12 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
 
   function mergeSelected(separator = ' '): void {
     if (!mergeAllowed.value) return
-    const targetId = mergeSelection.value[0]
-    queue({ type: 'mergeText', elementIds: [...mergeSelection.value], separator })
+    const elementIds = inReadingOrder(
+      mergeSelection.value,
+      effective.value?.readingOrder ?? elements.value.map((element) => element.id),
+    )
+    const targetId = elementIds[0]
+    queue({ type: 'mergeText', elementIds, separator })
     selectedElementId.value = targetId
     mergeSelection.value = [targetId]
   }
