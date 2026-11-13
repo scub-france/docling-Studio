@@ -14,11 +14,7 @@ from domain.analysis_editing import (
     StoredEditCommand,
 )
 from persistence.database import get_connection
-
-
-def _dt(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+from persistence.iso_datetime import require_iso
 
 
 def _stream(row) -> EditStream:
@@ -26,7 +22,7 @@ def _stream(row) -> EditStream:
         analysis_id=row["analysis_id"],
         base_document_hash=row["base_document_hash"],
         engine_version=row["engine_version"],
-        created_at=_dt(row["created_at"]),
+        created_at=require_iso(row["created_at"]),
     )
 
 
@@ -41,7 +37,7 @@ def _command(row) -> StoredEditCommand:
             command_version=row["command_version"],
         ),
         command_hash=row["command_hash"],
-        created_at=_dt(row["created_at"]),
+        created_at=require_iso(row["created_at"]),
     )
 
 
@@ -56,7 +52,7 @@ def _cache(row) -> EditedAnalysisCache:
         editor_model_json=row["editor_model_json"],
         command_stream_hash=row["command_stream_hash"],
         result_hash=row["result_hash"],
-        updated_at=_dt(row["updated_at"]),
+        updated_at=require_iso(row["updated_at"]),
     )
 
 

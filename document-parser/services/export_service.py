@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 from domain.analysis_editing import AnalysisEditUnavailableError
 from domain.models import AnalysisStatus
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from domain.models import AnalysisJob
@@ -134,8 +135,10 @@ class ExportService:
             raise ExportNotFoundError(str(exc)) from exc
 
 
-class ExportNotFoundError(Exception):
+class ExportNotFoundError(ServiceError):
     """Requested export payload is not available."""
+
+    http_status = 404
 
 
 def build_content_disposition(filename: str) -> str:

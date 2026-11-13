@@ -16,6 +16,7 @@ from typing import NoReturn
 from fastapi import APIRouter, HTTPException, Query
 
 from api import deps  # noqa: TC001
+from api.errors import http_error
 from api.schemas import (
     AddChunkRequest,
     ChunkBboxResponse,
@@ -59,7 +60,7 @@ def _to_response(chunk) -> DocChunkResponse:
 
 
 def _raise_for(error: ChunkServiceError) -> NoReturn:
-    raise HTTPException(status_code=error.http_status, detail=str(error))
+    raise http_error(error)
 
 
 # ---------------------------------------------------------------------------

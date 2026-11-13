@@ -5,7 +5,7 @@ import json
 import logging
 import sqlite3
 import threading
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -39,6 +39,7 @@ from domain.models import (
 )
 from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.docling_editor import DoclingDocumentEditor
+from infra.docling_pages import extract_pages_detail
 from infra.docling_projector import DoclingAnalysisProjector
 from persistence import database
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
@@ -378,6 +379,30 @@ def test_projector_normalizes_bottom_left_bboxes_for_the_frontend():
     )
     page = json.loads(projected.pages_json)[0]
     assert page["elements"][0]["bbox"] == [10.0, 20.0, 40.0, 40.0]
+
+
+def test_projector_pages_use_the_parser_element_types():
+    """#396: the workspace shows the projection by default, so its page elements
+    must carry the same types as a fresh conversion (a list item is "list")."""
+    document = DoclingDocument(name="types")
+    document.pages[1] = PageItem(page_no=1, size=Size(width=100, height=200))
+    prov = ProvenanceItem(
+        page_no=1,
+        bbox=BoundingBox(l=10, t=20, r=40, b=40, coord_origin=CoordOrigin.TOPLEFT),
+        charspan=(0, 4),
+    )
+    group = document.add_group(label=GroupLabel.LIST, name="items")
+    document.add_list_item(text="item", parent=group, prov=prov)
+    document.add_text(label=DocItemLabel.TEXT, text="body", prov=prov)
+    projected = DoclingAnalysisEngine().project(
+        document.model_dump_json(), base_analysis_id="types", commands=[]
+    )
+    expected, _ = extract_pages_detail(document)
+
+    page = json.loads(projected.pages_json)[0]
+
+    assert [element["type"] for element in page["elements"]] == ["list", "text"]
+    assert page["elements"] == [asdict(element) for element in expected[0].elements]
 
 
 def test_projector_renders_edited_text_without_overwriting_original_ocr_text():

@@ -9,16 +9,13 @@ whole family into a tool error.
 
 from __future__ import annotations
 
+from services.errors import ServiceError
 
-class NavigationServiceError(Exception):
+
+class NavigationServiceError(ServiceError):
     """Base error for document-navigation rejections, with a status hint."""
 
     http_status: int = 500
-
-    def __init__(self, message: str, *, http_status: int | None = None) -> None:
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
 
 
 class DocumentNotFoundError(NavigationServiceError):

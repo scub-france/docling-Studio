@@ -16,9 +16,10 @@ import json
 import logging
 from typing import NoReturn
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from api import deps  # noqa: TC001
+from api.errors import http_error
 from api.schemas import DocumentVersionResponse
 from services.version_service import VersionServiceError
 
@@ -47,7 +48,7 @@ def _to_response(version) -> DocumentVersionResponse:
 
 
 def _raise_for(error: VersionServiceError) -> NoReturn:
-    raise HTTPException(status_code=error.http_status, detail=str(error))
+    raise http_error(error)
 
 
 @router.get("/{doc_id}/versions", response_model=list[DocumentVersionResponse])

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 
-from docling_core.types.doc import DocItem, DoclingDocument, SectionHeaderItem, TableItem, TextItem
+from docling_core.types.doc import DoclingDocument, SectionHeaderItem, TableItem, TextItem
 
 from domain.analysis_editing import (
     EditorElement,
@@ -13,19 +14,9 @@ from domain.analysis_editing import (
     EditorTreeNode,
     ProjectedAnalysis,
 )
-from domain.value_objects import PageDetail, PageElement
+from domain.value_objects import DEFAULT_PAGE_HEIGHT
 from infra.bbox import to_topleft_list
-
-_TEXT_LABELS = {
-    "text",
-    "paragraph",
-    "title",
-    "section_header",
-    "caption",
-    "list_item",
-    "code",
-    "formula",
-}
+from infra.docling_pages import extract_pages_detail
 
 
 class DoclingAnalysisProjector:
@@ -55,7 +46,9 @@ class DoclingAnalysisProjector:
             for item, level in items_with_levels
             if getattr(item, "self_ref", None)
         )
-        pages = self._pages(document, items_with_levels, object_to_id)
+        # Same page mapping as a fresh conversion (#396): the workspace shows
+        # this projection by default, so element types must match the parser's.
+        pages, _ = extract_pages_detail(document)
         tree = self._tree(document, by_ref, object_to_id)
         model = {
             "baseAnalysisId": base_analysis_id,
@@ -72,7 +65,7 @@ class DoclingAnalysisProjector:
             document_json=document.model_dump_json(),
             content_markdown=export_document.export_to_markdown(),
             content_html=export_document.export_to_html(),
-            pages_json=json.dumps([self._page_dict(page) for page in pages]),
+            pages_json=json.dumps([asdict(page) for page in pages]),
             editor_model_json=json.dumps(model),
             tree=tree,
             elements=editor_elements,
@@ -129,7 +122,7 @@ class DoclingAnalysisProjector:
                         float(
                             document.pages[int(prov.page_no)].size.height
                             if int(prov.page_no) in document.pages
-                            else 792.0
+                            else DEFAULT_PAGE_HEIGHT
                         ),
                     )
                 ),
@@ -166,41 +159,6 @@ class DoclingAnalysisProjector:
             supported_operations=operations,  # type: ignore[arg-type]
             non_editable_reason=reason,
         )
-
-    def _pages(
-        self,
-        document: Any,
-        items_with_levels: list[tuple[Any, int]],
-        object_to_id: dict[int, str],
-    ) -> list[PageDetail]:
-        pages: dict[int, PageDetail] = {}
-        for page_no, page in document.pages.items():
-            pages[int(page_no)] = PageDetail(
-                page_number=int(page_no),
-                width=float(page.size.width),
-                height=float(page.size.height),
-            )
-        for item, level in items_with_levels:
-            if not isinstance(item, DocItem):
-                continue
-            label = self._label(item)
-            content = getattr(item, "text", "") or ""
-            if isinstance(item, TableItem):
-                content = item.export_to_markdown()
-            for prov in item.prov:
-                page_no = int(prov.page_no)
-                page = pages.setdefault(page_no, PageDetail(page_no, 612.0, 792.0))
-                bbox = to_topleft_list(prov.bbox, page.height)
-                page.elements.append(
-                    PageElement(
-                        type=label,
-                        bbox=bbox,
-                        content=content,
-                        level=int(getattr(item, "level", level) or level),
-                        self_ref=item.self_ref,
-                    )
-                )
-        return sorted(pages.values(), key=lambda page: page.page_number)
 
     def _tree(
         self,
@@ -268,22 +226,4 @@ class DoclingAnalysisProjector:
             "editable": element.editable,
             "supportedOperations": list(element.supported_operations),
             "nonEditableReason": element.non_editable_reason,
-        }
-
-    @staticmethod
-    def _page_dict(page: PageDetail) -> dict[str, Any]:
-        return {
-            "page_number": page.page_number,
-            "width": page.width,
-            "height": page.height,
-            "elements": [
-                {
-                    "type": element.type,
-                    "bbox": element.bbox,
-                    "content": element.content,
-                    "level": element.level,
-                    "self_ref": element.self_ref,
-                }
-                for element in page.elements
-            ],
         }
