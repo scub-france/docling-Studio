@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         AnalysisEditRepository,
         AnalysisRepository,
         AnalysisSelectionRepository,
+        ChunkRepository,
         ChunkSourceRepository,
         DocumentRepository,
     )
@@ -58,6 +59,7 @@ class AnalysisEditService:
         editor,
         projector,
         graph_writer=None,
+        chunk_repo: ChunkRepository | None = None,
     ) -> None:
         self._analyses = analysis_repo
         self._documents = document_repo
@@ -67,6 +69,7 @@ class AnalysisEditService:
         self._editor = editor
         self._projector = projector
         self._graph_writer = graph_writer
+        self._chunks = chunk_repo
         self._unedited_projection: tuple[str, str, ProjectedAnalysis] | None = None
 
     async def load_editor(self, document_id: str, analysis_id: str | None = None) -> EditorSnapshot:
@@ -137,7 +140,7 @@ class AnalysisEditService:
         analysis_id: str | None = None,
     ) -> EditorSnapshot:
         if not pending_commands:
-            return await self.load_editor(document_id)
+            return await self.load_editor(document_id, analysis_id)
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
         if not base.document_json:
@@ -332,11 +335,22 @@ class AnalysisEditService:
             completed_at=datetime.now(UTC),
             created_at=base.created_at,
         )
-        source = await self._chunk_sources.get_chunk_source(document.id)
-        stale = source is not None and (
-            source.analysis_id != base.id or source.result_hash != _sha256(projection.document_json)
-        )
+        stale = await self._chunks_stale(document.id, base.id, projection.document_json)
         return EditorSnapshot(job, projection, sequence, stale, base.id)
+
+    async def _chunks_stale(self, document_id: str, base_id: str, document_json: str) -> bool:
+        """Whether the live chunks may not match this analysis result.
+
+        Chunks with no recorded source (made before 0.7.4, #393) have an
+        unknown provenance: they count as stale so the user is invited to
+        regenerate them. No chunks means nothing can be stale.
+        """
+        source = await self._chunk_sources.get_chunk_source(document_id)
+        if source is None:
+            return (
+                self._chunks is not None and await self._chunks.count_for_document(document_id) > 0
+            )
+        return source.analysis_id != base_id or source.result_hash != _sha256(document_json)
 
 
 def _sha256(value: str) -> str:

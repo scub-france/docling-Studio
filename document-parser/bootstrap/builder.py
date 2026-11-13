@@ -130,6 +130,7 @@ class AppStateBuilder:
             editor=DoclingDocumentEditor(),
             projector=DoclingAnalysisProjector(),
             graph_writer=graph_writer,
+            chunk_repo=chunk_repo,
         )
         chunk_service = build_chunk_service(
             document_repo=document_repo,

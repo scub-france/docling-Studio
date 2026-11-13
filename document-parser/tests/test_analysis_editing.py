@@ -578,6 +578,64 @@ async def test_edit_stream_and_cache_belong_to_one_analysis(edit_service):
     assert await edits.list_commands("analysis-1") == []
 
 
+def _service_with_chunks(chunk_count: int) -> AnalysisEditService:
+    """A service on the fixture database whose document has `chunk_count` live chunks."""
+    state = SqliteDocumentAnalysisRepository()
+    return AnalysisEditService(
+        analysis_repo=SqliteAnalysisRepository(),
+        document_repo=SqliteDocumentRepository(),
+        selection_repo=state,
+        chunk_source_repo=state,
+        edit_repo=SqliteAnalysisEditRepository(),
+        editor=DoclingDocumentEditor(),
+        projector=DoclingAnalysisProjector(),
+        chunk_repo=Mock(count_for_document=AsyncMock(return_value=chunk_count)),
+    )
+
+
+@pytest.mark.asyncio
+async def test_chunks_with_no_recorded_source_are_stale(edit_service):
+    """#393: chunks made before 0.7.4 have no source row, so their provenance is unknown."""
+    assert (await _service_with_chunks(3).load_editor("doc-1")).chunks_stale
+    assert not (await _service_with_chunks(0).load_editor("doc-1")).chunks_stale
+
+    service = _service_with_chunks(3)
+    current_hash = hashlib.sha256(
+        (await service.load_editor("doc-1")).job.document_json.encode("utf-8")
+    ).hexdigest()
+    await SqliteDocumentAnalysisRepository().set_chunk_source(
+        DocumentChunkSource("doc-1", "analysis-1", current_hash)
+    )
+    assert not (await service.load_editor("doc-1")).chunks_stale
+
+
+@pytest.mark.asyncio
+async def test_empty_save_returns_the_requested_analysis(edit_service):
+    """#393: an empty save answers for the analysis the client edits, not the active one."""
+    service, _, analyses = edit_service
+    other_doc = DoclingDocument(name="other")
+    other_doc.add_text(label=DocItemLabel.TEXT, text="Other analysis")
+    other = AnalysisJob(
+        id="analysis-2",
+        document_id="doc-1",
+        status=AnalysisStatus.COMPLETED,
+        content_markdown="Other analysis",
+        content_html="<p>Other analysis</p>",
+        pages_json="[]",
+        document_json=other_doc.model_dump_json(),
+    )
+    await analyses.insert(other)
+    await analyses.update_status(other)
+    await SqliteDocumentAnalysisRepository().select(
+        DocumentAnalysisSelection("doc-1", "analysis-1")
+    )
+
+    snapshot = await service.save("doc-1", [], 0, "analysis-2")
+
+    assert snapshot.base_analysis_id == "analysis-2"
+    assert "Other analysis" in snapshot.job.content_markdown
+
+
 @pytest.mark.asyncio
 async def test_active_result_always_uses_saved_edits_for_selected_analysis(edit_service):
     service, _, _ = edit_service
