@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
 - **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
 
+### Fixed
+
+- **Analysis editor corrupt cache**: a damaged edited result cache is now ignored and the saved edits are replayed, instead of the editor failing with a server error (#395).
+
 ## [0.7.3] - 2026-11-02
 
 ### Added

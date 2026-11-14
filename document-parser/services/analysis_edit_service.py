@@ -81,6 +81,7 @@ class AnalysisEditService:
             if cached is not None and cached[0] == base.id and cached[1] == base_hash:
                 return await self._snapshot(document, base, cached[2], sequence)
         cache = await self._edits.find_cache(base.id) if stream else None
+        projection = None
         if (
             stream is not None
             and cache is not None
@@ -88,12 +89,20 @@ class AnalysisEditService:
             and cache.applied_through_sequence == sequence
             and cache.command_stream_hash == _stream_hash(stored, [])
         ):
-            projection = self._projector.project_serialized(
-                cache.document_json,
-                base_analysis_id=base.id,
-                editor_model_json=cache.editor_model_json,
-            )
-        else:
+            try:
+                projection = self._projector.project_serialized(
+                    cache.document_json,
+                    base_analysis_id=base.id,
+                    editor_model_json=cache.editor_model_json,
+                )
+            except Exception:
+                # The cache is a disposable copy; the command stream is the source of truth.
+                logger.warning(
+                    "Ignoring corrupt edited cache for analysis %s; replaying the edit stream",
+                    base.id,
+                    exc_info=True,
+                )
+        if projection is None:
             projection = self._replay(base, stored)
         if not stored:
             self._unedited_projection = (base.id, base_hash, projection)

@@ -803,6 +803,44 @@ async def test_load_replays_saved_stream_when_edited_cache_is_missing(edit_servi
     assert _projection_values(reloaded) == _projection_values(saved)
 
 
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("document_json", '{"not": "a docling document"}'),
+        ("document_json", "not json"),
+        ("editor_model_json", "not json"),
+        ("editor_model_json", '{"elements": [{"id": "x"}]}'),
+    ],
+)
+@pytest.mark.asyncio
+async def test_load_replays_saved_stream_when_edited_cache_is_corrupt(
+    edit_service, caplog, column, value
+):
+    service, edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    saved = await service.save(
+        "doc-1",
+        [EditCommand("replaceText", {"elementId": text_id, "text": "Replayed"})],
+        expected_sequence=0,
+    )
+
+    async with database.get_connection() as connection:
+        await connection.execute(
+            f"UPDATE edited_analysis_cache SET {column} = ? WHERE analysis_id = ?",
+            (value, "analysis-1"),
+        )
+        await connection.commit()
+    assert await edits.find_cache("analysis-1") is not None  # the row is still there
+
+    with caplog.at_level(logging.WARNING):
+        reloaded = await service.load_editor("doc-1")
+
+    assert reloaded.applied_through_sequence == saved.applied_through_sequence
+    assert _projection_values(reloaded) == _projection_values(saved)
+    assert "edited cache" in caplog.text.lower()
+
+
 @pytest.mark.asyncio
 async def test_preview_failure_logs_safe_editor_context(edit_service, caplog):
     service, _edits, _ = edit_service
