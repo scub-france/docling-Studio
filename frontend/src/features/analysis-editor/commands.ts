@@ -30,5 +30,9 @@ export function mergeValidationMessage(elements: EditorElement[], ids: string[])
   if (selected.some((element) => element.type !== 'text' && element.type !== 'paragraph')) {
     return 'Only text and paragraph elements can be merged.'
   }
+  // The backend merges only elements that share one label.
+  if (new Set(selected.map((element) => element.type)).size > 1) {
+    return 'Selected elements must all be the same type to merge.'
+  }
   return null
 }
