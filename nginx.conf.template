@@ -1,6 +1,12 @@
 server {
     listen 3000;
 
+    gzip on;
+    gzip_types application/json;
+    gzip_min_length 1024;
+    gzip_comp_level 4;
+    gzip_vary on;
+
     root /usr/share/nginx/html;
     index index.html;
 

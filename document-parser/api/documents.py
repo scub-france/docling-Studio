@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, Response
 
 from api import deps  # noqa: TC001
 from api.schemas import DocStoreLinkResponse, DocumentResponse, PageSizeResponse
+from infra.preview_cache import PreviewCache
 from services.document_service import DocumentService
 from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
 
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 _READ_CHUNK_SIZE = 64 * 1024  # 64 KB
+_preview_cache = PreviewCache()
 
 
 def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) -> DocumentResponse:
@@ -184,15 +186,22 @@ async def preview(
         )
 
     try:
-        # File read + PDF rasterisation are both blocking; offload to a
-        # worker thread so the event loop stays free for other requests.
-        file_content = await asyncio.to_thread(
-            service.resolve_storage_path(doc.storage_path).read_bytes
+        path = service.resolve_storage_path(doc.storage_path)
+        stat = await asyncio.to_thread(path.stat)
+        key = (str(path), stat.st_size, stat.st_mtime_ns, page, dpi)
+        png_bytes = _preview_cache.get(key)
+        if png_bytes is None:
+            # File read + rasterisation are blocking; keep both off the event loop.
+            file_content = await asyncio.to_thread(path.read_bytes)
+            png_bytes = await asyncio.to_thread(
+                DocumentService.generate_preview, file_content, page=page, dpi=dpi
+            )
+            _preview_cache.put(key, png_bytes)
+        return Response(
+            content=png_bytes,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=86400, immutable"},
         )
-        png_bytes = await asyncio.to_thread(
-            DocumentService.generate_preview, file_content, page=page, dpi=dpi
-        )
-        return Response(content=png_bytes, media_type="image/png")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except FileNotFoundError as exc:

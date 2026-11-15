@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -230,6 +230,33 @@ class TestDocumentEndpoints:
         resp = client.get("/api/documents/d1/preview?page=10")
         assert resp.status_code == 400
         assert "out of range" in resp.json()["detail"]
+
+    def test_preview_reuses_raster_and_invalidates_when_pdf_changes(
+        self, client, mock_document_service, tmp_path
+    ):
+        pdf = tmp_path / "preview.pdf"
+        pdf.write_bytes(b"%PDF-first")
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="preview.pdf", storage_path=str(pdf))
+        )
+
+        with patch(
+            "api.documents.DocumentService.generate_preview", return_value=b"rendered-png"
+        ) as render:
+            first = client.get("/api/documents/d1/preview?page=1")
+            second = client.get("/api/documents/d1/preview?page=1")
+            different_dpi = client.get("/api/documents/d1/preview?page=1&dpi=200")
+            pdf.write_bytes(b"%PDF-changed-and-longer")
+            changed = client.get("/api/documents/d1/preview?page=1")
+
+        assert all(
+            response.status_code == 200 for response in (first, second, different_dpi, changed)
+        )
+        assert first.content == second.content == b"rendered-png"
+        assert first.headers["cache-control"] == "private, max-age=86400, immutable"
+        assert render.call_count == 3
+        assert render.call_args_list[0].args[0] == b"%PDF-first"
+        assert render.call_args_list[-1].args[0] == b"%PDF-changed-and-longer"
 
     def test_page_sizes(self, client, mock_document_service, tmp_path):
         from tests.test_document_service import pdf_with_pages

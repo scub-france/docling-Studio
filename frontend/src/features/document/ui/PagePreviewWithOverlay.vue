@@ -375,7 +375,8 @@ function setupObserver(): void {
         if (page) updateRenderWindow(page, entry.isIntersecting)
       }
     },
-    { root: stage, rootMargin: '100% 0px' },
+    // Keep a small head start without rendering several screens of pages at once.
+    { root: stage, rootMargin: '25% 0px' },
   )
 
   for (const page of props.pages) {
