@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from domain.models import AnalysisJob, Document
 from infra.preview_cache import PreviewCache
 from main import app
+from services.preview_service import PreviewService
 from tests.app_state import state_override
 
 
@@ -33,7 +34,11 @@ def mock_document_service(client):
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
     mock_svc.resolve_storage_path.side_effect = lambda storage_path: Path(storage_path)
-    with state_override(app, document_service=mock_svc, preview_cache=PreviewCache()):
+    with state_override(
+        app,
+        document_service=mock_svc,
+        preview_service=PreviewService(mock_svc, PreviewCache()),
+    ):
         yield mock_svc
 
 
@@ -232,6 +237,14 @@ class TestDocumentEndpoints:
         assert resp.status_code == 400
         assert "out of range" in resp.json()["detail"]
 
+    def test_preview_document_not_found(self, client, mock_document_service):
+        mock_document_service.find_by_id = AsyncMock(return_value=None)
+
+        response = client.get("/api/documents/missing/preview")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Document not found"
+
     def test_preview_reuses_raster_and_invalidates_when_pdf_changes(
         self, client, mock_document_service, tmp_path
     ):
@@ -242,7 +255,8 @@ class TestDocumentEndpoints:
         )
 
         with patch(
-            "api.documents.DocumentService.generate_preview", return_value=b"rendered-png"
+            "services.preview_service.DocumentService.generate_preview",
+            return_value=b"rendered-png",
         ) as render:
             first = client.get("/api/documents/d1/preview?page=1")
             second = client.get("/api/documents/d1/preview?page=1")
@@ -273,8 +287,8 @@ class TestDocumentEndpoints:
         cache.get.return_value = b"cached-preview"
 
         with (
-            state_override(app, preview_cache=cache),
-            patch("api.documents.DocumentService.generate_preview") as render,
+            state_override(app, preview_service=PreviewService(mock_document_service, cache)),
+            patch("services.preview_service.DocumentService.generate_preview") as render,
         ):
             response = client.get("/api/documents/d1/preview?page=1")
 

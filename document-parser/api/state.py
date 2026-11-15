@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from domain.ports import (
         AnalysisRepository,
         DocumentStoreLinkRepository,
-        PreviewImageCache,
         ReasoningRunner,
         StoreRepository,
     )
@@ -44,6 +43,7 @@ if TYPE_CHECKING:
     from services.graph_service import GraphService
     from services.ingestion_service import IngestionService
     from services.mcp_config_service import McpConfigService
+    from services.preview_service import PreviewService
     from services.reasoning_service import ReasoningService
     from services.store_service import StoreService
     from services.version_service import VersionService
@@ -62,10 +62,10 @@ class AppState:
     analysis_repo: AnalysisRepository | None = None
     store_repo: StoreRepository | None = None
     document_store_link_repo: DocumentStoreLinkRepository | None = None
-    preview_cache: PreviewImageCache | None = None
 
     # Use-case services.
     document_service: DocumentService | None = None
+    preview_service: PreviewService | None = None
     analysis_service: AnalysisService | None = None
     analysis_edit_service: AnalysisEditService | None = None
     # Static rollout flag for the analysis editor, copied from Settings at boot.

@@ -66,8 +66,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { fetchAnalysis, fetchAnalysisSummaries } from '../features/analysis/api'
-import { fetchDocumentPages } from '../features/document/api'
+import { fetchAnalysis, fetchAnalysisSummaries } from '../features/analysis'
+import { fetchDocumentPages } from '../features/document'
 import type { Analysis, Page } from '../shared/types'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
