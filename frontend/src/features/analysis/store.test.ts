@@ -49,14 +49,15 @@ describe('useAnalysisStore', () => {
     expect(store.currentPages).toEqual([])
   })
 
-  it('load() fetches analyses', async () => {
+  it('load() fetches analysis summaries', async () => {
     const data = [{ id: '1', status: 'COMPLETED' }]
-    api.fetchAnalyses.mockResolvedValue(data)
+    api.fetchAnalysisSummaries.mockResolvedValue(data)
 
     const store = useAnalysisStore()
     await store.load()
 
     expect(store.analyses).toEqual(data)
+    expect(api.fetchAnalyses).not.toHaveBeenCalled()
   })
 
   it('run() creates analysis, sets current, and starts polling', async () => {

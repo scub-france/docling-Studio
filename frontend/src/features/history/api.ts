@@ -1,8 +1,8 @@
-import type { Analysis } from '../../shared/types'
+import type { AnalysisSummary } from '../../shared/types'
 import { apiFetch } from '@/shared/api/http'
 
-export function fetchHistory(): Promise<Analysis[]> {
-  return apiFetch<Analysis[]>('/api/analyses')
+export function fetchHistory(): Promise<AnalysisSummary[]> {
+  return apiFetch<AnalysisSummary[]>('/api/analyses/summaries')
 }
 
 export function deleteHistoryEntry(id: string): Promise<unknown> {
