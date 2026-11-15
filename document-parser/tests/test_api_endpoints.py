@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from domain.models import AnalysisJob, Document
+from infra.preview_cache import PreviewCache
 from main import app
 from tests.app_state import state_override
 
@@ -32,7 +33,7 @@ def mock_document_service(client):
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
     mock_svc.resolve_storage_path.side_effect = lambda storage_path: Path(storage_path)
-    with state_override(app, document_service=mock_svc):
+    with state_override(app, document_service=mock_svc, preview_cache=PreviewCache()):
         yield mock_svc
 
 
@@ -261,6 +262,27 @@ class TestDocumentEndpoints:
         assert render.call_args_list[0].args[0] == b"%PDF-first"
         assert render.call_args_list[2].kwargs["image_format"] == "WEBP"
         assert render.call_args_list[-1].args[0] == b"%PDF-changed-and-longer"
+
+    def test_preview_accepts_a_replacement_cache(self, client, mock_document_service, tmp_path):
+        pdf = tmp_path / "preview.pdf"
+        pdf.write_bytes(b"%PDF-test")
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="preview.pdf", storage_path=str(pdf))
+        )
+        cache = MagicMock()
+        cache.get.return_value = b"cached-preview"
+
+        with (
+            state_override(app, preview_cache=cache),
+            patch("api.documents.DocumentService.generate_preview") as render,
+        ):
+            response = client.get("/api/documents/d1/preview?page=1")
+
+        assert response.status_code == 200
+        assert response.content == b"cached-preview"
+        cache.get.assert_called_once()
+        cache.put.assert_not_called()
+        render.assert_not_called()
 
     def test_page_sizes(self, client, mock_document_service, tmp_path):
         from tests.test_document_service import pdf_with_pages

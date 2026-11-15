@@ -138,6 +138,18 @@ class DocumentRepository(Protocol):
     async def delete(self, doc_id: str) -> bool: ...
 
 
+# Source path, byte size, modification time, page, DPI, and image format.
+type PreviewImageKey = tuple[str, int, int, int, int, str]
+
+
+class PreviewImageCache(Protocol):
+    """Store rendered page images under an immutable source/page key."""
+
+    def get(self, key: PreviewImageKey) -> bytes | None: ...
+
+    def put(self, key: PreviewImageKey, image: bytes) -> None: ...
+
+
 class AnalysisSelectionRepository(Protocol):
     async def get_selection(self, document_id: str) -> DocumentAnalysisSelection | None: ...
 

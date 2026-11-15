@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from domain.ports import (
         AnalysisRepository,
         DocumentStoreLinkRepository,
+        PreviewImageCache,
         ReasoningRunner,
         StoreRepository,
     )
@@ -61,6 +62,7 @@ class AppState:
     analysis_repo: AnalysisRepository | None = None
     store_repo: StoreRepository | None = None
     document_store_link_repo: DocumentStoreLinkRepository | None = None
+    preview_cache: PreviewImageCache | None = None
 
     # Use-case services.
     document_service: DocumentService | None = None

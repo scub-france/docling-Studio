@@ -11,7 +11,6 @@ from fastapi.responses import FileResponse, Response
 
 from api import deps  # noqa: TC001
 from api.schemas import DocStoreLinkResponse, DocumentResponse, PageSizeResponse
-from infra.preview_cache import PreviewCache
 from services.document_service import DocumentService
 from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
 
@@ -22,7 +21,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 _READ_CHUNK_SIZE = 64 * 1024  # 64 KB
-_preview_cache = PreviewCache()
 
 
 def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) -> DocumentResponse:
@@ -171,6 +169,7 @@ async def export_document(
 async def preview(
     doc_id: str,
     service: deps.DocumentServiceDep,
+    cache: deps.PreviewCacheDep,
     page: int = Query(1, ge=1),
     dpi: int = Query(150, ge=72, le=300),
     format: Literal["png", "webp"] = Query("png"),
@@ -190,7 +189,7 @@ async def preview(
         path = service.resolve_storage_path(doc.storage_path)
         stat = await asyncio.to_thread(path.stat)
         key = (str(path), stat.st_size, stat.st_mtime_ns, page, dpi, format)
-        image_bytes = _preview_cache.get(key)
+        image_bytes = cache.get(key)
         if image_bytes is None:
             # File read + rasterisation are blocking; keep both off the event loop.
             file_content = await asyncio.to_thread(path.read_bytes)
@@ -201,7 +200,7 @@ async def preview(
                 dpi=dpi,
                 image_format=format.upper(),
             )
-            _preview_cache.put(key, image_bytes)
+            cache.put(key, image_bytes)
         return Response(
             content=image_bytes,
             media_type=f"image/{format}",

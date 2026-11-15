@@ -42,6 +42,7 @@ from infra.docling_agent_reasoning import deps_present, deps_provenance
 from infra.docling_editor import DoclingDocumentEditor
 from infra.docling_projector import DoclingAnalysisProjector
 from infra.llm.ollama_probe import OllamaProbe
+from infra.preview_cache import PreviewCache
 from infra.settings import settings
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
@@ -166,6 +167,7 @@ class AppStateBuilder:
             analysis_repo=analysis_repo,
             store_repo=store_repo,
             document_store_link_repo=link_repo,
+            preview_cache=PreviewCache(),
             document_service=build_document_service(document_repo, analysis_repo),
             analysis_service=analysis_service,
             analysis_edit_service=analysis_edit_service,

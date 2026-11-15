@@ -4,25 +4,29 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from threading import Lock
+from typing import TYPE_CHECKING
 
-type PreviewKey = tuple[str, int, int, int, int, str]
+if TYPE_CHECKING:
+    from domain.ports import PreviewImageKey
 
 
 class PreviewCache:
+    """Bounded in-memory implementation of the PreviewImageCache port."""
+
     def __init__(self, max_bytes: int = 64 * 1024 * 1024) -> None:
         self._max_bytes = max_bytes
         self._bytes = 0
-        self._images: OrderedDict[PreviewKey, bytes] = OrderedDict()
+        self._images: OrderedDict[PreviewImageKey, bytes] = OrderedDict()
         self._lock = Lock()
 
-    def get(self, key: PreviewKey) -> bytes | None:
+    def get(self, key: PreviewImageKey) -> bytes | None:
         with self._lock:
             image = self._images.get(key)
             if image is not None:
                 self._images.move_to_end(key)
             return image
 
-    def put(self, key: PreviewKey, image: bytes) -> None:
+    def put(self, key: PreviewImageKey, image: bytes) -> None:
         if len(image) > self._max_bytes:
             return
         with self._lock:

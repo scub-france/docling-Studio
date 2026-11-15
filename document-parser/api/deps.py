@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 
 from api.state import AppState, get_app_state, require
-from domain.ports import DocumentStoreLinkRepository, StoreRepository
+from domain.ports import DocumentStoreLinkRepository, PreviewImageCache, StoreRepository
 from services.analysis_edit_service import AnalysisEditService
 from services.analysis_service import AnalysisService
 from services.app_config_service import AppConfigService
@@ -34,6 +34,13 @@ def get_document_service(state: AppStateDep) -> DocumentService:
 
 
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
+
+
+def get_preview_cache(state: AppStateDep) -> PreviewImageCache:
+    return require(state.preview_cache, detail="Preview cache not available")
+
+
+PreviewCacheDep = Annotated[PreviewImageCache, Depends(get_preview_cache)]
 
 
 def get_analysis_service(state: AppStateDep) -> AnalysisService:
