@@ -157,14 +157,19 @@ class DocumentService:
         return await self._document_repo.delete(doc_id)
 
     @staticmethod
-    def generate_preview(file_content: bytes, page: int = 1, dpi: int = 150) -> bytes:
-        """Generate a PNG preview of a specific PDF page."""
+    def generate_preview(
+        file_content: bytes, page: int = 1, dpi: int = 150, image_format: str = "PNG"
+    ) -> bytes:
+        """Generate a preview of a specific PDF page."""
         images = convert_from_bytes(file_content, first_page=page, last_page=page, dpi=dpi)
         if not images:
             raise ValueError(f"Page {page} not found")
 
         buf = io.BytesIO()
-        images[0].save(buf, format="PNG")
+        if image_format == "WEBP":
+            images[0].save(buf, format="WEBP", lossless=True)
+        else:
+            images[0].save(buf, format="PNG")
         return buf.getvalue()
 
     @staticmethod

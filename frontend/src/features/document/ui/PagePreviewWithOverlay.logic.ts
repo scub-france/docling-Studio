@@ -9,3 +9,17 @@ export function clampPageInput(raw: string, totalPages: number): number | null {
 export function pageInputWidthCh(totalPages: number, min = DEFAULT_PAGE_INPUT_SIZE): number {
   return Math.max(min, String(totalPages).length)
 }
+
+/** Bound image requests independently of page dimensions and viewport width. */
+export function pageInRenderWindow(
+  pageNumber: number,
+  currentPage: number,
+  viewMode: 'page' | 'scroll',
+  focusedPage: number | null,
+): boolean {
+  return (
+    viewMode === 'page' ||
+    pageNumber === focusedPage ||
+    (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 2)
+  )
+}

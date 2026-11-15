@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from threading import Lock
 
-type PreviewKey = tuple[str, int, int, int, int]
+type PreviewKey = tuple[str, int, int, int, int, str]
 
 
 class PreviewCache:

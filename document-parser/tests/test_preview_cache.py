@@ -3,9 +3,9 @@ from infra.preview_cache import PreviewCache
 
 def test_preview_cache_evicts_oldest_image_to_stay_within_byte_budget():
     cache = PreviewCache(max_bytes=6)
-    first = ("a.pdf", 1, 1, 1, 150)
-    second = ("a.pdf", 1, 1, 2, 150)
-    third = ("a.pdf", 1, 1, 3, 150)
+    first = ("a.pdf", 1, 1, 1, 150, "png")
+    second = ("a.pdf", 1, 1, 2, 150, "png")
+    third = ("a.pdf", 1, 1, 3, 150, "png")
 
     cache.put(first, b"aaa")
     cache.put(second, b"bb")
@@ -19,6 +19,6 @@ def test_preview_cache_evicts_oldest_image_to_stay_within_byte_budget():
 
 def test_preview_cache_skips_image_larger_than_budget():
     cache = PreviewCache(max_bytes=2)
-    key = ("a.pdf", 1, 1, 1, 150)
+    key = ("a.pdf", 1, 1, 1, 150, "png")
     cache.put(key, b"abc")
     assert cache.get(key) is None

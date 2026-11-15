@@ -98,7 +98,6 @@
             :src="getPreviewUrl(documentId, page.page_number)"
             :alt="`Page ${page.page_number}`"
             class="preview-image"
-            loading="lazy"
             decoding="async"
             :ref="(el) => registerImage(page.page_number, el as HTMLImageElement | null)"
             @load="onImageLoad(page.page_number)"
@@ -139,7 +138,11 @@ import { useI18n } from '../../../shared/i18n'
 import { bboxToRect, computeScale } from '@/shared/bboxScaling'
 import { getPreviewUrl, PREVIEW_DPI } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
-import { clampPageInput, pageInputWidthCh } from './PagePreviewWithOverlay.logic'
+import {
+  clampPageInput,
+  pageInRenderWindow,
+  pageInputWidthCh,
+} from './PagePreviewWithOverlay.logic'
 import {
   centeredScrollPosition,
   isFocusScrollRequest,
@@ -184,13 +187,11 @@ const pageCardRefs = reactive<Record<number, HTMLElement | null>>({})
 // what the focus scroll uses to place a bbox.
 const frameRefs = reactive<Record<number, HTMLElement | null>>({})
 const visiblePage = ref<number | null>(null)
-const renderedPageNumbers = reactive(new Set<number>())
 const viewMode = ref<'page' | 'scroll'>('scroll')
 const pageInput = ref('1')
 const pageInputFocused = ref(false)
 
 let pageObserver: IntersectionObserver | null = null
-let renderObserver: IntersectionObserver | null = null
 const visibilityRatios = new Map<number, number>()
 
 const totalPages = computed(() => props.pages.length)
@@ -272,11 +273,7 @@ function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent):
 }
 
 function shouldRenderPage(pageNumber: number): boolean {
-  return (
-    viewMode.value === 'page' ||
-    renderedPageNumbers.has(pageNumber) ||
-    pageNumber === focusedPage.value
-  )
+  return pageInRenderWindow(pageNumber, props.currentPage, viewMode.value, focusedPage.value)
 }
 
 function onPageChange(page: number): void {
@@ -337,18 +334,13 @@ function scrollToPage(pageNumber: number): void {
 function setupObserver(): void {
   if (viewMode.value !== 'scroll') {
     pageObserver?.disconnect()
-    renderObserver?.disconnect()
     pageObserver = null
-    renderObserver = null
-    renderedPageNumbers.clear()
     return
   }
   pageObserver?.disconnect()
-  renderObserver?.disconnect()
   visibilityRatios.clear()
   const stage = stageRef.value
   if (!stage) return
-  renderedPageNumbers.add(props.currentPage)
 
   pageObserver = new IntersectionObserver(
     (entries) => {
@@ -368,39 +360,13 @@ function setupObserver(): void {
     },
   )
 
-  renderObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        const page = Number((entry.target as HTMLElement).dataset.pageNumber)
-        if (page) updateRenderWindow(page, entry.isIntersecting)
-      }
-    },
-    // Keep a small head start without rendering several screens of pages at once.
-    { root: stage, rootMargin: '25% 0px' },
-  )
-
   for (const page of props.pages) {
     if (viewMode.value !== 'scroll' && page.page_number !== props.currentPage) continue
     const card = pageCardRefs[page.page_number]
     if (!card) continue
     card.dataset.pageNumber = String(page.page_number)
     pageObserver.observe(card)
-    renderObserver.observe(card)
   }
-}
-
-function updateRenderWindow(pageNumber: number, isIntersecting: boolean): void {
-  if (isIntersecting) {
-    renderedPageNumbers.add(pageNumber)
-    return
-  }
-  renderedPageNumbers.delete(pageNumber)
-  // Hold on to the raster of the page carrying the highlight (#336): the focus
-  // scroll may still be travelling towards it, and dropping it mid-flight would
-  // take the bbox overlay down with it. `shouldRenderPage` keeps the `<img>`
-  // mounted for exactly as long, so the page is released — image and overlay
-  // together — as soon as the focus moves on.
-  if (pageNumber !== focusedPage.value) loadedImages[pageNumber] = null
 }
 
 function highlightTarget(): { page: Page; element: PageElement } | null {
@@ -528,7 +494,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   pageObserver?.disconnect()
-  renderObserver?.disconnect()
 })
 </script>
 

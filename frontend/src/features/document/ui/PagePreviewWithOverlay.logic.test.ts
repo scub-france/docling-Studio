@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_PAGE_INPUT_SIZE,
   clampPageInput,
+  pageInRenderWindow,
   pageInputWidthCh,
 } from './PagePreviewWithOverlay.logic'
 
@@ -52,5 +53,19 @@ describe('pageInputWidthCh', () => {
   it('grows to fit the digit count past the default', () => {
     expect(pageInputWidthCh(10000)).toBe(5)
     expect(pageInputWidthCh(123456)).toBe(6)
+  })
+})
+
+describe('pageInRenderWindow', () => {
+  it('preloads two pages ahead while bounding requests for a large PDF', () => {
+    const mounted = Array.from({ length: 411 }, (_, index) => index + 1).filter((page) =>
+      pageInRenderWindow(page, 50, 'scroll', null),
+    )
+    expect(mounted).toEqual([49, 50, 51, 52])
+  })
+
+  it('keeps a distant focused page mounted during a focus scroll', () => {
+    expect(pageInRenderWindow(300, 1, 'scroll', 300)).toBe(true)
+    expect(pageInRenderWindow(301, 1, 'scroll', 300)).toBe(false)
   })
 })

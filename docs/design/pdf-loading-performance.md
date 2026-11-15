@@ -63,3 +63,20 @@ Compare initial display time, first page image time, repeated page time, editor
 load time, transferred bytes, and mounted tree rows for the same 411-page PDF.
 Check direct navigation to a distant page and element, cross-page edits, and
 returning to a previously viewed page.
+
+## Scrolling follow-up
+
+After phase 1 deployed, cold pages still arrived slowly during continuous
+scrolling. In the 411-page analysis at a 1440px desktop viewport, page 30 took
+1.72 s and page 31 took 1.41 s to reach the browser; a cached repeat of page 30
+took 7 ms. Most of the cold request time was image transfer. The 25% observer
+margin mounted only the current and next page, leaving too little time before
+the reader reached the next cold page.
+
+The scrolling follow-up keeps image mounting to the current page, one previous
+page and two upcoming pages, regardless of page-card geometry. The browser
+starts those mounted image requests immediately. The frontend requests lossless
+WebP previews while the backend retains PNG for existing clients. On four local
+150 DPI pages, lossless WebP was 69–119 KB versus 331–472 KB for PNG, with
+similar encode time. Lossless encoding preserves text edges; deployed transfer
+times should be checked after rollout.

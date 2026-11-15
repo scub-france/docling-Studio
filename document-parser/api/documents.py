@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -173,8 +173,9 @@ async def preview(
     service: deps.DocumentServiceDep,
     page: int = Query(1, ge=1),
     dpi: int = Query(150, ge=72, le=300),
+    format: Literal["png", "webp"] = Query("png"),
 ) -> Response:
-    """Generate a PNG preview of a specific PDF page."""
+    """Generate a PNG or WebP preview of a specific PDF page."""
     doc = await service.find_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -188,18 +189,22 @@ async def preview(
     try:
         path = service.resolve_storage_path(doc.storage_path)
         stat = await asyncio.to_thread(path.stat)
-        key = (str(path), stat.st_size, stat.st_mtime_ns, page, dpi)
-        png_bytes = _preview_cache.get(key)
-        if png_bytes is None:
+        key = (str(path), stat.st_size, stat.st_mtime_ns, page, dpi, format)
+        image_bytes = _preview_cache.get(key)
+        if image_bytes is None:
             # File read + rasterisation are blocking; keep both off the event loop.
             file_content = await asyncio.to_thread(path.read_bytes)
-            png_bytes = await asyncio.to_thread(
-                DocumentService.generate_preview, file_content, page=page, dpi=dpi
+            image_bytes = await asyncio.to_thread(
+                DocumentService.generate_preview,
+                file_content,
+                page=page,
+                dpi=dpi,
+                image_format=format.upper(),
             )
-            _preview_cache.put(key, png_bytes)
+            _preview_cache.put(key, image_bytes)
         return Response(
-            content=png_bytes,
-            media_type="image/png",
+            content=image_bytes,
+            media_type=f"image/{format}",
             headers={"Cache-Control": "private, max-age=86400, immutable"},
         )
     except ValueError as e:

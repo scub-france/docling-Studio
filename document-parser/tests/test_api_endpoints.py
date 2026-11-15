@@ -246,16 +246,20 @@ class TestDocumentEndpoints:
             first = client.get("/api/documents/d1/preview?page=1")
             second = client.get("/api/documents/d1/preview?page=1")
             different_dpi = client.get("/api/documents/d1/preview?page=1&dpi=200")
+            webp = client.get("/api/documents/d1/preview?page=1&format=webp")
             pdf.write_bytes(b"%PDF-changed-and-longer")
             changed = client.get("/api/documents/d1/preview?page=1")
 
         assert all(
-            response.status_code == 200 for response in (first, second, different_dpi, changed)
+            response.status_code == 200
+            for response in (first, second, different_dpi, webp, changed)
         )
         assert first.content == second.content == b"rendered-png"
         assert first.headers["cache-control"] == "private, max-age=86400, immutable"
-        assert render.call_count == 3
+        assert webp.headers["content-type"] == "image/webp"
+        assert render.call_count == 4
         assert render.call_args_list[0].args[0] == b"%PDF-first"
+        assert render.call_args_list[2].kwargs["image_format"] == "WEBP"
         assert render.call_args_list[-1].args[0] == b"%PDF-changed-and-longer"
 
     def test_page_sizes(self, client, mock_document_service, tmp_path):
