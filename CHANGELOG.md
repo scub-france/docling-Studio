@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
+- **Faster PDF viewing**: analysis, editor, document, and Studio previews render the visible PDF page in the browser using byte ranges. Nearby pages load as needed; server-rendered previews remain a fallback.
+- **Faster analysis lists**: analysis and history lists fetch lightweight summaries instead of full Docling results.
 - **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
 - **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
 
