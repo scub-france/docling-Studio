@@ -80,3 +80,9 @@ WebP previews while the backend retains PNG for existing clients. On four local
 150 DPI pages, lossless WebP was 69–119 KB versus 331–472 KB for PNG, with
 similar encode time. Lossless encoding preserves text edges; deployed transfer
 times should be checked after rollout.
+
+The next viewer revision prioritizes the current page: it mounts a cold
+foreground image first and requests the two upcoming pages after that image
+loads. Previously requested nearby pages stay mounted while they finish, and
+the document switch clears the request state. This addresses the observed
+4.6–6.8 s time to first byte when three cold page renders began together.

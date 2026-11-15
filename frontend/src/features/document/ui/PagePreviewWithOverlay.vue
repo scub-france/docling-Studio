@@ -98,9 +98,11 @@
             :src="getPreviewUrl(documentId, page.page_number)"
             :alt="`Page ${page.page_number}`"
             class="preview-image"
+            :fetchpriority="page.page_number === currentPage ? 'high' : 'low'"
             decoding="async"
             :ref="(el) => registerImage(page.page_number, el as HTMLImageElement | null)"
             @load="onImageLoad(page.page_number)"
+            @error="onImageError(page.page_number)"
           />
           <BboxCanvas
             v-if="loadedImages[page.page_number]"
@@ -181,6 +183,9 @@ const emit = defineEmits<{
 const stageRef = ref<HTMLDivElement | null>(null)
 const imageRefs = reactive<Record<number, HTMLImageElement | null>>({})
 const loadedImages = reactive<Record<number, HTMLImageElement | null>>({})
+const loadedPageNumbers = reactive(new Set<number>())
+const settledPageNumbers = reactive(new Set<number>())
+const pendingPageNumbers = reactive(new Set<number>())
 const pageCardRefs = reactive<Record<number, HTMLElement | null>>({})
 // The frame is the page's *reserved* box (#336): unlike the image it exists
 // and measures correctly whether or not the raster has been mounted, so it is
@@ -221,7 +226,12 @@ const renderedPages = computed<Page[]>(() => {
 
 function registerImage(pageNumber: number, el: HTMLImageElement | null): void {
   imageRefs[pageNumber] = el
-  if (!el) loadedImages[pageNumber] = null
+  if (el) {
+    if (!settledPageNumbers.has(pageNumber)) pendingPageNumbers.add(pageNumber)
+  } else {
+    pendingPageNumbers.delete(pageNumber)
+    loadedImages[pageNumber] = null
+  }
 }
 
 function registerFrame(pageNumber: number, el: HTMLElement | null): void {
@@ -257,6 +267,9 @@ function registerPageCard(pageNumber: number, el: HTMLElement | null): void {
 }
 
 function onImageLoad(pageNumber: number): void {
+  pendingPageNumbers.delete(pageNumber)
+  loadedPageNumbers.add(pageNumber)
+  settledPageNumbers.add(pageNumber)
   loadedImages[pageNumber] = imageRefs[pageNumber] ?? null
   // With the box reserved, decoding shifts no layout and the focus scroll has
   // already run against the final geometry. Only a page we could *not* reserve
@@ -266,6 +279,11 @@ function onImageLoad(pageNumber: number): void {
   if (highlightTarget()?.page.page_number === pageNumber) requestScroll('focus')
 }
 
+function onImageError(pageNumber: number): void {
+  pendingPageNumbers.delete(pageNumber)
+  settledPageNumbers.add(pageNumber)
+}
+
 function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent): void {
   // No re-scroll guard needed: a bbox the user just clicked is on screen, and
   // `centerHighlighted` leaves an already-visible target alone.
@@ -273,7 +291,14 @@ function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent):
 }
 
 function shouldRenderPage(pageNumber: number): boolean {
-  return pageInRenderWindow(pageNumber, props.currentPage, viewMode.value, focusedPage.value)
+  return pageInRenderWindow(
+    pageNumber,
+    props.currentPage,
+    viewMode.value,
+    focusedPage.value,
+    settledPageNumbers.has(props.currentPage),
+    loadedPageNumbers.has(pageNumber) || pendingPageNumbers.has(pageNumber),
+  )
 }
 
 function onPageChange(page: number): void {
@@ -462,6 +487,17 @@ watch(
     setupObserver()
   },
   { deep: true },
+)
+
+watch(
+  () => props.documentId,
+  () => {
+    loadedPageNumbers.clear()
+    settledPageNumbers.clear()
+    pendingPageNumbers.clear()
+    for (const page of Object.keys(loadedImages)) loadedImages[Number(page)] = null
+  },
+  { flush: 'sync' },
 )
 
 watch(viewMode, async () => {

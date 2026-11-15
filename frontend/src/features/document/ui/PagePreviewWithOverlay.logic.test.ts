@@ -57,15 +57,29 @@ describe('pageInputWidthCh', () => {
 })
 
 describe('pageInRenderWindow', () => {
-  it('preloads two pages ahead while bounding requests for a large PDF', () => {
+  it('requests only the foreground page until it has settled', () => {
     const mounted = Array.from({ length: 411 }, (_, index) => index + 1).filter((page) =>
-      pageInRenderWindow(page, 50, 'scroll', null),
+      pageInRenderWindow(page, 50, 'scroll', null, false, false),
+    )
+    expect(mounted).toEqual([50])
+  })
+
+  it('preloads two pages ahead after the foreground page settles', () => {
+    const mounted = Array.from({ length: 411 }, (_, index) => index + 1).filter((page) =>
+      pageInRenderWindow(page, 50, 'scroll', null, true, false),
+    )
+    expect(mounted).toEqual([50, 51, 52])
+  })
+
+  it('keeps requested nearby pages while moving to a page still loading', () => {
+    const mounted = Array.from({ length: 411 }, (_, index) => index + 1).filter((page) =>
+      pageInRenderWindow(page, 50, 'scroll', null, false, [49, 51, 52].includes(page)),
     )
     expect(mounted).toEqual([49, 50, 51, 52])
   })
 
   it('keeps a distant focused page mounted during a focus scroll', () => {
-    expect(pageInRenderWindow(300, 1, 'scroll', 300)).toBe(true)
-    expect(pageInRenderWindow(301, 1, 'scroll', 300)).toBe(false)
+    expect(pageInRenderWindow(300, 1, 'scroll', 300, false, false)).toBe(true)
+    expect(pageInRenderWindow(301, 1, 'scroll', 300, false, false)).toBe(false)
   })
 })

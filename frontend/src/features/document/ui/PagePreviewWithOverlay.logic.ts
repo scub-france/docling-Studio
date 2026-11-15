@@ -16,10 +16,15 @@ export function pageInRenderWindow(
   currentPage: number,
   viewMode: 'page' | 'scroll',
   focusedPage: number | null,
+  currentPageSettled: boolean,
+  alreadyRequested: boolean,
 ): boolean {
   return (
     viewMode === 'page' ||
     pageNumber === focusedPage ||
-    (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 2)
+    pageNumber === currentPage ||
+    (pageNumber >= currentPage - 1 &&
+      pageNumber <= currentPage + 2 &&
+      (alreadyRequested || (currentPageSettled && pageNumber > currentPage)))
   )
 }
