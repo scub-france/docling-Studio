@@ -159,7 +159,7 @@ import { getExportUrl, getPreviewUrl, PREVIEW_DPI } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
 import PdfPageCanvas from './PdfPageCanvas.vue'
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url'
 import {
   clampPageInput,
   pageInRenderWindow,
