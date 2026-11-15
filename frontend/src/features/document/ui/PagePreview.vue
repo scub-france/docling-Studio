@@ -28,33 +28,25 @@
       </div>
     </div>
     <div class="preview-image-wrapper">
-      <img
-        v-if="previewUrl"
-        :src="previewUrl"
-        :alt="`Page ${page}`"
-        class="preview-image"
-        @load="$emit('imageLoaded', $event)"
-      />
+      <PdfPagePreview :document-id="documentId" :page="page" @ready="onReady" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { getPreviewUrl } from '../api'
+import PdfPagePreview from './PdfPagePreview.vue'
 
-const props = defineProps({
+defineProps({
   documentId: String,
   page: { type: Number, default: 1 },
   pageCount: Number,
 })
 
-defineEmits(['update:page', 'imageLoaded'])
+const emit = defineEmits(['update:page', 'imageLoaded'])
 
-const previewUrl = computed(() => {
-  if (!props.documentId) return null
-  return getPreviewUrl(props.documentId, props.page)
-})
+function onReady(element: HTMLElement | null): void {
+  if (element) emit('imageLoaded', element)
+}
 </script>
 
 <style scoped>
@@ -116,9 +108,7 @@ const previewUrl = computed(() => {
   min-height: 200px;
 }
 
-.preview-image {
+.preview-image-wrapper :deep(.pdf-page-preview) {
   width: 100%;
-  height: auto;
-  display: block;
 }
 </style>

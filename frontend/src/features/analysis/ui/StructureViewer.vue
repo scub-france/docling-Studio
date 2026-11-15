@@ -30,12 +30,12 @@
 
     <!-- Canvas overlay -->
     <div class="canvas-container" ref="containerRef">
-      <img
+      <PdfPagePreview
         v-if="documentId"
-        :src="previewUrl ?? undefined"
+        :document-id="documentId"
+        :page="selectedPage"
         class="page-image"
-        ref="imageRef"
-        @load="onImageLoad"
+        @ready="onPageReady"
       />
       <canvas
         ref="canvasRef"
@@ -60,8 +60,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, reactive } from 'vue'
-import { getPreviewUrl } from '@/features/document'
+import { ref, computed, watch, nextTick, reactive, onBeforeUnmount } from 'vue'
+import { PdfPagePreview } from '@/features/document'
 import { computeScale, bboxToRect, pointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
@@ -105,11 +105,11 @@ const REASONING_COLOR = '#EA580C'
 const selectedPage = ref(1)
 const hiddenTypes = reactive(new Set<string>())
 const containerRef = ref<HTMLDivElement | null>(null)
-const imageRef = ref<HTMLImageElement | null>(null)
+const pageEl = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const hoveredElement = ref<PageElement | null>(null)
 const tooltipStyle = ref<Record<string, string>>({})
-const imageSize = ref({ width: 0, height: 0 })
+let pageResizeObserver: ResizeObserver | null = null
 
 const currentPageData = computed(() => {
   return props.pages.find((p) => p.page_number === selectedPage.value)
@@ -118,11 +118,6 @@ const currentPageData = computed(() => {
 const visibleElements = computed(() => {
   if (!currentPageData.value) return []
   return currentPageData.value.elements.filter((e) => !hiddenTypes.has(e.type))
-})
-
-const previewUrl = computed(() => {
-  if (!props.documentId) return null
-  return getPreviewUrl(props.documentId, selectedPage.value)
 })
 
 function toggleType(type: string) {
@@ -136,17 +131,29 @@ function countElements(type: string) {
   return currentPageData.value.elements.filter((e) => e.type === type).length
 }
 
-function onImageLoad() {
-  const img = imageRef.value
-  if (!img) return
-  imageSize.value = { width: img.naturalWidth, height: img.naturalHeight }
+function onPageReady(element: HTMLElement | null) {
+  pageEl.value = element
+  pageResizeObserver?.disconnect()
+  pageResizeObserver = null
+  if (element) {
+    pageResizeObserver = new ResizeObserver(() => drawOverlay())
+    pageResizeObserver.observe(element)
+  }
   nextTick(drawOverlay)
 }
 
+onBeforeUnmount(() => pageResizeObserver?.disconnect())
+
 function drawOverlay() {
   const canvas = canvasRef.value
-  const img = imageRef.value
-  if (!canvas || !img) return
+  const img = pageEl.value
+  if (!canvas) return
+  if (!img) {
+    canvas.width = 0
+    canvas.height = 0
+    hoveredElement.value = null
+    return
+  }
 
   canvas.width = img.clientWidth
   canvas.height = img.clientHeight
@@ -228,7 +235,7 @@ function drawVisitBadge(ctx: CanvasRenderingContext2D, x: number, y: number, ord
 function elementAt(e: MouseEvent): PageElement | null {
   const canvas = canvasRef.value
   const page = currentPageData.value
-  const img = imageRef.value
+  const img = pageEl.value
   if (!canvas || !page || !img) return null
   const canvasRect = canvas.getBoundingClientRect()
   const mx = e.clientX - canvasRect.left
@@ -284,7 +291,7 @@ function scrollToFocused(ref: string | null): void {
     if (page.elements.some((e) => e.self_ref === ref)) {
       if (selectedPage.value !== page.page_number) {
         selectedPage.value = page.page_number
-        // Let <img> reload before drawing — drawOverlay runs on @load.
+        // Let the PDF page render before drawing — onPageReady redraws.
       } else {
         nextTick(drawOverlay)
       }

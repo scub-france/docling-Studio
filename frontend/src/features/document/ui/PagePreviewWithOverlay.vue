@@ -142,24 +142,14 @@
  * `currentPage` remains the external selection source for side panels.
  * In scroll mode it is synchronized to the page mostly visible in the viewport.
  */
-import {
-  computed,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  reactive,
-  ref,
-  shallowRef,
-  watch,
-} from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRef, watch } from 'vue'
 import type { Page, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToRect, computeScale } from '@/shared/bboxScaling'
-import { getExportUrl, getPreviewUrl, PREVIEW_DPI } from '../api'
+import { getPreviewUrl, PREVIEW_DPI } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
 import PdfPageCanvas from './PdfPageCanvas.vue'
-import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url'
+import { usePdfDocument } from './usePdfDocument'
 import {
   clampPageInput,
   pageInRenderWindow,
@@ -203,10 +193,7 @@ const emit = defineEmits<{
 const stageRef = ref<HTMLDivElement | null>(null)
 const imageRefs = reactive<Record<number, HTMLImageElement | null>>({})
 const loadedImages = reactive<Record<number, HTMLElement | null>>({})
-const pdfDocument = shallowRef<PDFDocumentProxy | null>(null)
-const pdfFailed = ref(false)
-let pdfLoadingTask: PDFDocumentLoadingTask | null = null
-let pdfGeneration = 0
+const { document: pdfDocument, failed: pdfFailed } = usePdfDocument(toRef(props, 'documentId'))
 const loadedPageNumbers = reactive(new Set<number>())
 const settledPageNumbers = reactive(new Set<number>())
 const pendingPageNumbers = reactive(new Set<number>())
@@ -328,32 +315,6 @@ function onPdfError(pageNumber: number): void {
   pendingPageNumbers.delete(pageNumber)
   loadedImages[pageNumber] = null
   pdfFailed.value = true
-}
-
-async function loadPdf(): Promise<void> {
-  const current = ++pdfGeneration
-  const previous = pdfLoadingTask
-  pdfLoadingTask = null
-  pdfDocument.value = null
-  pdfFailed.value = false
-  try {
-    if (previous) await previous.destroy()
-    const pdfjs = await import('pdfjs-dist')
-    if (current !== pdfGeneration) return
-    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-    const task = pdfjs.getDocument({
-      url: getExportUrl(props.documentId, 'pdf'),
-      disableStream: true,
-      disableAutoFetch: true,
-      rangeChunkSize: 262144,
-    })
-    pdfLoadingTask = task
-    const document = await task.promise
-    if (current !== pdfGeneration) return
-    pdfDocument.value = document
-  } catch {
-    if (current === pdfGeneration) pdfFailed.value = true
-  }
 }
 
 function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent): void {
@@ -568,9 +529,8 @@ watch(
     settledPageNumbers.clear()
     pendingPageNumbers.clear()
     for (const page of Object.keys(loadedImages)) loadedImages[Number(page)] = null
-    void loadPdf()
   },
-  { flush: 'sync', immediate: true },
+  { flush: 'sync' },
 )
 
 watch(viewMode, async () => {
@@ -603,8 +563,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   pageObserver?.disconnect()
-  pdfGeneration += 1
-  void pdfLoadingTask?.destroy()
 })
 </script>
 

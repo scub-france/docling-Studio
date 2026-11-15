@@ -1,5 +1,10 @@
 <template>
-  <canvas ref="canvasRef" class="pdf-page-canvas" :aria-label="`Page ${pageNumber}`" />
+  <canvas
+    ref="canvasRef"
+    class="pdf-page-canvas"
+    :class="{ 'fill-frame': fillFrame !== false }"
+    :aria-label="`Page ${pageNumber}`"
+  />
 </template>
 
 <script setup lang="ts">
@@ -9,6 +14,7 @@ import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
 const props = defineProps<{
   document: PDFDocumentProxy | null
   pageNumber: number
+  fillFrame?: boolean
 }>()
 const emit = defineEmits<{
   ready: [canvas: HTMLCanvasElement]
@@ -87,6 +93,9 @@ onBeforeUnmount(() => {
 .pdf-page-canvas {
   display: block;
   width: 100%;
+  height: auto;
+}
+.pdf-page-canvas.fill-frame {
   height: 100%;
 }
 </style>
