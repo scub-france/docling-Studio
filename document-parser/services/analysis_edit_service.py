@@ -330,7 +330,7 @@ class AnalysisEditService:
 
     async def _snapshot(self, document, base, projection, sequence: int) -> EditorSnapshot:
         job = AnalysisJob(
-            id=f"working:{document.id}",
+            id=f"working:{document.id}:{base.id}",
             document_id=document.id,
             status=AnalysisStatus.COMPLETED,
             content_markdown=projection.content_markdown,

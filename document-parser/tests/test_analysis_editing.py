@@ -914,4 +914,9 @@ async def test_each_base_analysis_has_an_independent_edited_cache(edit_service):
     second_after = await service.load_editor("doc-1", "analysis-2")
     assert "Second edit" not in first.job.content_markdown
     assert "Second edit" in second_after.job.content_markdown
+    assert first.job.id != second_after.job.id
+    assert (first.job.id, second_after.job.id) == (
+        "working:doc-1:analysis-1",
+        "working:doc-1:analysis-2",
+    )
     service._graph_writer.write_document_tree.assert_not_awaited()

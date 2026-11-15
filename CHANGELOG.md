@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Analysis editor corrupt cache**: a damaged edited result cache is now ignored and the saved edits are replayed, instead of the editor failing with a server error (#395).
 - **Analysis editor merge**: the Merge button is only enabled when all selected elements have the same type, so a mix of text and paragraph no longer fails with an error after the click (#395).
+- **Analysis editor result id**: the id of an edited result now includes its base analysis, so two analyses of one document no longer return edited results with the same id (#395).
 
 ## [0.7.3] - 2026-11-02
 
