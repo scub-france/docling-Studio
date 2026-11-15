@@ -19,6 +19,7 @@ from api.schemas import (
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
+    AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
     EditCommand,
     active_edit_commands,
@@ -110,6 +111,8 @@ def _commands(body: AnalysisEditRequest) -> list[EditCommand]:
 def _raise(exc: Exception) -> NoReturn:
     if isinstance(exc, AnalysisEditConflictError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, AnalysisEditNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, AnalysisEditUnavailableError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if isinstance(exc, AnalysisEditError):

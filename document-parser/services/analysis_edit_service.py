@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
+    AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
     EditCommand,
     EditedAnalysisCache,
@@ -113,7 +114,7 @@ class AnalysisEditService:
         await self._require_document(document_id)
         selection = await self._selection.get_selection(document_id)
         if selection is None:
-            raise AnalysisEditUnavailableError("This document has no active analysis")
+            raise AnalysisEditNotFoundError("This document has no active analysis")
         return await self.load_editor(document_id, selection.analysis_id)
 
     async def history(self, document_id: str, analysis_id: str | None = None) -> list:
@@ -277,7 +278,7 @@ class AnalysisEditService:
     async def _require_document(self, document_id: str):
         document = await self._documents.find_by_id(document_id)
         if document is None:
-            raise AnalysisEditUnavailableError(f"Document not found: {document_id}")
+            raise AnalysisEditNotFoundError(f"Document not found: {document_id}")
         return document
 
     async def _base_analysis(self, document, analysis_id: str | None = None):
@@ -288,9 +289,11 @@ class AnalysisEditService:
         else:
             selection = await self._selection.get_selection(document.id)
             if selection is None:
-                raise AnalysisEditUnavailableError("This document has no active analysis")
+                raise AnalysisEditNotFoundError("This document has no active analysis")
             base = await self._analyses.find_by_id(selection.analysis_id)
-        if base is None or base.status != AnalysisStatus.COMPLETED or not base.document_json:
+        if base is None:
+            raise AnalysisEditNotFoundError("Analysis not found")
+        if base.status != AnalysisStatus.COMPLETED or not base.document_json:
             raise AnalysisEditUnavailableError(
                 "This analysis has no canonical Docling document. Re-run the analysis to enable "
                 "the editor and document tree."

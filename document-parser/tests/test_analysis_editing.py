@@ -19,10 +19,13 @@ from docling_core.types.doc import (
     Size,
     TableData,
 )
+from fastapi import HTTPException
 
+from api.analysis_edits import _raise
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
+    AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
     EditCommand,
     active_edit_commands,
@@ -920,3 +923,33 @@ async def test_each_base_analysis_has_an_independent_edited_cache(edit_service):
         "working:doc-1:analysis-2",
     )
     service._graph_writer.write_document_tree.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_missing_document_or_analysis_is_not_found(edit_service):
+    service, _, analyses = edit_service
+    await analyses.insert(AnalysisJob(id="analysis-pending", document_id="doc-1"))
+
+    with pytest.raises(AnalysisEditNotFoundError, match="Document not found"):
+        await service.load_editor("missing-doc")
+    with pytest.raises(AnalysisEditNotFoundError, match="Analysis not found"):
+        await service.load_editor("doc-1", "missing-analysis")
+    # An analysis that exists but is not completed is unusable, not missing.
+    with pytest.raises(AnalysisEditUnavailableError) as unusable:
+        await service.load_editor("doc-1", "analysis-pending")
+    assert not isinstance(unusable.value, AnalysisEditNotFoundError)
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (AnalysisEditNotFoundError("missing"), 404),
+        (AnalysisEditUnavailableError("unusable"), 409),
+        (AnalysisEditConflictError("stale"), 409),
+        (AnalysisEditError("invalid"), 400),
+    ],
+)
+def test_api_maps_edit_errors_to_http_status(error, status):
+    with pytest.raises(HTTPException) as raised:
+        _raise(error)
+    assert raised.value.status_code == status
