@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowMount } from '@vue/test-utils'
+import { flushPromises, shallowMount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import type { Page } from '../../../shared/types'
 import PagePreviewWithOverlay from './PagePreviewWithOverlay.vue'
+import PdfPageCanvas from './PdfPageCanvas.vue'
+
+vi.mock('pdfjs-dist', () => ({
+  GlobalWorkerOptions: {},
+  getDocument: vi.fn(() => ({ promise: Promise.resolve({}), destroy: vi.fn() })),
+}))
 
 const pages: Page[] = Array.from({ length: 6 }, (_, index) => ({
   page_number: index + 1,
@@ -17,7 +23,7 @@ class ObserverStub {
   disconnect(): void {}
 }
 
-describe('PagePreviewWithOverlay image scheduling', () => {
+describe('PagePreviewWithOverlay PDF scheduling', () => {
   beforeEach(() => vi.stubGlobal('IntersectionObserver', ObserverStub))
   afterEach(() => vi.unstubAllGlobals())
 
@@ -31,26 +37,32 @@ describe('PagePreviewWithOverlay image scheduling', () => {
         showLabels: true,
       },
     })
+    await flushPromises()
     await nextTick()
 
     const mountedPages = () =>
-      wrapper.findAll('img.preview-image').map((image) => Number(image.attributes('alt')?.slice(5)))
+      wrapper
+        .findAll('pdf-page-canvas-stub')
+        .map((canvas) => Number(canvas.attributes('pagenumber')))
 
     expect(mountedPages()).toEqual([1])
-    await wrapper.get('img.preview-image').trigger('load')
+    wrapper.getComponent(PdfPageCanvas).vm.$emit('ready', document.createElement('canvas'))
+    await nextTick()
     expect(mountedPages()).toEqual([1, 2, 3])
 
     await wrapper.setProps({ currentPage: 2 })
     expect(mountedPages()).toEqual([1, 2, 3])
-    await wrapper.findAll('img.preview-image')[1].trigger('load')
+    wrapper.findAllComponents(PdfPageCanvas)[1].vm.$emit('ready', document.createElement('canvas'))
+    await nextTick()
     expect(mountedPages()).toEqual([1, 2, 3, 4])
 
     await wrapper.setProps({ currentPage: 6 })
     expect(mountedPages()).toEqual([6])
 
     await wrapper.setProps({ documentId: 'doc-2', currentPage: 1 })
+    await flushPromises()
     expect(mountedPages()).toEqual([1])
-    expect(wrapper.get('img.preview-image').attributes('src')).toContain('/documents/doc-2/')
+    expect(wrapper.find('img.preview-image').exists()).toBe(false)
     wrapper.unmount()
   })
 })
