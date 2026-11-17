@@ -841,7 +841,10 @@ async def test_load_replays_saved_stream_when_edited_cache_is_corrupt(
 
     assert reloaded.applied_through_sequence == saved.applied_through_sequence
     assert _projection_values(reloaded) == _projection_values(saved)
-    assert "edited cache" in caplog.text.lower()
+    record = next(r for r in caplog.records if "edited cache" in r.getMessage())
+    assert record.editor_operation == "load"
+    assert record.document_id == "doc-1"
+    assert record.base_analysis_id == "analysis-1"
 
 
 @pytest.mark.asyncio

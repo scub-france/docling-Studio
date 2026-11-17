@@ -99,8 +99,12 @@ class AnalysisEditService:
             except Exception:
                 # The cache is a disposable copy; the command stream is the source of truth.
                 logger.warning(
-                    "Ignoring corrupt edited cache for analysis %s; replaying the edit stream",
-                    base.id,
+                    "Ignoring corrupt edited cache; replaying the edit stream",
+                    extra={
+                        "editor_operation": "load",
+                        "document_id": document.id,
+                        "base_analysis_id": base.id,
+                    },
                     exc_info=True,
                 )
         if projection is None:
