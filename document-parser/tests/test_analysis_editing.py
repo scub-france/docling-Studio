@@ -932,11 +932,25 @@ async def test_each_base_analysis_has_an_independent_edited_cache(edit_service):
 async def test_missing_document_or_analysis_is_not_found(edit_service):
     service, _, analyses = edit_service
     await analyses.insert(AnalysisJob(id="analysis-pending", document_id="doc-1"))
+    await SqliteDocumentRepository().insert(
+        Document(id="doc-2", filename="other.pdf", storage_path="/tmp/other.pdf")
+    )
+    other = AnalysisJob(
+        id="analysis-other",
+        document_id="doc-2",
+        status=AnalysisStatus.COMPLETED,
+        document_json=_document()[0],
+    )
+    await analyses.insert(other)
+    await analyses.update_status(other)
 
-    with pytest.raises(AnalysisEditNotFoundError, match="Document not found"):
+    with pytest.raises(AnalysisEditNotFoundError, match="Document not found: missing-doc"):
         await service.load_editor("missing-doc")
-    with pytest.raises(AnalysisEditNotFoundError, match="Analysis not found"):
+    with pytest.raises(AnalysisEditNotFoundError, match="Analysis not found: missing-analysis"):
         await service.load_editor("doc-1", "missing-analysis")
+    # A completed analysis of another document must not be editable through this one.
+    with pytest.raises(AnalysisEditNotFoundError, match="Analysis not found: analysis-other"):
+        await service.load_editor("doc-1", "analysis-other")
     # An analysis that exists but is not completed is unusable, not missing.
     with pytest.raises(AnalysisEditUnavailableError) as unusable:
         await service.load_editor("doc-1", "analysis-pending")

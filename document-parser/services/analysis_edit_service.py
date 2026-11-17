@@ -294,9 +294,10 @@ class AnalysisEditService:
             selection = await self._selection.get_selection(document.id)
             if selection is None:
                 raise AnalysisEditNotFoundError("This document has no active analysis")
-            base = await self._analyses.find_by_id(selection.analysis_id)
+            analysis_id = selection.analysis_id
+            base = await self._analyses.find_by_id(analysis_id)
         if base is None:
-            raise AnalysisEditNotFoundError("Analysis not found")
+            raise AnalysisEditNotFoundError(f"Analysis not found: {analysis_id}")
         if base.status != AnalysisStatus.COMPLETED or not base.document_json:
             raise AnalysisEditUnavailableError(
                 "This analysis has no canonical Docling document. Re-run the analysis to enable "
