@@ -44,4 +44,13 @@ describe('analysis editor commands', () => {
       'Only text and paragraph elements can be merged.',
     )
   })
+
+  it('rejects a merge that mixes text and paragraph', () => {
+    const paragraph: EditorElement = { ...text('b'), type: 'paragraph' }
+    expect(canMerge([text('a'), paragraph], ['a', 'b'])).toBe(false)
+    expect(mergeValidationMessage([text('a'), paragraph], ['a', 'b'])).toBe(
+      'Selected elements must all be the same type to merge.',
+    )
+    expect(canMerge([paragraph, { ...paragraph, id: 'c' }], ['b', 'c'])).toBe(true)
+  })
 })

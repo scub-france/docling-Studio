@@ -16,6 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
 - **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
 
+### Fixed
+
+- **Analysis editor corrupt cache**: a damaged edited result cache is now ignored and the saved edits are replayed, instead of the editor failing with a server error (#395).
+- **Analysis editor merge**: the Merge button is only enabled when all selected elements have the same type, so a mix of text and paragraph no longer fails with an error after the click (#395).
+- **Analysis editor result id**: the id of an edited result now includes its base analysis, so two analyses of one document no longer return edited results with the same id (#395).
+- **Analysis editor missing resources**: the editor API now answers 404 for an unknown document or analysis instead of 409, so the editor no longer shows an edit conflict for something that does not exist (#395).
+
 ## [0.7.3] - 2026-11-02
 
 ### Added
