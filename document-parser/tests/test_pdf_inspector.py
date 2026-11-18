@@ -117,3 +117,16 @@ class TestCountPagesInBytes:
     def test_returns_none_on_an_unexpected_error(self):
         with patch("infra.pdf_inspector.pdfinfo_from_bytes", side_effect=RuntimeError("boom")):
             assert PdfiumInspector().count_pages_in_bytes(b"pdf") is None
+
+
+class TestPageSizesStayLight:
+    def test_reads_sizes_without_loading_any_page(self, tmp_path):
+        """A loaded page keeps the pdfium lock busy, which stalls a running conversion."""
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792), (842, 595)))
+
+        with patch.object(pdfium.PdfDocument, "__getitem__") as load_page:
+            pages = PdfiumInspector().page_sizes(str(pdf))
+
+        load_page.assert_not_called()
+        assert [(p.width, p.height) for p in pages] == [(612, 792), (842, 595)]

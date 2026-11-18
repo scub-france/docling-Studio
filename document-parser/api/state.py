@@ -58,7 +58,9 @@ class AppState:
     backend resolver) stay locals of the builder.
     """
 
-    # Repositories reached directly by the API layer.
+    # Repositories kept on the state. No route reads the store and link
+    # repositories any more (the document service joins them); they stay for
+    # the tests that override the state.
     analysis_repo: AnalysisRepository | None = None
     store_repo: StoreRepository | None = None
     document_store_link_repo: DocumentStoreLinkRepository | None = None

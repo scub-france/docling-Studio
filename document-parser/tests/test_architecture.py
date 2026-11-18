@@ -111,9 +111,8 @@ class TestDocumentAgentServicesAreFrameworkFree:
     Rasterising a page was inlined in `NavigationService` — PIL, a filesystem
     read and an import of another service, in the middle of a use case. The
     `PageRasterizer` port moved all three behind `infra/page_raster.py`; this
-    is what stops them coming back. Scoped to these four modules rather than
-    all of `services/` because `document_service.py` still counts upload pages
-    with pdf2image and predates the port.
+    is what stops them coming back. PIL is checked on these modules only; the
+    PDF libraries are forbidden in all of `services/` further down.
     """
 
     MODULES = (

@@ -30,13 +30,12 @@ class PdfiumInspector:
         with pdfium_lock:
             pdf = pdfium.PdfDocument(storage_path)
             try:
+                # Sizes come from the document's page table: loading each page
+                # would hold the lock, and so stall a running conversion, about
+                # forty times longer on a long PDF.
                 sizes: list[PageDetail] = []
                 for index in range(len(pdf)):
-                    page = pdf[index]
-                    try:
-                        width, height = page.get_size()
-                    finally:
-                        page.close()
+                    width, height = pdf.get_page_size(index)
                     sizes.append(PageDetail(page_number=index + 1, width=width, height=height))
                 return sizes
             finally:
