@@ -1,4 +1,4 @@
-import type { Analysis, Page } from '../../shared/types'
+import type { Analysis } from '../../shared/types'
 
 export interface EditorProvenance {
   page: number
@@ -86,11 +86,4 @@ export interface AnalysisEditActiveChange {
   expectedAppliedThroughSequence: number
 }
 
-export function parseAnalysisPages(analysis: Analysis | null): Page[] {
-  if (!analysis?.pagesJson) return []
-  try {
-    return JSON.parse(analysis.pagesJson) as Page[]
-  } catch {
-    return []
-  }
-}
+export { parseAnalysisPages } from '../../shared/analysisPages'

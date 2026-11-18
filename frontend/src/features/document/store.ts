@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Analysis, Document, DocumentVersion, Page } from '../../shared/types'
 import { appMaxFileSizeMb } from '../../shared/appConfig'
+import { parseAnalysisPages } from '../../shared/analysisPages'
 import { fetchAnalysis } from '@/features/analysis'
 import { pushChunksToStore } from '@/features/chunks'
 import { useFeatureFlagStore } from '@/features/feature-flags'
@@ -57,15 +58,7 @@ export const useDocumentStore = defineStore('document', () => {
   const workspaceLatestAnalysis = computed<Analysis | null>(() => workspaceActiveAnalysis.value)
 
   /** Pages parsed lazily from the active analysis's `pagesJson`. */
-  const workspacePages = computed<Page[]>(() => {
-    const raw = workspaceActiveAnalysis.value?.pagesJson
-    if (!raw) return []
-    try {
-      return JSON.parse(raw) as Page[]
-    } catch {
-      return []
-    }
-  })
+  const workspacePages = computed<Page[]>(() => parseAnalysisPages(workspaceActiveAnalysis.value))
 
   function clearError(): void {
     error.value = null

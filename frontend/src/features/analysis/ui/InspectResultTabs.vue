@@ -37,6 +37,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { Analysis, Page } from '../../../shared/types'
+import { parseAnalysisPages } from '../../../shared/analysisPages'
 import MarkdownViewer from '@/shared/ui/MarkdownViewer.vue'
 import StructureViewer from './StructureViewer.vue'
 import ImageGallery from './ImageGallery.vue'
@@ -59,14 +60,7 @@ type TabId = (typeof TABS)[number]['id']
 
 const activeTab = ref<TabId>('elements')
 
-const pages = computed<Page[]>(() => {
-  if (!props.analysis.pagesJson) return []
-  try {
-    return JSON.parse(props.analysis.pagesJson) as Page[]
-  } catch {
-    return []
-  }
-})
+const pages = computed<Page[]>(() => parseAnalysisPages(props.analysis))
 </script>
 
 <style scoped>

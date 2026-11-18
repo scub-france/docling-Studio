@@ -8,6 +8,7 @@ import type {
   Page,
   PipelineOptions,
 } from '../../shared/types'
+import { parseAnalysisPages } from '../../shared/analysisPages'
 import * as api from './api'
 import { hasActive, mergeSummaries } from './batch'
 
@@ -40,14 +41,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
   const following = ref<ReturnType<typeof setInterval> | null>(null)
   const FOLLOW_INTERVAL = 3000
 
-  const currentPages = computed<Page[]>(() => {
-    if (!currentAnalysis.value?.pagesJson) return []
-    try {
-      return JSON.parse(currentAnalysis.value.pagesJson) as Page[]
-    } catch {
-      return []
-    }
-  })
+  const currentPages = computed<Page[]>(() => parseAnalysisPages(currentAnalysis.value))
 
   function clearError(): void {
     error.value = null
