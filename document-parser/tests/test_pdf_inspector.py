@@ -98,3 +98,22 @@ class TestPdfiumLock:
             assert not done.wait(0.1)
         worker.join(timeout=5)
         assert done.is_set()
+
+
+class TestCountPagesInBytes:
+    """The upload's page count, read by poppler from the uploaded bytes."""
+
+    def test_returns_page_count(self):
+        with patch("infra.pdf_inspector.pdfinfo_from_bytes", return_value={"Pages": 42}):
+            assert PdfiumInspector().count_pages_in_bytes(b"pdf") == 42
+
+    def test_returns_none_on_error(self):
+        with patch(
+            "infra.pdf_inspector.pdfinfo_from_bytes",
+            side_effect=FileNotFoundError("poppler not found"),
+        ):
+            assert PdfiumInspector().count_pages_in_bytes(b"pdf") is None
+
+    def test_returns_none_on_an_unexpected_error(self):
+        with patch("infra.pdf_inspector.pdfinfo_from_bytes", side_effect=RuntimeError("boom")):
+            assert PdfiumInspector().count_pages_in_bytes(b"pdf") is None

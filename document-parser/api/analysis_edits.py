@@ -16,11 +16,7 @@ from api.schemas import (
     AnalysisEditSaveResponse,
     AnalysisResponse,
 )
-from domain.analysis_editing import (
-    AnalysisEditError,
-    EditCommand,
-    resolve_active_edit_commands,
-)
+from domain.analysis_editing import AnalysisEditError, EditCommand
 
 router = APIRouter(prefix="/api/documents", tags=["analysis-editor"])
 
@@ -68,7 +64,8 @@ def _to_editor_response(snapshot) -> AnalysisEditorResponse:
     )
 
 
-def _to_history_entry(record, active: bool | None) -> AnalysisEditHistoryEntryResponse:
+def _to_history_entry(entry) -> AnalysisEditHistoryEntryResponse:
+    record = entry.record
     return AnalysisEditHistoryEntryResponse(
         id=record.id,
         sequence=record.sequence,
@@ -77,7 +74,7 @@ def _to_history_entry(record, active: bool | None) -> AnalysisEditHistoryEntryRe
         payload=record.command.payload,
         command_hash=record.command_hash,
         created_at=str(record.created_at),
-        active=active,
+        active=entry.active,
     )
 
 
@@ -142,9 +139,8 @@ async def edit_history(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> list[AnalysisEditHistoryEntryResponse]:
     try:
-        records = await service.list_history(doc_id, analysis_id)
-        _, states = resolve_active_edit_commands(records)
-        return [_to_history_entry(record, states.get(record.sequence)) for record in records]
+        entries = await service.list_history_entries(doc_id, analysis_id)
+        return [_to_history_entry(entry) for entry in entries]
     except AnalysisEditError as exc:
         raise to_http_error(exc) from exc
 

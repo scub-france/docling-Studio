@@ -4,16 +4,21 @@ pdfium opens the file by path, so the PDF is never read whole into memory
 (#398). pdfium is not thread-safe and these reads run in worker threads, next
 to a Docling conversion that drives pdfium from its own threads: every call
 takes the process-wide lock the text-layer reader already shares with Docling.
+Counting an upload's pages from its bytes goes through poppler instead.
 """
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pypdfium2 as pdfium
+from pdf2image import pdfinfo_from_bytes
 
 from domain.value_objects import PageDetail
 from infra.pdfium_lock import pdfium_lock
+
+logger = logging.getLogger(__name__)
 
 
 class PdfiumInspector:
@@ -44,3 +49,16 @@ class PdfiumInspector:
                 return len(pdf)
             finally:
                 pdf.close()
+
+    def count_pages_in_bytes(self, content: bytes) -> int | None:
+        # The upload's page limit has always counted with poppler's pdfinfo:
+        # keep it, so what an upload accepts or rejects does not change.
+        try:
+            info = pdfinfo_from_bytes(content)
+            return info.get("Pages")
+        except (FileNotFoundError, OSError) as exc:
+            logger.warning("Could not count pages: %s", exc)
+            return None
+        except Exception:
+            logger.warning("Unexpected error counting pages", exc_info=True)
+            return None

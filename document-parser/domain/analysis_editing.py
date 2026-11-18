@@ -45,6 +45,15 @@ class StoredEditCommand:
 
 
 @dataclass(frozen=True)
+class EditHistoryEntry:
+    """A stored command with its state: True or False for an edit that is
+    applied or reverted, None for a `setCommandActive` event itself."""
+
+    record: StoredEditCommand
+    active: bool | None
+
+
+@dataclass(frozen=True)
 class EditStream:
     analysis_id: str
     base_document_hash: str

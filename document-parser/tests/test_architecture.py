@@ -191,13 +191,15 @@ _SERVICES_FORBIDDEN_EXTERNALS = {
     "httpx",
     "neo4j",
     "opensearchpy",
+    "pdf2image",
+    "pypdfium2",
     "starlette",
 }
 
 # Service imports that should move behind ports before joining the denylist.
 # Keep this list explicit: deleting a candidate means its migration must also
 # add the package to `_SERVICES_FORBIDDEN_EXTERNALS`.
-_SERVICES_EXTERNAL_MIGRATION_CANDIDATES = {"pdf2image", "pypdfium2"}
+_SERVICES_EXTERNAL_MIGRATION_CANDIDATES: set[str] = set()
 
 
 class TestDomainExternalDependencies:

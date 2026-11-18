@@ -1,5 +1,6 @@
 """Tests for FastAPI API endpoints using TestClient."""
 
+import shutil
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -164,14 +165,17 @@ class TestDocumentEndpoints:
         assert "createdAt" in data[0]
 
     def test_get_document(self, client, mock_document_service):
-        mock_document_service.find_by_id = AsyncMock(
-            return_value=Document(
-                id="d1",
-                filename="test.pdf",
-                content_type="application/pdf",
-                file_size=2048,
-                page_count=3,
-                storage_path="/tmp/test",
+        mock_document_service.find_with_store_links = AsyncMock(
+            return_value=(
+                Document(
+                    id="d1",
+                    filename="test.pdf",
+                    content_type="application/pdf",
+                    file_size=2048,
+                    page_count=3,
+                    storage_path="/tmp/test",
+                ),
+                [],
             )
         )
 
@@ -181,12 +185,38 @@ class TestDocumentEndpoints:
         assert data["id"] == "d1"
         assert data["fileSize"] == 2048
         assert data["pageCount"] == 3
+        assert data["storeLinks"] == []
+
+    def test_get_document_maps_its_store_links(self, client, mock_document_service):
+        from datetime import datetime
+
+        from domain.value_objects import DocumentStoreLinkState
+        from services.document_service import DocumentStoreLinkView
+
+        pushed = datetime(2026, 11, 1, 12, 0, 0)
+        mock_document_service.find_with_store_links = AsyncMock(
+            return_value=(
+                Document(id="d1", filename="test.pdf", storage_path="/tmp/test"),
+                [
+                    DocumentStoreLinkView("legal-v1", DocumentStoreLinkState.INGESTED, pushed),
+                    DocumentStoreLinkView("rh", DocumentStoreLinkState.STALE, None),
+                ],
+            )
+        )
+
+        resp = client.get("/api/documents/d1")
+
+        assert resp.json()["storeLinks"] == [
+            {"store": "legal-v1", "state": "Ingested", "pushedAt": str(pushed)},
+            {"store": "rh", "state": "Stale", "pushedAt": None},
+        ]
 
     def test_get_document_not_found(self, client, mock_document_service):
-        mock_document_service.find_by_id = AsyncMock(return_value=None)
+        mock_document_service.find_with_store_links = AsyncMock(return_value=None)
 
         resp = client.get("/api/documents/missing")
         assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found"}
 
     def test_upload_document(self, client, mock_document_service):
         mock_document_service.upload = AsyncMock(
@@ -218,6 +248,45 @@ class TestDocumentEndpoints:
             files={"file": ("big.pdf", b"x", "application/pdf")},
         )
         assert resp.status_code == 400
+
+    @pytest.mark.skipif(
+        shutil.which("pdfinfo") is None,
+        reason="poppler's pdfinfo is not installed",
+    )
+    def test_upload_counts_and_limits_pages_through_the_real_service(self, client, tmp_path):
+        """The upload route on a real `DocumentService` and the real inspector."""
+        from services.document_service import DocumentConfig, DocumentService
+        from tests.test_document_service import pdf_with_pages
+
+        service = DocumentService(
+            document_repo=AsyncMock(),
+            analysis_repo=AsyncMock(),
+            config=DocumentConfig(upload_dir=str(tmp_path), max_page_count=2),
+            link_repo=AsyncMock(),
+            store_repo=AsyncMock(),
+            pdf_inspector=PdfiumInspector(),
+        )
+        two = pdf_with_pages((612, 792), (612, 792))
+        three = pdf_with_pages((612, 792), (612, 792), (612, 792))
+
+        with state_override(app, document_service=service):
+            ok = client.post(
+                "/api/documents/upload", files={"file": ("two.pdf", two, "application/pdf")}
+            )
+            too_many = client.post(
+                "/api/documents/upload", files={"file": ("three.pdf", three, "application/pdf")}
+            )
+            not_pdf = client.post(
+                "/api/documents/upload", files={"file": ("x.pdf", b"hello", "application/pdf")}
+            )
+
+        assert ok.status_code == 200
+        assert ok.json()["pageCount"] == 2
+        assert too_many.status_code == 400
+        assert too_many.json() == {"detail": "Too many pages (3). Maximum allowed: 2"}
+        assert not_pdf.status_code == 400
+        assert not_pdf.json() == {"detail": "Invalid file: not a PDF document"}
+        assert len(list(tmp_path.iterdir())) == 1
 
     def test_upload_rejects_oversized_content_length(self, client, mock_document_service):
         """Endpoint returns 413 from the Content-Length pre-check, before the
@@ -480,6 +549,7 @@ class TestDocumentEndpoints:
             resp = client.get("/api/documents/d1/export?format=md&analysisId=a1&edited=true")
 
         assert resp.status_code == 404
+        assert resp.json() == {"detail": "Analysis editor is disabled"}
         mock_export_service.export.assert_not_awaited()
         mock_export_service.export_edited.assert_not_awaited()
 
@@ -707,13 +777,42 @@ class TestAnalysisEndpoints:
         assert resp.json() == {"detail": "documentId is required"}
 
     def test_import_analysis_rejects_missing_document(self, client, mock_analysis_service):
+        from services.analysis_service import ImportDocumentNotFoundError
+
         mock_analysis_service.import_docling_document = AsyncMock(
-            side_effect=ValueError("Document not found: missing")
+            side_effect=ImportDocumentNotFoundError("Document not found: missing")
         )
 
         resp = client.post("/api/analyses/import", json={"documentId": "missing", "document": {}})
 
         assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found: missing"}
+
+    def test_import_analysis_rejects_an_invalid_docling_document(
+        self, client, mock_analysis_service
+    ):
+        from services.analysis_service import InvalidDoclingDocumentError
+
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=InvalidDoclingDocumentError("Invalid Docling document: bad payload")
+        )
+
+        resp = client.post("/api/analyses/import", json={"documentId": "d1", "document": {}})
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Invalid Docling document: bad payload"}
+
+    def test_import_analysis_answers_400_for_any_other_rejection(
+        self, client, mock_analysis_service
+    ):
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=ValueError("Analysis not found: j1")
+        )
+
+        resp = client.post("/api/analyses/import", json={"documentId": "d1", "document": {}})
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Analysis not found: j1"}
 
     def test_delete_analysis(self, client, mock_analysis_service):
         mock_analysis_service.delete = AsyncMock(return_value=True)

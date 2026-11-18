@@ -173,6 +173,25 @@ def test_set_active_reverts_a_saved_command(client):
     assert "Saved" not in response.json()["result"]["contentMarkdown"]
 
 
+def test_history_marks_a_reverted_command_and_its_toggle(client):
+    element_id = _first_text_id(client)
+    client.post(
+        f"{BASE}/analysis-edits",
+        json={"commands": [_replace(element_id, "Saved")], "expectedAppliedThroughSequence": 0},
+    )
+    client.patch(
+        f"{BASE}/analysis-edits/history/1",
+        json={"active": False, "expectedAppliedThroughSequence": 1},
+    )
+
+    entries = client.get(f"{BASE}/analysis-edits/history").json()
+
+    assert [(e["sequence"], e["commandType"], e["active"]) for e in entries] == [
+        (1, "replaceText", False),
+        (2, "setCommandActive", None),
+    ]
+
+
 def test_rebuild_replays_the_saved_stream(client):
     element_id = _first_text_id(client)
     client.post(

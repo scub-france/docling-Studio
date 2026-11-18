@@ -12,7 +12,6 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 
 from api.state import AppState, get_app_state, require
-from domain.ports import DocumentStoreLinkRepository, StoreRepository
 from services.analysis_edit_service import AnalysisEditService
 from services.analysis_service import AnalysisService
 from services.app_config_service import AppConfigService
@@ -51,9 +50,14 @@ def get_analysis_service(state: AppStateDep) -> AnalysisService:
 AnalysisServiceDep = Annotated[AnalysisService, Depends(get_analysis_service)]
 
 
-def get_analysis_edit_service(state: AppStateDep) -> AnalysisEditService:
+def ensure_analysis_editor_enabled(state: AppState) -> None:
+    """Hide every editor surface while the analysis editor is switched off."""
     if not state.analysis_editor_enabled:
         raise HTTPException(status_code=404, detail="Analysis editor is disabled")
+
+
+def get_analysis_edit_service(state: AppStateDep) -> AnalysisEditService:
+    ensure_analysis_editor_enabled(state)
     return require(state.analysis_edit_service, detail="Analysis editor not available")
 
 
@@ -103,24 +107,6 @@ def get_export_service(state: AppStateDep) -> ExportService:
 
 
 ExportServiceDep = Annotated[ExportService, Depends(get_export_service)]
-
-
-def get_store_repo(state: AppStateDep) -> StoreRepository:
-    return require(state.store_repo, detail="Store repository not available")
-
-
-StoreRepoDep = Annotated[StoreRepository, Depends(get_store_repo)]
-
-
-def get_document_store_link_repo(state: AppStateDep) -> DocumentStoreLinkRepository:
-    return require(
-        state.document_store_link_repo, detail="Document/store link repository not available"
-    )
-
-
-DocumentStoreLinkRepoDep = Annotated[
-    DocumentStoreLinkRepository, Depends(get_document_store_link_repo)
-]
 
 
 def get_reasoning_service(state: AppStateDep) -> ReasoningService:

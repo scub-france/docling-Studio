@@ -16,6 +16,7 @@ from domain.analysis_editing import (
     AnalysisEditUnavailableError,
     EditCommand,
     EditedAnalysisCache,
+    EditHistoryEntry,
     EditorSnapshot,
     EditStream,
     ProjectedAnalysis,
@@ -109,6 +110,14 @@ class AnalysisEditService:
         base = await self._load_base_analysis(document, analysis_id)
         stream = await self._edits.find_stream(base.id)
         return await self._edits.list_commands(base.id) if stream else []
+
+    async def list_history_entries(
+        self, document_id: str, analysis_id: str | None = None
+    ) -> list[EditHistoryEntry]:
+        """The command stream with each entry's state, as the history shows it."""
+        records = await self.list_history(document_id, analysis_id)
+        _, states = resolve_active_edit_commands(records)
+        return [EditHistoryEntry(record, states.get(record.sequence)) for record in records]
 
     async def preview(
         self,

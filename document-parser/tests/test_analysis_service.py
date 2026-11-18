@@ -12,7 +12,13 @@ import pytest
 from domain.models import AnalysisJob, AnalysisStatus, Document
 from domain.services import extract_html_body, merge_results
 from domain.value_objects import ConversionResult, PageDetail
-from services.analysis_service import AnalysisConfig, AnalysisService, _count_pdf_pages
+from infra.pdf_inspector import PdfiumInspector
+from services.analysis_service import (
+    AnalysisConfig,
+    AnalysisService,
+    ImportDocumentNotFoundError,
+    InvalidDoclingDocumentError,
+)
 
 
 def _make_service(**kwargs) -> AnalysisService:
@@ -217,9 +223,25 @@ class TestDoclingDocumentImport:
             docling_importer=importer,
         )
 
-        with pytest.raises(ValueError, match="Invalid Docling document"):
+        with pytest.raises(InvalidDoclingDocumentError, match="Invalid Docling document"):
             await service.import_docling_document("d1", {})
 
+        analysis_repo.insert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_import_rejects_a_missing_document(self):
+        analysis_repo = MagicMock()
+        analysis_repo.insert = AsyncMock()
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=None)
+        service = _make_service(
+            analysis_repo=analysis_repo, document_repo=document_repo, docling_importer=MagicMock()
+        )
+
+        with pytest.raises(ImportDocumentNotFoundError, match=r"^Document not found: d1$") as exc:
+            await service.import_docling_document("d1", {})
+
+        assert exc.value.http_status == 404
         analysis_repo.insert.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -241,7 +263,7 @@ class TestDoclingDocumentImport:
         importer.deserialize.side_effect = deserialize
         service = _make_service(document_repo=document_repo, docling_importer=importer)
 
-        with pytest.raises(ValueError, match="stop here"):
+        with pytest.raises(InvalidDoclingDocumentError, match="stop here"):
             await service.import_docling_document("d1", {})
 
         assert loop_seen_by_importer == [False]
@@ -293,7 +315,13 @@ class TestAnalysisServiceConcurrency:
 
 
 class TestCountPdfPages:
-    def test_valid_pdf(self, tmp_path):
+    """Page count for batching, through the real `PdfInspector` adapter."""
+
+    @staticmethod
+    async def _count(path: str) -> int:
+        return await _make_service(pdf_inspector=PdfiumInspector())._count_pages(path)
+
+    async def test_valid_pdf(self, tmp_path):
         """A real (minimal) PDF should return its page count."""
         import pypdfium2 as pdfium
 
@@ -303,23 +331,23 @@ class TestCountPdfPages:
         pdf.save(str(path))
         pdf.close()
 
-        assert _count_pdf_pages(str(path)) == 1
+        assert await self._count(str(path)) == 1
 
-    def test_non_pdf_file(self, tmp_path):
+    async def test_non_pdf_file(self, tmp_path):
         """A non-PDF file should return 0."""
         path = tmp_path / "test.docx"
         path.write_bytes(b"PK\x03\x04 not a pdf")
-        assert _count_pdf_pages(str(path)) == 0
+        assert await self._count(str(path)) == 0
 
-    def test_nonexistent_file(self):
+    async def test_nonexistent_file(self):
         """A nonexistent file should return 0."""
-        assert _count_pdf_pages("/no/such/file.pdf") == 0
+        assert await self._count("/no/such/file.pdf") == 0
 
-    def test_empty_file(self, tmp_path):
+    async def test_empty_file(self, tmp_path):
         """An empty file should return 0."""
         path = tmp_path / "empty.pdf"
         path.write_bytes(b"")
-        assert _count_pdf_pages(str(path)) == 0
+        assert await self._count(str(path)) == 0
 
 
 class TestExtractHtmlBody:
@@ -567,10 +595,10 @@ class TestBatchedConversion:
             document_repo=mock_document_repo,
             conversion_timeout=60,
             config=config,
+            pdf_inspector=MagicMock(page_count=MagicMock(return_value=8)),
         )
 
-        with patch("services.analysis_service._count_pdf_pages", return_value=8):
-            await service._run_analysis_inner("job-progress", "/fake.pdf", "fake.pdf")
+        await service._run_analysis_inner("job-progress", "/fake.pdf", "fake.pdf")
 
         # The last write is the COMPLETED one, which also selects the analysis
         completed_job = saved_jobs[-1]

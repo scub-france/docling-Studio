@@ -14,8 +14,6 @@ import math
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
-import pypdfium2 as pdfium
-
 from domain.exceptions import InvalidLifecycleTransitionError
 from domain.models import AnalysisJob, AnalysisStatus
 from domain.services import classify_error
@@ -26,6 +24,7 @@ from domain.value_objects import (
     ConversionResult,
     DocumentLifecycleState,
 )
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -57,16 +56,16 @@ def _chunk_to_dict(c: ChunkResult) -> dict:
 _DEFAULT_MAX_CONCURRENT = 3
 
 
-def _count_pdf_pages(file_path: str) -> int:
-    """Count pages in a PDF. Returns 0 if the file is not a valid PDF."""
-    try:
-        pdf = pdfium.PdfDocument(file_path)
-        count = len(pdf)
-        pdf.close()
-        return count
-    except Exception:
-        logger.debug("Cannot open %s as PDF, batching disabled", file_path)
-        return 0
+class ImportDocumentNotFoundError(ServiceError):
+    """The document an analysis is imported into does not exist."""
+
+    http_status = 404
+
+
+class InvalidDoclingDocumentError(ServiceError):
+    """The imported payload is not a valid Docling document."""
+
+    http_status = 400
 
 
 @dataclass
@@ -173,14 +172,17 @@ class AnalysisService:
         """
         doc = await self._document_repo.find_by_id(document_id)
         if not doc:
-            raise ValueError(f"Document not found: {document_id}")
+            raise ImportDocumentNotFoundError(f"Document not found: {document_id}")
 
         if not self._docling_importer:
             raise RuntimeError("Docling document importer is not configured")
         # Validation and the three exports are CPU-bound and grow with the
         # document: run them in a worker thread so one import does not stall
         # every other request on the event loop.
-        result = await asyncio.to_thread(self._docling_importer.deserialize, document)
+        try:
+            result = await asyncio.to_thread(self._docling_importer.deserialize, document)
+        except ValueError as exc:
+            raise InvalidDoclingDocumentError(str(exc)) from exc
 
         job = AnalysisJob(document_id=document_id)
         job.document_filename = doc.filename
@@ -439,11 +441,12 @@ class AnalysisService:
     async def _count_pages(self, file_path: str) -> int:
         """Page count for batching, 0 when the file is not a readable PDF.
 
-        Through the inspector when wired: it holds the pdfium lock shared with
-        Docling's own threads, and runs off the event loop.
+        Through the inspector: it holds the pdfium lock shared with Docling's
+        own threads, and runs off the event loop. Without one (some tests),
+        batching is disabled.
         """
         if self._pdf_inspector is None:
-            return _count_pdf_pages(file_path)
+            return 0
         try:
             return await asyncio.to_thread(self._pdf_inspector.page_count, file_path)
         except Exception:

@@ -10,12 +10,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pdf2image import pdfinfo_from_bytes
-
 from domain.models import Document
 
 if TYPE_CHECKING:
-    from domain.ports import AnalysisRepository, DocumentRepository
+    from collections.abc import Callable
+    from datetime import datetime
+
+    from domain.ports import (
+        AnalysisRepository,
+        DocumentRepository,
+        DocumentStoreLinkRepository,
+        PdfInspector,
+        StoreRepository,
+    )
+    from domain.value_objects import DocumentStoreLinkState
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +43,15 @@ class DocumentConfig:
     max_page_count: int = 0
 
 
+@dataclass(frozen=True)
+class DocumentStoreLinkView:
+    """A document's link to one store, named by the store's slug (#283)."""
+
+    store: str
+    state: DocumentStoreLinkState
+    last_push_at: datetime | None
+
+
 class DocumentService:
     """Orchestrates document upload, storage, and lookup."""
 
@@ -43,9 +60,16 @@ class DocumentService:
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
         config: DocumentConfig,
+        *,
+        link_repo: DocumentStoreLinkRepository,
+        store_repo: StoreRepository,
+        pdf_inspector: PdfInspector,
     ):
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
+        self._link_repo = link_repo
+        self._store_repo = store_repo
+        self._pdf_inspector = pdf_inspector
         self._config = config
         self._upload_dir = config.upload_dir
         self._max_file_size = (
@@ -65,9 +89,9 @@ class DocumentService:
         """Save uploaded file to disk and persist metadata.
 
         Writes the file in fixed-size chunks to keep peak memory usage low.
-        The blocking disk write and the poppler subprocess (`pdfinfo`) are
-        offloaded to a worker thread so the FastAPI event loop stays free
-        for other requests during large uploads.
+        The blocking disk write and the page count (a poppler subprocess
+        behind the inspector) are offloaded to a worker thread so the FastAPI
+        event loop stays free for other requests during large uploads.
         """
         if self._max_file_size > 0 and len(file_content) > self._max_file_size:
             raise ValueError(f"File too large (max {self._config.max_file_size_mb} MB)")
@@ -79,10 +103,14 @@ class DocumentService:
         safe_name = f"{uuid.uuid4()}{ext}"
         file_path = os.path.join(self._upload_dir, safe_name)
 
-        # Disk write + poppler subprocess — both blocking. Offload together
+        # Disk write + page count — both blocking. Offload together
         # so we cross the thread boundary once instead of twice.
         page_count = await asyncio.to_thread(
-            _persist_and_count, self._upload_dir, file_path, file_content
+            _persist_and_count,
+            self._upload_dir,
+            file_path,
+            file_content,
+            self._pdf_inspector.count_pages_in_bytes,
         )
 
         if (
@@ -112,6 +140,32 @@ class DocumentService:
     async def find_by_id(self, doc_id: str) -> Document | None:
         """Find a document by its ID, or return None."""
         return await self._document_repo.find_by_id(doc_id)
+
+    async def find_with_store_links(
+        self, doc_id: str
+    ) -> tuple[Document, list[DocumentStoreLinkView]] | None:
+        """A document with its per-store links, or None when it does not exist.
+
+        Each link carries the store slug, the frontend's stable identity for a
+        store, rather than the opaque store_id. No links gives an empty list.
+        """
+        doc = await self._document_repo.find_by_id(doc_id)
+        if not doc:
+            return None
+        links = await self._link_repo.find_for_document(doc_id)
+        if not links:
+            return doc, []
+        # Store rows are O(1-10) in practice: one `find_all` resolves every slug.
+        stores = await self._store_repo.find_all()
+        slug_by_id = {s.id: s.slug for s in stores}
+        return doc, [
+            DocumentStoreLinkView(
+                store=slug_by_id.get(link.store_id, link.store_id),
+                state=link.state,
+                last_push_at=link.last_push_at,
+            )
+            for link in links
+        ]
 
     def resolve_storage_path(self, storage_path: str) -> Path:
         """Resolve a persisted upload path in either Docker or host development.
@@ -154,28 +208,20 @@ class DocumentService:
         return await self._document_repo.delete(doc_id)
 
 
-def _persist_and_count(upload_dir: str, file_path: str, file_content: bytes) -> int | None:
+def _persist_and_count(
+    upload_dir: str,
+    file_path: str,
+    file_content: bytes,
+    count_pages: Callable[[bytes], int | None],
+) -> int | None:
     """Write the uploaded bytes to disk and return the page count.
 
     Synchronous helper meant to be invoked through `asyncio.to_thread` so
-    the chunked write loop and the poppler subprocess never block the
-    FastAPI event loop.
+    the chunked write loop and the page count never block the FastAPI
+    event loop.
     """
     os.makedirs(upload_dir, exist_ok=True)
     with open(file_path, "wb") as f:
         for offset in range(0, len(file_content), _UPLOAD_CHUNK_SIZE):
             f.write(file_content[offset : offset + _UPLOAD_CHUNK_SIZE])
-    return _count_pages(file_content)
-
-
-def _count_pages(file_content: bytes) -> int | None:
-    """Count PDF pages using poppler via pdf2image."""
-    try:
-        info = pdfinfo_from_bytes(file_content)
-        return info.get("Pages")
-    except (FileNotFoundError, OSError) as exc:
-        logger.warning("Could not count pages: %s", exc)
-        return None
-    except Exception:
-        logger.warning("Unexpected error counting pages", exc_info=True)
-        return None
+    return count_pages(file_content)

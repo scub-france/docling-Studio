@@ -663,6 +663,11 @@ class PdfInspector(Protocol):
         """Number of pages. Raises when the file is not a readable PDF."""
         ...
 
+    def count_pages_in_bytes(self, content: bytes) -> int | None:
+        """Number of pages of an uploaded PDF still in memory, or None when
+        it cannot be read (damaged, locked, no PDF tool). Never raises."""
+        ...
+
 
 @runtime_checkable
 class PageTextReader(Protocol):

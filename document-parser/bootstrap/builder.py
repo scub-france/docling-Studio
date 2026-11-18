@@ -165,7 +165,9 @@ class AppStateBuilder:
         analysis_service.set_version_recorder(version_service)
         chunk_service.set_version_recorder(version_service)
 
-        document_service = build_document_service(document_repo, analysis_repo)
+        document_service = build_document_service(
+            document_repo, analysis_repo, link_repo, store_repo
+        )
         self._update(
             analysis_repo=analysis_repo,
             store_repo=store_repo,

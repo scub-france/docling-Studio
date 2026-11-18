@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 
 from api import deps  # noqa: TC001
+from api.errors import to_http_error
 from api.schemas import (
     AnalysisResponse,
     AnalysisSummaryResponse,
@@ -17,6 +18,7 @@ from api.schemas import (
     RechunkRequest,
     UpdateChunkTextRequest,
 )
+from services.errors import ServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
@@ -80,9 +82,10 @@ async def import_analysis(
 
     try:
         job = await service.import_docling_document(body.documentId, body.document)
+    except ServiceError as exc:
+        raise to_http_error(exc) from exc
     except ValueError as e:
-        status_code = 404 if str(e).startswith("Document not found:") else 400
-        raise HTTPException(status_code=status_code, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     return _to_response(job)
 
