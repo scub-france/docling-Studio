@@ -35,8 +35,8 @@ from mcp.types import CallToolResult, ToolAnnotations
 
 from domain.anchors import AnchorParseError
 from domain.navigation import estimate_tokens
-from mcp_adapter.page_image import CitationImageOut, image_out
-from mcp_adapter.results import compact
+from mcp_adapter.page_image import CitationImageOut, to_image_out
+from mcp_adapter.results import to_compact_result
 from mcp_adapter.sources_view import SOURCES_APP_HTML, register_sources_view
 from mcp_adapter.wire import neutralise
 from services.navigation_errors import NavigationServiceError
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from services.document_tools import DocumentTools
 
 
-def _versioned_uri(name: str, html: str) -> str:
+def _build_versioned_uri(name: str, html: str) -> str:
     """The template's uri carries a hash of its content.
 
     SEP-1865 says a host fetches a `ui://` resource once and caches it, and a
@@ -65,9 +65,9 @@ def _versioned_uri(name: str, html: str) -> str:
 
 
 CITATION_APP_HTML = (Path(__file__).parent / "citation_app.html").read_text(encoding="utf-8")
-CITATION_APP_URI = _versioned_uri("citation", CITATION_APP_HTML)
+CITATION_APP_URI = _build_versioned_uri("citation", CITATION_APP_HTML)
 
-SOURCES_APP_URI = _versioned_uri("sources", SOURCES_APP_HTML)
+SOURCES_APP_URI = _build_versioned_uri("sources", SOURCES_APP_HTML)
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ class CitationView:
 
 # What to do when the card does not appear. Phrased to hold whether or not a
 # viewer mounted: the server has no way to know.
-def _no_card(deep_link: str | None) -> str:
+def _build_no_card_hint(deep_link: str | None) -> str:
     fallback = (
         "give the reader `deep_link`, which opens it in Docling Studio"
         if deep_link
@@ -182,9 +182,9 @@ def _register_citation_card(apps: Apps, tools: Callable[[], DocumentTools]) -> N
             page=citation.page,
             headings=[neutralise(h) for h in citation.headings],
             deep_link=citation.deep_link,
-            next_step=_no_card(citation.deep_link),
+            next_step=_build_no_card_hint(citation.deep_link),
         )
-        return compact(view)
+        return to_compact_result(view)
 
     @apps.tool(
         resource_uri=CITATION_APP_URI,
@@ -208,7 +208,7 @@ def _register_citation_card(apps: Apps, tools: Callable[[], DocumentTools]) -> N
             raise ToolError(str(exc)) from exc
         except NavigationServiceError as exc:
             raise ToolError(str(exc)) from exc
-        return image_out(image)
+        return to_image_out(image)
 
     apps.add_html_resource(
         CITATION_APP_URI,

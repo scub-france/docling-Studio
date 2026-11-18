@@ -120,7 +120,7 @@ class OpenSearchClientPool:
         if clients:
             logger.info("OpenSearch pool: closed %d client(s) at shutdown", len(clients))
 
-    def keys(self) -> list[tuple[str, str | None]]:
+    def list_keys(self) -> list[tuple[str, str | None]]:
         """Snapshot of currently-open `(url, user)` keys."""
         return list(self._clients.keys())
 

@@ -85,7 +85,7 @@ RETURN d AS document, elements, pages, chunks,
 """
 
 
-def _element_node(
+def _build_element_node(
     doc_id: str, e: dict[str, Any], provs: list[dict[str, Any]] | None = None
 ) -> dict[str, Any]:
     # Determine the specific element label: Neo4j returns it via labels(e) on the
@@ -130,7 +130,7 @@ def _chunk_node(p: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _edge_id(from_id: str, to_id: str, edge_type: str) -> str:
+def _build_edge_id(from_id: str, to_id: str, edge_type: str) -> str:
     return f"{edge_type}::{from_id}::{to_id}"
 
 
@@ -208,7 +208,7 @@ async def fetch_graph(
             continue
         provs = [p for p in (row.get("provs") or []) if p is not None]
         labels = [label for label in e.labels if label != "Element"]
-        node = _element_node(doc_id, dict(e), provs=provs)
+        node = _build_element_node(doc_id, dict(e), provs=provs)
         node["label"] = labels[0] if labels else "TextElement"
         nodes.append(node)
 
@@ -231,7 +231,7 @@ async def fetch_graph(
             return
         edges.append(
             {
-                "id": _edge_id(f"{from_prefix}{frm}", f"{to_prefix}{to}", e["type"]),
+                "id": _build_edge_id(f"{from_prefix}{frm}", f"{to_prefix}{to}", e["type"]),
                 "source": f"{from_prefix}{frm}",
                 "target": f"{to_prefix}{to}",
                 "type": e["type"],

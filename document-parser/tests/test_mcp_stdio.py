@@ -12,7 +12,7 @@ import mcp_stdio
 def test_a_relative_db_path_is_the_backend_s_not_the_caller_s(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DB_PATH", raising=False)
-    assert mcp_stdio.db_path() == mcp_stdio.BACKEND_DIR / "data" / "docling_studio.db"
+    assert mcp_stdio.resolve_db_path() == mcp_stdio.BACKEND_DIR / "data" / "docling_studio.db"
 
 
 def test_a_missing_database_stops_the_server_with_a_message(tmp_path):

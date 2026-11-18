@@ -28,7 +28,7 @@ _PROBE_TIMEOUT_SECONDS = 3.0
 _BLOCKED_TARGET_ERROR = "blocked target address (link-local/metadata/reserved)"
 
 
-def _resolved_target_is_blocked(host: str) -> bool:
+def _is_resolved_target_blocked(host: str) -> bool:
     """SSRF guard for the user-supplied probe target (MAJ-08a).
 
     The legitimate target — an Ollama daemon — lives on loopback or the LAN by
@@ -79,7 +79,7 @@ class OllamaProbe:
     async def probe(self, host: str) -> LLMHostProbeResult:
         # Resolve and screen the target BEFORE any outbound request so a
         # blocked host never produces network traffic (SSRF, MAJ-08a).
-        if _resolved_target_is_blocked(host):
+        if _is_resolved_target_blocked(host):
             logger.debug("Ollama probe blocked for %s: link-local/metadata/reserved", host)
             return LLMHostProbeResult(reachable=False, error=_BLOCKED_TARGET_ERROR)
         url = f"{host.rstrip('/')}{_TAGS_PATH}"

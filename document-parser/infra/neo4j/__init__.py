@@ -37,7 +37,7 @@ from infra.neo4j.queries import fetch_graph
 from infra.neo4j.schema import bootstrap_schema
 from infra.neo4j.tree_reader import (
     delete_document,
-    document_exists,
+    has_document,
     read_document_json,
 )
 from infra.neo4j.tree_writer import TreeWriteResult, write_document
@@ -52,10 +52,10 @@ __all__ = [
     "bootstrap_schema",
     "close_driver",
     "delete_document",
-    "document_exists",
     "fetch_graph",
     "get_driver",
     "get_pool",
+    "has_document",
     "read_document_json",
     "reset_pool",
     "write_chunks",

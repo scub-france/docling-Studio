@@ -147,7 +147,7 @@ class Neo4jDriverPool:
         if drivers:
             logger.info("Neo4j pool: closed %d driver(s) at shutdown", len(drivers))
 
-    def keys(self) -> list[tuple[str, str]]:
+    def list_keys(self) -> list[tuple[str, str]]:
         """Snapshot of currently-open `(uri, user)` keys. Used by tests
         and observability — not for control flow."""
         return list(self._drivers.keys())

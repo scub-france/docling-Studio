@@ -22,12 +22,12 @@ from pydantic import TypeAdapter
 
 
 @cache
-def _adapter(kind: type) -> TypeAdapter[Any]:
+def _get_type_adapter(kind: type) -> TypeAdapter[Any]:
     return TypeAdapter(kind)
 
 
-def compact(value: Any) -> CallToolResult:
+def to_compact_result(value: Any) -> CallToolResult:
     """`value` as structured content, and once more as compact JSON text."""
-    data = _adapter(type(value)).dump_python(value, mode="json")
+    data = _get_type_adapter(type(value)).dump_python(value, mode="json")
     text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     return CallToolResult(content=[TextContent(type="text", text=text)], structured_content=data)

@@ -45,7 +45,7 @@ class DoclingDocumentEditor:
         except Exception as exc:  # pydantic errors are implementation detail
             raise AnalysisEditError(f"Invalid canonical Docling document: {exc}") from exc
 
-        logical_objects = self._logical_refs(document, base_analysis_id)
+        logical_objects = self._map_logical_refs(document, base_analysis_id)
         before_refs = {logical: obj.self_ref for logical, obj in logical_objects.items()}
         for command in commands:
             self._apply_one(document, logical_objects, command)
@@ -60,7 +60,7 @@ class DoclingDocumentEditor:
         except Exception as exc:
             raise AnalysisEditError(f"Edited Docling document failed validation: {exc}") from exc
 
-        live_object_ids = {id(item) for item in self._all_items(document)}
+        live_object_ids = {id(item) for item in self._list_all_items(document)}
         current_refs = {
             logical: obj.self_ref
             for logical, obj in logical_objects.items()
@@ -74,27 +74,27 @@ class DoclingDocumentEditor:
         return MutationResult(document, current_refs, changes)
 
     @staticmethod
-    def _all_items(document: DoclingDocument) -> list[Any]:
+    def _list_all_items(document: DoclingDocument) -> list[Any]:
         return [
             item for item, _ in document.iterate_items(with_groups=True, traverse_pictures=True)
         ]
 
-    def _logical_refs(self, document: DoclingDocument, base_id: str) -> dict[str, Any]:
+    def _map_logical_refs(self, document: DoclingDocument, base_id: str) -> dict[str, Any]:
         return {
             f"{base_id}:{item.self_ref}": item
-            for item in self._all_items(document)
+            for item in self._list_all_items(document)
             if getattr(item, "self_ref", None)
         }
 
     @classmethod
-    def _in_document_order(cls, document: DoclingDocument, items: list[Any]) -> list[Any]:
+    def _sort_in_document_order(cls, document: DoclingDocument, items: list[Any]) -> list[Any]:
         """Sort `items` by their current reading order in `document` (#392).
 
         A merge keeps the text in reading order, whatever order the client
         sent the ids in: the first item in the document is the target and the
         others follow it. Duplicate ids are kept, so validation still sees them.
         """
-        position = {id(item): index for index, item in enumerate(cls._all_items(document))}
+        position = {id(item): index for index, item in enumerate(cls._list_all_items(document))}
         return sorted(items, key=lambda item: position.get(id(item), len(position)))
 
     @staticmethod
@@ -211,7 +211,7 @@ class DoclingDocumentEditor:
         separator = payload.get("separator", " ")
         if not isinstance(raw_ids, list) or len(raw_ids) < 2 or not isinstance(separator, str):
             raise AnalysisEditError("mergeText requires at least two element IDs and a separator")
-        items = self._in_document_order(
+        items = self._sort_in_document_order(
             document, [self._get(logical_objects, str(item_id)) for item_id in raw_ids]
         )
         if any(not isinstance(item, TextItem) for item in items):

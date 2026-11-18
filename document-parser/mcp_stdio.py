@@ -39,7 +39,7 @@ logger = logging.getLogger("mcp_stdio")
 BACKEND_DIR = Path(__file__).resolve().parent
 
 
-def db_path() -> Path:
+def resolve_db_path() -> Path:
     """`DB_PATH`, resolved against the backend directory when relative."""
     raw = Path(os.environ.get("DB_PATH") or "./data/docling_studio.db")
     return raw if raw.is_absolute() else BACKEND_DIR / raw
@@ -84,7 +84,7 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
         stream=sys.stderr,
     )
-    db = db_path()
+    db = resolve_db_path()
     if not db.is_file():
         logger.error(
             "No Docling Studio database at %s. Start Docling Studio once to create it, "

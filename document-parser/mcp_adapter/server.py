@@ -26,7 +26,7 @@ from mcp.types import CallToolResult, ToolAnnotations
 
 from mcp_adapter.apps import build_apps_extension
 from mcp_adapter.prompts import register_prompts
-from mcp_adapter.results import compact
+from mcp_adapter.results import to_compact_result
 from mcp_adapter.tool_errors import ToolErrors, parse_anchor
 from mcp_adapter.wire import (
     UNTRUSTED_NOTE,
@@ -36,10 +36,10 @@ from mcp_adapter.wire import (
     VerificationResult,
 )
 from mcp_adapter.wire_mapping import (
-    excerpt_result,
-    outline_result,
-    search_result,
-    verification_result,
+    to_excerpt_result,
+    to_outline_result,
+    to_search_result,
+    to_verification_result,
 )
 from services.navigation_config import MAX_ROUNDS
 from services.navigation_errors import NavigationUnavailableError
@@ -78,7 +78,7 @@ or edit one.
 """
 
 
-def instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
+def build_instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
     """The server instructions, read by the client on every connection.
 
     Fixed when the server is built: a client reads them once, at `initialize`,
@@ -87,7 +87,7 @@ def instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
     return _LOOP.format(max_rounds=max_rounds) + (_CARDS if apps else "") + _RULES
 
 
-INSTRUCTIONS = instructions(apps=False)
+INSTRUCTIONS = build_instructions(apps=False)
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
@@ -116,12 +116,12 @@ def build_mcp_server(
     server = MCPServer(
         name=name,
         version=version,
-        instructions=instructions(apps=apps, max_rounds=max_rounds),
+        instructions=build_instructions(apps=apps, max_rounds=max_rounds),
         extensions=[build_apps_extension(tools, citation_card=citation_card)] if apps else None,
     )
     # The slash command: the whole loop, invoked by the user rather than
     # inflicted on every call (see mcp_adapter/prompts.py).
-    register_prompts(server, apps=apps, rounds=_effective_rounds(tools, max_rounds))
+    register_prompts(server, apps=apps, rounds=_bind_effective_rounds(tools, max_rounds))
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -136,7 +136,7 @@ def build_mcp_server(
     ) -> Annotated[CallToolResult, DocumentSearchResult]:
         async with ToolErrors():
             search = await tools().navigation.find_documents(query=query, limit=limit)
-        return compact(search_result(search))
+        return to_compact_result(to_search_result(search))
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -155,7 +155,7 @@ def build_mcp_server(
             outline = await tools().navigation.get_outline(
                 document_id, version_id=version_id, depth=depth
             )
-        return compact(outline_result(outline))
+        return to_compact_result(to_outline_result(outline))
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -182,7 +182,7 @@ def build_mcp_server(
                 max_tokens=max_tokens,
                 cursor=cursor,
             )
-        return compact(excerpt_result(excerpt))
+        return to_compact_result(to_excerpt_result(excerpt))
 
     @server.tool(
         annotations=_READ_ONLY,
@@ -197,18 +197,18 @@ def build_mcp_server(
         parse_anchor(uri)
         async with ToolErrors():
             check = await tools().citations.verify_citation(uri, quote)
-        return compact(verification_result(check))
+        return to_compact_result(to_verification_result(check))
 
     return server
 
 
-def _effective_rounds(tools: Callable[[], DocumentTools], fallback: int) -> Callable[[], int]:
+def _bind_effective_rounds(tools: Callable[[], DocumentTools], fallback: int) -> Callable[[], int]:
     """The round cap of the services a call would use now (#364)."""
 
-    def rounds() -> int:
+    def read_rounds() -> int:
         try:
             return tools().config.max_rounds
         except NavigationUnavailableError:
             return fallback
 
-    return rounds
+    return read_rounds

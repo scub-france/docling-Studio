@@ -507,11 +507,11 @@ class TestLabelMapping:
 class TestServeConverter:
     def test_headers_with_api_key(self):
         conv = ServeConverter(base_url="http://localhost:5001", api_key="secret")
-        assert conv._headers() == {"X-Api-Key": "secret"}
+        assert conv._build_headers() == {"X-Api-Key": "secret"}
 
     def test_headers_without_api_key(self):
         conv = ServeConverter(base_url="http://localhost:5001")
-        assert conv._headers() == {}
+        assert conv._build_headers() == {}
 
     def test_base_url_trailing_slash_stripped(self):
         conv = ServeConverter(base_url="http://localhost:5001/")

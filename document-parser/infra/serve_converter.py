@@ -86,7 +86,7 @@ class ServeConverter:
         self._api_key = api_key
         self._timeout = timeout
 
-    def _headers(self) -> dict[str, str]:
+    def _build_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
         if self._api_key:
             headers["X-Api-Key"] = self._api_key
@@ -158,7 +158,7 @@ class ServeConverter:
                     url,
                     files={"files": (filename, file_bytes, content_type)},
                     data=form_data,
-                    headers=self._headers(),
+                    headers=self._build_headers(),
                 )
             last_response = response
             if response.status_code != 404:
@@ -192,7 +192,7 @@ class ServeConverter:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     f"{self._base_url}/version",
-                    headers=self._headers(),
+                    headers=self._build_headers(),
                 )
                 return resp.status_code == 200
         except httpx.HTTPError:
@@ -317,19 +317,19 @@ def _table_to_markdown(data: dict | None) -> str:
     if not grid or not grid[0]:
         return ""
 
-    def cell_text(cell: object) -> str:
+    def read_cell_text(cell: object) -> str:
         text = (cell.get("text", "") if isinstance(cell, dict) else "") or ""
         # Escape pipes (column delimiter) and flatten newlines (row delimiter).
         return text.replace("|", "\\|").replace("\n", " ").strip()
 
-    header = [cell_text(c) for c in grid[0]]
+    header = [read_cell_text(c) for c in grid[0]]
     cols = len(header)
     lines = [
         "| " + " | ".join(header) + " |",
         "| " + " | ".join(["---"] * cols) + " |",
     ]
     for row in grid[1:]:
-        cells = [cell_text(c) for c in row]
+        cells = [read_cell_text(c) for c in row]
         # Keep every row rectangular against the header width.
         cells = (cells + [""] * cols)[:cols]
         lines.append("| " + " | ".join(cells) + " |")

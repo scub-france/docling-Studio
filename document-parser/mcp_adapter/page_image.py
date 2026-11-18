@@ -34,7 +34,7 @@ class CitationImageOut:
     page_count: int | None = None
 
 
-def image_out(image: CitationImage) -> CitationImageOut:
+def to_image_out(image: CitationImage) -> CitationImageOut:
     return CitationImageOut(
         data_uri=image.data_uri,
         media_type=image.media_type,

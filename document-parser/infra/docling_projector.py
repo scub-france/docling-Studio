@@ -42,7 +42,7 @@ class DoclingAnalysisProjector:
             if getattr(item, "self_ref", None) in ref_to_id
         }
         editor_elements = tuple(
-            self._editor_element(item, level, object_to_id, document)
+            self._build_editor_element(item, level, object_to_id, document)
             for item, level in items_with_levels
             if getattr(item, "self_ref", None)
         )
@@ -52,7 +52,7 @@ class DoclingAnalysisProjector:
         tree = self._build_tree(document, by_ref, object_to_id)
         model = {
             "baseAnalysisId": base_analysis_id,
-            "elements": [self._element_dict(element) for element in editor_elements],
+            "elements": [self._to_element_dict(element) for element in editor_elements],
         }
         export_document = document.model_copy(deep=True)
         for item in export_document.texts:
@@ -91,18 +91,18 @@ class DoclingAnalysisProjector:
         )
 
     @staticmethod
-    def _label_of(item: Any) -> str:
+    def _get_label(item: Any) -> str:
         value = getattr(item, "label", "text")
         return str(getattr(value, "value", value)).lower()
 
-    def _editor_element(
+    def _build_editor_element(
         self,
         item: Any,
         level: int,
         object_to_id: dict[int, str],
         document: Any,
     ) -> EditorElement:
-        label = self._label_of(item)
+        label = self._get_label(item)
         parent = item.parent.resolve(doc=document) if getattr(item, "parent", None) else None
         parent_id = object_to_id.get(id(parent)) if parent is not None else None
         children = tuple(
@@ -166,11 +166,11 @@ class DoclingAnalysisProjector:
         by_ref: dict[str, Any],
         object_to_id: dict[int, str],
     ) -> tuple[EditorTreeNode, ...]:
-        def node(item: Any) -> EditorTreeNode:
-            label = self._label_of(item)
+        def build_node(item: Any) -> EditorTreeNode:
+            label = self._get_label(item)
             text = getattr(item, "text", None) or getattr(item, "name", None) or label
             children = tuple(
-                node(child)
+                build_node(child)
                 for child_ref in getattr(item, "children", [])
                 if (child := child_ref.resolve(doc=document)) is not None
             )
@@ -185,8 +185,8 @@ class DoclingAnalysisProjector:
             child = by_ref.get(child_ref.cref)
             if child is None or id(child) not in object_to_id:
                 continue
-            built = node(child)
-            is_heading = isinstance(child, SectionHeaderItem) or self._label_of(child) == "title"
+            built = build_node(child)
+            is_heading = isinstance(child, SectionHeaderItem) or self._get_label(child) == "title"
             if is_heading:
                 level = int(getattr(child, "level", 0) or 0)
                 while heading_stack and heading_stack[-1][0] >= level:
@@ -213,7 +213,7 @@ class DoclingAnalysisProjector:
         return freeze(roots)
 
     @staticmethod
-    def _element_dict(element: EditorElement) -> dict[str, Any]:
+    def _to_element_dict(element: EditorElement) -> dict[str, Any]:
         return {
             "id": element.id,
             "selfRef": element.self_ref,

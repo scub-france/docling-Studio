@@ -39,7 +39,7 @@ LABEL_MAP: dict[str, str] = {
 DEFAULT_LABEL = "TextElement"
 
 
-def element_label(docling_label: str) -> str:
+def map_element_label(docling_label: str) -> str:
     return LABEL_MAP.get(docling_label.lower(), DEFAULT_LABEL)
 
 
@@ -72,7 +72,7 @@ def iter_items(doc_data: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]
             yield key, item
 
 
-def parent_ref(item: dict[str, Any]) -> str | None:
+def get_parent_ref(item: dict[str, Any]) -> str | None:
     parent = item.get("parent")
     if isinstance(parent, dict):
         return parent.get("$ref") or parent.get("cref")

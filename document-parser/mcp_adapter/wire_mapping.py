@@ -43,7 +43,7 @@ def _neutralise_all(values: list[str]) -> list[str]:
     return [neutralise(value) for value in values]
 
 
-def document_row(summary: DocumentSummary) -> DocumentRow:
+def to_document_row(summary: DocumentSummary) -> DocumentRow:
     return DocumentRow(
         document_id=summary.document_id,
         filename=neutralise(summary.filename),
@@ -54,7 +54,7 @@ def document_row(summary: DocumentSummary) -> DocumentRow:
     )
 
 
-def search_result(search: DocumentSearch) -> DocumentSearchResult:
+def to_search_result(search: DocumentSearch) -> DocumentSearchResult:
     unparsed = [row for row in search.documents if row.version_id is None]
     hint = "get_outline(document_id) on the document you need."
     if search.truncated:
@@ -62,13 +62,13 @@ def search_result(search: DocumentSearch) -> DocumentSearchResult:
     if unparsed:
         hint += " Rows with a null version_id cannot be read yet."
     return DocumentSearchResult(
-        documents=[document_row(summary) for summary in search.documents],
+        documents=[to_document_row(summary) for summary in search.documents],
         truncated=search.truncated,
         next_step=hint,
     )
 
 
-def outline_entry(node: OutlineNode) -> OutlineEntry:
+def to_outline_entry(node: OutlineNode) -> OutlineEntry:
     return OutlineEntry(
         ref=node.ref,
         title=neutralise(node.title),
@@ -77,11 +77,11 @@ def outline_entry(node: OutlineNode) -> OutlineEntry:
         est_tokens=node.est_tokens,
         child_count=node.child_count,
         page=node.page,
-        children=[outline_entry(child) for child in node.children],
+        children=[to_outline_entry(child) for child in node.children],
     )
 
 
-def outline_result(outline: DocumentOutline) -> OutlineResult:
+def to_outline_result(outline: DocumentOutline) -> OutlineResult:
     return OutlineResult(
         document_id=outline.document_id,
         version_id=outline.version_id,
@@ -90,7 +90,7 @@ def outline_result(outline: DocumentOutline) -> OutlineResult:
         total_est_tokens=outline.total_est_tokens,
         deeper_levels_available=outline.depth_limited,
         entries_omitted=outline.node_limited,
-        entries=[outline_entry(node) for node in outline.nodes],
+        entries=[to_outline_entry(node) for node in outline.nodes],
         pages=outline.page_count,
         next_step=(
             "read_element(document_id, ref) on the entries that answer; the whole document "
@@ -103,7 +103,7 @@ def outline_result(outline: DocumentOutline) -> OutlineResult:
 PREVIEW_WORDS = 8
 
 
-def citation_ref(citation: Citation) -> CitationRef:
+def to_citation_ref(citation: Citation) -> CitationRef:
     """The pointer form: anchor, page, and a few words to recognise it by."""
     words = neutralise(citation.quote).split()
     preview = " ".join(words[:PREVIEW_WORDS])
@@ -117,7 +117,7 @@ def citation_ref(citation: Citation) -> CitationRef:
     )
 
 
-def citation_out(citation: Citation) -> CitationOut:
+def to_citation_out(citation: Citation) -> CitationOut:
     return CitationOut(
         uri=citation.uri,
         ref=citation.ref,
@@ -151,7 +151,7 @@ _VERIFICATION_NEXT_STEP = {
 }
 
 
-def _excerpt_next_step(excerpt: Excerpt) -> str:
+def _build_excerpt_next_step(excerpt: Excerpt) -> str:
     if excerpt.truncated and excerpt.next_cursor:
         return (
             "Cut at the budget: call read_element again with the same ref and "
@@ -162,7 +162,7 @@ def _excerpt_next_step(excerpt: Excerpt) -> str:
     return _CITE_WITH + (_CITE_SPAN if excerpt.span_uri else "")
 
 
-def excerpt_result(excerpt: Excerpt) -> ExcerptResult:
+def to_excerpt_result(excerpt: Excerpt) -> ExcerptResult:
     return ExcerptResult(
         uri=excerpt.uri,
         document_id=excerpt.document_id,
@@ -176,8 +176,8 @@ def excerpt_result(excerpt: Excerpt) -> ExcerptResult:
         ),
         est_tokens=excerpt.est_tokens,
         truncated=excerpt.truncated,
-        citations=[citation_ref(citation) for citation in excerpt.citations],
-        next_step=_excerpt_next_step(excerpt),
+        citations=[to_citation_ref(citation) for citation in excerpt.citations],
+        next_step=_build_excerpt_next_step(excerpt),
         next_cursor=excerpt.next_cursor,
         first_page=excerpt.page_range[0] if excerpt.page_range else None,
         last_page=excerpt.page_range[1] if excerpt.page_range else None,
@@ -185,12 +185,12 @@ def excerpt_result(excerpt: Excerpt) -> ExcerptResult:
     )
 
 
-def verification_result(check: CitationCheck) -> VerificationResult:
+def to_verification_result(check: CitationCheck) -> VerificationResult:
     return VerificationResult(
         valid=check.valid,
         status=check.status,
         detail=check.detail,
         next_step=_VERIFICATION_NEXT_STEP.get(check.status, ""),
         actual_quote=neutralise(check.actual_quote) if check.actual_quote else None,
-        citation=citation_out(check.citation) if check.citation else None,
+        citation=to_citation_out(check.citation) if check.citation else None,
     )

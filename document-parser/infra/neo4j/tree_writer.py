@@ -19,12 +19,12 @@ from typing import TYPE_CHECKING, Any
 from infra.docling_tree import (
     build_collapse_index,
     dfs_order,
-    element_label,
+    get_parent_ref,
     is_inline_group,
     iter_items,
     iter_pages,
     iter_provs,
-    parent_ref,
+    map_element_label,
 )
 
 if TYPE_CHECKING:
@@ -41,7 +41,7 @@ class TreeWriteResult:
     provenances_written: int = 0
 
 
-def _element_props(item: dict[str, Any], doc_id: str) -> dict[str, Any]:
+def _build_element_props(item: dict[str, Any], doc_id: str) -> dict[str, Any]:
     """Properties stored on the `:Element` node itself.
 
     Provenance (page + bbox) is NOT here anymore — see `_iter_provs` and the
@@ -99,8 +99,8 @@ async def write_document(
         ref = item.get("self_ref")
         if not ref or ref in skip_refs:
             continue
-        specific = element_label(item.get("label") or "")
-        props = _element_props(item, doc_id)
+        specific = map_element_label(item.get("label") or "")
+        props = _build_element_props(item, doc_id)
         if is_inline_group(item):
             meta = inline_meta.get(ref, {"text": "", "provs": []})
             props["text"] = meta["text"]
@@ -110,7 +110,7 @@ async def write_document(
         elements.append(
             {
                 "specific_label": specific,
-                "parent_ref": parent_ref(item),
+                "parent_ref": get_parent_ref(item),
                 **props,
             }
         )

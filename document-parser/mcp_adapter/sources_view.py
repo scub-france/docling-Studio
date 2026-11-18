@@ -22,7 +22,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import TypeAdapter
 
 from domain.anchors import AnchorParseError, DocumentAnchor
-from mcp_adapter.page_image import CitationImageOut, image_out
+from mcp_adapter.page_image import CitationImageOut, to_image_out
 from mcp_adapter.wire import neutralise
 from services.navigation_errors import NavigationServiceError
 
@@ -179,12 +179,12 @@ def register_sources_view(apps: Apps, tools: Callable[[], DocumentTools], uri: s
             for e in read
         ]
         try:
-            report = await tools().sources.show(question, reads, _citations(cited or []))
+            report = await tools().sources.show(question, reads, _parse_citations(cited or []))
         except NavigationServiceError as exc:
             raise ToolError(str(exc)) from exc
-        card = sources_card(report)
+        card = build_sources_card(report)
         return CallToolResult(
-            content=[TextContent(type="text", text=sources_text(card))],
+            content=[TextContent(type="text", text=render_sources_text(card))],
             structured_content=_CARD.dump_python(card, mode="json"),
         )
 
@@ -206,10 +206,10 @@ def register_sources_view(apps: Apps, tools: Callable[[], DocumentTools], uri: s
             )
         except (AnchorParseError, NavigationServiceError) as exc:
             raise ToolError(str(exc)) from exc
-        return image_out(image)
+        return to_image_out(image)
 
 
-def _citations(cited: list[dict[str, str] | str]) -> list[tuple[str, str]]:
+def _parse_citations(cited: list[dict[str, str] | str]) -> list[tuple[str, str]]:
     """`(uri, quote)` pairs. A bare anchor is still taken — the shape before
     quotes travelled with it — and shows as cited, not verified."""
     return [
@@ -220,7 +220,7 @@ def _citations(cited: list[dict[str, str] | str]) -> list[tuple[str, str]]:
     ]
 
 
-def sources_card(report: SourceReport) -> SourcesCard:
+def build_sources_card(report: SourceReport) -> SourcesCard:
     sources, links = report.sources, report.deep_links
     totals, cap = sources.totals, report.max_rounds
     unit = "pages" if totals.mode == "pages" else "sections"
@@ -250,8 +250,8 @@ def sources_card(report: SourceReport) -> SourcesCard:
             tokens_total=totals.tokens_total,
             percent=totals.percent,
         ),
-        hops=[_hop(hop, links) for hop in sources.hops],
-        map=[_node(node, links) for node in sources.nodes],
+        hops=[_to_hop_out(hop, links) for hop in sources.hops],
+        map=[_to_node_out(node, links) for node in sources.nodes],
         segments=[
             SourceSegmentOut(
                 ref=s.ref,
@@ -264,7 +264,7 @@ def sources_card(report: SourceReport) -> SourcesCard:
             )
             for s in sources.segments
         ],
-        passages=[_passage(p, links) for p in sources.passages],
+        passages=[_to_passage_out(p, links) for p in sources.passages],
         page_count=report.page_count,
         title=neutralise(report.title or report.filename),
         unknown=list(report.unknown),
@@ -275,7 +275,7 @@ def sources_card(report: SourceReport) -> SourcesCard:
     )
 
 
-def _hop(hop: SourceHop, links: dict[str, str]) -> SourceHopOut:
+def _to_hop_out(hop: SourceHop, links: dict[str, str]) -> SourceHopOut:
     cited_link = next((links.get(DocumentAnchor.parse(u).ref) for u in hop.cited), None)
     return SourceHopOut(
         hop_id=hop.hop_id,
@@ -290,26 +290,26 @@ def _hop(hop: SourceHop, links: dict[str, str]) -> SourceHopOut:
         page=hop.page,
         cited=list(hop.cited),
         deep_link=cited_link or links.get(hop.node_ref or hop.ref),
-        regions=_regions(hop.regions),
+        regions=_to_regions_out(hop.regions),
     )
 
 
-def _passage(passage: SourcePassage, links: dict[str, str]) -> PassageOut:
+def _to_passage_out(passage: SourcePassage, links: dict[str, str]) -> PassageOut:
     return PassageOut(
         uri=passage.uri,
         ref=passage.ref,
         quote=neutralise(passage.quote),
         status=passage.status,
-        regions=_regions(passage.regions),
+        regions=_to_regions_out(passage.regions),
         hop_id=passage.hop_id,
         page=passage.page,
         deep_link=links.get(passage.ref),
         section=neutralise(passage.section),
-        marks=_regions(passage.marks),
+        marks=_to_regions_out(passage.marks),
     )
 
 
-def _regions(regions: list[PageRegion]) -> list[RegionOut]:
+def _to_regions_out(regions: list[PageRegion]) -> list[RegionOut]:
     # Four places: a ten-thousandth of a page is under a pixel on any screen.
     return [
         RegionOut(
@@ -320,7 +320,7 @@ def _regions(regions: list[PageRegion]) -> list[RegionOut]:
     ]
 
 
-def _node(node: SourceNode, links: dict[str, str]) -> SourceNodeOut:
+def _to_node_out(node: SourceNode, links: dict[str, str]) -> SourceNodeOut:
     return SourceNodeOut(
         ref=node.ref,
         uri=node.uri,
@@ -335,7 +335,7 @@ def _node(node: SourceNode, links: dict[str, str]) -> SourceNodeOut:
     )
 
 
-def sources_text(card: SourcesCard) -> str:
+def render_sources_text(card: SourcesCard) -> str:
     """The card as a tree a text-only host can relay as is."""
     lines = [f"Sources — {card.question}", f"{card.filename}: {card.summary}", ""]
     lines.append("Rounds:")
@@ -348,13 +348,13 @@ def sources_text(card: SourcesCard) -> str:
             lines.append(f"   found: {hop.found}")
         # Every quote, each with its own words: several can share one anchor.
         for passage in (p for p in card.passages if p.hop_id == hop.hop_id):
-            lines.append(f"   cited {passage.ref}{_said(passage)}")
+            lines.append(f"   cited {passage.ref}{_format_quote_verdict(passage)}")
         if hop.deep_link:
             lines.append(f"   open in Studio: {hop.deep_link}")
     outside = [p for p in card.passages if not p.hop_id]
     if outside:
         lines += ["", "Cited outside the rounds:"]
-        lines += [f"- {p.ref}{_said(p)}" for p in outside]
+        lines += [f"- {p.ref}{_format_quote_verdict(p)}" for p in outside]
     lines += ["", "On the map:"]
     lines += [f"{'  ' * max(0, n.level - 1)}- {n.title} [{n.status}]" for n in card.map]
     if card.unknown:
@@ -362,7 +362,7 @@ def sources_text(card: SourcesCard) -> str:
     return "\n".join(lines)
 
 
-def _said(passage: PassageOut) -> str:
+def _format_quote_verdict(passage: PassageOut) -> str:
     """A cited quote, and the server's word on it, for the text tree."""
     if not passage.quote:
         return ""
