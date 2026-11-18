@@ -41,6 +41,7 @@ from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import deps_present, deps_provenance
 from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.llm.ollama_probe import OllamaProbe
+from infra.preview_cache import PreviewCache
 from infra.settings import settings
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
@@ -58,6 +59,7 @@ from services.app_config_service import AppConfigService
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.mcp_config_service import McpConfigService
+from services.preview_service import PreviewService
 from services.reasoning_service import ReasoningService
 from services.store_service import StoreService
 from services.version_service import VersionService
@@ -161,11 +163,13 @@ class AppStateBuilder:
         analysis_service.set_version_recorder(version_service)
         chunk_service.set_version_recorder(version_service)
 
+        document_service = build_document_service(document_repo, analysis_repo)
         self._update(
             analysis_repo=analysis_repo,
             store_repo=store_repo,
             document_store_link_repo=link_repo,
-            document_service=build_document_service(document_repo, analysis_repo),
+            document_service=document_service,
+            preview_service=PreviewService(document_service, PreviewCache()),
             analysis_service=analysis_service,
             analysis_edit_service=analysis_edit_service,
             export_service=ExportService(

@@ -157,8 +157,10 @@ class DocumentService:
         return await self._document_repo.delete(doc_id)
 
     @staticmethod
-    def generate_preview(pdf_path: str | Path, page: int = 1, dpi: int = 150) -> bytes:
-        """Generate a PNG preview of a specific PDF page.
+    def generate_preview(
+        pdf_path: str | Path, page: int = 1, dpi: int = 150, image_format: str = "PNG"
+    ) -> bytes:
+        """Generate a PNG or WebP preview of a specific PDF page.
 
         Poppler reads the file by path: only the requested page is rendered and
         the PDF is never loaded whole into memory (#398).
@@ -170,7 +172,10 @@ class DocumentService:
             raise ValueError(f"Page {page} not found")
 
         buf = io.BytesIO()
-        images[0].save(buf, format="PNG")
+        if image_format == "WEBP":
+            images[0].save(buf, format="WEBP", lossless=True)
+        else:
+            images[0].save(buf, format="PNG")
         return buf.getvalue()
 
     @staticmethod

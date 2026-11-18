@@ -85,6 +85,7 @@ class AnalysisEditService:
             if cached is not None and cached[0] == base.id and cached[1] == base_hash:
                 return await self._snapshot(document, base, cached[2], sequence)
         cache = await self._edits.find_cache(base.id) if stream else None
+        projection = None
         if (
             stream is not None
             and cache is not None
@@ -106,7 +107,7 @@ class AnalysisEditService:
         await self._require_document(document_id)
         selection = await self._selection.get_selection(document_id)
         if selection is None:
-            raise AnalysisEditUnavailableError("This document has no active analysis")
+            raise AnalysisEditNotFoundError("This document has no active analysis")
         return await self.load_editor(document_id, selection.analysis_id)
 
     async def list_history(self, document_id: str, analysis_id: str | None = None) -> list:
@@ -281,9 +282,12 @@ class AnalysisEditService:
         else:
             selection = await self._selection.get_selection(document.id)
             if selection is None:
-                raise AnalysisEditUnavailableError("This document has no active analysis")
-            base = await self._analyses.find_by_id(selection.analysis_id)
-        if base is None or base.status != AnalysisStatus.COMPLETED or not base.document_json:
+                raise AnalysisEditNotFoundError("This document has no active analysis")
+            analysis_id = selection.analysis_id
+            base = await self._analyses.find_by_id(analysis_id)
+        if base is None:
+            raise AnalysisEditNotFoundError(f"Analysis not found: {analysis_id}")
+        if base.status != AnalysisStatus.COMPLETED or not base.document_json:
             raise AnalysisEditUnavailableError(
                 "This analysis has no canonical Docling document. Re-run the analysis to enable "
                 "the editor and document tree."
@@ -305,8 +309,12 @@ class AnalysisEditService:
             )
         except Exception:
             logger.warning(
-                "Edited analysis cache unreadable, replaying the edit stream",
-                extra={"document_id": base.document_id, "base_analysis_id": base.id},
+                "Ignoring corrupt edited cache; replaying the edit stream",
+                extra={
+                    "editor_operation": "load",
+                    "document_id": base.document_id,
+                    "base_analysis_id": base.id,
+                },
                 exc_info=True,
             )
             return None

@@ -92,11 +92,13 @@ describe('document API', () => {
   })
 
   it('getPreviewUrl builds correct URL with defaults', () => {
-    expect(getPreviewUrl('abc')).toBe('/api/documents/abc/preview?page=1&dpi=150')
+    expect(getPreviewUrl('abc')).toBe('/api/documents/abc/preview?page=1&dpi=150&format=webp')
   })
 
   it('getPreviewUrl accepts custom page and dpi', () => {
-    expect(getPreviewUrl('abc', 3, 300)).toBe('/api/documents/abc/preview?page=3&dpi=300')
+    expect(getPreviewUrl('abc', 3, 300)).toBe(
+      '/api/documents/abc/preview?page=3&dpi=300&format=webp',
+    )
   })
 
   it('getExportUrl exports the latest analysis by default', () => {

@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
+- **Faster PDF viewing**: analysis, editor, document, and Studio previews render the visible PDF page in the browser using byte ranges. Nearby pages load as needed; server-rendered previews remain a fallback.
+- **Faster analysis lists**: analysis and history lists fetch lightweight summaries instead of full Docling results.
 - **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
 - **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
 - **Default Markdown and JSON export**: without `analysisId`, the export now returns the document's active analysis with its saved edits, instead of the latest completed conversion.
@@ -27,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Analysis editor responsiveness** (#394): replaying and projecting edits (editor load, preview, save, default export, rechunk) now runs in a worker thread instead of blocking the server; the Docling engine sits behind a domain port.
 - **Element types in the document workspace** (#396): the page boxes of the edited result now use the same element types as a fresh conversion, so list items keep their colour and layer.
 - **Chunk edits and page rendering** (#398): inserting, splitting, merging, regenerating and restoring chunks write in one SQL statement instead of one per chunk, and page previews open the PDF by path instead of reading the whole file for every page.
+- **Analysis editor corrupt cache**: a damaged edited result cache is now ignored and the saved edits are replayed, instead of the editor failing with a server error (#395).
+- **Analysis editor merge**: the Merge button is only enabled when all selected elements have the same type, so a mix of text and paragraph no longer fails with an error after the click (#395).
+- **Analysis editor result id**: the id of an edited result now includes its base analysis, so two analyses of one document no longer return edited results with the same id (#395).
+- **Analysis editor missing resources**: the editor API now answers 404 for an unknown document or analysis instead of 409, so the editor no longer shows an edit conflict for something that does not exist (#395).
 
 ## [0.7.3] - 2026-11-02
 

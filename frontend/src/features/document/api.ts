@@ -47,7 +47,7 @@ export function deleteDocument(id: string): Promise<unknown> {
 export const PREVIEW_DPI = 150
 
 export function getPreviewUrl(id: string, page = 1, dpi = PREVIEW_DPI): string {
-  return `/api/documents/${id}/preview?page=${page}&dpi=${dpi}`
+  return `/api/documents/${id}/preview?page=${page}&dpi=${dpi}&format=webp`
 }
 
 /** The PDF's pages, sized but without elements, for the preview of a

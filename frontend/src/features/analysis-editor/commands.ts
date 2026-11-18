@@ -42,8 +42,7 @@ function findFoldTarget(queue: AnalysisEditCommand[], command: FoldableCommand):
   for (let index = queue.length - 1; index >= 0; index--) {
     const candidate = queue[index]
     if (isFoldable(candidate)) {
-      if (candidate.type === command.type && candidate.elementId === command.elementId)
-        return index
+      if (candidate.type === command.type && candidate.elementId === command.elementId) return index
     } else if (listStructuralElementIds(candidate).includes(command.elementId)) {
       return -1
     }

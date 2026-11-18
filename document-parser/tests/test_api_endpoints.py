@@ -2,13 +2,15 @@
 
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from domain.models import AnalysisJob, Document
+from infra.preview_cache import PreviewCache
 from main import app
+from services.preview_service import PreviewService
 from tests.app_state import state_override
 
 
@@ -32,7 +34,11 @@ def mock_document_service(client):
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
     mock_svc.resolve_storage_path.side_effect = lambda storage_path: Path(storage_path)
-    with state_override(app, document_service=mock_svc):
+    with state_override(
+        app,
+        document_service=mock_svc,
+        preview_service=PreviewService(mock_svc, PreviewCache()),
+    ):
         yield mock_svc
 
 
@@ -52,6 +58,7 @@ def mock_export_service(client):
     """Inject a mock ExportService into app.state for export endpoint tests."""
     mock_svc = MagicMock()
     mock_svc.export = AsyncMock()
+    mock_svc.export_edited = AsyncMock()
     with state_override(app, export_service=mock_svc):
         yield mock_svc
 
@@ -243,6 +250,68 @@ class TestDocumentEndpoints:
         assert resp.status_code == 404
         assert "not found on disk" in resp.json()["detail"]
 
+    def test_preview_document_not_found(self, client, mock_document_service):
+        mock_document_service.find_by_id = AsyncMock(return_value=None)
+
+        response = client.get("/api/documents/missing/preview")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Document not found"
+
+    def test_preview_reuses_raster_and_invalidates_when_pdf_changes(
+        self, client, mock_document_service, tmp_path
+    ):
+        pdf = tmp_path / "preview.pdf"
+        pdf.write_bytes(b"%PDF-first")
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="preview.pdf", storage_path=str(pdf))
+        )
+
+        with patch(
+            "services.preview_service.DocumentService.generate_preview",
+            return_value=b"rendered-png",
+        ) as render:
+            first = client.get("/api/documents/d1/preview?page=1")
+            second = client.get("/api/documents/d1/preview?page=1")
+            different_dpi = client.get("/api/documents/d1/preview?page=1&dpi=200")
+            webp = client.get("/api/documents/d1/preview?page=1&format=webp")
+            pdf.write_bytes(b"%PDF-changed-and-longer")
+            changed = client.get("/api/documents/d1/preview?page=1")
+
+        assert all(
+            response.status_code == 200
+            for response in (first, second, different_dpi, webp, changed)
+        )
+        assert first.content == second.content == b"rendered-png"
+        assert first.headers["cache-control"] == "private, max-age=86400, immutable"
+        assert webp.headers["content-type"] == "image/webp"
+        assert render.call_count == 4
+        # The renderer opens the PDF by path (#398): it never receives its bytes.
+        assert render.call_args_list[0].args[0] == pdf
+        assert render.call_args_list[2].kwargs["image_format"] == "WEBP"
+        assert render.call_args_list[-1].args[0] == pdf
+
+    def test_preview_accepts_a_replacement_cache(self, client, mock_document_service, tmp_path):
+        pdf = tmp_path / "preview.pdf"
+        pdf.write_bytes(b"%PDF-test")
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="preview.pdf", storage_path=str(pdf))
+        )
+        cache = MagicMock()
+        cache.get.return_value = b"cached-preview"
+
+        with (
+            state_override(app, preview_service=PreviewService(mock_document_service, cache)),
+            patch("services.preview_service.DocumentService.generate_preview") as render,
+        ):
+            response = client.get("/api/documents/d1/preview?page=1")
+
+        assert response.status_code == 200
+        assert response.content == b"cached-preview"
+        cache.get.assert_called_once()
+        cache.put.assert_not_called()
+        render.assert_not_called()
+
     def test_page_sizes(self, client, mock_document_service, tmp_path):
         from tests.test_document_service import pdf_with_pages
 
@@ -354,24 +423,23 @@ class TestDocumentEndpoints:
         resp = client.get(f"/api/documents/d1/export?{query}")
 
         assert resp.status_code == 200
-        mock_export_service.export.assert_awaited_once_with(
-            "d1", ExportFormat.MD, analysis_id, edited=False
-        )
+        mock_export_service.export.assert_awaited_once_with("d1", ExportFormat.MD, analysis_id)
+        mock_export_service.export_edited.assert_not_awaited()
 
     def test_export_document_supports_editor_result_when_enabled(self, client, mock_export_service):
         from services.export_service import ExportFormat
 
-        mock_export_service.export.return_value.file_path = None
-        mock_export_service.export.return_value.content = "# Edited"
-        mock_export_service.export.return_value.media_type = "text/markdown"
-        mock_export_service.export.return_value.filename = "report.md"
+        mock_export_service.export_edited.return_value.file_path = None
+        mock_export_service.export_edited.return_value.content = "# Edited"
+        mock_export_service.export_edited.return_value.media_type = "text/markdown"
+        mock_export_service.export_edited.return_value.filename = "report.md"
 
         resp = client.get("/api/documents/d1/export?format=md&analysisId=a1&edited=true")
 
         assert resp.status_code == 200
-        mock_export_service.export.assert_awaited_once_with(
-            "d1", ExportFormat.MD, "a1", edited=True
-        )
+        assert resp.text == "# Edited"
+        mock_export_service.export_edited.assert_awaited_once_with("d1", ExportFormat.MD, "a1")
+        mock_export_service.export.assert_not_awaited()
 
     def test_editor_export_is_flagged(self, client, mock_export_service):
         with state_override(app, analysis_editor_enabled=False):
@@ -379,6 +447,7 @@ class TestDocumentEndpoints:
 
         assert resp.status_code == 404
         mock_export_service.export.assert_not_awaited()
+        mock_export_service.export_edited.assert_not_awaited()
 
     def test_export_document_unsupported_format_returns_422(self, client, mock_export_service):
         resp = client.get("/api/documents/d1/export?format=docx")

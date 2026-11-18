@@ -28,7 +28,7 @@ import { bboxToRect, computeScale, pointInRect } from '@/shared/bboxScaling'
 import { colorFor, UNKNOWN_ELEMENT_COLOR } from '@/shared/elementColors'
 
 const props = defineProps<{
-  imageEl: HTMLImageElement | null
+  imageEl: HTMLElement | null
   pageNumber: number
   pageWidth: number
   pageHeight: number

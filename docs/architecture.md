@@ -60,7 +60,9 @@ flowchart TB
     class Infra,Persistence teal
 ```
 
-`tests/test_architecture.py` fails when a layer imports what it must not:
+`tests/test_architecture.py` scans Python imports and fails on new forbidden
+layer dependencies. Existing exceptions are listed by source and target module
+in that test until they are migrated:
 
 | Layer | Never imports |
 |-------|---------------|

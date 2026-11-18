@@ -111,7 +111,7 @@ import { analysisProgress } from '../features/analysis/progress'
 import { useAnalysisStore } from '../features/analysis/store'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
-import type { Analysis } from '../shared/types'
+import type { AnalysisSummary } from '../shared/types'
 
 const store = useAnalysisStore()
 const { t } = useI18n()
@@ -139,7 +139,7 @@ async function load(): Promise<void> {
 }
 
 // A batched analysis reports its pages done: show the share next to RUNNING.
-function statusLabel(analysis: Analysis): string {
+function statusLabel(analysis: AnalysisSummary): string {
   if (analysis.status !== 'RUNNING') return analysis.status
   const progress = analysisProgress(analysis, Date.now())
   if (progress.kind !== 'pages') return analysis.status

@@ -95,9 +95,10 @@ describe('analysis editor commands', () => {
   })
 
   it('refuses mixing text and paragraph, as the backend does (#395)', () => {
-    const paragraph = { ...text('p'), type: 'paragraph' }
+    const paragraph: EditorElement = { ...text('p'), type: 'paragraph' }
 
     expect(validateMerge([text('a'), paragraph], ['a', 'p'])).toBe('analysisEditor.merge.sameType')
     expect(canMerge([text('a'), paragraph], ['a', 'p'])).toBe(false)
+    expect(canMerge([paragraph, { ...paragraph, id: 'c' }], ['p', 'c'])).toBe(true)
   })
 })

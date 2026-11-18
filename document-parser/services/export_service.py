@@ -68,7 +68,9 @@ class ExportService:
         analysis_id: str | None,
     ) -> ExportResult:
         """Export like `export`, with Markdown / JSON taken from the saved editor result."""
-        return await self._export(doc_id, format, lambda: self._edited_analysis(doc_id, analysis_id))
+        return await self._export(
+            doc_id, format, lambda: self._edited_analysis(doc_id, analysis_id)
+        )
 
     async def _export(
         self,

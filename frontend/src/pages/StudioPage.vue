@@ -255,19 +255,17 @@
         </div>
         <div class="pdf-image-area">
           <div class="pdf-image-wrapper">
-            <img
-              v-if="previewUrl"
-              ref="pdfImageRef"
-              :src="previewUrl"
-              :alt="`Page ${currentPage}`"
+            <PdfPagePreview
+              :document-id="selectedDoc.id"
+              :page="currentPage"
               class="pdf-image"
               data-e2e="pdf-image"
-              @load="onPdfImageLoad"
+              @ready="onPdfPageReady"
             />
             <BboxOverlay
               v-if="(visualMode || mode === 'prepare') && hasAnalysisResults"
               ref="bboxOverlayRef"
-              :image-el="pdfImageRef"
+              :image-el="pdfPageEl"
               :page-data="currentPageData"
               :highlighted-index="highlightedElementIndex"
               :highlighted-bboxes="highlightedChunkBboxes"
@@ -512,14 +510,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useDocumentStore } from '../features/document/store'
 import { useAnalysisStore } from '../features/analysis/store'
 import { useIngestionStore } from '../features/ingestion/store'
-import { DocumentUpload, DocumentList } from '../features/document/index'
+import { DocumentUpload, DocumentList, PdfPagePreview } from '../features/document'
 import { ResultTabs } from '../features/analysis/index'
 import BboxOverlay from '../features/analysis/ui/BboxOverlay.vue'
 import GraphView from '../features/analysis/ui/GraphView.vue'
 import { ChunkPanel } from '../features/chunking'
 import { IngestPanel } from '../features/ingestion'
 import { useFeatureFlag } from '../features/feature-flags'
-import { getPreviewUrl } from '../features/document/api'
 import { useI18n } from '../shared/i18n'
 import type { ChunkBbox, PipelineOptions } from '../shared/types'
 
@@ -537,7 +534,7 @@ const currentPage = ref(1)
 const visualMode = ref(false)
 const highlightedElementIndex = ref(-1)
 const highlightedChunkBboxes = ref<ChunkBbox[]>([])
-const pdfImageRef = ref<HTMLImageElement | null>(null)
+const pdfPageEl = ref<HTMLElement | null>(null)
 const bboxOverlayRef = ref<InstanceType<typeof BboxOverlay> | null>(null)
 
 // --- Resizable right panel ---
@@ -604,17 +601,13 @@ const currentPageData = computed(() => {
   return analysisStore.currentPages.find((p) => p.page_number === currentPage.value) || null
 })
 
-function onPdfImageLoad() {
+function onPdfPageReady(element: HTMLElement | null) {
+  pdfPageEl.value = element
   nextTick(() => bboxOverlayRef.value?.draw())
 }
 
 const selectedDoc = computed(() => {
   return documentStore.documents.find((d) => d.id === documentStore.selectedId)
-})
-
-const previewUrl = computed(() => {
-  if (!selectedDoc.value) return null
-  return getPreviewUrl(selectedDoc.value.id, currentPage.value)
 })
 
 function onPageInput(e: Event) {
@@ -1186,6 +1179,7 @@ onBeforeUnmount(() => {
 .pdf-image-wrapper {
   position: relative;
   display: inline-block;
+  width: min(100%, 900px);
   max-width: 100%;
 }
 

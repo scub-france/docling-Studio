@@ -35,14 +35,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, reactive, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, reactive, onBeforeUnmount } from 'vue'
 import { computeScale, bboxToRect, pointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement, ChunkBbox } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
 
 const props = withDefaults(
   defineProps<{
-    imageEl: HTMLImageElement | null
+    imageEl: HTMLElement | null
     pageData: Page | null
     highlightedIndex: number
     highlightedBboxes: ChunkBbox[]
@@ -85,7 +85,13 @@ function countElements(type: string): number {
 function draw(): void {
   const canvas = canvasRef.value
   const img = props.imageEl
-  if (!canvas || !img) return
+  if (!canvas) return
+  if (!img) {
+    canvas.width = 0
+    canvas.height = 0
+    hoveredElement.value = null
+    return
+  }
 
   if (!img.clientWidth || !img.clientHeight) return
 
@@ -186,12 +192,17 @@ function onMouseMove(e: MouseEvent): void {
 }
 
 let resizeObserver: ResizeObserver | null = null
-onMounted(() => {
-  if (props.imageEl) {
+watch(
+  () => props.imageEl,
+  (element) => {
+    resizeObserver?.disconnect()
+    resizeObserver = null
+    if (!element) return
     resizeObserver = new ResizeObserver(() => draw())
-    resizeObserver.observe(props.imageEl)
-  }
-})
+    resizeObserver.observe(element)
+  },
+  { immediate: true },
+)
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
 })

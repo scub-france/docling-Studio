@@ -50,6 +50,7 @@
         v-if="editMode && editorEnabled"
         :document-id="analysis.documentId"
         :analysis-id="analysis.id"
+        :preview-pages="previewPages"
       />
       <DocParseTab
         v-else
@@ -63,10 +64,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { fetchAnalysis } from '../features/analysis/api'
-import type { Analysis } from '../shared/types'
+import { fetchAnalysis, fetchAnalysisSummaries } from '../features/analysis'
+import { fetchDocumentPages } from '../features/document'
+import type { Analysis, Page } from '../shared/types'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocParseTab from './DocParseTab.vue'
@@ -83,6 +85,13 @@ const editMode = ref(false)
 const editorStore = useAnalysisEditorStore()
 const featureFlags = useFeatureFlagStore()
 const editorEnabled = computed(() => featureFlags.isEnabled('analysisEditor'))
+const previewPages = computed<Page[]>(() => {
+  try {
+    return JSON.parse(analysis.value?.pagesJson ?? '[]') as Page[]
+  } catch {
+    return []
+  }
+})
 
 function closeEditor(): void {
   if (editorStore.hasUnsavedChanges && !window.confirm(t('analysisEditor.leaveConfirm'))) return
@@ -97,9 +106,36 @@ function formatDate(value: string): string {
 
 onMounted(async () => {
   try {
+    const summary = (await fetchAnalysisSummaries()).find((item) => item.id === props.id)
+    if (summary) {
+      const pages = await fetchDocumentPages(summary.documentId)
+      analysis.value = {
+        ...summary,
+        contentMarkdown: null,
+        contentHtml: null,
+        pagesJson: JSON.stringify(pages),
+        chunksJson: null,
+        hasDocumentJson: false,
+      }
+      loading.value = false
+      await nextTick()
+    }
     analysis.value = await fetchAnalysis(props.id)
   } catch {
-    error.value = true
+    // A missing summary or unavailable page manifest should still allow the
+    // existing full analysis path to open the document.
+    if (!analysis.value) {
+      try {
+        analysis.value = await fetchAnalysis(props.id)
+      } catch {
+        error.value = true
+      }
+    } else {
+      // The manifest is only a temporary preview. A failed full request must
+      // not present it as a completed saved analysis.
+      analysis.value = null
+      error.value = true
+    }
   } finally {
     loading.value = false
   }

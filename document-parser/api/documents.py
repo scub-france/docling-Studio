@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -13,6 +13,7 @@ from api import deps  # noqa: TC001
 from api.schemas import DocStoreLinkResponse, DocumentResponse, PageSizeResponse
 from services.document_service import DocumentService
 from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
+from services.preview_service import PreviewDocumentNotFoundError, PreviewPageOutOfRangeError
 
 if TYPE_CHECKING:
     from domain.ports import DocumentStoreLinkRepository, StoreRepository
@@ -172,29 +173,23 @@ async def export_document(
 @router.get("/{doc_id}/preview")
 async def preview(
     doc_id: str,
-    service: deps.DocumentServiceDep,
+    service: deps.PreviewServiceDep,
     page: int = Query(1, ge=1),
     dpi: int = Query(150, ge=72, le=300),
+    format: Literal["png", "webp"] = Query("png"),
 ) -> Response:
-    """Generate a PNG preview of a specific PDF page."""
-    doc = await service.find_by_id(doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    if doc.page_count and page > doc.page_count:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Page {page} out of range (document has {doc.page_count} pages)",
-        )
-
+    """Generate a PNG or WebP preview of a specific PDF page."""
     try:
-        # PDF rasterisation is blocking; offload to a worker thread so the
-        # event loop stays free. Poppler opens the file by path (#398).
-        pdf_path = service.resolve_storage_path(doc.storage_path)
-        png_bytes = await asyncio.to_thread(
-            DocumentService.generate_preview, pdf_path, page=page, dpi=dpi
+        image_bytes = await service.get_preview(doc_id, page=page, dpi=dpi, image_format=format)
+        return Response(
+            content=image_bytes,
+            media_type=f"image/{format}",
+            headers={"Cache-Control": "private, max-age=86400, immutable"},
         )
-        return Response(content=png_bytes, media_type="image/png")
+    except PreviewDocumentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Document not found") from exc
+    except PreviewPageOutOfRangeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except FileNotFoundError as exc:

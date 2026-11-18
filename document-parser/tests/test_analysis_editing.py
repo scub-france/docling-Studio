@@ -22,6 +22,7 @@ from docling_core.types.doc import (
     TableData,
 )
 
+from api.errors import http_error
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
@@ -654,17 +655,6 @@ async def test_engine_never_runs_on_the_event_loop_thread(edit_service):
 
 
 @pytest.mark.asyncio
-async def test_missing_document_or_analysis_is_not_found(edit_service):
-    """#395: a missing resource is a 404 for the API, not an edit conflict."""
-    service, _, _ = edit_service
-
-    with pytest.raises(AnalysisEditNotFoundError, match="Document not found"):
-        await service.load_editor("missing-doc")
-    with pytest.raises(AnalysisEditNotFoundError, match="Analysis not found"):
-        await service.load_editor("doc-1", "missing-analysis")
-
-
-@pytest.mark.asyncio
 async def test_working_result_id_names_its_base_analysis(edit_service):
     """#395: two analyses of one document no longer share a working id."""
     service, _, _ = edit_service
@@ -819,7 +809,7 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
         await exports.export("doc-1", ExportFormat.MD)
     ).content == reapplied.job.content_markdown
     assert (
-        await exports.export("doc-1", ExportFormat.JSON, "analysis-1", edited=True)
+        await exports.export_edited("doc-1", ExportFormat.JSON, "analysis-1")
     ).content == reapplied.job.document_json
     assert (await service.rebuild("doc-1")).job.document_json == reapplied.job.document_json
     assert len(await edits.list_commands(stream.analysis_id)) == 4
@@ -981,6 +971,47 @@ async def test_load_replays_saved_stream_when_edited_cache_is_missing(edit_servi
     assert _projection_values(reloaded) == _projection_values(saved)
 
 
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("document_json", '{"not": "a docling document"}'),
+        ("document_json", "not json"),
+        ("editor_model_json", "not json"),
+        ("editor_model_json", '{"elements": [{"id": "x"}]}'),
+    ],
+)
+@pytest.mark.asyncio
+async def test_load_replays_saved_stream_when_edited_cache_is_corrupt(
+    edit_service, caplog, column, value
+):
+    service, edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    saved = await service.save(
+        "doc-1",
+        [EditCommand("replaceText", {"elementId": text_id, "text": "Replayed"})],
+        expected_sequence=0,
+    )
+
+    async with database.get_connection() as connection:
+        await connection.execute(
+            f"UPDATE edited_analysis_cache SET {column} = ? WHERE analysis_id = ?",
+            (value, "analysis-1"),
+        )
+        await connection.commit()
+    assert await edits.find_cache("analysis-1") is not None  # the row is still there
+
+    with caplog.at_level(logging.WARNING):
+        reloaded = await service.load_editor("doc-1")
+
+    assert reloaded.applied_through_sequence == saved.applied_through_sequence
+    assert _projection_values(reloaded) == _projection_values(saved)
+    record = next(r for r in caplog.records if "edited cache" in r.getMessage())
+    assert record.editor_operation == "load"
+    assert record.document_id == "doc-1"
+    assert record.base_analysis_id == "analysis-1"
+
+
 @pytest.mark.asyncio
 async def test_preview_failure_logs_safe_editor_context(edit_service, caplog):
     service, _edits, _ = edit_service
@@ -1054,4 +1085,51 @@ async def test_each_base_analysis_has_an_independent_edited_cache(edit_service):
     second_after = await service.load_editor("doc-1", "analysis-2")
     assert "Second edit" not in first.job.content_markdown
     assert "Second edit" in second_after.job.content_markdown
+    assert first.job.id != second_after.job.id
+    assert (first.job.id, second_after.job.id) == (
+        "working:doc-1:analysis-1",
+        "working:doc-1:analysis-2",
+    )
     service._graph_writer.write_document_tree.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_missing_document_or_analysis_is_not_found(edit_service):
+    service, _, analyses = edit_service
+    await analyses.insert(AnalysisJob(id="analysis-pending", document_id="doc-1"))
+    await SqliteDocumentRepository().insert(
+        Document(id="doc-2", filename="other.pdf", storage_path="/tmp/other.pdf")
+    )
+    other = AnalysisJob(
+        id="analysis-other",
+        document_id="doc-2",
+        status=AnalysisStatus.COMPLETED,
+        document_json=_document()[0],
+    )
+    await analyses.insert(other)
+    await analyses.update_status(other)
+
+    with pytest.raises(AnalysisEditNotFoundError, match="Document not found: missing-doc"):
+        await service.load_editor("missing-doc")
+    with pytest.raises(AnalysisEditNotFoundError, match="Analysis not found: missing-analysis"):
+        await service.load_editor("doc-1", "missing-analysis")
+    # A completed analysis of another document must not be editable through this one.
+    with pytest.raises(AnalysisEditNotFoundError, match="Analysis not found: analysis-other"):
+        await service.load_editor("doc-1", "analysis-other")
+    # An analysis that exists but is not completed is unusable, not missing.
+    with pytest.raises(AnalysisEditUnavailableError) as unusable:
+        await service.load_editor("doc-1", "analysis-pending")
+    assert not isinstance(unusable.value, AnalysisEditNotFoundError)
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (AnalysisEditNotFoundError("missing"), 404),
+        (AnalysisEditUnavailableError("unusable"), 409),
+        (AnalysisEditConflictError("stale"), 409),
+        (AnalysisEditError("invalid"), 400),
+    ],
+)
+def test_api_maps_edit_errors_to_http_status(error, status):
+    assert http_error(error).status_code == status
