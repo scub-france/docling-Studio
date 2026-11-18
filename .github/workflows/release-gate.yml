@@ -81,12 +81,14 @@ jobs:
 
       - name: Backend tests
         run: |
+          set -o pipefail
           cd document-parser
           uv sync --frozen --group dev
           uv run pytest tests/ -v --tb=short 2>&1 | tee /tmp/backend-tests.txt
 
       - name: Frontend tests
         run: |
+          set -o pipefail
           cd frontend
           npm ci
           npm run test:run 2>&1 | tee /tmp/frontend-tests.txt
