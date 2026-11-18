@@ -200,8 +200,8 @@ import StoreConfigForm from './StoreConfigForm.vue'
 import {
   buildConnectionPayloadForCreate,
   buildConnectionPayloadForUpdate,
-  connectionFormFromStore,
-  emptyConnectionFormState,
+  toConnectionFormState,
+  createEmptyConnectionFormState,
   type StoreKind,
   validateConnectionUri,
 } from './connectionForm.logic'
@@ -243,11 +243,11 @@ const form = reactive<StoreCreatePayload>({
 // shape (write-only password, tri-state on edit).
 const connection = reactive(
   props.initialValue
-    ? connectionFormFromStore({
+    ? toConnectionFormState({
         connectionUri: props.initialValue.connectionUri ?? null,
         connectionUsername: props.initialValue.connectionUsername ?? null,
       })
-    : emptyConnectionFormState(),
+    : createEmptyConnectionFormState(),
 )
 const initialHasPassword = ref(props.initialValue?.hasConnectionPassword ?? false)
 const showPassword = ref(false)

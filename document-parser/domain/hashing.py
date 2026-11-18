@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 _CHUNK_SEPARATOR = b"\x1f"
 
 
-def chunkset_hash(chunks: Iterable[ChunkResult]) -> str:
+def hash_chunkset(chunks: Iterable[ChunkResult]) -> str:
     """Return a deterministic SHA-256 hex digest over a chunkset.
 
     Hashed inputs (per chunk, in order):

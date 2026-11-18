@@ -176,7 +176,7 @@ class TestMarks:
             self.fails = fails
             self.asked: list[tuple[str, int]] = []
 
-        def glyphs(self, storage_path, *, page):
+        def read_glyphs(self, storage_path, *, page):
             from domain.quote_marks import Glyph
 
             self.asked.append((storage_path, page))
@@ -256,7 +256,7 @@ class TestTitle:
     def title_of(*items):
         from domain.parse_index import build_index
         from infra.docling_tree import DoclingTreeReader
-        from services.source_service import _title
+        from services.source_service import _find_document_title
 
         texts = [
             {
@@ -283,7 +283,7 @@ class TestTitle:
             "body": {"self_ref": "#/body", "children": [{"$ref": t["self_ref"]} for t in texts]},
             "texts": texts,
         }
-        return _title(build_index(doc, DoclingTreeReader()))
+        return _find_document_title(build_index(doc, DoclingTreeReader()))
 
     def test_a_title_element_is_the_title(self):
         assert self.title_of(("text", "Intro", 1), ("title", "Le contrat", 1)) == "Le contrat"

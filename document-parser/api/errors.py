@@ -22,7 +22,7 @@ _EDIT_ERROR_STATUS: tuple[tuple[type[AnalysisEditError], int], ...] = (
 )
 
 
-def http_error(error: ServiceError | AnalysisEditError) -> HTTPException:
+def to_http_error(error: ServiceError | AnalysisEditError) -> HTTPException:
     """The HTTPException a router raises for a service or editor error."""
     if isinstance(error, ServiceError):
         status = error.http_status

@@ -18,7 +18,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from api import deps  # noqa: TC001
-from api.errors import http_error
+from api.errors import to_http_error
 from services.graph_service import GraphServiceError
 
 logger = logging.getLogger(__name__)
@@ -68,5 +68,5 @@ async def get_document_graph(doc_id: str, service: deps.GraphServiceDep) -> Grap
     try:
         payload = await service.fetch_document_graph(doc_id)
     except GraphServiceError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
     return _to_response(payload)

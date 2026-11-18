@@ -146,7 +146,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { DocChunk, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToPercent } from '../bboxPercent'
-import { colorFor } from '@/shared/elementColors'
+import { getElementColor } from '@/shared/elementColors'
 import MarkdownViewer from '@/shared/ui/MarkdownViewer.vue'
 import TableModal from './TableModal.vue'
 
@@ -175,7 +175,7 @@ const isTable = computed(() => props.element?.type === 'table')
 
 const typeStyle = computed(() => {
   if (!props.element) return {}
-  const c = colorFor(props.element.type)
+  const c = getElementColor(props.element.type)
   return { background: c + '22', color: c }
 })
 

@@ -165,16 +165,16 @@ class TestParseLookups:
         await self._parsed(analysis_repo, "a-new", "doc-1", json="{}")
         await self._parsed(analysis_repo, "b-only", "doc-2", json="{}")
         await self._parsed(analysis_repo, "c-empty", "doc-3", json=None)
-        latest = await analysis_repo.latest_parsed_ids(["doc-1", "doc-2", "doc-3"])
+        latest = await analysis_repo.find_latest_parsed_ids(["doc-1", "doc-2", "doc-3"])
         assert latest == {"doc-1": "a-new", "doc-2": "b-only"}
 
     async def test_parsed_document_id_is_none_without_a_parse(self, document_repo, analysis_repo):
         await self._docs(document_repo, "doc-1")
         await self._parsed(analysis_repo, "parsed", "doc-1", json="{}")
         await self._parsed(analysis_repo, "empty", "doc-1", json=None)
-        assert await analysis_repo.parsed_document_id("parsed") == "doc-1"
-        assert await analysis_repo.parsed_document_id("empty") is None
-        assert await analysis_repo.parsed_document_id("missing") is None
+        assert await analysis_repo.find_parsed_document_id("parsed") == "doc-1"
+        assert await analysis_repo.find_parsed_document_id("empty") is None
+        assert await analysis_repo.find_parsed_document_id("missing") is None
 
     async def test_parse_json_reads_the_stored_parse(self, document_repo, analysis_repo):
         await self._docs(document_repo, "doc-1")

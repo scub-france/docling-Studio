@@ -221,7 +221,7 @@ class TestBootAndStatus:
 
     async def test_server_status_is_the_provider_s(self):
         service, _, _ = _service()
-        assert await service.server_status() == STATUS
+        assert await service.get_server_status() == STATUS
 
     async def test_stdio_resolves_the_same_precedence(self):
         repo = _FakeRepo({"max_rounds": "2"})

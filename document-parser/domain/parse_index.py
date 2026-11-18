@@ -87,7 +87,7 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         if ref:
             by_ref[ref] = item
 
-    order = [ref for ref in tree_reader.dfs_order(doc_data, skip_refs) if ref in by_ref]
+    order = [ref for ref in tree_reader.list_dfs_order(doc_data, skip_refs) if ref in by_ref]
     position = {ref: idx for idx, ref in enumerate(order)}
 
     heading_path: dict[str, list[str]] = {}
@@ -96,14 +96,14 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
 
     for idx, ref in enumerate(order):
         item = by_ref[ref]
-        label = label_of(item)
+        label = get_label(item)
         if is_heading(label):
-            level = heading_level(item)
+            level = get_heading_level(item)
             while stack and stack[-1][0] >= level:
                 _, closed, _ = stack.pop()
                 section_end[closed] = idx
             heading_path[ref] = [title for _, _, title in stack]
-            stack.append((level, ref, title_of(item, inline_meta)))
+            stack.append((level, ref, get_title(item, inline_meta)))
         else:
             heading_path[ref] = [title for _, _, title in stack]
     while stack:
@@ -132,7 +132,7 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
             continue
         page_of[ref] = int(located[0]["page_no"])
         pages_of[ref] = frozenset(int(p["page_no"]) for p in located)
-        boxes = tuple(_box(prov, page_sizes) for prov in located)
+        boxes = tuple(_to_box(prov, page_sizes) for prov in located)
         bbox_of[ref] = boxes[0]
         boxes_of[ref] = boxes
 
@@ -160,7 +160,7 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
     )
 
 
-def _box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> BoundingBox:
+def _to_box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> BoundingBox:
     """One provenance row as a box on its own page, with that page's size."""
     page = int(prov["page_no"])
     width, height = page_sizes.get(page, (None, None))
@@ -176,9 +176,9 @@ def _box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> Bo
     )
 
 
-def heading_level(item: dict[str, Any]) -> int:
+def get_heading_level(item: dict[str, Any]) -> int:
     """0 for the document title, >=1 for section headers (docling `level`)."""
-    if label_of(item) == "title":
+    if get_label(item) == "title":
         return 0
     try:
         return max(int(item.get("level") or 1), 1)
@@ -186,18 +186,18 @@ def heading_level(item: dict[str, Any]) -> int:
         return 1
 
 
-def label_of(item: dict[str, Any]) -> str:
+def get_label(item: dict[str, Any]) -> str:
     return (item.get("label") or "text").lower()
 
 
-def title_of(item: dict[str, Any], inline_meta: dict[str, dict[str, Any]]) -> str:
+def get_title(item: dict[str, Any], inline_meta: dict[str, dict[str, Any]]) -> str:
     ref = item.get("self_ref") or ""
     meta = inline_meta.get(ref)
     raw = (meta or {}).get("text") or item.get("text") or ""
     title = str(raw).strip()
     if title:
         return truncate_title(title)
-    label = label_of(item)
+    label = get_label(item)
     return {"table": "Table", "picture": "Figure", "list": "List"}.get(label, label or "node")
 
 

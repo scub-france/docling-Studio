@@ -60,7 +60,7 @@ class BoundingBox:
     page_width: float | None = None
     page_height: float | None = None
 
-    def pixel_box(self, *, dpi: int = 150, padding: int = 8) -> tuple[int, int, int, int] | None:
+    def to_pixel_box(self, *, dpi: int = 150, padding: int = 8) -> tuple[int, int, int, int] | None:
         """Project the box onto a page rendered at `dpi`, origin-normalised.
 
         Docling reports points (1/72 inch) from whichever corner the parse
@@ -107,18 +107,18 @@ class BoundingBox:
         left, right = sorted((self.left, self.right))
         top, bottom = sorted((top, bottom))
 
-        def share(value: float, size: float) -> float:
+        def to_fraction(value: float, size: float) -> float:
             return min(1.0, max(0.0, value / size))
 
         return (
-            share(left, self.page_width),
-            share(top, self.page_height),
-            share(right, self.page_width),
-            share(bottom, self.page_height),
+            to_fraction(left, self.page_width),
+            to_fraction(top, self.page_height),
+            to_fraction(right, self.page_width),
+            to_fraction(bottom, self.page_height),
         )
 
     @classmethod
-    def union(cls, boxes: Sequence[BoundingBox]) -> BoundingBox | None:
+    def compute_union(cls, boxes: Sequence[BoundingBox]) -> BoundingBox | None:
         """The smallest box covering `boxes` — for a citation spanning several.
 
         Only boxes sharing the first one's page *and* coordinate origin are
@@ -331,7 +331,7 @@ def estimate_tokens(text: str) -> int:
     return max(1, (len(text) + _CHARS_PER_TOKEN - 1) // _CHARS_PER_TOKEN)
 
 
-def chars_for_tokens(tokens: int) -> int:
+def compute_char_budget(tokens: int) -> int:
     """Inverse of `estimate_tokens` — the character budget for `tokens`."""
     return max(1, tokens) * _CHARS_PER_TOKEN
 
@@ -358,7 +358,7 @@ def clip_point(text: str, budget: int) -> int:
     """Where `clip_to_tokens` cuts `text`: the start of the first word it
     drops, or `len(text)` when all of it fits. Never 0 when it cuts, so a
     read resuming there always moves forward."""
-    limit = chars_for_tokens(max(1, budget - estimate_tokens(CLIP_MARKER)))
+    limit = compute_char_budget(max(1, budget - estimate_tokens(CLIP_MARKER)))
     if len(text) <= limit:
         return len(text)
     space = text.rfind(" ", 0, limit + 1)

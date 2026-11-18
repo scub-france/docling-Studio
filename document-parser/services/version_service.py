@@ -41,11 +41,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _new_id() -> str:
+def _generate_id() -> str:
     return uuid.uuid4().hex
 
 
-def _utcnow() -> datetime:
+def _get_utc_now() -> datetime:
     return datetime.now(UTC)
 
 
@@ -120,7 +120,7 @@ class VersionService:
         chunks = await self._chunks.find_for_document(document_id)
         source = await self._chunk_sources.get_chunk_source(document_id)
         version = DocumentVersion(
-            id=_new_id(),
+            id=_generate_id(),
             document_id=document_id,
             kind=DocumentVersionKind.ANALYSIS,
             analysis_id=analysis_id,
@@ -128,7 +128,7 @@ class VersionService:
             chunks_source_result_hash=source.result_hash if source else None,
             chunks_snapshot=_serialize_chunks(chunks),
             summary="Analysis run",
-            created_at=_utcnow(),
+            created_at=_get_utc_now(),
         )
         await self._versions.insert(version)
         return version
@@ -144,7 +144,7 @@ class VersionService:
         analysis pointer is the one rechunk just consumed."""
         chunks = await self._chunks.find_for_document(document_id)
         version = DocumentVersion(
-            id=_new_id(),
+            id=_generate_id(),
             document_id=document_id,
             kind=DocumentVersionKind.CHUNKS,
             analysis_id=analysis_id,
@@ -152,7 +152,7 @@ class VersionService:
             chunks_source_result_hash=source_result_hash,
             chunks_snapshot=_serialize_chunks(chunks),
             summary="Chunks generated",
-            created_at=_utcnow(),
+            created_at=_get_utc_now(),
         )
         await self._versions.insert(version)
         return version
@@ -176,7 +176,7 @@ class VersionService:
 
         # Wipe live chunks (soft-delete), then re-insert the
         # snapshot's chunks under fresh ids.
-        await self._chunks.soft_delete_for_document(document_id, at=_utcnow())
+        await self._chunks.soft_delete_for_document(document_id, at=_get_utc_now())
 
         raw_chunks = json.loads(version.chunks_snapshot or "[]")
         new_chunks: list[Chunk] = []
@@ -226,7 +226,7 @@ def _chunk_from_snapshot(document_id: str, raw: dict) -> Chunk:
     from domain.value_objects import ChunkBbox, ChunkDocItem
 
     return Chunk(
-        id=_new_id(),
+        id=_generate_id(),
         document_id=document_id,
         sequence=raw.get("sequence", 0),
         text=raw.get("text", ""),

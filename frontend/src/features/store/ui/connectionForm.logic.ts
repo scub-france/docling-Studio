@@ -63,11 +63,11 @@ export interface ConnectionFormState {
   clearPassword: boolean
 }
 
-export function emptyConnectionFormState(): ConnectionFormState {
+export function createEmptyConnectionFormState(): ConnectionFormState {
   return { uri: '', username: '', password: '', clearPassword: false }
 }
 
-export function connectionFormFromStore(detail: {
+export function toConnectionFormState(detail: {
   connectionUri?: string | null
   connectionUsername?: string | null
 }): ConnectionFormState {

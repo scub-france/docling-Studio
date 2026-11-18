@@ -58,7 +58,7 @@
           <p>{{ t('docs.batchFailed') }}</p>
           <ul>
             <li v-for="failure in launchFailures" :key="failure.documentId">
-              {{ filenameOf(failure.documentId) }}: {{ failure.error }}
+              {{ findFilename(failure.documentId) }}: {{ failure.error }}
             </li>
           </ul>
         </div>
@@ -212,7 +212,7 @@ import { AnalysisImportButton } from '../features/analysis'
 import { fetchDocumentAnalyses } from '../features/analysis/api'
 import { useAnalysisStore } from '../features/analysis/store'
 import type { BatchLaunch } from '../features/analysis/store'
-import { keepListed, selectionState, toggleListed, toggleOne } from './DocsLibraryPage.logic'
+import { keepListed, getSelectionState, toggleListed, toggleOne } from './DocsLibraryPage.logic'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import type { Document } from '../shared/types'
@@ -276,7 +276,7 @@ const launching = ref(false)
 const launchFailures = ref<BatchLaunch['failed']>([])
 
 const listedIds = computed(() => filteredDocs.value.map((doc) => doc.id))
-const selection = computed(() => selectionState(selected.value, listedIds.value))
+const selection = computed(() => getSelectionState(selected.value, listedIds.value))
 
 // Only listed documents stay selected, so the count and Analyze match the rows shown.
 watch(listedIds, (ids) => {
@@ -296,7 +296,7 @@ function clearSelection(): void {
   launchFailures.value = []
 }
 
-function filenameOf(id: string): string {
+function findFilename(id: string): string {
   return docStore.documents.find((doc) => doc.id === id)?.filename ?? id
 }
 

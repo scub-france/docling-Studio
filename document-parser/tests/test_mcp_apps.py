@@ -70,7 +70,7 @@ def _service_with_file(tmp_path: Path, **kwargs):
 class TestPixelProjection:
     def test_topleft_scales_by_dpi(self):
         box = BoundingBox(page=1, left=72, top=100, right=172, bottom=200, page_height=792)
-        assert box.pixel_box(dpi=144, padding=0) == (144, 200, 344, 400)
+        assert box.to_pixel_box(dpi=144, padding=0) == (144, 200, 344, 400)
 
     def test_bottomleft_is_flipped_through_the_page_height(self):
         # y grows upwards: `top` is the larger number, and the crop needs the
@@ -84,18 +84,18 @@ class TestPixelProjection:
             coord_origin="BOTTOMLEFT",
             page_height=792,
         )
-        assert box.pixel_box(dpi=72, padding=0) == (72, 92, 172, 192)
+        assert box.to_pixel_box(dpi=72, padding=0) == (72, 92, 172, 192)
 
     def test_padding_never_goes_negative(self):
         box = BoundingBox(page=1, left=2, top=2, right=50, bottom=50)
-        left, top, _, _ = box.pixel_box(dpi=72, padding=20)
+        left, top, _, _ = box.to_pixel_box(dpi=72, padding=20)
         assert (left, top) == (0, 0)
 
     def test_inverted_corners_are_normalised(self):
         # A box whose corners arrive the wrong way round must not produce a
         # negative-height crop — that raises deep inside the imaging library.
         box = BoundingBox(page=1, left=200, top=300, right=100, bottom=100)
-        left, top, right, bottom = box.pixel_box(dpi=72, padding=0)
+        left, top, right, bottom = box.to_pixel_box(dpi=72, padding=0)
         assert left < right and top < bottom
 
     def test_bottomleft_without_a_page_height_has_no_box(self):
@@ -103,7 +103,7 @@ class TestPixelProjection:
         box = BoundingBox(
             page=1, left=10, top=300, right=100, bottom=100, coord_origin="BOTTOMLEFT"
         )
-        assert box.pixel_box(dpi=72, padding=0) is None
+        assert box.to_pixel_box(dpi=72, padding=0) is None
 
 
 class TestRenderPage:

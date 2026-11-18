@@ -36,7 +36,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, reactive, onBeforeUnmount } from 'vue'
-import { computeScale, bboxToRect, pointInRect } from '@/shared/bboxScaling'
+import { computeScale, bboxToRect, isPointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement, ChunkBbox } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
 
@@ -174,7 +174,7 @@ function onMouseMove(e: MouseEvent): void {
   let found: PageElement | null = null
   let foundIdx = -1
   for (const el of visibleElements.value) {
-    if (pointInRect(mx, my, bboxToRect(el.bbox, scale))) {
+    if (isPointInRect(mx, my, bboxToRect(el.bbox, scale))) {
       found = el
       foundIdx = contentElements.value.indexOf(el)
       break

@@ -55,7 +55,7 @@ function findFoldTarget(queue: AnalysisEditCommand[], command: FoldableCommand):
  * whatever order the user clicked in. Ids missing from `readingOrder` keep
  * their relative order after the others.
  */
-export function inReadingOrder(ids: string[], readingOrder: string[]): string[] {
+export function sortInReadingOrder(ids: string[], readingOrder: string[]): string[] {
   const position = new Map(readingOrder.map((id, index) => [id, index]))
   return ids
     .map((id, clickIndex) => ({ id, clickIndex, rank: position.get(id) ?? Infinity }))

@@ -80,13 +80,15 @@ class ParseLoader:
             raise DocumentNotFoundError(f"Document not found: {document_id}")
 
         if version_id:
-            if await self._analyses.parsed_document_id(version_id) != document_id:
+            if await self._analyses.find_parsed_document_id(version_id) != document_id:
                 raise NoParseError(
                     f"Version {version_id} is not a parse of document {document_id}.",
                     http_status=404,
                 )
         else:
-            version_id = (await self._analyses.latest_parsed_ids([document_id])).get(document_id)
+            version_id = (await self._analyses.find_latest_parsed_ids([document_id])).get(
+                document_id
+            )
             if version_id is None:
                 raise NoParseError(
                     f"Document {document_id} has no parsed content to navigate yet. "

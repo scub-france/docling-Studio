@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from domain.anchors import DocumentAnchor, normalise_quote, quote_hash
-from domain.element_reader import element_text, resolve, section_refs
+from domain.element_reader import list_section_refs, read_element_text, resolve
 from domain.navigation import (
     Citation,
     CitationCheck,
@@ -28,7 +28,7 @@ from domain.navigation import (
     estimate_tokens,
 )
 from domain.parse_index import parse_page_ref
-from domain.spans import is_span, span_ref, span_start
+from domain.spans import build_span_ref, get_span_start, is_span
 from services.navigation_errors import (
     InvalidArgumentError,
     NavigationServiceError,
@@ -118,7 +118,7 @@ class CitationService:
                 status=CitationStatus.QUOTE_DRIFT,
                 detail="No quote supplied to verify.",
                 citation=citation,
-                actual_quote=self._clipped(element.text),
+                actual_quote=self._clip(element.text),
             )
 
         match = self._locate_quote(parse.index, anchor.ref, element, claimed)
@@ -131,11 +131,11 @@ class CitationService:
                     "verbatim, or re-read the element."
                 ),
                 citation=citation,
-                actual_quote=self._clipped(element.text),
+                actual_quote=self._clip(element.text),
             )
 
         matched = self.build(parse.document.id, parse.version_id, match)
-        current = await self._superseding_parse(parse.document.id, parse.version_id)
+        current = await self._find_superseding_parse(parse.document.id, parse.version_id)
         if current is not None:
             return CitationCheck(
                 valid=True,
@@ -146,14 +146,14 @@ class CitationService:
                     "document to cite the current parse."
                 ),
                 citation=matched,
-                actual_quote=self._clipped(match.text),
+                actual_quote=self._clip(match.text),
             )
         return CitationCheck(
             valid=True,
             status=CitationStatus.VERIFIED,
-            detail=_found_detail(anchor.ref, match.ref),
+            detail=_describe_found(anchor.ref, match.ref),
             citation=matched,
-            actual_quote=self._clipped(match.text),
+            actual_quote=self._clip(match.text),
         )
 
     # ------------------------------------------------------------------
@@ -183,19 +183,21 @@ class CitationService:
             page=element.page,
             bbox=element.bbox,
             headings=list(element.headings),
-            deep_link=self.deep_link(version_id, element),
+            deep_link=self.build_deep_link(version_id, element),
         )
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
-    def _clipped(self, text: str) -> str:
+    def _clip(self, text: str) -> str:
         return clip_to_tokens(text, self._config.max_read_tokens)
 
-    async def _superseding_parse(self, document_id: str, version_id: str) -> str | None:
+    async def _find_superseding_parse(self, document_id: str, version_id: str) -> str | None:
         """The id of the current parse when the anchor pins an older one."""
-        latest = (await self._parses.analyses.latest_parsed_ids([document_id])).get(document_id)
+        latest = (await self._parses.analyses.find_latest_parsed_ids([document_id])).get(
+            document_id
+        )
         return latest if latest is not None and latest != version_id else None
 
     @staticmethod
@@ -217,7 +219,7 @@ class CitationService:
         # hand back the range as sent, however wide. Look inside it instead.
         if not is_span(ref) and claimed in normalise_quote(element.text):
             return element
-        covered = section_refs(index, ref)
+        covered = list_section_refs(index, ref)
         for candidate in covered:
             if candidate == ref:
                 continue
@@ -241,7 +243,7 @@ class CitationService:
         That bound is what keeps this linear-ish over a long section instead
         of quadratic.
         """
-        texts = [(ref, normalise_quote(element_text(index, ref))) for ref in refs]
+        texts = [(ref, normalise_quote(read_element_text(index, ref))) for ref in refs]
         texts = [(ref, text) for ref, text in texts if text]
         # Longer than everything the anchor covers, joined: no window can hold it.
         if len(claimed) > sum(len(text) + 1 for _, text in texts):
@@ -254,7 +256,7 @@ class CitationService:
                 joined = f"{joined} {texts[end][1]}"
                 if claimed in joined:
                     first = CitationService._trim_left(texts, start, end, claimed)
-                    return resolve(index, span_ref(texts[first][0], texts[end][0]))
+                    return resolve(index, build_span_ref(texts[first][0], texts[end][0]))
         return None
 
     @staticmethod
@@ -276,7 +278,7 @@ class CitationService:
             start += 1
         return start
 
-    def deep_link(self, version_id: str, element: ResolvedElement) -> str | None:
+    def build_deep_link(self, version_id: str, element: ResolvedElement) -> str | None:
         """The Studio URL that opens the cited parse on this element — None
         without a configured base: a bare path is no link for a reader."""
         base = self._config.studio_base_url.rstrip("/")
@@ -286,13 +288,13 @@ class CitationService:
         # The viewer focuses one element: a span opens on its first, and a
         # virtual page has none — its page is the whole target.
         if parse_page_ref(element.ref) is None:
-            query["ref"] = span_start(element.ref)
+            query["ref"] = get_span_start(element.ref)
         if element.page is not None:
             query["page"] = element.page
         return f"{base}/analyses/{version_id}" + (f"?{urlencode(query)}" if query else "")
 
 
-def _found_detail(asked: str, found: str) -> str:
+def _describe_found(asked: str, found: str) -> str:
     """What to tell an agent about where its quote actually turned up."""
     if found == asked:
         return "The quote appears verbatim in the cited element."

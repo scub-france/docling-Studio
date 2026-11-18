@@ -7,7 +7,7 @@ import json
 from fastapi import APIRouter, Query
 
 from api import deps  # noqa: TC001
-from api.errors import http_error
+from api.errors import to_http_error
 from api.schemas import (
     AnalysisEditHistoryActionRequest,
     AnalysisEditHistoryEntryResponse,
@@ -19,7 +19,7 @@ from api.schemas import (
 from domain.analysis_editing import (
     AnalysisEditError,
     EditCommand,
-    active_edit_commands,
+    resolve_active_edit_commands,
 )
 
 router = APIRouter(prefix="/api/documents", tags=["analysis-editor"])
@@ -114,7 +114,7 @@ async def load_editor(
     try:
         return _to_editor_response(await service.load_editor(doc_id, analysis_id))
     except AnalysisEditError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
 
 
 @router.post("/{doc_id}/analysis-edits/preview", response_model=AnalysisEditorResponse)
@@ -129,7 +129,7 @@ async def preview_edits(
             await service.preview(doc_id, _to_edit_commands(body), analysis_id)
         )
     except AnalysisEditError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
 
 
 @router.get(
@@ -143,10 +143,10 @@ async def edit_history(
 ) -> list[AnalysisEditHistoryEntryResponse]:
     try:
         records = await service.list_history(doc_id, analysis_id)
-        _, states = active_edit_commands(records)
+        _, states = resolve_active_edit_commands(records)
         return [_to_history_entry(record, states.get(record.sequence)) for record in records]
     except AnalysisEditError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
 
 
 @router.patch("/{doc_id}/analysis-edits/history/{sequence}", response_model=AnalysisEditorResponse)
@@ -168,7 +168,7 @@ async def set_edit_active(
             )
         )
     except AnalysisEditError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
 
 
 @router.post("/{doc_id}/analysis-edits", response_model=AnalysisEditSaveResponse)
@@ -192,7 +192,7 @@ async def save_edits(
             chunks_stale=snapshot.chunks_stale,
         )
     except AnalysisEditError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
 
 
 @router.post("/{doc_id}/analysis-edits/rebuild", response_model=AnalysisEditorResponse)
@@ -204,4 +204,4 @@ async def rebuild_edits(
     try:
         return _to_editor_response(await service.rebuild(doc_id, analysis_id))
     except AnalysisEditError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc

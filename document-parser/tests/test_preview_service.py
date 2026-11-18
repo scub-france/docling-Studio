@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from PIL import Image
 
-from api.errors import http_error
+from api.errors import to_http_error
 from domain.models import Document
 from domain.ports import PageRasterizer, PdfInspector
 from domain.value_objects import PageDetail
@@ -65,14 +65,14 @@ class TestGetPreview:
         with pytest.raises(PreviewPageNotFoundError) as caught:
             await service.get_preview("d1", page=4, dpi=96, image_format="png")
 
-        http = http_error(caught.value)
+        http = to_http_error(caught.value)
         assert (http.status_code, http.detail) == (404, "Page 4 not found")
 
     async def test_unknown_document(self):
         with pytest.raises(PreviewDocumentNotFoundError) as caught:
             await _service(None).get_preview("nope", page=1, dpi=96, image_format="png")
 
-        http = http_error(caught.value)
+        http = to_http_error(caught.value)
         assert (http.status_code, http.detail) == (404, "Document not found")
 
     async def test_page_beyond_the_known_count(self):
@@ -81,7 +81,7 @@ class TestGetPreview:
         with pytest.raises(PreviewPageOutOfRangeError) as caught:
             await service.get_preview("d1", page=10, dpi=96, image_format="png")
 
-        http = http_error(caught.value)
+        http = to_http_error(caught.value)
         assert http.status_code == 400
         assert http.detail == "Page 10 out of range (document has 3 pages)"
 

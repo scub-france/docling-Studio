@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from api.errors import http_error
+from api.errors import to_http_error
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
@@ -31,7 +31,7 @@ from services.store_service import StoreNotFoundError
     ],
 )
 def test_errors_map_to_their_status_and_keep_their_message(error, status):
-    http = http_error(error)
+    http = to_http_error(error)
 
     assert http.status_code == status
     assert http.detail == str(error)

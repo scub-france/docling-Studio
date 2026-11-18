@@ -14,8 +14,8 @@ from domain.app_config import ReasoningConfig
 from domain.mcp_config import McpRuntimeConfig
 from infra.docling_agent_reasoning import (
     DoclingAgentReasoningRunner,
-    deps_present,
-    deps_provenance,
+    describe_deps_provenance,
+    has_usable_deps,
 )
 from infra.llm.ollama_provider import OllamaProvider
 from infra.settings import settings
@@ -70,7 +70,7 @@ def build_chunker():
     return LocalChunker()
 
 
-def env_reasoning_config() -> ReasoningConfig:
+def build_env_reasoning_config() -> ReasoningConfig:
     """Bootstrap defaults for the runtime-configurable reasoning knobs (#317).
 
     Env vars seed the config; `app_settings` rows override them at runtime via
@@ -92,12 +92,12 @@ def build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunn
     """
     if not config.enabled:
         return None
-    if not deps_present():
+    if not has_usable_deps():
         logger.warning(
             "Reasoning is enabled but the stack is unusable (%s) — runner "
             "disabled, /api/reasoning will 503. Expected docling-agent >= 0.6.0 + mellea; "
             "a bare `uvicorn` resolves against the ambient interpreter, not the project venv.",
-            deps_provenance(),
+            describe_deps_provenance(),
         )
         return None
     if settings.llm_provider_type != "ollama":
@@ -110,7 +110,7 @@ def build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunn
         return None
 
     provider = OllamaProvider(host=config.ollama_host, default_model_id=config.model_id)
-    logger.info("Reasoning runner enabled (%s)", deps_provenance())
+    logger.info("Reasoning runner enabled (%s)", describe_deps_provenance())
     return DoclingAgentReasoningRunner(provider=provider, max_iterations=config.max_iterations)
 
 
@@ -238,7 +238,7 @@ def build_chunk_service(**repos) -> ChunkService:
     )
 
 
-def env_mcp_config() -> McpRuntimeConfig:
+def build_env_mcp_config() -> McpRuntimeConfig:
     """Bootstrap defaults for the runtime-configurable MCP knobs (#364).
 
     Env vars seed the config; `app_settings` rows override them at runtime via

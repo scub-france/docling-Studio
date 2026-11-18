@@ -89,7 +89,7 @@ The Parse and Chunk tabs draw with `frontend/src/features/document/ui/BboxCanvas
 - computes the scale, then draws one rectangle per visible element;
 - when elements are selected, dims the others and draws the selected ones last, with a thicker stroke and a dashed outline.
 
-It redraws when the image is resized, and when the page, the elements, the hidden layers, the selection or the labels setting change. Hover and click use `pointInRect()` to find the element under the pointer.
+It redraws when the image is resized, and when the page, the elements, the hidden layers, the selection or the labels setting change. Hover and click use `isPointInRect()` to find the element under the pointer.
 
 The older Studio page (`/studio`, behind `STUDIO_MODE_ENABLED`) draws with `frontend/src/features/analysis/ui/BboxOverlay.vue` instead, which scales its canvas by `devicePixelRatio`.
 

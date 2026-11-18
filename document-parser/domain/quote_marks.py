@@ -65,37 +65,37 @@ def quote_marks(
     then looked for cell by cell, since the text layer may read the row in
     another order or with other cells between.
     """
-    hay, owners = _haystack(glyphs, within)
-    whole = _key(quote)
+    hay, owners = _build_haystack(glyphs, within)
+    whole = _to_match_key(quote)
     if len(whole) >= _MIN_CHARS and (spans := _find_all([whole], hay)):
-        return _lines(glyphs, owners, spans, page)
-    parts = [_key(part) for part in quote.split("|")]
+        return _build_line_marks(glyphs, owners, spans, page)
+    parts = [_to_match_key(part) for part in quote.split("|")]
     parts = [part for part in parts if len(part) >= _MIN_CHARS]
     if len(parts) < 2:
         return []
-    return _lines(glyphs, owners, _find_all(parts, hay), page)
+    return _build_line_marks(glyphs, owners, _find_all(parts, hay), page)
 
 
-def _key(text: str) -> str:
+def _to_match_key(text: str) -> str:
     """Letters and digits only, case folded, ligatures and widths unfolded."""
     return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
 
 
-def _haystack(glyphs: Sequence[Glyph], within: Sequence[PageRegion]) -> tuple[str, list[int]]:
+def _build_haystack(glyphs: Sequence[Glyph], within: Sequence[PageRegion]) -> tuple[str, list[int]]:
     """The page's letters and digits inside the blocks, and the glyph each
     one came from (a ligature gives several)."""
     chars: list[str] = []
     owners: list[int] = []
     for index, glyph in enumerate(glyphs):
-        if glyph.box is None or not _inside(glyph.box, within):
+        if glyph.box is None or not _is_inside(glyph.box, within):
             continue
-        for char in _key(glyph.char):
+        for char in _to_match_key(glyph.char):
             chars.append(char)
             owners.append(index)
     return "".join(chars), owners
 
 
-def _inside(box: tuple[float, float, float, float], within: Sequence[PageRegion]) -> bool:
+def _is_inside(box: tuple[float, float, float, float], within: Sequence[PageRegion]) -> bool:
     if not within:
         return True
     x, y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
@@ -129,7 +129,7 @@ def _find(needle: str, hay: str, start: int) -> tuple[int, int] | None:
     return match.span() if match else None
 
 
-def _lines(
+def _build_line_marks(
     glyphs: Sequence[Glyph], owners: list[int], spans: list[tuple[int, int]], page: int
 ) -> list[PageRegion]:
     """One rectangle per run of matched glyphs on one line.
@@ -145,7 +145,7 @@ def _lines(
             if box is None:
                 continue
             left, top, right, bottom = box
-            if line is not None and _same_line(line, box):
+            if line is not None and _is_same_line(line, box):
                 line = [
                     min(line[0], left),
                     min(line[1], top),
@@ -161,7 +161,7 @@ def _lines(
     return marks[:MAX_MARKS]
 
 
-def _same_line(line: list[float], box: tuple[float, float, float, float]) -> bool:
+def _is_same_line(line: list[float], box: tuple[float, float, float, float]) -> bool:
     height = max(box[3] - box[1], 1e-6)
     centre, line_centre = (box[1] + box[3]) / 2, (line[1] + line[3]) / 2
     return abs(centre - line_centre) < height / 2 and box[0] >= line[2] - height

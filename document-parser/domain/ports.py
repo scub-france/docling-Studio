@@ -317,9 +317,9 @@ class AnalysisRepository(Protocol):
 
     # The parse lookups below read ids and one column, never whole rows: a
     # row carries the docling JSON, the HTML and the markdown.
-    async def latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]: ...
+    async def find_latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]: ...
 
-    async def parsed_document_id(self, job_id: str) -> str | None: ...
+    async def find_parsed_document_id(self, job_id: str) -> str | None: ...
 
     async def parse_json(self, job_id: str) -> str | None: ...
 
@@ -606,7 +606,9 @@ class DocumentTreeReader(Protocol):
         """
         ...
 
-    def dfs_order(self, doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
+    def list_dfs_order(
+        self, doc_data: dict[str, Any], skip_refs: set[str] | None = None
+    ) -> list[str]:
         """Return `self_ref`s in reading order (DFS pre-order from body),
         omitting `skip_refs`."""
         ...
@@ -670,7 +672,7 @@ class PageTextReader(Protocol):
     while finding a quote among them is domain logic (`domain.quote_marks`).
     """
 
-    def glyphs(self, storage_path: str, *, page: int) -> list[Glyph]:
+    def read_glyphs(self, storage_path: str, *, page: int) -> list[Glyph]:
         """Every character of `page`, in the text layer's order, each with its
         box as fractions of the page from the top-left corner. Empty for a
         page it cannot place characters on (a rotated page, a scan)."""

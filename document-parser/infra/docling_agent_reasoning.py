@@ -45,7 +45,7 @@ def _import_deps() -> _Deps:
     carries the trace surface.
 
     Single source of truth for the dependency contract: `run()` calls it to do
-    its work and `deps_present()` calls it to decide availability at boot, so
+    its work and `has_usable_deps()` calls it to decide availability at boot, so
     the boot check cannot drift from what `run()` actually imports. That drift
     is what let docling-agent 0.1.0 — which has `agents` but neither `backends`
     nor `run_with_trace` — pass the old two-module check, advertise
@@ -75,7 +75,7 @@ def _import_deps() -> _Deps:
     )
 
 
-def deps_present() -> bool:
+def has_usable_deps() -> bool:
     """Whether the reasoning stack is importable *and* new enough. Used by the
     DI wire-up to decide whether to instantiate the runner at all, so a missing
     or stale docling-agent surfaces as `reasoning_available: false` at boot
@@ -88,7 +88,7 @@ def deps_present() -> bool:
     return True
 
 
-def deps_provenance() -> str:
+def describe_deps_provenance() -> str:
     """Which docling-agent actually got resolved, as `version from path`.
 
     Logged at boot: the install is easy to get wrong (a bare `uvicorn` picks up
@@ -140,7 +140,7 @@ class DoclingAgentReasoningRunner:
             )
         self._provider = provider
         self._max_iterations = max_iterations
-        self._deps_ok = deps_present()
+        self._deps_ok = has_usable_deps()
 
     @property
     def is_available(self) -> bool:
@@ -157,7 +157,7 @@ class DoclingAgentReasoningRunner:
             raise RuntimeError("docling-agent / mellea not importable — cannot run reasoning")
 
         # Lazy import keeps the module loadable when deps are missing. Shared
-        # with `deps_present()` so the boot check covers exactly what runs here.
+        # with `has_usable_deps()` so the boot check covers exactly what runs here.
         deps = _import_deps()
 
         raw_model_id = model_id or self._provider.default_model_id

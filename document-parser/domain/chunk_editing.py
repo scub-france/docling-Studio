@@ -26,11 +26,11 @@ class ChunkEditingError(Exception):
     a wider catch."""
 
 
-def _utcnow() -> datetime:
+def _get_utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _new_id() -> str:
+def _generate_id() -> str:
     return uuid.uuid4().hex
 
 
@@ -57,9 +57,9 @@ def insert(
     """
     if at_position < 0 or at_position > len(chunks):
         raise ChunkEditingError(f"insert position out of range: {at_position}")
-    now = _utcnow()
+    now = _get_utc_now()
     new_chunk = Chunk(
-        id=_new_id(),
+        id=_generate_id(),
         document_id=document_id,
         sequence=at_position,
         text=text,
@@ -95,7 +95,7 @@ def update(
         target.text = text
     if headings is not None:
         target.headings = list(headings)
-    target.updated_at = _utcnow()
+    target.updated_at = _get_utc_now()
     return list(chunks), target
 
 
@@ -106,7 +106,7 @@ def delete(chunks: list[Chunk], chunk_id: str) -> tuple[list[Chunk], Chunk]:
     target = chunks[idx]
     if target.deleted_at is not None:
         return list(chunks), target  # idempotent
-    target.deleted_at = _utcnow()
+    target.deleted_at = _get_utc_now()
     target.updated_at = target.deleted_at
     return list(chunks), target
 
@@ -144,9 +144,9 @@ def merge(
     merged_page = min((c.source_page for c in sources if c.source_page is not None), default=None)
     merged_sequence = min(c.sequence for c in sources)
 
-    now = _utcnow()
+    now = _get_utc_now()
     new_chunk = Chunk(
-        id=_new_id(),
+        id=_generate_id(),
         document_id=document_id,
         sequence=merged_sequence,
         text=merged_text,
@@ -182,9 +182,9 @@ def split(
     if at_offset <= 0 or at_offset >= len(target.text):
         raise ChunkEditingError(f"split offset out of range for chunk of length {len(target.text)}")
 
-    now = _utcnow()
+    now = _get_utc_now()
     left = Chunk(
-        id=_new_id(),
+        id=_generate_id(),
         document_id=target.document_id,
         sequence=target.sequence,
         text=target.text[:at_offset],
@@ -194,7 +194,7 @@ def split(
         updated_at=now,
     )
     right = Chunk(
-        id=_new_id(),
+        id=_generate_id(),
         document_id=target.document_id,
         sequence=target.sequence + 1,
         text=target.text[at_offset:],

@@ -128,7 +128,7 @@ class SqliteAnalysisRepository:
             row = await cursor.fetchone()
             return _row_to_job(row) if row else None
 
-    async def latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]:
+    async def find_latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]:
         """For each document, the id of its latest completed analysis with a parse."""
         if not document_ids:
             return {}
@@ -147,7 +147,7 @@ class SqliteAnalysisRepository:
             )
             return {row["document_id"]: row["id"] for row in await cursor.fetchall()}
 
-    async def parsed_document_id(self, job_id: str) -> str | None:
+    async def find_parsed_document_id(self, job_id: str) -> str | None:
         """The document an analysis with a parse belongs to, or None."""
         async with get_connection() as db:
             cursor = await db.execute(

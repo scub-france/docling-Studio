@@ -211,7 +211,7 @@ class TestCard:
         from tests.navigation_fixtures import make_document
 
         class Reader:
-            def glyphs(self, storage_path, *, page):
+            def read_glyphs(self, storage_path, *, page):
                 text = "Le préavis est de trois mois à compter de la notification."
                 return [
                     Glyph(c, (0.12 + n * 0.01, 0.38, 0.13 + n * 0.01, 0.395))

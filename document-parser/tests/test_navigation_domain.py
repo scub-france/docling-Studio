@@ -17,11 +17,11 @@ from domain.anchors import (
     normalise_quote,
     quote_hash,
 )
-from domain.element_reader import element_text, render_markdown, resolve, section_refs
+from domain.element_reader import list_section_refs, read_element_text, render_markdown, resolve
 from domain.navigation import BoundingBox, estimate_tokens
 from domain.outline_builder import build_outline
 from domain.parse_index import build_index, page_ref, parse_page_ref
-from domain.spans import is_span, parse_span, span_members
+from domain.spans import is_span, list_span_members, parse_span
 from infra.docling_tree import DoclingTreeReader
 from tests.navigation_fixtures import FLAT, MESSY, SECTIONED
 
@@ -241,7 +241,7 @@ class TestOutline:
         index = _index(_relabelled(texts_0="text", texts_1="text"))
         preamble = build_outline(index, depth=2).nodes[0]
         assert preamble.ref == "#/texts/0..#/texts/2"
-        assert section_refs(index, preamble.ref) == ["#/texts/0", "#/texts/1", "#/texts/2"]
+        assert list_section_refs(index, preamble.ref) == ["#/texts/0", "#/texts/1", "#/texts/2"]
 
     def test_a_single_heading_falls_back_to_pages(self):
         # One heading covering the whole document is a one-node map.
@@ -271,7 +271,7 @@ class TestResolution:
         assert resolve(_index(), "#/pages/99") is None
 
     def test_section_of_a_heading_stops_at_the_next_peer(self):
-        refs = section_refs(_index(), "#/texts/1")
+        refs = list_section_refs(_index(), "#/texts/1")
         assert refs == [
             "#/texts/1",
             "#/texts/2",
@@ -283,18 +283,18 @@ class TestResolution:
         assert "#/texts/6" not in refs  # Article 13 is a sibling, not content
 
     def test_section_of_a_leaf_is_itself(self):
-        assert section_refs(_index(), "#/texts/2") == ["#/texts/2"]
+        assert list_section_refs(_index(), "#/texts/2") == ["#/texts/2"]
 
     def test_page_ref_collects_everything_on_that_page(self):
-        assert section_refs(_index(FLAT), "#/pages/2") == ["#/texts/2"]
+        assert list_section_refs(_index(FLAT), "#/pages/2") == ["#/texts/2"]
 
     def test_table_renders_as_markdown(self):
-        text = element_text(_index(), "#/tables/0")
+        text = read_element_text(_index(), "#/tables/0")
         assert text.splitlines()[0] == "| Motif | Préavis |"
         assert "| Faute grave | Aucun |" in text
 
     def test_picture_falls_back_to_its_caption(self):
-        assert element_text(_index(), "#/pictures/0") == (
+        assert read_element_text(_index(), "#/pictures/0") == (
             "[figure] Figure 1 — Processus de résiliation"
         )
 
@@ -313,8 +313,8 @@ class TestPageProvenance:
         # It starts on page 1 — that is what a citation reports…
         assert index.page_of["#/texts/3"] == 1
         # …but reading page 2 must still surface it: it is visible there.
-        assert "#/texts/3" in section_refs(index, "#/pages/2")
-        assert "#/texts/3" in section_refs(index, "#/pages/1")
+        assert "#/texts/3" in list_section_refs(index, "#/pages/2")
+        assert "#/texts/3" in list_section_refs(index, "#/pages/1")
 
     def test_bbox_carries_the_page_dimensions(self):
         bbox = resolve(_index(MESSY), "#/texts/1").bbox
@@ -331,23 +331,23 @@ class TestPageProvenance:
 
     def test_running_headers_and_footers_carry_no_readable_text(self):
         index = _index(MESSY)
-        assert element_text(index, "#/texts/0") == ""  # page_header
-        assert element_text(index, "#/texts/4") == ""  # page_footer
+        assert read_element_text(index, "#/texts/0") == ""  # page_header
+        assert read_element_text(index, "#/texts/4") == ""  # page_footer
         # And they never reach a rendered excerpt.
-        elements = [resolve(index, ref) for ref in section_refs(index, "#/pages/2")]
+        elements = [resolve(index, ref) for ref in list_section_refs(index, "#/pages/2")]
         assert "page 2/2" not in render_markdown(elements)
 
 
 class TestTableRendering:
     def test_renders_the_grid_payload_variant(self):
-        text = element_text(_index(MESSY), "#/tables/0")
+        text = read_element_text(_index(MESSY), "#/tables/0")
         assert text.splitlines()[1] == "| --- | --- |"
         assert "| Ligne 1 | 42 |" in text
 
     def test_escapes_a_pipe_inside_a_cell(self):
         # An unescaped pipe silently shifts every column of the table the
         # agent is reading.
-        text = element_text(_index(MESSY), "#/tables/0")
+        text = read_element_text(_index(MESSY), "#/tables/0")
         header = text.splitlines()[0]
         assert r"Colonne \| pipe" in header
         # Three *unescaped* pipes: the cell's own pipe no longer opens a column.
@@ -357,7 +357,7 @@ class TestTableRendering:
         index = _index(MESSY)
         # The internal label extracted from the figure is not a reading-order node.
         assert "#/texts/6" not in index.order
-        assert element_text(index, "#/pictures/0") == "[figure] Figure A — schéma"
+        assert read_element_text(index, "#/pictures/0") == "[figure] Figure A — schéma"
 
 
 class TestPartialMetadata:
@@ -375,7 +375,7 @@ class TestPartialMetadata:
         assert index.page_numbers == [1, 2]
         assert [node.ref for node in draft.nodes] == ["#/pages/1", "#/pages/2"]
         assert resolve(index, "#/pages/2") is not None
-        assert section_refs(index, "#/pages/2") == ["#/texts/2"]
+        assert list_section_refs(index, "#/pages/2") == ["#/texts/2"]
 
     def test_an_unreadable_table_says_so_instead_of_reading_empty(self):
         import copy
@@ -386,7 +386,7 @@ class TestPartialMetadata:
         # A payload shape this version does not know — what a docling upgrade
         # looks like from here.
         payload["tables"][0]["data"] = {"cells_v2": [{"content": "Motif"}]}
-        text = element_text(_index(payload), "#/tables/0")
+        text = read_element_text(_index(payload), "#/tables/0")
         # Not "": an empty element is skipped by the reader, so the agent would
         # be told the table is empty rather than that it could not be read.
         assert text == UNREADABLE_TABLE
@@ -396,7 +396,7 @@ class TestPartialMetadata:
 
         payload = copy.deepcopy(SECTIONED)
         payload["tables"][0]["data"] = {}
-        assert element_text(_index(payload), "#/tables/0") == ""
+        assert read_element_text(_index(payload), "#/tables/0") == ""
 
 
 class TestSpanRefs:
@@ -415,7 +415,7 @@ class TestSpanRefs:
 
     def test_a_span_covers_everything_between_its_ends_in_reading_order(self):
         index = _index()
-        assert span_members(index, "#/texts/2", "#/texts/4") == [
+        assert list_span_members(index, "#/texts/2", "#/texts/4") == [
             "#/texts/2",
             "#/texts/3",
             "#/texts/4",
@@ -423,13 +423,13 @@ class TestSpanRefs:
 
     def test_reversed_endpoints_are_read_in_the_document_s_order(self):
         index = _index()
-        assert span_members(index, "#/texts/4", "#/texts/2") == span_members(
+        assert list_span_members(index, "#/texts/4", "#/texts/2") == list_span_members(
             index, "#/texts/2", "#/texts/4"
         )
 
     def test_an_endpoint_from_another_parse_covers_nothing(self):
         # Guessing at the overlap would produce a citation nobody asked for.
-        assert span_members(_index(), "#/texts/2", "#/texts/999") == []
+        assert list_span_members(_index(), "#/texts/2", "#/texts/999") == []
 
     def test_resolving_a_span_joins_the_members_own_text(self):
         element = resolve(_index(), "#/texts/2..#/texts/4")
@@ -470,7 +470,7 @@ class TestSpanRefs:
         assert resolve(_index(), "#/texts/99..#/texts/100") is None
 
     def test_reading_a_span_as_a_section_yields_its_members(self):
-        assert section_refs(_index(), "#/texts/2..#/texts/4") == [
+        assert list_section_refs(_index(), "#/texts/2..#/texts/4") == [
             "#/texts/2",
             "#/texts/3",
             "#/texts/4",
@@ -510,14 +510,14 @@ class TestPageFraction:
 
 class TestBoxUnion:
     def test_no_boxes_no_union(self):
-        assert BoundingBox.union([]) is None
+        assert BoundingBox.compute_union([]) is None
 
     def test_topleft_grows_downwards(self):
         boxes = [
             BoundingBox(page=1, left=72, top=100, right=500, bottom=140),
             BoundingBox(page=1, left=60, top=200, right=520, bottom=260),
         ]
-        union = BoundingBox.union(boxes)
+        union = BoundingBox.compute_union(boxes)
         assert (union.left, union.top, union.right, union.bottom) == (60, 100, 520, 260)
 
     def test_bottomleft_grows_upwards(self):
@@ -526,7 +526,7 @@ class TestBoxUnion:
             BoundingBox(page=1, left=72, top=700, right=500, bottom=660, coord_origin="BOTTOMLEFT"),
             BoundingBox(page=1, left=60, top=600, right=520, bottom=540, coord_origin="BOTTOMLEFT"),
         ]
-        union = BoundingBox.union(boxes)
+        union = BoundingBox.compute_union(boxes)
         assert (union.top, union.bottom) == (700, 540)
 
     def test_a_box_from_another_page_is_dropped_not_merged(self):
@@ -534,7 +534,7 @@ class TestBoxUnion:
             BoundingBox(page=1, left=72, top=100, right=500, bottom=140),
             BoundingBox(page=2, left=10, top=10, right=600, bottom=700),
         ]
-        union = BoundingBox.union(boxes)
+        union = BoundingBox.compute_union(boxes)
         assert union.page == 1
         assert (union.left, union.right) == (72, 500)
 
@@ -543,4 +543,4 @@ class TestBoxUnion:
             BoundingBox(page=1, left=72, top=100, right=500, bottom=140),
             BoundingBox(page=1, left=10, top=700, right=600, bottom=660, coord_origin="BOTTOMLEFT"),
         ]
-        assert BoundingBox.union(boxes).bottom == 140
+        assert BoundingBox.compute_union(boxes).bottom == 140

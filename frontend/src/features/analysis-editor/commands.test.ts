@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canMerge, coalesceCommands, inReadingOrder, validateMerge } from './commands'
+import { canMerge, coalesceCommands, sortInReadingOrder, validateMerge } from './commands'
 import type { EditorElement } from './types'
 
 const text = (id: string, parentId = 'parent'): EditorElement => ({
@@ -75,8 +75,8 @@ describe('analysis editor commands', () => {
   })
 
   it('orders merge ids by reading order, not click order (#392)', () => {
-    expect(inReadingOrder(['c', 'a', 'b'], ['a', 'b', 'c'])).toEqual(['a', 'b', 'c'])
-    expect(inReadingOrder(['x', 'b', 'y', 'a'], ['a', 'b'])).toEqual(['a', 'b', 'x', 'y'])
+    expect(sortInReadingOrder(['c', 'a', 'b'], ['a', 'b', 'c'])).toEqual(['a', 'b', 'c'])
+    expect(sortInReadingOrder(['x', 'b', 'y', 'a'], ['a', 'b'])).toEqual(['a', 'b', 'x', 'y'])
   })
 
   it('permits compatible text regardless of its original parent or position', () => {

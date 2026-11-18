@@ -29,7 +29,7 @@ export const UNKNOWN_ELEMENT_COLOR = '#94A3B8'
  * Lookup helper — returns the palette color for `type`, falling back to
  * `UNKNOWN_ELEMENT_COLOR` so callers never have to handle `undefined`.
  */
-export function colorFor(type: string): string {
+export function getElementColor(type: string): string {
   return ELEMENT_COLORS[type] ?? UNKNOWN_ELEMENT_COLOR
 }
 

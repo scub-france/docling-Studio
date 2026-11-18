@@ -91,7 +91,7 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
         return None
 
     server = build_mcp_server(
-        lambda: _tools_from(app),
+        lambda: _resolve_tools(app),
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         citation_card=settings.mcp_citation_card,
@@ -113,9 +113,11 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
         # `mcp_adapter/apps.py`); a future branch on negotiated capabilities
         # would have to go stateful, and pay for session affinity, first.
         stateless_http=True,
-        transport_security=_transport_security(),
+        transport_security=_build_transport_security(),
     )
-    app.router.routes.extend(_gated(route, lambda: _serving(app)) for route in mcp_app.routes)
+    app.router.routes.extend(
+        _wrap_route(route, lambda: _is_serving(app)) for route in mcp_app.routes
+    )
 
     logger.warning(
         "MCP document server mounted at %s — UNAUTHENTICATED: it reads every document. "
@@ -137,12 +139,12 @@ async def describe_mcp_server(mounted: MountedMcpServer | None) -> McpServerStat
     )
     if mounted is None:
         return status
-    tools = tuple(_tool_info(tool) for tool in await mounted.server.list_tools())
+    tools = tuple(_to_tool_info(tool) for tool in await mounted.server.list_tools())
     prompts = tuple(prompt.name for prompt in await mounted.server.list_prompts())
     return replace(status, tools=tools, prompts=prompts)
 
 
-def _tool_info(tool: Tool) -> McpToolInfo:
+def _to_tool_info(tool: Tool) -> McpToolInfo:
     ui = (tool.meta or {}).get("ui") or {}
     visibility = tuple(ui.get("visibility") or _DEFAULT_VISIBILITY)
     return McpToolInfo(name=tool.name, visibility=visibility, card="resourceUri" in ui)
@@ -169,7 +171,7 @@ class _ServingGate:
         await self._app(scope, receive, send)
 
 
-def _gated(route, serving: Callable[[], bool]):
+def _wrap_route(route, serving: Callable[[], bool]):
     """`route` behind the serving gate. The SDK mounts one `Route` around an
     ASGI app; anything else passes through untouched."""
     if not isinstance(route, Route):
@@ -182,14 +184,14 @@ def _gated(route, serving: Callable[[], bool]):
     )
 
 
-def _serving(app: FastAPI) -> bool:
+def _is_serving(app: FastAPI) -> bool:
     """Whether `/mcp` answers now. Before the container is published the
     gate lets requests through, and the tools say the backend is starting."""
     container: AppState | None = getattr(app.state, "container", None)
     return container is None or container.mcp_serving
 
 
-def _tools_from(app: FastAPI) -> DocumentTools:
+def _resolve_tools(app: FastAPI) -> DocumentTools:
     """Resolve the wired service, typed — `app.state` itself stays untyped.
 
     The one `getattr` is the same read `api.state.get_app_state` does, and for
@@ -207,7 +209,7 @@ def _tools_from(app: FastAPI) -> DocumentTools:
     return container.document_tools
 
 
-def _transport_security():
+def _build_transport_security():
     """DNS-rebinding protection for the streamable-HTTP transport.
 
     The SDK's own default only trusts localhost, which silently 421s a

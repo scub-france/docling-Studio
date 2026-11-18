@@ -17,8 +17,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildConnectionPayloadForCreate,
   buildConnectionPayloadForUpdate,
-  connectionFormFromStore,
-  emptyConnectionFormState,
+  toConnectionFormState,
+  createEmptyConnectionFormState,
   validateConnectionUri,
 } from './connectionForm.logic'
 
@@ -65,9 +65,9 @@ describe('validateConnectionUri', () => {
   })
 })
 
-describe('emptyConnectionFormState', () => {
+describe('createEmptyConnectionFormState', () => {
   it('produces a blank state ready for the create dialog', () => {
-    expect(emptyConnectionFormState()).toEqual({
+    expect(createEmptyConnectionFormState()).toEqual({
       uri: '',
       username: '',
       password: '',
@@ -76,9 +76,9 @@ describe('emptyConnectionFormState', () => {
   })
 })
 
-describe('connectionFormFromStore', () => {
+describe('toConnectionFormState', () => {
   it('hydrates URI + username, leaves password blank', () => {
-    const state = connectionFormFromStore({
+    const state = toConnectionFormState({
       connectionUri: 'bolt://x:7687',
       connectionUsername: 'neo4j',
     })
@@ -93,7 +93,7 @@ describe('connectionFormFromStore', () => {
   })
 
   it('treats nulls as empty', () => {
-    const state = connectionFormFromStore({
+    const state = toConnectionFormState({
       connectionUri: null,
       connectionUsername: null,
     })

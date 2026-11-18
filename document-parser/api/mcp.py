@@ -18,4 +18,4 @@ router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
 @router.get("/server", response_model=McpServerResponse)
 async def get_mcp_server(service: deps.McpConfigServiceDep) -> McpServerResponse:
-    return McpServerResponse.from_status(await service.server_status())
+    return McpServerResponse.from_status(await service.get_server_status())

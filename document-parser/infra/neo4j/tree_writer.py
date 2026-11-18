@@ -18,12 +18,12 @@ from typing import TYPE_CHECKING, Any
 
 from infra.docling_tree import (
     build_collapse_index,
-    dfs_order,
     get_parent_ref,
     is_inline_group,
     iter_items,
     iter_pages,
     iter_provs,
+    list_dfs_order,
     map_element_label,
 )
 
@@ -119,7 +119,7 @@ async def write_document(
 
     pages: list[dict[str, Any]] = [{"doc_id": doc_id, **p} for p in iter_pages(doc_data)]
 
-    reading_order = dfs_order(doc_data, skip_refs)
+    reading_order = list_dfs_order(doc_data, skip_refs)
 
     async with (
         neo.driver.session(database=neo.database) as session,

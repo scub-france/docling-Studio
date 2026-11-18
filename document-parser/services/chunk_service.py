@@ -20,7 +20,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain.analysis_editing import AnalysisEditUnavailableError, result_hash
+from domain.analysis_editing import AnalysisEditUnavailableError, hash_result
 from domain.models import (
     AnalysisStatus,
     Chunk,
@@ -88,11 +88,11 @@ class ChunkValidationError(ChunkServiceError):
 # ---------------------------------------------------------------------------
 
 
-def _utcnow() -> datetime:
+def _get_utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _new_id() -> str:
+def _generate_id() -> str:
     return str(uuid.uuid4())
 
 
@@ -230,15 +230,15 @@ class ChunkService:
     async def add_chunk(self, document_id: str, *, text: str, after_id: str | None = None) -> Chunk:
         await self._require_doc(document_id)
         existing = await self._chunks.find_for_document(document_id)
-        sequence = self._sequence_after(existing, after_id)
+        sequence = self._compute_sequence_after(existing, after_id)
         await self._shift_sequences(document_id, from_sequence=sequence)
 
         new_chunk = Chunk(
             document_id=document_id,
             sequence=sequence,
             text=text,
-            created_at=_utcnow(),
-            updated_at=_utcnow(),
+            created_at=_get_utc_now(),
+            updated_at=_get_utc_now(),
         )
         await self._chunks.insert(new_chunk)
         logger.info(
@@ -259,14 +259,14 @@ class ChunkService:
             chunk.text = text
         if headings is not None:
             chunk.headings = list(headings)
-        chunk.updated_at = _utcnow()
+        chunk.updated_at = _get_utc_now()
         await self._chunks.update(chunk)
         logger.info("chunk.update docId=%s chunkId=%s", document_id, chunk.id)
         return chunk
 
     async def delete_chunk(self, document_id: str, chunk_id: str) -> None:
         chunk = await self._require_chunk(document_id, chunk_id)
-        deleted = await self._chunks.soft_delete(chunk_id, at=_utcnow())
+        deleted = await self._chunks.soft_delete(chunk_id, at=_get_utc_now())
         if not deleted:
             raise ChunkNotFoundError(f"Chunk not found: {chunk_id}")
         logger.info("chunk.delete docId=%s chunkId=%s", document_id, chunk.id)
@@ -302,7 +302,7 @@ class ChunkService:
 
         # Push subsequent sequences by 1 to make room for `tail`.
         await self._shift_sequences(document_id, from_sequence=source.sequence + 1)
-        await self._chunks.soft_delete(source.id, at=_utcnow())
+        await self._chunks.soft_delete(source.id, at=_get_utc_now())
         await self._chunks.insert_many([head, tail])
 
         logger.info(
@@ -348,7 +348,7 @@ class ChunkService:
             token_count=token_total,
         )
 
-        await self._chunks.soft_delete_many([c.id for c in ordered], at=_utcnow())
+        await self._chunks.soft_delete_many([c.id for c in ordered], at=_get_utc_now())
         await self._chunks.insert(merged)
 
         logger.info(
@@ -385,7 +385,7 @@ class ChunkService:
         chunk_opts = ChunkingOptions(**options) if options else ChunkingOptions()
         new_results = await self._chunker.chunk(job.document_json, chunk_opts)
 
-        old_count = await self._chunks.soft_delete_for_document(document_id, at=_utcnow())
+        old_count = await self._chunks.soft_delete_for_document(document_id, at=_get_utc_now())
 
         new_chunks = [
             Chunk(
@@ -412,7 +412,7 @@ class ChunkService:
         source_analysis_id = job.id
         if active is not None:
             source_analysis_id = active.base_analysis_id
-        source_result_hash = result_hash(job.document_json)
+        source_result_hash = hash_result(job.document_json)
         await self._chunk_sources.set_chunk_source(
             DocumentChunkSource(document_id, source_analysis_id, source_result_hash)
         )
@@ -551,9 +551,9 @@ class ChunkService:
             raise
 
         chunk_ids = [c.id for c in canonical]
-        pushed_at = _utcnow()
+        pushed_at = _get_utc_now()
         push = ChunkPush(
-            id=_new_id(),
+            id=_generate_id(),
             document_id=document_id,
             store_id=resolved_store_id,
             chunkset_hash=chunkset_hash,
@@ -731,7 +731,7 @@ class ChunkService:
     # -- sequence helpers
 
     @staticmethod
-    def _sequence_after(existing: list[Chunk], after_id: str | None) -> int:
+    def _compute_sequence_after(existing: list[Chunk], after_id: str | None) -> int:
         if after_id is None:
             return (max((c.sequence for c in existing), default=-1)) + 1
         anchor = next((c for c in existing if c.id == after_id), None)
@@ -741,7 +741,9 @@ class ChunkService:
 
     async def _shift_sequences(self, document_id: str, *, from_sequence: int) -> None:
         """Push live chunks at >= from_sequence one slot up to make room, in one UPDATE."""
-        await self._chunks.shift_sequences(document_id, from_sequence=from_sequence, at=_utcnow())
+        await self._chunks.shift_sequences(
+            document_id, from_sequence=from_sequence, at=_get_utc_now()
+        )
 
 
 # ---------------------------------------------------------------------------

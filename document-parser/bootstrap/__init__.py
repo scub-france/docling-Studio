@@ -9,14 +9,14 @@ from bootstrap.builder import AppStateBuilder
 from bootstrap.factories import (
     build_chunker,
     build_converter,
+    build_env_reasoning_config,
     build_reasoning_runner,
-    env_reasoning_config,
 )
 
 __all__ = [
     "AppStateBuilder",
     "build_chunker",
     "build_converter",
+    "build_env_reasoning_config",
     "build_reasoning_runner",
-    "env_reasoning_config",
 ]

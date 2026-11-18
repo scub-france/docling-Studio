@@ -24,8 +24,8 @@
  */
 import { onBeforeUnmount, ref, watch } from 'vue'
 import type { PageElement } from '../../../shared/types'
-import { bboxToRect, computeScale, pointInRect } from '@/shared/bboxScaling'
-import { colorFor, UNKNOWN_ELEMENT_COLOR } from '@/shared/elementColors'
+import { bboxToRect, computeScale, isPointInRect } from '@/shared/bboxScaling'
+import { getElementColor, UNKNOWN_ELEMENT_COLOR } from '@/shared/elementColors'
 
 const props = defineProps<{
   imageEl: HTMLElement | null
@@ -58,11 +58,11 @@ function scheduleDraw(): void {
   })
 }
 
-function visibleElements(): PageElement[] {
+function listVisibleElements(): PageElement[] {
   return props.elements.filter((e) => !props.hiddenTypes.has(e.type))
 }
 
-function badgeRect(
+function computeBadgeRect(
   rect: { x: number; y: number },
   order: number,
   canvas: HTMLCanvasElement,
@@ -98,10 +98,10 @@ function draw(): void {
 
   const focusMode = highlighted.size > 0
   // Two-pass draw so the highlighted element ends up on top, fully crisp.
-  for (const el of visibleElements()) {
+  for (const el of listVisibleElements()) {
     const rect = bboxToRect(el.bbox, scale)
     if (rect.w <= 0 || rect.h <= 0) continue
-    const color = colorFor(el.type)
+    const color = getElementColor(el.type)
     const isHighlight = !!el.self_ref && highlighted.has(el.self_ref)
     if (isHighlight) continue // drawn in the second pass
 
@@ -124,11 +124,11 @@ function draw(): void {
   // Second pass — focused element, drawn on top with a bold stroke and a
   // dashed halo so it pops over the dimmed neighbours.
   if (focusMode) {
-    for (const el of visibleElements()) {
+    for (const el of listVisibleElements()) {
       if (!el.self_ref || !highlighted.has(el.self_ref)) continue
       const rect = bboxToRect(el.bbox, scale)
       if (rect.w <= 0 || rect.h <= 0) continue
-      const color = colorFor(el.type)
+      const color = getElementColor(el.type)
 
       // Halo (dashed outline a few px outside the rect).
       ctx.setLineDash([5, 3])
@@ -155,10 +155,10 @@ function draw(): void {
   // Theme colours come from the design tokens in app/App.vue (no literal
   // copies here), so the overlay follows the light/dark theme.
   const styles = props.nextRef || props.readingOrderByRef?.size ? getComputedStyle(canvas) : null
-  const token = (name: string): string => styles?.getPropertyValue(name).trim() ?? ''
-  const success = token('--success')
+  const readToken = (name: string): string => styles?.getPropertyValue(name).trim() ?? ''
+  const success = readToken('--success')
   if (props.nextRef) {
-    for (const el of visibleElements()) {
+    for (const el of listVisibleElements()) {
       if (el.self_ref !== props.nextRef) continue
       const rect = bboxToRect(el.bbox, scale)
       if (rect.w <= 0 || rect.h <= 0) continue
@@ -172,22 +172,22 @@ function draw(): void {
 
   const order = props.readingOrderByRef
   if (order?.size) {
-    const accent = token('--accent')
-    const background = token('--bg-elevated')
-    const foreground = token('--text')
-    const border = token('--border-light')
-    const onBright = token('--on-bright')
+    const accent = readToken('--accent')
+    const background = readToken('--bg-elevated')
+    const foreground = readToken('--text')
+    const border = readToken('--border-light')
+    const onBright = readToken('--on-bright')
     ctx.save()
     ctx.font = '600 11px "IBM Plex Mono", monospace'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    for (const el of visibleElements()) {
+    for (const el of listVisibleElements()) {
       if (!el.self_ref) continue
       const number = order.get(el.self_ref)
       if (number === undefined) continue
       const rect = bboxToRect(el.bbox, scale)
       if (rect.w <= 0 || rect.h <= 0) continue
-      const badge = badgeRect(rect, number, canvas)
+      const badge = computeBadgeRect(rect, number, canvas)
       const selected = el.self_ref === props.selectedRef
       const next = el.self_ref === props.nextRef
       ctx.fillStyle = selected ? accent : next ? success : background
@@ -202,7 +202,7 @@ function draw(): void {
   }
 }
 
-function elementAt(e: MouseEvent): PageElement | null {
+function findElementAt(e: MouseEvent): PageElement | null {
   const canvas = canvasRef.value
   const img = props.imageEl
   if (!canvas || !img) return null
@@ -211,29 +211,29 @@ function elementAt(e: MouseEvent): PageElement | null {
   const my = e.clientY - r.top
   const scale = computeScale(img.clientWidth, img.clientHeight, props.pageWidth, props.pageHeight)
   if (props.readingOrderByRef?.size) {
-    for (const el of [...visibleElements()].reverse()) {
+    for (const el of [...listVisibleElements()].reverse()) {
       if (!el.self_ref) continue
       const number = props.readingOrderByRef.get(el.self_ref)
       if (number === undefined) continue
       const rect = bboxToRect(el.bbox, scale)
       if (rect.w <= 0 || rect.h <= 0) continue
-      if (pointInRect(mx, my, badgeRect(rect, number, canvas))) return el
+      if (isPointInRect(mx, my, computeBadgeRect(rect, number, canvas))) return el
     }
   }
-  for (const el of visibleElements()) {
-    if (pointInRect(mx, my, bboxToRect(el.bbox, scale))) return el
+  for (const el of listVisibleElements()) {
+    if (isPointInRect(mx, my, bboxToRect(el.bbox, scale))) return el
   }
   return null
 }
 
 function onMouseMove(e: MouseEvent): void {
-  emit('hoverElement', elementAt(e))
+  emit('hoverElement', findElementAt(e))
 }
 function onMouseLeave(): void {
   emit('hoverElement', null)
 }
 function onClick(e: MouseEvent): void {
-  const el = elementAt(e)
+  const el = findElementAt(e)
   if (el) emit('clickElement', el, props.pageNumber, e)
 }
 

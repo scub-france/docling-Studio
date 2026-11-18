@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from api import deps  # noqa: TC001
-from api.errors import http_error
+from api.errors import to_http_error
 from api.schemas import (
     McpConfigResponse,
     McpConfigUpdateRequest,
@@ -49,7 +49,7 @@ async def put_reasoning_config(
     except AppConfigError as exc:
         # 400 (invalid values) / 403 (read-only deployment) — the service
         # carries the status hint, like `ReasoningServiceError`.
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
     return ReasoningConfigResponse.from_view(view)
 
 
@@ -58,7 +58,7 @@ async def reset_reasoning_config(service: deps.AppConfigServiceDep) -> Reasoning
     try:
         view = await service.reset_reasoning()
     except AppConfigError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
     return ReasoningConfigResponse.from_view(view)
 
 
@@ -69,7 +69,7 @@ async def test_reasoning_connection(
     try:
         result = await service.test_connection(body.host)
     except AppConfigError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
     return ReasoningProbeResponse.from_result(result)
 
 
@@ -91,7 +91,7 @@ async def put_mcp_config(
     try:
         view = await service.update_config(config)
     except AppConfigError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
     return McpConfigResponse.from_view(view)
 
 
@@ -100,5 +100,5 @@ async def reset_mcp_config(service: deps.McpConfigServiceDep) -> McpConfigRespon
     try:
         view = await service.reset_config()
     except AppConfigError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
     return McpConfigResponse.from_view(view)

@@ -28,17 +28,17 @@ from bootstrap.factories import (
     build_chunk_service,
     build_document_service,
     build_document_tools,
+    build_env_mcp_config,
+    build_env_reasoning_config,
     build_ingestion_service,
     build_parse_loader,
     build_reasoning_runner,
     check_store_secret_key,
-    env_mcp_config,
-    env_reasoning_config,
     init_neo4j,
 )
 from bootstrap.mcp_mount import describe_mcp_server
 from domain.app_config import ReasoningConfig, ReasoningDiagnostics
-from infra.docling_agent_reasoning import deps_present, deps_provenance
+from infra.docling_agent_reasoning import describe_deps_provenance, has_usable_deps
 from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.llm.ollama_probe import OllamaProbe
 from infra.page_raster import PdfPageRasterizer
@@ -239,23 +239,23 @@ class AppStateBuilder:
                 ),
             )
 
-        def diagnostics() -> ReasoningDiagnostics:
+        def read_diagnostics() -> ReasoningDiagnostics:
             runner = self._state.reasoning_runner
             return ReasoningDiagnostics(
-                deps_present=deps_present(),
-                provenance=deps_provenance(),
+                deps_present=has_usable_deps(),
+                provenance=describe_deps_provenance(),
                 available=runner is not None and runner.is_available,
             )
 
         self._update(
             app_config_service=AppConfigService(
                 repo=SqliteAppSettingsRepository(),
-                env_defaults=env_reasoning_config(),
+                env_defaults=build_env_reasoning_config(),
                 provider_type=settings.llm_provider_type,
                 read_only=settings.deployment_mode == "huggingface",
                 probe=OllamaProbe(),
                 apply_config=apply_config,
-                diagnostics_provider=diagnostics,
+                diagnostics_provider=read_diagnostics,
             )
         )
         # Applies persisted overrides on top of the env defaults — this is what
@@ -282,16 +282,16 @@ class AppStateBuilder:
                 mcp_serving=config.enabled,
             )
 
-        async def server_status() -> McpServerStatus:
+        async def get_server_status() -> McpServerStatus:
             return await describe_mcp_server(mounted)
 
         self._update(
             mcp_config_service=McpConfigService(
                 repo=SqliteAppSettingsRepository(),
-                env_defaults=env_mcp_config(),
+                env_defaults=build_env_mcp_config(),
                 read_only=settings.deployment_mode == "huggingface",
                 apply_config=apply_config,
-                status_provider=server_status,
+                status_provider=get_server_status,
                 mounted=mounted is not None,
             )
         )

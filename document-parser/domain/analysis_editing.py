@@ -117,7 +117,7 @@ class EditorSnapshot:
     base_analysis_id: str
 
 
-def result_hash(document_json: str) -> str:
+def hash_result(document_json: str) -> str:
     """Fingerprint of an analysis result.
 
     Chunks record it as their source, and the editor compares it to decide
@@ -146,7 +146,7 @@ class AnalysisEditNotFoundError(AnalysisEditUnavailableError):
     """
 
 
-def active_edit_commands(
+def resolve_active_edit_commands(
     stored: list[StoredEditCommand], pending: list[EditCommand] | None = None
 ) -> tuple[list[EditCommand], dict[int, bool]]:
     """Resolve append-only history events into the edits to replay."""

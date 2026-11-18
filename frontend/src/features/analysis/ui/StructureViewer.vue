@@ -62,7 +62,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, reactive, onBeforeUnmount } from 'vue'
 import { PdfPagePreview } from '@/features/document'
-import { computeScale, bboxToRect, pointInRect } from '@/shared/bboxScaling'
+import { computeScale, bboxToRect, isPointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
 
@@ -242,7 +242,7 @@ function findElementAt(e: MouseEvent): PageElement | null {
   const my = e.clientY - canvasRect.top
   const scale = computeScale(img.clientWidth, img.clientHeight, page.width, page.height)
   for (const el of visibleElements.value) {
-    if (pointInRect(mx, my, bboxToRect(el.bbox, scale))) return el
+    if (isPointInRect(mx, my, bboxToRect(el.bbox, scale))) return el
   }
   return null
 }

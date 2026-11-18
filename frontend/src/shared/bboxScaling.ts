@@ -49,6 +49,6 @@ export function bboxToRect(bbox: [number, number, number, number], scale: Scale)
  * Check if a point (px, py) is inside a Rect.
  * Returns false for EMPTY_RECT (w=0, h=0) — degenerate bboxes are not hoverable.
  */
-export function pointInRect(px: number, py: number, rect: Rect): boolean {
+export function isPointInRect(px: number, py: number, rect: Rect): boolean {
   return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h
 }

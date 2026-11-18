@@ -48,7 +48,7 @@ def resolve_db_path() -> Path:
 async def _serve() -> None:
     # Imported once DB_PATH is pinned: `persistence` and `settings` read it at
     # import time.
-    from bootstrap.factories import build_document_tools, build_parse_loader, env_mcp_config
+    from bootstrap.factories import build_document_tools, build_env_mcp_config, build_parse_loader
     from infra.settings import settings
     from mcp_adapter import build_mcp_server
     from persistence.analysis_repo import SqliteAnalysisRepository
@@ -60,7 +60,7 @@ async def _serve() -> None:
     # Applies pending migrations; idempotent against an up-to-date database.
     await init_db()
 
-    config = await load_effective_mcp_config(SqliteAppSettingsRepository(), env_mcp_config())
+    config = await load_effective_mcp_config(SqliteAppSettingsRepository(), build_env_mcp_config())
     tools = build_document_tools(
         build_parse_loader(SqliteDocumentRepository(), SqliteAnalysisRepository()),
         config,

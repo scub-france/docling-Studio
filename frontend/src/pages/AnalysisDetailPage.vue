@@ -104,7 +104,7 @@ function formatDate(value: string): string {
 
 /** Frame-only analysis built from the light summary and page sizes, shown
  * while the full payload is still downloading. */
-function analysisFrame(summary: AnalysisSummary, pages: Page[]): Analysis {
+function buildAnalysisFrame(summary: AnalysisSummary, pages: Page[]): Analysis {
   return {
     ...summary,
     contentMarkdown: null,
@@ -122,7 +122,7 @@ async function loadAnalysisFrame(id: string): Promise<Analysis | null> {
   try {
     const summary = (await fetchAnalysisSummaries()).find((item) => item.id === id)
     if (!summary) return null
-    return analysisFrame(summary, await fetchDocumentPages(summary.documentId))
+    return buildAnalysisFrame(summary, await fetchDocumentPages(summary.documentId))
   } catch {
     return null
   }

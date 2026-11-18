@@ -11,8 +11,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from domain.navigation import BoundingBox, ResolvedElement, is_heading, is_readable
-from domain.parse_index import heading_level, label_of, parse_page_ref
-from domain.spans import parse_span, span_members, span_ref
+from domain.parse_index import get_heading_level, get_label, parse_page_ref
+from domain.spans import build_span_ref, list_span_members, parse_span
 
 if TYPE_CHECKING:
     from domain.parse_index import DocumentIndex
@@ -34,19 +34,19 @@ def resolve(index: DocumentIndex, ref: str) -> ResolvedElement | None:
     item = index.by_ref.get(ref)
     if item is None:
         return None
-    label = label_of(item)
+    label = get_label(item)
     return ResolvedElement(
         ref=ref,
         label=label,
-        text=element_text(index, ref),
-        level=heading_level(item) if is_heading(label) else 0,
+        text=read_element_text(index, ref),
+        level=get_heading_level(item) if is_heading(label) else 0,
         page=index.page_of.get(ref),
         bbox=index.bbox_of.get(ref),
         headings=list(index.heading_path.get(ref, [])),
     )
 
 
-def section_refs(index: DocumentIndex, ref: str) -> list[str]:
+def list_section_refs(index: DocumentIndex, ref: str) -> list[str]:
     """Refs covered by `ref` when read as a section, in reading order.
 
     - a **page** ref covers every element whose first provenance is on it;
@@ -58,7 +58,7 @@ def section_refs(index: DocumentIndex, ref: str) -> list[str]:
     """
     span = parse_span(ref)
     if span is not None:
-        return span_members(index, *span)
+        return list_span_members(index, *span)
 
     page = parse_page_ref(ref)
     if page is not None:
@@ -68,14 +68,14 @@ def section_refs(index: DocumentIndex, ref: str) -> list[str]:
         return []
     start = index.position[ref]
     item = index.by_ref[ref]
-    if is_heading(label_of(item)):
+    if is_heading(get_label(item)):
         return index.order[start : index.section_end.get(ref, start + 1)]
 
-    descendants = _descendant_refs(index, ref)
+    descendants = _collect_descendant_refs(index, ref)
     return [ref] + [r for r in index.order[start + 1 :] if r in descendants]
 
 
-def _descendant_refs(index: DocumentIndex, ref: str) -> set[str]:
+def _collect_descendant_refs(index: DocumentIndex, ref: str) -> set[str]:
     seen: set[str] = set()
     stack = [ref]
     while stack:
@@ -106,7 +106,7 @@ def _resolve_span(index: DocumentIndex, start: str, end: str) -> ResolvedElement
     heading with `##` would put characters in the citation that are nowhere in
     the document.
     """
-    members = [(ref, element_text(index, ref)) for ref in span_members(index, start, end)]
+    members = [(ref, read_element_text(index, ref)) for ref in list_span_members(index, start, end)]
     readable = [(ref, text) for ref, text in members if text.strip()]
     if not readable:
         return None
@@ -119,16 +119,16 @@ def _resolve_span(index: DocumentIndex, start: str, end: str) -> ResolvedElement
         if ref in index.bbox_of and index.page_of.get(ref) == page
     ]
     return ResolvedElement(
-        ref=span_ref(start, end),
+        ref=build_span_ref(start, end),
         label=SPAN_LABEL,
         text="\n\n".join(text for _, text in readable),
         page=page,
-        bbox=BoundingBox.union(boxes),
+        bbox=BoundingBox.compute_union(boxes),
         headings=list(index.heading_path.get(first, [])),
     )
 
 
-def element_text(index: DocumentIndex, ref: str) -> str:
+def read_element_text(index: DocumentIndex, ref: str) -> str:
     """The readable text of one element — inline runs joined, tables rendered."""
     meta = index.inline_meta.get(ref)
     if meta and meta.get("text"):
@@ -137,21 +137,21 @@ def element_text(index: DocumentIndex, ref: str) -> str:
     item = index.by_ref.get(ref)
     if item is None:
         return ""
-    label = label_of(item)
+    label = get_label(item)
     if not is_readable(label):
         return ""
     if label in {"table", "document_index"}:
-        return _render_table(item) or _caption_text(index, item)
+        return _render_table(item) or _read_caption_text(index, item)
     text = (item.get("text") or "").strip()
     if text:
         return text
     if label in {"picture", "chart"}:
-        caption = _caption_text(index, item)
+        caption = _read_caption_text(index, item)
         return f"[figure] {caption}".strip() if caption else "[figure]"
     return ""
 
 
-def _caption_text(index: DocumentIndex, item: dict[str, Any]) -> str:
+def _read_caption_text(index: DocumentIndex, item: dict[str, Any]) -> str:
     parts: list[str] = []
     for caption in item.get("captions") or []:
         caption_ref = caption.get("$ref") or caption.get("cref")
@@ -178,7 +178,7 @@ def _render_table(item: dict[str, Any]) -> str:
     """
     data = item.get("data") or {}
     try:
-        rows = _table_rows(data)
+        rows = _read_table_rows(data)
     except Exception:
         return UNREADABLE_TABLE
     if not rows:
@@ -191,10 +191,10 @@ def _render_table(item: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _table_rows(data: dict[str, Any]) -> list[list[str]]:
+def _read_table_rows(data: dict[str, Any]) -> list[list[str]]:
     grid = data.get("grid")
     if isinstance(grid, list) and grid:
-        return [[_cell_text(cell) for cell in row] for row in grid]
+        return [[_read_cell_text(cell) for cell in row] for row in grid]
 
     cells = data.get("table_cells") or []
     if not cells:
@@ -210,11 +210,11 @@ def _table_rows(data: dict[str, Any]) -> list[list[str]]:
         row = int(cell.get("start_row_offset_idx", 0))
         col = int(cell.get("start_col_offset_idx", 0))
         if 0 <= row < num_rows and 0 <= col < num_cols:
-            rows[row][col] = _cell_text(cell)
+            rows[row][col] = _read_cell_text(cell)
     return rows
 
 
-def _cell_text(cell: Any) -> str:
+def _read_cell_text(cell: Any) -> str:
     if isinstance(cell, dict):
         return str(cell.get("text") or "").replace("|", "\\|").replace("\n", " ").strip()
     return str(cell or "").strip()

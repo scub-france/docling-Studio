@@ -22,13 +22,13 @@
                 <circle cx="4" cy="4" r="4" />
               </svg>
             </span>
-            <span v-else class="item-status" :class="statusClass(analysis.status)">
+            <span v-else class="item-status" :class="getStatusClass(analysis.status)">
               {{ analysis.status }}
             </span>
           </div>
           <div class="item-meta">
             <span>{{ formatDate(analysis.createdAt) }}</span>
-            <span v-if="analysis.completedAt"> — {{ duration(analysis) }}</span>
+            <span v-if="analysis.completedAt"> — {{ formatDuration(analysis) }}</span>
           </div>
         </div>
         <button class="item-delete" @click.stop="store.remove(analysis.id)" title="Delete">
@@ -59,7 +59,7 @@ function openAnalysis(analysis: AnalysisSummary) {
   router.push({ name: 'studio', query: { analysisId: analysis.id } })
 }
 
-function statusClass(status: string) {
+function getStatusClass(status: string) {
   return {
     'status-pending': status === 'PENDING',
     'status-running': status === 'RUNNING',
@@ -73,7 +73,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString()
 }
 
-function duration(analysis: AnalysisSummary) {
+function formatDuration(analysis: AnalysisSummary) {
   if (!analysis.startedAt || !analysis.completedAt) return ''
   const ms = new Date(analysis.completedAt!).getTime() - new Date(analysis.startedAt!).getTime()
   const secs = Math.round(ms / 1000)

@@ -49,7 +49,7 @@
  */
 import { computed } from 'vue'
 import type { PageElement } from '../../../shared/types'
-import { colorFor, LAYER_ORDER } from '@/shared/elementColors'
+import { getElementColor, LAYER_ORDER } from '@/shared/elementColors'
 import { useI18n } from '@/shared/i18n'
 import { areAllLayersHidden, toggleAllLayers } from '../layerVisibility'
 
@@ -73,7 +73,7 @@ const chipEntries = computed(() => {
   return Array.from(counts.entries()).map(([type, count]) => ({
     type,
     count,
-    color: colorFor(type),
+    color: getElementColor(type),
   }))
 })
 

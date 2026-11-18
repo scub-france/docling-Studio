@@ -97,11 +97,11 @@ class CitationImageService:
         # only on the passage's own page: on any other, there is no passage
         # to mark.
         highlight = (
-            element.bbox.pixel_box(dpi=at, padding=0)
+            element.bbox.to_pixel_box(dpi=at, padding=0)
             if element.bbox and page == element.page
             else None
         )
-        return self._image(
+        return self._build_image(
             crop,
             page=page,
             dpi=at,
@@ -130,7 +130,7 @@ class CitationImageService:
             current = max(self._config.image_min_dpi, current // 2)
 
     @staticmethod
-    def _image(
+    def _build_image(
         crop,
         *,
         page: int,

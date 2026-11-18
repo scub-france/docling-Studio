@@ -21,7 +21,7 @@ from infra.pdfium_lock import pdfium_lock
 class PdfPageTextReader:
     """Stateless adapter for the `PageTextReader` port."""
 
-    def glyphs(self, storage_path: str, *, page: int) -> list[Glyph]:
+    def read_glyphs(self, storage_path: str, *, page: int) -> list[Glyph]:
         with pdfium_lock:
             pdf = pdfium.PdfDocument(storage_path)
             try:

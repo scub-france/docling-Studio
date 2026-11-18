@@ -25,23 +25,23 @@ class AnalysisStatus(enum.StrEnum):
     FAILED = "FAILED"
 
 
-def _utcnow() -> datetime:
+def _get_utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _new_id() -> str:
+def _generate_id() -> str:
     return str(uuid.uuid4())
 
 
 @dataclass
 class Document:
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=_generate_id)
     filename: str = ""
     content_type: str | None = None
     file_size: int | None = None
     page_count: int | None = None
     storage_path: str = ""
-    created_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=_get_utc_now)
     lifecycle_state: DocumentLifecycleState = DocumentLifecycleState.UPLOADED
     lifecycle_state_at: datetime | None = None
 
@@ -63,7 +63,7 @@ class Document:
         """
         previous = self.lifecycle_state
         assert_transition(previous, target)
-        at = now or _utcnow()
+        at = now or _get_utc_now()
         self.lifecycle_state = target
         self.lifecycle_state_at = at
         return DocumentLifecycleChanged(
@@ -89,7 +89,7 @@ class DocumentChunkSource:
 
 @dataclass
 class AnalysisJob:
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=_generate_id)
     document_id: str = ""
     status: AnalysisStatus = AnalysisStatus.PENDING
     content_markdown: str | None = None
@@ -102,7 +102,7 @@ class AnalysisJob:
     progress_total: int | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
-    created_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=_get_utc_now)
 
     # Joined from document (not persisted separately)
     document_filename: str | None = None
@@ -112,7 +112,7 @@ class AnalysisJob:
         if self.status != AnalysisStatus.PENDING:
             raise ValueError(f"Cannot mark as RUNNING from {self.status} (expected PENDING)")
         self.status = AnalysisStatus.RUNNING
-        self.started_at = _utcnow()
+        self.started_at = _get_utc_now()
 
     def mark_completed(
         self,
@@ -131,7 +131,7 @@ class AnalysisJob:
         self.pages_json = pages_json
         self.document_json = document_json
         self.chunks_json = chunks_json
-        self.completed_at = _utcnow()
+        self.completed_at = _get_utc_now()
 
     def update_progress(self, current: int, total: int) -> None:
         """Update batch progress counters."""
@@ -148,7 +148,7 @@ class AnalysisJob:
             )
         self.status = AnalysisStatus.FAILED
         self.error_message = error
-        self.completed_at = _utcnow()
+        self.completed_at = _get_utc_now()
 
 
 @dataclass
@@ -170,7 +170,7 @@ class Store:
     `docs/design/279-store-connection-credentials.md`.
     """
 
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=_generate_id)
     name: str = ""
     slug: str = ""
     kind: StoreKind = StoreKind.OPENSEARCH
@@ -187,8 +187,8 @@ class Store:
     # `SqliteStoreRepository.get_connection_password`.
     has_connection_password: bool = False
     is_default: bool = False
-    created_at: datetime = field(default_factory=_utcnow)
-    updated_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=_get_utc_now)
+    updated_at: datetime = field(default_factory=_get_utc_now)
 
 
 @dataclass
@@ -201,7 +201,7 @@ class DocumentStoreLink:
     UNIQUE constraint at the persistence layer.
     """
 
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=_generate_id)
     document_id: str = ""
     store_id: str = ""
     state: DocumentStoreLinkState = DocumentStoreLinkState.INGESTED
@@ -250,7 +250,7 @@ class Chunk:
     row stays in the table until document deletion.
     """
 
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=_generate_id)
     document_id: str = ""
     sequence: int = 0
     text: str = ""
@@ -259,8 +259,8 @@ class Chunk:
     bboxes: list[ChunkBbox] = field(default_factory=list)
     doc_items: list[ChunkDocItem] = field(default_factory=list)
     token_count: int | None = None
-    created_at: datetime = field(default_factory=_utcnow)
-    updated_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=_get_utc_now)
+    updated_at: datetime = field(default_factory=_get_utc_now)
     deleted_at: datetime | None = None
 
 
@@ -303,7 +303,7 @@ class DocumentVersion:
     chunkset at version creation. Restore writes both back into live state.
     """
 
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=_generate_id)
     document_id: str = ""
     kind: DocumentVersionKind = DocumentVersionKind.ANALYSIS
     analysis_id: str | None = None
@@ -311,4 +311,4 @@ class DocumentVersion:
     chunks_source_result_hash: str | None = None
     chunks_snapshot: str | None = None  # JSON-serialized list of chunk dicts
     summary: str = ""
-    created_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=_get_utc_now)

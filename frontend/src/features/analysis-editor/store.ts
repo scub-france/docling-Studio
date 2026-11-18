@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as api from './api'
-import { canMerge, coalesceCommands, inReadingOrder, validateMerge } from './commands'
+import { canMerge, coalesceCommands, sortInReadingOrder, validateMerge } from './commands'
 import type {
   AnalysisEditCommand,
   AnalysisEditHistoryEntry,
@@ -182,7 +182,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
 
   function mergeSelected(separator = ' '): void {
     if (!mergeAllowed.value) return
-    const elementIds = inReadingOrder(
+    const elementIds = sortInReadingOrder(
       mergeSelection.value,
       effective.value?.readingOrder ?? elements.value.map((element) => element.id),
     )
@@ -342,13 +342,13 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     discard()
   }
 
-  function pendingStorageKey(): string | null {
+  function buildPendingStorageKey(): string | null {
     if (!documentId.value || !baseAnalysisId.value) return null
     return `analysis-editor-pending:${documentId.value}:${baseAnalysisId.value}`
   }
 
   function persistPendingCommands(): void {
-    const key = pendingStorageKey()
+    const key = buildPendingStorageKey()
     if (!key) return
     try {
       if (!pendingCommands.value.length) {
@@ -368,7 +368,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   }
 
   function readRecoveredPendingCommands(): AnalysisEditCommand[] | null {
-    const key = pendingStorageKey()
+    const key = buildPendingStorageKey()
     if (!key) return null
     try {
       const value = window.sessionStorage.getItem(key)

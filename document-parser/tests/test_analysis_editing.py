@@ -22,14 +22,14 @@ from docling_core.types.doc import (
     TableData,
 )
 
-from api.errors import http_error
+from api.errors import to_http_error
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
     AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
     EditCommand,
-    active_edit_commands,
+    resolve_active_edit_commands,
 )
 from domain.models import (
     AnalysisJob,
@@ -794,7 +794,7 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     stream = await edits.find_stream("analysis-1")
     assert stream is not None
     records = await edits.list_commands(stream.analysis_id)
-    commands, states = active_edit_commands(records)
+    commands, states = resolve_active_edit_commands(records)
     assert [command.payload["text"] for command in commands] == ["Second edited"]
     assert states == {1: False, 2: True}
     assert records[2].command.command_type == "setCommandActive"
@@ -1132,4 +1132,4 @@ async def test_missing_document_or_analysis_is_not_found(edit_service):
     ],
 )
 def test_api_maps_edit_errors_to_http_status(error, status):
-    assert http_error(error).status_code == status
+    assert to_http_error(error).status_code == status

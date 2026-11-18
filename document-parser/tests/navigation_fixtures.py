@@ -401,14 +401,14 @@ class FakeAnalysisRepository:
     def __init__(self, jobs) -> None:
         self._jobs = jobs
 
-    async def latest_parsed_ids(self, document_ids):
+    async def find_latest_parsed_ids(self, document_ids):
         latest = {}
         for job in self._jobs:
             if job.document_id in document_ids and job.document_json:
                 latest[job.document_id] = job.id
         return latest
 
-    async def parsed_document_id(self, job_id):
+    async def find_parsed_document_id(self, job_id):
         job = self._job(job_id)
         return job.document_id if job and job.document_json else None
 

@@ -57,8 +57,8 @@
           <span
             class="type-badge"
             :style="{
-              background: colorFor(chunkBadgeType(chunk)) + '22',
-              color: colorFor(chunkBadgeType(chunk)),
+              background: getElementColor(chunkBadgeType(chunk)) + '22',
+              color: getElementColor(chunkBadgeType(chunk)),
             }"
           >
             {{ chunkBadgeType(chunk) }}
@@ -95,7 +95,7 @@ import { computed, watch } from 'vue'
 import type { DocChunk } from '../../../shared/types'
 import type { RechunkOptions } from '@/shared/types'
 import { useI18n } from '../../../shared/i18n'
-import { colorFor } from '@/shared/elementColors'
+import { getElementColor } from '@/shared/elementColors'
 import { useChunksStore } from '../store'
 import StrategyPopover from './StrategyPopover.vue'
 

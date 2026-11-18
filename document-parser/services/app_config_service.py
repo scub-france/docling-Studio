@@ -87,7 +87,7 @@ class AppConfigService:
     async def get_reasoning(self) -> ReasoningConfigView:
         """Effective config (db over env) + per-field sources + diagnostics."""
         config, sources = await self._resolve()
-        return self._view(config, sources)
+        return self._build_view(config, sources)
 
     async def update_reasoning(self, config: ReasoningConfig) -> ReasoningConfigView:
         """Validate, persist the full override set, rebuild the runner in place.
@@ -154,7 +154,7 @@ class AppConfigService:
             config.model_id,
             config.max_iterations,
         )
-        return self._view(config, sources)
+        return self._build_view(config, sources)
 
     async def _resolve(self) -> tuple[ReasoningConfig, dict[str, ConfigSource]]:
         rows = await self._repo.get_namespace(_NAMESPACE)
@@ -177,7 +177,7 @@ class AppConfigService:
         }
         return config, sources
 
-    def _view(
+    def _build_view(
         self, config: ReasoningConfig, sources: dict[str, ConfigSource]
     ) -> ReasoningConfigView:
         return ReasoningConfigView(

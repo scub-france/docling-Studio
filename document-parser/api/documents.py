@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from api import deps  # noqa: TC001
-from api.errors import http_error
+from api.errors import to_http_error
 from api.schemas import DocStoreLinkResponse, DocumentResponse, PageSizeResponse
 from services.errors import ServiceError
 from services.export_service import ExportFormat, build_content_disposition
@@ -153,7 +153,7 @@ async def export_document(
             else await service.export(doc_id, format, analysis_id)
         )
     except ServiceError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
 
     if export.file_path is not None:
         return FileResponse(
@@ -186,7 +186,7 @@ async def preview(
             headers={"Cache-Control": "private, max-age=86400, immutable"},
         )
     except ServiceError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except FileNotFoundError as exc:
@@ -206,7 +206,7 @@ async def page_sizes(doc_id: str, service: deps.PreviewServiceDep) -> list[PageS
     try:
         pages = await service.page_sizes(doc_id)
     except ServiceError as exc:
-        raise http_error(exc) from exc
+        raise to_http_error(exc) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
     except Exception as exc:
