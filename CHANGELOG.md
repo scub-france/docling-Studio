@@ -14,12 +14,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
-- **Faster PDF viewing**: analysis, editor, document, and Studio previews render the visible PDF page in the browser using byte ranges. Nearby pages load as needed; server-rendered previews remain a fallback.
-- **Faster analysis lists**: analysis and history lists fetch lightweight summaries instead of full Docling results.
+- **Faster PDF viewing** (#401): analysis, editor, document, and Studio previews render the visible PDF page in the browser using byte ranges. Nearby pages load as needed; server-rendered previews remain a fallback. The fallback previews are cached in memory (up to 64 MB per backend process) and by the browser, and `GET /api/documents/{id}/preview` takes `format=webp` for a lossless WebP (`png` stays the default). A proxy placed in front of Studio must pass `Range` requests, or the browser downloads the whole PDF.
+- **Faster analysis lists** (#401): analysis and history lists fetch lightweight summaries instead of full Docling results.
 - **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
 - **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
 - **Default Markdown and JSON export**: without `analysisId`, the export now returns the document's active analysis with its saved edits, instead of the latest completed conversion.
 - **MCP cards in English by default** (#397): the citation and sources cards follow the browser language, English unless it is French. The analysis editor's remaining hard-coded labels are translated.
+- **Static files cached and compressed**: nginx now caches the fingerprinted files under `/assets/` for a year and compresses JavaScript, CSS and SVG, not only JSON. The PDF viewer's 1.7 MB of scripts used to be sent uncompressed on every visit. The logo, also used as the favicon, went from 878 kB to 61 kB.
+- **Docker images build the frontend on Node 22**: the PDF viewer's library requires Node 22.13 or later. Use Node 22 to build the frontend from source.
 
 ### Fixed
 
