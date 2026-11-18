@@ -261,7 +261,7 @@ function sanitize(options: Required<RechunkOptions>): RechunkOptions {
 .strategy-popover-warning {
   margin: 0;
   padding: 8px 10px;
-  background: rgba(234, 179, 8, 0.1);
+  background: var(--warning-muted);
   border: 1px solid rgba(234, 179, 8, 0.4);
   border-radius: var(--radius-sm);
   font-size: 12px;
