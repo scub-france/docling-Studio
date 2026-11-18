@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -33,6 +34,7 @@ from domain.analysis_editing import (
 from domain.models import (
     AnalysisJob,
     AnalysisStatus,
+    Chunk,
     Document,
     DocumentAnalysisSelection,
     DocumentChunkSource,
@@ -42,6 +44,7 @@ from infra.docling_projector import DoclingAnalysisProjector
 from persistence import database
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
+from persistence.chunk_repo import SqliteChunkRepository
 from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from services.analysis_edit_service import AnalysisEditService
@@ -501,6 +504,7 @@ async def edit_service(tmp_path: Path, monkeypatch):
         document_repo=documents,
         selection_repo=analysis_state,
         chunk_source_repo=analysis_state,
+        chunk_repo=SqliteChunkRepository(),
         edit_repo=edits,
         editor=DoclingDocumentEditor(),
         projector=DoclingAnalysisProjector(),
@@ -945,6 +949,23 @@ async def test_empty_save_returns_the_requested_analysis(edit_service):
     await analyses.update_status(second)
     snapshot = await service.save("doc-1", [], 0, "analysis-2")
     assert snapshot.base_analysis_id == "analysis-2"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_flags_chunks_with_unknown_provenance_as_stale(edit_service):
+    service, _edits, _analyses = edit_service
+    await SqliteChunkRepository().insert(Chunk(document_id="doc-1", sequence=0, text="legacy"))
+    assert (await service.load_editor("doc-1")).chunks_stale is True
+
+
+@pytest.mark.asyncio
+async def test_snapshot_without_chunks_or_source_is_not_stale(edit_service):
+    service, _edits, _analyses = edit_service
+    assert (await service.load_editor("doc-1")).chunks_stale is False
+    chunk = Chunk(document_id="doc-1", sequence=0, text="legacy")
+    await SqliteChunkRepository().insert(chunk)
+    await SqliteChunkRepository().soft_delete(chunk.id, at=datetime.now(UTC))
+    assert (await service.load_editor("doc-1")).chunks_stale is False
 
 
 @pytest.mark.asyncio
