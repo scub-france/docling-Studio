@@ -72,8 +72,10 @@ describe('usePdfDocument', () => {
     expect(first.destroy).toHaveBeenCalledTimes(1)
     expect(getDocument).toHaveBeenCalledTimes(2)
 
-    first.resolve({ id: 'doc-1' })
+    // The stale PDF resolves last: without the generation guard it would win.
     second.resolve({ id: 'doc-2' })
+    await flushPromises()
+    first.resolve({ id: 'doc-1' })
     await flushPromises()
     expect(state().document.value).toEqual({ id: 'doc-2' })
     expect(state().failed.value).toBe(false)
