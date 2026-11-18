@@ -171,7 +171,7 @@ async function onCombinedSelect(event: Event): Promise<void> {
 
 .upload-error {
   font-size: 13px;
-  color: var(--error, #e53e3e);
+  color: var(--error);
   font-weight: 500;
 }
 

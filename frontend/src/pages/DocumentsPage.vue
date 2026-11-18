@@ -289,7 +289,7 @@ onMounted(() => {
 .filter-btn.active,
 .sort-btn.active {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .page-content {
@@ -384,12 +384,12 @@ onMounted(() => {
 }
 
 .status-badge.indexed {
-  background: rgba(34, 197, 94, 0.15);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
   color: var(--success);
 }
 
 .status-badge.not-indexed {
-  background: rgba(156, 163, 175, 0.15);
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
   color: var(--text-muted);
 }
 
@@ -416,17 +416,17 @@ onMounted(() => {
 
 .action-btn:hover {
   color: var(--accent);
-  background: rgba(249, 115, 22, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .action-btn.delete:hover {
   color: var(--error);
-  background: rgba(239, 68, 68, 0.1);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
 }
 
 .action-btn.unindex:hover {
-  color: var(--warning, #f59e0b);
-  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
 }
 
 .action-btn svg {

@@ -208,7 +208,7 @@ function splitAtCurrentCursor(): void {
 }
 
 .chunk-item:hover {
-  border-color: var(--border-hover, var(--border));
+  border-color: var(--border-light);
 }
 
 .chunk-item--selected {

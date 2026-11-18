@@ -152,8 +152,11 @@ function draw(): void {
     }
   }
 
+  // Theme colours come from the design tokens in app/App.vue (no literal
+  // copies here), so the overlay follows the light/dark theme.
   const styles = props.nextRef || props.readingOrderByRef?.size ? getComputedStyle(canvas) : null
-  const success = styles?.getPropertyValue('--success').trim() || '#22c55e'
+  const token = (name: string): string => styles?.getPropertyValue(name).trim() ?? ''
+  const success = token('--success')
   if (props.nextRef) {
     for (const el of visibleElements()) {
       if (el.self_ref !== props.nextRef) continue
@@ -169,10 +172,11 @@ function draw(): void {
 
   const order = props.readingOrderByRef
   if (order?.size) {
-    const accent = styles?.getPropertyValue('--accent').trim() || '#f97316'
-    const background = styles?.getPropertyValue('--bg-elevated').trim() || '#1a1a1d'
-    const foreground = styles?.getPropertyValue('--text').trim() || '#ececef'
-    const border = styles?.getPropertyValue('--border-light').trim() || '#3f3f46'
+    const accent = token('--accent')
+    const background = token('--bg-elevated')
+    const foreground = token('--text')
+    const border = token('--border-light')
+    const onBright = token('--on-bright')
     ctx.save()
     ctx.font = '600 11px "IBM Plex Mono", monospace'
     ctx.textAlign = 'center'
@@ -191,7 +195,7 @@ function draw(): void {
       ctx.lineWidth = 1
       ctx.strokeStyle = selected ? accent : next ? success : border
       ctx.strokeRect(badge.x, badge.y, badge.w, badge.h)
-      ctx.fillStyle = selected || next ? '#18181b' : foreground
+      ctx.fillStyle = selected || next ? onBright : foreground
       ctx.fillText(String(number), badge.x + badge.w / 2, badge.y + badge.h / 2 + 0.5)
     }
     ctx.restore()

@@ -130,7 +130,7 @@ function toggle(): void {
 }
 
 .tree-node-row--highlight {
-  background: var(--warning-muted, rgba(234, 179, 8, 0.1));
+  background: var(--warning-muted);
   color: var(--text);
 }
 

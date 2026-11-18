@@ -96,7 +96,16 @@ function dismissDisclaimer() {
   --success: #22c55e;
   --error: #ef4444;
   --warning: #eab308;
+  --warning-muted: rgba(234, 179, 8, 0.1);
   --info: #3b82f6;
+
+  /* Ink on filled surfaces, the same in both themes: white on the accent /
+     status buttons, near-black on bright fills (amber banner, canvas badges). */
+  --on-accent: #ffffff;
+  --on-bright: #18181b;
+  --banner-bg: #f59e0b;
+
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.15);
 
   --radius: 8px;
   --radius-sm: 6px;
@@ -157,8 +166,8 @@ body {
 }
 
 .disclaimer-banner {
-  background: #f59e0b;
-  color: #1a1a1d;
+  background: var(--banner-bg);
+  color: var(--on-bright);
   font-size: 13px;
   font-weight: 500;
   text-align: center;
@@ -174,7 +183,7 @@ body {
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #1a1a1d;
+  color: var(--on-bright);
   font-size: 18px;
   cursor: pointer;
   padding: 0 4px;
@@ -216,7 +225,7 @@ body {
   padding: 1px 5px;
   border-radius: 3px;
   background: var(--warning);
-  color: #1a1a1d;
+  color: var(--on-bright);
   font-weight: 500;
 }
 

@@ -386,23 +386,23 @@ function onSubmit() {
 }
 .field-input {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, #d1d5db);
+  border: 1px solid var(--border-light);
   border-radius: 0.375rem;
   font-size: 0.875rem;
 }
 .field-input[aria-invalid='true'] {
-  border-color: #dc2626;
+  border-color: var(--error);
 }
 .field-input:disabled {
-  background: var(--color-bg-muted, #f3f4f6);
+  background: var(--bg-elevated);
 }
 .field-help {
   font-size: 0.75rem;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .field-error {
   font-size: 0.75rem;
-  color: #dc2626;
+  color: var(--error);
 }
 .checkbox-label {
   display: inline-flex;
@@ -411,7 +411,7 @@ function onSubmit() {
   font-size: 0.875rem;
 }
 .config-section {
-  border: 1px solid var(--color-border, #d1d5db);
+  border: 1px solid var(--border-light);
   border-radius: 0.5rem;
   padding: 1rem;
 }
@@ -421,8 +421,8 @@ function onSubmit() {
   padding: 0 0.5rem;
 }
 .form-error {
-  background: #fee2e2;
-  color: #991b1b;
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  color: var(--error);
   padding: 0.5rem 0.75rem;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -435,8 +435,8 @@ function onSubmit() {
 .btn-primary {
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
-  background: var(--color-primary, #2563eb);
-  color: white;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   font-size: 0.875rem;
   font-weight: 500;
@@ -449,9 +449,9 @@ function onSubmit() {
 .btn-secondary {
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
-  background: white;
-  color: var(--color-text, #111827);
-  border: 1px solid var(--color-border, #d1d5db);
+  background: var(--bg-surface);
+  color: var(--text);
+  border: 1px solid var(--border-light);
   font-size: 0.875rem;
   cursor: pointer;
 }
@@ -472,19 +472,19 @@ function onSubmit() {
 }
 .btn-icon {
   padding: 0 0.75rem;
-  border: 1px solid var(--color-border, #d1d5db);
+  border: 1px solid var(--border-light);
   border-radius: 0.375rem;
-  background: white;
+  background: var(--bg-surface);
   cursor: pointer;
   font-size: 1rem;
 }
 .btn-icon:hover {
-  background: var(--color-bg-muted, #f3f4f6);
+  background: var(--bg-elevated);
 }
 .clear-row {
   margin-top: 0.25rem;
   font-size: 0.75rem;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .test-row {
   display: flex;
@@ -497,17 +497,17 @@ function onSubmit() {
   font-size: 0.75rem;
 }
 .test-result--ok {
-  color: #16a34a;
+  color: var(--success);
 }
 .test-result--err {
-  color: #dc2626;
+  color: var(--error);
 }
 .spinner {
   display: inline-block;
   width: 10px;
   height: 10px;
   margin-right: 0.4rem;
-  border: 1.5px solid rgba(0, 0, 0, 0.2);
+  border: 1.5px solid color-mix(in srgb, currentColor 20%, transparent);
   border-top-color: currentColor;
   border-radius: 50%;
   animation: spform 0.6s linear infinite;

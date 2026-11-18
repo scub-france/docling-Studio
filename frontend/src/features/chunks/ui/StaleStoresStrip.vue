@@ -115,9 +115,9 @@ async function reingestAll(): Promise<void> {
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 500;
-  background: var(--warning-bg, rgba(234, 179, 8, 0.1));
-  color: var(--warning, #ca8a04);
-  border: 1px solid var(--warning, #ca8a04);
+  background: var(--warning-muted);
+  color: var(--warning);
+  border: 1px solid var(--warning);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: opacity var(--transition);

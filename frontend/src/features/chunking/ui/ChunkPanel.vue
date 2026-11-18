@@ -406,7 +406,7 @@ async function doRechunk() {
 
 .config-select,
 .config-input {
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px 10px;
@@ -437,7 +437,7 @@ async function doRechunk() {
 .toggle-switch {
   width: 32px;
   height: 18px;
-  background: var(--bg-tertiary);
+  background: var(--border-light);
   border-radius: 9px;
   position: relative;
   transition: background 0.2s;
@@ -511,7 +511,7 @@ async function doRechunk() {
 }
 
 .chunk-card {
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -547,7 +547,7 @@ async function doRechunk() {
 .chunk-page {
   font-size: 11px;
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -562,7 +562,7 @@ async function doRechunk() {
 .chunk-heading {
   font-size: 11px;
   color: var(--accent);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+  background: var(--accent-muted);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -611,7 +611,7 @@ async function doRechunk() {
 
 .chunk-edit-icon:hover {
   color: var(--accent);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
 }
 
 .chunk-card:hover .chunk-delete-icon {
@@ -637,7 +637,7 @@ async function doRechunk() {
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   padding: 8px;
   resize: vertical;
   box-sizing: border-box;
@@ -658,7 +658,7 @@ async function doRechunk() {
 .chunk-edit-btn {
   padding: 4px 12px;
   border: none;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -675,7 +675,7 @@ async function doRechunk() {
 }
 
 .chunk-edit-btn.cancel {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   color: var(--text-secondary);
 }
 
@@ -719,7 +719,7 @@ async function doRechunk() {
 .chunk-confirm-btn {
   padding: 6px 14px;
   border: none;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -736,7 +736,7 @@ async function doRechunk() {
 }
 
 .chunk-confirm-btn.cancel {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   color: var(--text-secondary);
 }
 

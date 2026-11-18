@@ -583,7 +583,7 @@ watch(
   letter-spacing: 0.06em;
 }
 .unsaved {
-  color: var(--warning, #d97706);
+  color: var(--warning);
   font-size: 11px;
 }
 .selection-status {
@@ -614,7 +614,7 @@ button.primary {
 }
 .operation-feedback {
   max-width: 220px;
-  color: var(--warning, #d97706);
+  color: var(--warning);
   font-size: 11px;
 }
 .delete-range-button {
@@ -634,8 +634,8 @@ button.primary {
   font-size: 12px;
 }
 .editor-warning {
-  color: var(--warning, #d97706);
-  background: color-mix(in srgb, var(--warning, #d97706) 10%, transparent);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
 }
 .editor-success {
   color: var(--success);

@@ -196,7 +196,7 @@ async function onConfirm(): Promise<void> {
   z-index: 1000;
 }
 .launch-modal {
-  background: var(--bg-surface, #fff);
+  background: var(--bg-surface);
   border-radius: 8px;
   width: min(560px, 90vw);
   max-height: 80vh;
@@ -222,7 +222,7 @@ async function onConfirm(): Promise<void> {
   border: none;
   font-size: 1.1rem;
   cursor: pointer;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .launch-modal-close:disabled {
   opacity: 0.5;
@@ -231,12 +231,12 @@ async function onConfirm(): Promise<void> {
 .launch-modal-hint {
   margin: 0;
   font-size: 0.8rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .launch-empty {
   padding: 1.5rem 0.5rem;
   text-align: center;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   font-size: 0.85rem;
 }
 .launch-list {
@@ -254,20 +254,20 @@ async function onConfirm(): Promise<void> {
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0.6rem;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg-elevated, #f9fafb);
+  background: var(--bg-elevated);
 }
 .launch-row--running {
-  background: rgba(59, 130, 246, 0.06);
+  background: color-mix(in srgb, var(--info) 6%, transparent);
 }
 .launch-row--ok {
-  border-color: rgba(34, 197, 94, 0.45);
-  background: rgba(34, 197, 94, 0.06);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  background: color-mix(in srgb, var(--success) 6%, transparent);
 }
 .launch-row--err {
-  border-color: rgba(220, 38, 38, 0.45);
-  background: rgba(220, 38, 38, 0.06);
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+  background: color-mix(in srgb, var(--error) 6%, transparent);
 }
 .launch-check {
   display: flex;
@@ -288,19 +288,19 @@ async function onConfirm(): Promise<void> {
   border-radius: 50%;
 }
 .launch-dot--on {
-  background: #22c55e;
+  background: var(--success);
 }
 .launch-dot--off {
-  background: #94a3b8;
+  background: var(--text-muted);
 }
 .launch-name {
   font-weight: 500;
-  color: var(--text, #111827);
+  color: var(--text);
 }
 .launch-kind {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.75rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
 }
 .launch-state {
   font-family: 'IBM Plex Mono', monospace;
@@ -311,20 +311,20 @@ async function onConfirm(): Promise<void> {
   letter-spacing: 0.04em;
 }
 .launch-state--notPushed {
-  background: rgba(148, 163, 184, 0.15);
-  color: #6b7280;
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+  color: var(--text-muted);
 }
 .launch-state--upToDate {
-  background: rgba(34, 197, 94, 0.15);
-  color: #16a34a;
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
 }
 .launch-state--stale {
-  background: rgba(234, 179, 8, 0.15);
-  color: #b45309;
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
 }
 .launch-state--failed {
-  background: rgba(220, 38, 38, 0.15);
-  color: #dc2626;
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  color: var(--error);
 }
 .launch-spinner-wrap {
   display: flex;
@@ -339,10 +339,10 @@ async function onConfirm(): Promise<void> {
   text-overflow: ellipsis;
 }
 .launch-result--ok {
-  color: #16a34a;
+  color: var(--success);
 }
 .launch-result--err {
-  color: #dc2626;
+  color: var(--error);
 }
 .launch-modal-actions {
   display: flex;
@@ -353,8 +353,8 @@ async function onConfirm(): Promise<void> {
 .launch-ghost {
   padding: 0.45rem 1rem;
   border-radius: 5px;
-  background: white;
-  border: 1px solid var(--color-border, #d1d5db);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
   cursor: pointer;
   font-size: 0.85rem;
 }
@@ -365,9 +365,9 @@ async function onConfirm(): Promise<void> {
 .launch-primary {
   padding: 0.45rem 1rem;
   border-radius: 5px;
-  background: var(--accent, #2563eb);
-  border: 1px solid var(--accent, #2563eb);
-  color: white;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--on-accent);
   cursor: pointer;
   font-size: 0.85rem;
   display: inline-flex;
@@ -382,14 +382,14 @@ async function onConfirm(): Promise<void> {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 1.5px solid rgba(0, 0, 0, 0.2);
+  border: 1.5px solid color-mix(in srgb, currentColor 20%, transparent);
   border-top-color: currentColor;
   border-radius: 50%;
   animation: launch-spin 0.6s linear infinite;
 }
 .launch-spinner--btn {
-  border-color: rgba(255, 255, 255, 0.4);
-  border-top-color: white;
+  border-color: color-mix(in srgb, var(--on-accent) 40%, transparent);
+  border-top-color: var(--on-accent);
 }
 @keyframes launch-spin {
   to {
