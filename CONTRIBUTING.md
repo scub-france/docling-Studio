@@ -63,7 +63,7 @@ uv run uvicorn main:app --reload --port 8000
 
 Add `--group reasoning` to `uv sync` if you need Ask. The API documentation is at <http://localhost:8000/docs>.
 
-Frontend, with Node 20:
+Frontend, with Node 22:
 
 ```bash
 cd frontend
