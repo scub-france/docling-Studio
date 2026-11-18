@@ -151,7 +151,7 @@ class AnalysisEditService:
         analysis_id: str | None = None,
     ) -> EditorSnapshot:
         if not pending_commands:
-            return await self.load_editor(document_id)
+            return await self.load_editor(document_id, analysis_id)
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
         if not base.document_json:

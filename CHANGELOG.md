@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Analysis editor merge**: the Merge button is only enabled when all selected elements have the same type, so a mix of text and paragraph no longer fails with an error after the click (#395).
 - **Analysis editor result id**: the id of an edited result now includes its base analysis, so two analyses of one document no longer return edited results with the same id (#395).
 - **Analysis editor missing resources**: the editor API now answers 404 for an unknown document or analysis instead of 409, so the editor no longer shows an edit conflict for something that does not exist (#395).
+- **Analysis editor empty save**: saving with no pending edits now returns the analysis the editor is working on, not the document's active one (#393).
 
 ## [0.7.3] - 2026-11-02
 

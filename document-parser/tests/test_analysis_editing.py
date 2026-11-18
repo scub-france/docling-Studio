@@ -929,6 +929,25 @@ async def test_each_base_analysis_has_an_independent_edited_cache(edit_service):
 
 
 @pytest.mark.asyncio
+async def test_empty_save_returns_the_requested_analysis(edit_service):
+    service, _edits, analyses = edit_service
+    raw, _, _ = _document()
+    second = AnalysisJob(
+        id="analysis-2",
+        document_id="doc-1",
+        status=AnalysisStatus.COMPLETED,
+        content_markdown="Second base",
+        content_html="<p>Second base</p>",
+        pages_json="[]",
+        document_json=raw,
+    )
+    await analyses.insert(second)
+    await analyses.update_status(second)
+    snapshot = await service.save("doc-1", [], 0, "analysis-2")
+    assert snapshot.base_analysis_id == "analysis-2"
+
+
+@pytest.mark.asyncio
 async def test_missing_document_or_analysis_is_not_found(edit_service):
     service, _, analyses = edit_service
     await analyses.insert(AnalysisJob(id="analysis-pending", document_id="doc-1"))
