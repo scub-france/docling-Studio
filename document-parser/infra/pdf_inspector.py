@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class PdfiumInspector:
     """Stateless adapter for the `PdfInspector` port."""
 
-    def page_sizes(self, storage_path: str) -> list[PageDetail]:
+    def read_page_sizes(self, storage_path: str) -> list[PageDetail]:
         if not Path(storage_path).is_file():
             raise FileNotFoundError(storage_path)
         with pdfium_lock:
@@ -41,7 +41,7 @@ class PdfiumInspector:
             finally:
                 pdf.close()
 
-    def page_count(self, storage_path: str) -> int:
+    def count_pages(self, storage_path: str) -> int:
         with pdfium_lock:
             pdf = pdfium.PdfDocument(storage_path)
             try:

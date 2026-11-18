@@ -654,12 +654,12 @@ class PageRasterizer(Protocol):
 class PdfInspector(Protocol):
     """Port for reading a stored PDF's page geometry, without rendering it."""
 
-    def page_sizes(self, storage_path: str) -> list[PageDetail]:
+    def read_page_sizes(self, storage_path: str) -> list[PageDetail]:
         """Size of each page, in points, without elements. Raises
         `FileNotFoundError` when the file is missing."""
         ...
 
-    def page_count(self, storage_path: str) -> int:
+    def count_pages(self, storage_path: str) -> int:
         """Number of pages. Raises when the file is not a readable PDF."""
         ...
 

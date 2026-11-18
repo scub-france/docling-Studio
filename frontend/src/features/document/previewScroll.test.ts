@@ -5,8 +5,8 @@ import {
   isFocusScrollRequest,
   isRectVisible,
   findMostVisiblePage,
-  pageFrameGeometry,
-  pageTopScrollPosition,
+  computePageFrameGeometry,
+  computePageTopScrollPosition,
 } from './previewScroll'
 
 describe('findMostVisiblePage', () => {
@@ -69,36 +69,36 @@ describe('computeCenteredScrollPosition', () => {
   })
 })
 
-describe('pageFrameGeometry', () => {
+describe('computePageFrameGeometry', () => {
   it('reserves the page box from its point dimensions and the raster density', () => {
     // A4 at 150 dpi: 595pt / 72 * 150 ≈ 1240px of natural raster width.
-    expect(pageFrameGeometry({ width: 595, height: 842 }, 150)).toEqual({
+    expect(computePageFrameGeometry({ width: 595, height: 842 }, 150)).toEqual({
       aspectRatio: '595 / 842',
       maxWidth: '1240px',
     })
   })
 
   it('caps a narrow page at its own raster width rather than the column', () => {
-    expect(pageFrameGeometry({ width: 144, height: 144 }, 72)).toEqual({
+    expect(computePageFrameGeometry({ width: 144, height: 144 }, 72)).toEqual({
       aspectRatio: '144 / 144',
       maxWidth: '144px',
     })
   })
 
   it('declines to reserve a box for a degenerate page or density', () => {
-    expect(pageFrameGeometry({ width: 0, height: 842 }, 150)).toBeNull()
-    expect(pageFrameGeometry({ width: 595, height: -1 }, 150)).toBeNull()
-    expect(pageFrameGeometry({ width: 595, height: 842 }, 0)).toBeNull()
+    expect(computePageFrameGeometry({ width: 0, height: 842 }, 150)).toBeNull()
+    expect(computePageFrameGeometry({ width: 595, height: -1 }, 150)).toBeNull()
+    expect(computePageFrameGeometry({ width: 595, height: 842 }, 0)).toBeNull()
   })
 })
 
-describe('pageTopScrollPosition', () => {
+describe('computePageTopScrollPosition', () => {
   it('brings a card below the fold up to the top of the viewport', () => {
-    expect(pageTopScrollPosition(300, 50, 420)).toBe(670)
+    expect(computePageTopScrollPosition(300, 50, 420)).toBe(670)
   })
 
   it('clamps at the scroll origin for a card above the viewport', () => {
-    expect(pageTopScrollPosition(0, 80, 20)).toBe(0)
+    expect(computePageTopScrollPosition(0, 80, 20)).toBe(0)
   })
 })
 

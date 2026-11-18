@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 from domain.anchors import AnchorParseError, DocumentAnchor
 from domain.element_reader import read_element_text, resolve
 from domain.parse_index import get_label
-from domain.quote_marks import quote_marks
+from domain.quote_marks import find_quote_marks
 from domain.source_map import SourceCited, SourceRead, build_source_map
 from services.navigation_errors import InvalidArgumentError, NavigationServiceError
 
@@ -230,7 +230,7 @@ def _find_quote_marks(
     """The quote's lines on the first of its pages that holds it."""
     for page in sorted({r.page for r in passage.regions}):
         blocks = [r for r in passage.regions if r.page == page]
-        marks = quote_marks(glyphs(page), passage.quote, page=page, within=blocks)
+        marks = find_quote_marks(glyphs(page), passage.quote, page=page, within=blocks)
         if marks:
             return marks
     return []

@@ -180,7 +180,7 @@ async def page_sizes(doc_id: str, service: deps.PreviewServiceDep) -> list[PageS
     """Size of each page of the PDF, so the preview can lay out its pages
     before any analysis (#352)."""
     try:
-        pages = await service.page_sizes(doc_id)
+        pages = await service.read_page_sizes(doc_id)
     except ServiceError as exc:
         raise to_http_error(exc) from exc
     except FileNotFoundError as exc:

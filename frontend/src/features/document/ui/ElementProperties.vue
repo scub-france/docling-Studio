@@ -133,7 +133,7 @@
  *
  * Driven by the currently selected element on the canvas / tree. When
  * the element has a linked chunk (computed by the parent via
- * `chunkForElement`), an inline-edit affordance is shown — pressing it
+ * `findChunkForElement`), an inline-edit affordance is shown — pressing it
  * swaps the chunk metadata block for a textarea bound to the chunk's
  * text. Save calls back through `@save-chunk` so the parent owns the
  * actual `chunksStore.updateText` invocation.

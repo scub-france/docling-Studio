@@ -90,17 +90,17 @@ class TestPageSizes:
     async def test_reads_through_the_inspector_with_the_resolved_path(self, tmp_path):
         pdf = tmp_path / "doc.pdf"
         inspector = MagicMock()
-        inspector.page_sizes.return_value = [PageDetail(page_number=1, width=612, height=792)]
+        inspector.read_page_sizes.return_value = [PageDetail(page_number=1, width=612, height=792)]
         service = _service(Document(id="d1", storage_path=str(pdf)), inspector=inspector)
 
-        pages = await service.page_sizes("d1")
+        pages = await service.read_page_sizes("d1")
 
         assert [(p.page_number, p.width, p.height) for p in pages] == [(1, 612, 792)]
-        inspector.page_sizes.assert_called_once_with(str(pdf))
+        inspector.read_page_sizes.assert_called_once_with(str(pdf))
 
     async def test_unknown_document(self):
         with pytest.raises(PreviewDocumentNotFoundError):
-            await _service(None).page_sizes("nope")
+            await _service(None).read_page_sizes("nope")
 
 
 def test_preview_errors_share_the_service_base():

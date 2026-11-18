@@ -67,14 +67,14 @@ class PreviewService:
             self._cache.put(key, image)
         return image
 
-    async def page_sizes(self, doc_id: str) -> list[PageDetail]:
+    async def read_page_sizes(self, doc_id: str) -> list[PageDetail]:
         """Size of each page of the PDF, so the preview can lay out its pages
         before any analysis (#352)."""
         document = await self._documents.find_by_id(doc_id)
         if document is None:
             raise PreviewDocumentNotFoundError()
         path = self._documents.resolve_storage_path(document.storage_path)
-        return await asyncio.to_thread(self._inspector.page_sizes, str(path))
+        return await asyncio.to_thread(self._inspector.read_page_sizes, str(path))
 
     async def _render(self, path: Path, *, page: int, dpi: int, fmt: str) -> bytes:
         # Poppler opens the PDF by path: the file is never read whole (#398).

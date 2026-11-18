@@ -116,7 +116,7 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
         transport_security=_build_transport_security(),
     )
     app.router.routes.extend(
-        _wrap_route(route, lambda: _is_serving(app)) for route in mcp_app.routes
+        _gate_route(route, lambda: _is_serving(app)) for route in mcp_app.routes
     )
 
     logger.warning(
@@ -171,7 +171,7 @@ class _ServingGate:
         await self._app(scope, receive, send)
 
 
-def _wrap_route(route, serving: Callable[[], bool]):
+def _gate_route(route, serving: Callable[[], bool]):
     """`route` behind the serving gate. The SDK mounts one `Route` around an
     ASGI app; anything else passes through untouched."""
     if not isinstance(route, Route):

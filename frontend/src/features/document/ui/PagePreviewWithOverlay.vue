@@ -152,16 +152,16 @@ import PdfPageCanvas from './PdfPageCanvas.vue'
 import { usePdfDocument } from './usePdfDocument'
 import {
   clampPageInput,
-  pageInRenderWindow,
-  pageInputWidthCh,
+  isPageInRenderWindow,
+  computePageInputWidthCh,
 } from './PagePreviewWithOverlay.logic'
 import {
   computeCenteredScrollPosition,
   isFocusScrollRequest,
   isRectVisible,
   findMostVisiblePage,
-  pageFrameGeometry,
-  pageTopScrollPosition,
+  computePageFrameGeometry,
+  computePageTopScrollPosition,
 } from '../previewScroll'
 
 const { t } = useI18n()
@@ -211,7 +211,7 @@ let pageObserver: IntersectionObserver | null = null
 const visibilityRatios = new Map<number, number>()
 
 const totalPages = computed(() => props.pages.length)
-const pageInputSize = computed(() => pageInputWidthCh(totalPages.value))
+const pageInputSize = computed(() => computePageInputWidthCh(totalPages.value))
 
 /**
  * One scroll per user action (#336).
@@ -260,7 +260,7 @@ function registerFrame(pageNumber: number, el: HTMLElement | null): void {
 
 /** Inline geometry that makes a card hold its height with no image mounted. */
 function getFrameStyle(page: Page): Record<string, string> {
-  return pageFrameGeometry(page, PREVIEW_DPI) ?? {}
+  return computePageFrameGeometry(page, PREVIEW_DPI) ?? {}
 }
 
 function resetPageInput(): void {
@@ -295,7 +295,7 @@ function onImageLoad(pageNumber: number): void {
   // already run against the final geometry. Only a page we could *not* reserve
   // (degenerate dimensions) still grows on load and needs a second pass.
   const page = props.pages.find((p) => p.page_number === pageNumber)
-  if (!page || pageFrameGeometry(page, PREVIEW_DPI)) return
+  if (!page || computePageFrameGeometry(page, PREVIEW_DPI)) return
   if (highlightTarget()?.page.page_number === pageNumber) requestScroll('focus')
 }
 
@@ -324,7 +324,7 @@ function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent):
 }
 
 function shouldRenderPage(pageNumber: number): boolean {
-  return pageInRenderWindow(
+  return isPageInRenderWindow(
     pageNumber,
     props.currentPage,
     viewMode.value,
@@ -384,7 +384,7 @@ function scrollToPage(pageNumber: number): void {
 
   if (isVisible) return
   stage.scrollTo({
-    top: pageTopScrollPosition(stage.scrollTop, stageRect.top, cardRect.top),
+    top: computePageTopScrollPosition(stage.scrollTop, stageRect.top, cardRect.top),
     behavior: 'smooth',
   })
 }

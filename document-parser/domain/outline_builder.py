@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING
 from domain.element_reader import list_section_refs, read_element_text
 from domain.navigation import OutlineNode, is_heading, read_cost
 from domain.parse_index import (
+    build_page_ref,
     get_heading_level,
     get_label,
     get_title,
-    page_ref,
     truncate_title,
 )
 from domain.spans import build_span_ref
@@ -52,7 +52,7 @@ def build_outline(
     headings = [ref for ref in index.order if is_heading(get_label(index.by_ref[ref]))]
     # One heading makes a one-node map that says nothing; pages say more.
     if len(headings) < 2:
-        nodes, node_limited = _page_nodes(index, max_nodes=max_nodes)
+        nodes, node_limited = _build_page_nodes(index, max_nodes=max_nodes)
         return OutlineDraft(
             nodes=nodes, mode="pages", total_est_tokens=total, node_limited=node_limited
         )
@@ -124,7 +124,7 @@ def _build_section_nodes(
     return roots, depth_limited, node_limited
 
 
-def _page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNode], bool]:
+def _build_page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNode], bool]:
     pages = index.page_numbers or sorted({p for pages in index.pages_of.values() for p in pages})
     truncated = len(pages) > max_nodes
     nodes: list[OutlineNode] = []
@@ -134,7 +134,7 @@ def _page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNo
         text = " ".join(texts).strip()
         nodes.append(
             OutlineNode(
-                ref=page_ref(page),
+                ref=build_page_ref(page),
                 uri="",
                 title=truncate_title(text) if text else f"Page {page}",
                 kind="page",

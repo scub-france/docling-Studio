@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
-from domain.anchors import DocumentAnchor, normalise_quote, quote_hash
+from domain.anchors import DocumentAnchor, hash_quote, normalise_quote
 from domain.element_reader import list_section_refs, read_element_text, resolve
 from domain.navigation import (
     Citation,
@@ -179,7 +179,7 @@ class CitationService:
             ref=element.ref,
             label=element.label,
             quote=quote,
-            quote_hash=quote_hash(quote),
+            quote_hash=hash_quote(quote),
             page=element.page,
             bbox=element.bbox,
             headings=list(element.headings),

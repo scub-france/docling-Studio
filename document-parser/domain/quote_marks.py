@@ -56,7 +56,7 @@ class Glyph:
     box: tuple[float, float, float, float] | None
 
 
-def quote_marks(
+def find_quote_marks(
     glyphs: Sequence[Glyph], quote: str, *, page: int, within: Sequence[PageRegion] = ()
 ) -> list[PageRegion]:
     """The lines `quote` covers on `page`, or nothing when it is not there.

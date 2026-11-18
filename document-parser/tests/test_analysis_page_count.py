@@ -22,21 +22,21 @@ async def test_counts_through_the_inspector_off_the_event_loop():
     seen: list[int] = []
     inspector = MagicMock()
 
-    def page_count(path):
+    def count_pages(path):
         seen.append(threading.get_ident())
         return 12
 
-    inspector.page_count.side_effect = page_count
+    inspector.count_pages.side_effect = count_pages
 
     assert await _service(inspector)._count_pages("/doc.pdf") == 12
 
-    inspector.page_count.assert_called_once_with("/doc.pdf")
+    inspector.count_pages.assert_called_once_with("/doc.pdf")
     assert seen and seen[0] != loop_thread
 
 
 async def test_an_unreadable_pdf_disables_batching():
     inspector = MagicMock()
-    inspector.page_count.side_effect = RuntimeError("not a PDF")
+    inspector.count_pages.side_effect = RuntimeError("not a PDF")
 
     assert await _service(inspector)._count_pages("/doc.pdf") == 0
 

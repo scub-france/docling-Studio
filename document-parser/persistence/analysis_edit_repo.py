@@ -73,7 +73,7 @@ _CACHE_UPSERT = """INSERT INTO edited_analysis_cache
       updated_at=excluded.updated_at"""
 
 
-def _cache_values(cache: EditedAnalysisCache) -> tuple:
+def _to_cache_params(cache: EditedAnalysisCache) -> tuple:
     return (
         cache.analysis_id,
         cache.applied_through_sequence,
@@ -195,7 +195,7 @@ class SqliteAnalysisEditRepository:
                     )
                     previous_hash = command_hash
 
-                await db.execute(_CACHE_UPSERT, _cache_values(cache))
+                await db.execute(_CACHE_UPSERT, _to_cache_params(cache))
                 await db.commit()
                 return saved
             except Exception:
@@ -204,7 +204,7 @@ class SqliteAnalysisEditRepository:
 
     async def replace_cache(self, cache: EditedAnalysisCache) -> None:
         async with get_connection() as db:
-            await db.execute(_CACHE_UPSERT, _cache_values(cache))
+            await db.execute(_CACHE_UPSERT, _to_cache_params(cache))
             await db.commit()
 
 

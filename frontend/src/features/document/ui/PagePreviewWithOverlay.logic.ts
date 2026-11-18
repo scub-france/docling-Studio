@@ -6,12 +6,12 @@ export function clampPageInput(raw: string, totalPages: number): number | null {
   return Math.min(totalPages, Math.max(1, parsed))
 }
 
-export function pageInputWidthCh(totalPages: number, min = DEFAULT_PAGE_INPUT_SIZE): number {
+export function computePageInputWidthCh(totalPages: number, min = DEFAULT_PAGE_INPUT_SIZE): number {
   return Math.max(min, String(totalPages).length)
 }
 
 /** Bound image requests independently of page dimensions and viewport width. */
-export function pageInRenderWindow(
+export function isPageInRenderWindow(
   pageNumber: number,
   currentPage: number,
   viewMode: 'page' | 'scroll',

@@ -448,7 +448,7 @@ class AnalysisService:
         if self._pdf_inspector is None:
             return 0
         try:
-            return await asyncio.to_thread(self._pdf_inspector.page_count, file_path)
+            return await asyncio.to_thread(self._pdf_inspector.count_pages, file_path)
         except Exception:
             logger.debug("Cannot open %s as PDF, batching disabled", file_path)
             return 0

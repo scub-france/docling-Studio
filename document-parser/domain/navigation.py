@@ -90,7 +90,7 @@ class BoundingBox:
             int(bottom + padding),
         )
 
-    def page_fraction(self) -> tuple[float, float, float, float] | None:
+    def to_page_fraction(self) -> tuple[float, float, float, float] | None:
         """The box as fractions of its page, from the top-left corner.
 
         `(left, top, right, bottom)`, each in [0, 1]: what a viewer needs to

@@ -76,7 +76,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import type { DocStoreLink, PageElement } from '../shared/types'
 import { useChunksStore } from '../features/chunks/store'
 import { useDocumentStore } from '../features/document/store'
-import { chunkForElement, findElementRefsForChunk } from '../features/document/linkedView'
+import { findChunkForElement, findElementRefsForChunk } from '../features/document/linkedView'
 import LayersBar from '../features/document/ui/LayersBar.vue'
 import PagePreviewWithOverlay from '../features/document/ui/PagePreviewWithOverlay.vue'
 import ChunksPanel from '../features/chunks/ui/ChunksPanel.vue'
@@ -120,7 +120,7 @@ function onHoverElement(el: PageElement | null): void {
 }
 
 function onClickElement(el: PageElement, pageNumber: number): void {
-  const chunk = chunkForElement(el, pageNumber, chunksStore.chunks)
+  const chunk = findChunkForElement(el, pageNumber, chunksStore.chunks)
   if (chunk) selectedChunkId.value = chunk.id
 }
 

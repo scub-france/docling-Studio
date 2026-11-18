@@ -70,7 +70,7 @@ class CitationImageService:
         width_pt = (element.bbox.page_width if element.bbox else None) or DEFAULT_PAGE_WIDTH
         dpi = max(24, min(int(max_width / (width_pt / 72.0)), self._config.image_dpi))
         return await asyncio.to_thread(
-            self._page_thumbnail,
+            self._render_page_thumbnail,
             parse.document.storage_path,
             element,
             target,
@@ -78,7 +78,7 @@ class CitationImageService:
             page_count,
         )
 
-    def _page_thumbnail(
+    def _render_page_thumbnail(
         self,
         storage_path: str,
         element: ResolvedElement,

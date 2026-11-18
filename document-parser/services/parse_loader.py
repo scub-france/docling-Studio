@@ -95,10 +95,10 @@ class ParseLoader:
                     "Run an analysis in Docling Studio first."
                 )
 
-        index = await self._index_for(version_id)
+        index = await self._load_index(version_id)
         return LoadedParse(document=doc, version_id=version_id, index=index)
 
-    async def _index_for(self, version_id: str) -> DocumentIndex:
+    async def _load_index(self, version_id: str) -> DocumentIndex:
         cached = self._cache.get(version_id)
         if cached is not None:
             self._cache.move_to_end(version_id)

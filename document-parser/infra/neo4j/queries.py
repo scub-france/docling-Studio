@@ -109,7 +109,7 @@ def _build_element_node(
     }
 
 
-def _page_node(doc_id: str, p: dict[str, Any]) -> dict[str, Any]:
+def _build_page_node(doc_id: str, p: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": f"page::{p.get('page_no')}",
         "group": "page",
@@ -120,7 +120,7 @@ def _page_node(doc_id: str, p: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _chunk_node(p: dict[str, Any]) -> dict[str, Any]:
+def _build_chunk_node(p: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": f"chunk::{p.get('id')}",
         "group": "chunk",
@@ -216,13 +216,13 @@ async def fetch_graph(
     for p in record["pages"] or []:
         if p is None:
             continue
-        nodes.append(_page_node(doc_id, dict(p)))
+        nodes.append(_build_page_node(doc_id, dict(p)))
 
     # Chunks.
     for c in record["chunks"] or []:
         if c is None:
             continue
-        nodes.append(_chunk_node(dict(c)))
+        nodes.append(_build_chunk_node(dict(c)))
 
     # Edges — filter out rows whose from/to is null (OPTIONAL MATCH can yield them).
     def _push_element_edge(e: dict[str, Any], from_prefix: str, to_prefix: str) -> None:

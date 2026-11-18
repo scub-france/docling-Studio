@@ -595,7 +595,7 @@ class TestBatchedConversion:
             document_repo=mock_document_repo,
             conversion_timeout=60,
             config=config,
-            pdf_inspector=MagicMock(page_count=MagicMock(return_value=8)),
+            pdf_inspector=MagicMock(count_pages=MagicMock(return_value=8)),
         )
 
         await service._run_analysis_inner("job-progress", "/fake.pdf", "fake.pdf")

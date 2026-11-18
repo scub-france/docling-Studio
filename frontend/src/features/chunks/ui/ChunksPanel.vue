@@ -57,11 +57,11 @@
           <span
             class="type-badge"
             :style="{
-              background: getElementColor(chunkBadgeType(chunk)) + '22',
-              color: getElementColor(chunkBadgeType(chunk)),
+              background: getElementColor(getChunkBadgeType(chunk)) + '22',
+              color: getElementColor(getChunkBadgeType(chunk)),
             }"
           >
-            {{ chunkBadgeType(chunk) }}
+            {{ getChunkBadgeType(chunk) }}
           </span>
           <span class="chunk-seq">#{{ chunk.sequence }}</span>
           <span v-if="chunk.sourcePage !== null" class="chunk-page">p.{{ chunk.sourcePage }}</span>
@@ -69,7 +69,7 @@
           <span v-if="chunk.tokenCount" class="chunk-tokens">{{ chunk.tokenCount }}t</span>
         </div>
         <div class="chunk-card-body">
-          {{ chunkTitle(chunk) || chunk.text }}
+          {{ getChunkTitle(chunk) || chunk.text }}
         </div>
       </li>
     </ul>
@@ -142,7 +142,7 @@ watch(
 
 // --- formatting helpers ----------------------------------------------------
 
-function chunkTitle(c: DocChunk): string {
+function getChunkTitle(c: DocChunk): string {
   return c.headings[0] ?? ''
 }
 
@@ -151,7 +151,7 @@ function chunkTitle(c: DocChunk): string {
  * element type — we use the *first* docItem's label as a proxy ("section
  * header", "table", etc.), falling back to "chunk" when none is set.
  */
-function chunkBadgeType(c: DocChunk): string {
+function getChunkBadgeType(c: DocChunk): string {
   const label = c.docItems[0]?.label
   if (!label) return 'chunk'
   return label.toLowerCase().replace(/[^a-z]+/g, '_')

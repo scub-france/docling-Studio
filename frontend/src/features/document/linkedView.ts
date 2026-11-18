@@ -2,7 +2,7 @@
  * Pure helpers for the Linked view's chunk ↔ element mapping (#264).
  *
  * Two directions:
- *  - chunkForElement(element, chunks): which chunk does this OCR element
+ *  - findChunkForElement(element, chunks): which chunk does this OCR element
  *    belong to? Used when the user clicks a bbox on the preview → scroll
  *    to the matching chunk card.
  *  - findElementRefsForChunk(chunk): which element `self_ref`s does this chunk
@@ -26,7 +26,7 @@ const OVERLAP_MIN_COVERAGE = 0.5
  * by at least `OVERLAP_MIN_COVERAGE` of the element's area on the same
  * page. Returns `null` if no chunk satisfies either criterion.
  */
-export function chunkForElement(
+export function findChunkForElement(
   element: PageElement,
   pageNumber: number,
   chunks: readonly DocChunk[],
@@ -69,7 +69,7 @@ export function findElementRefsForChunk(chunk: DocChunk): Set<string> {
  * fallback highlight when `findElementRefsForChunk` is empty (no self_ref
  * link available).
  */
-export function chunkBboxesOnPage(chunk: DocChunk, pageNumber: number): ChunkBbox[] {
+export function filterChunkBboxesOnPage(chunk: DocChunk, pageNumber: number): ChunkBbox[] {
   return chunk.bboxes.filter((b) => b.page === pageNumber)
 }
 

@@ -88,7 +88,7 @@ def collect_regions(
         if get_label(index.by_ref.get(ref) or {}) in _FURNITURE:
             continue
         for box in index.boxes_of.get(ref, ()):
-            share = box.page_fraction()
+            share = box.to_page_fraction()
             if share is None or share[2] <= share[0] or share[3] <= share[1]:
                 continue
             _add(by_page.setdefault(box.page, []), PageRegion(box.page, *share))

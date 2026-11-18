@@ -178,7 +178,7 @@ import type { Analysis, Chunk, DocChunk, DocTreeNode, PageElement } from '../sha
 import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
-import { chunkForElement } from '../features/document/linkedView'
+import { findChunkForElement } from '../features/document/linkedView'
 import { collectAncestorRefs } from '../features/document/treeReveal'
 import DocTreeRail from '../features/document/ui/DocTreeRail.vue'
 import ElementProperties from '../features/document/ui/ElementProperties.vue'
@@ -293,7 +293,7 @@ const selectedElementPage = computed(() => {
 
 const linkedChunk = computed<DocChunk | null>(() => {
   if (!selectedElementData.value) return null
-  return chunkForElement(
+  return findChunkForElement(
     selectedElementData.value.element,
     selectedElementData.value.pageNumber,
     activeChunks.value,

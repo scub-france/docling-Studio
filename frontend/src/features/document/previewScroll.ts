@@ -69,7 +69,7 @@ const POINTS_PER_INCH = 72
  * Returns `null` for a degenerate page — the caller then falls back to
  * sizing the card from the image, as before.
  */
-export function pageFrameGeometry(
+export function computePageFrameGeometry(
   page: { width: number; height: number },
   dpi: number,
 ): { aspectRatio: string; maxWidth: string } | null {
@@ -85,7 +85,7 @@ export function pageFrameGeometry(
  * Viewport-relative inputs, scroll-space output — same convention as
  * `computeCenteredScrollPosition`.
  */
-export function pageTopScrollPosition(
+export function computePageTopScrollPosition(
   scrollTop: number,
   viewportTop: number,
   cardTop: number,

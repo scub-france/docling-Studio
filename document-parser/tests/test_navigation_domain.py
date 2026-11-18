@@ -14,13 +14,13 @@ import pytest
 from domain.anchors import (
     AnchorParseError,
     DocumentAnchor,
+    hash_quote,
     normalise_quote,
-    quote_hash,
 )
 from domain.element_reader import list_section_refs, read_element_text, render_markdown, resolve
 from domain.navigation import BoundingBox, estimate_tokens
 from domain.outline_builder import build_outline
-from domain.parse_index import build_index, page_ref, parse_page_ref
+from domain.parse_index import build_index, build_page_ref, parse_page_ref
 from domain.spans import is_span, list_span_members, parse_span
 from infra.docling_tree import DoclingTreeReader
 from tests.navigation_fixtures import FLAT, MESSY, SECTIONED
@@ -86,7 +86,7 @@ class TestAnchorGrammar:
         assert parsed.ref == "#/tables/3"
 
     def test_accepts_a_virtual_page_ref(self):
-        parsed = DocumentAnchor.parse(f"dstudio://doc/d@v{page_ref(7)}")
+        parsed = DocumentAnchor.parse(f"dstudio://doc/d@v{build_page_ref(7)}")
         assert parse_page_ref(parsed.ref) == 7
 
     @pytest.mark.parametrize(
@@ -110,12 +110,12 @@ class TestAnchorGrammar:
 
 class TestQuoteHashing:
     def test_is_insensitive_to_whitespace_reflow(self):
-        assert quote_hash("le préavis\n  est de trois mois") == quote_hash(
+        assert hash_quote("le préavis\n  est de trois mois") == hash_quote(
             "le préavis est de trois mois"
         )
 
     def test_differs_on_a_changed_word(self):
-        assert quote_hash("trois mois") != quote_hash("six mois")
+        assert hash_quote("trois mois") != hash_quote("six mois")
 
     def test_normalisation_strips_and_collapses(self):
         assert normalise_quote("  a \n\t b  ") == "a b"
@@ -482,7 +482,7 @@ class TestPageFraction:
         box = BoundingBox(
             page=1, left=61.2, top=79.2, right=306, bottom=396, page_width=612, page_height=792
         )
-        assert box.page_fraction() == pytest.approx((0.1, 0.1, 0.5, 0.5))
+        assert box.to_page_fraction() == pytest.approx((0.1, 0.1, 0.5, 0.5))
 
     def test_bottomleft_is_flipped_to_the_top(self):
         # Docling's PDF-native origin: `top` is the LARGER number.
@@ -496,16 +496,16 @@ class TestPageFraction:
             page_width=612,
             page_height=792,
         )
-        assert box.page_fraction() == pytest.approx((0.1, 0.1, 0.5, 0.5))
+        assert box.to_page_fraction() == pytest.approx((0.1, 0.1, 0.5, 0.5))
 
     def test_no_page_size_no_fraction(self):
-        assert BoundingBox(page=1, left=1, top=1, right=2, bottom=2).page_fraction() is None
+        assert BoundingBox(page=1, left=1, top=1, right=2, bottom=2).to_page_fraction() is None
 
     def test_a_box_past_the_edge_is_clamped_to_the_page(self):
         box = BoundingBox(
             page=1, left=-10, top=0, right=700, bottom=800, page_width=612, page_height=792
         )
-        assert box.page_fraction() == (0.0, 0.0, 1.0, 1.0)
+        assert box.to_page_fraction() == (0.0, 0.0, 1.0, 1.0)
 
 
 class TestBoxUnion:

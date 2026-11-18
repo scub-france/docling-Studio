@@ -12,7 +12,7 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 import pytest
 
-from domain.quote_marks import quote_marks
+from domain.quote_marks import find_quote_marks
 from infra.page_text import PdfPageTextReader
 
 
@@ -56,7 +56,7 @@ class TestGlyphs:
 
     def test_found_quotes_land_on_their_lines(self, notice):
         glyphs = PdfPageTextReader().read_glyphs(notice, page=1)
-        marks = quote_marks(glyphs, "three months from the", page=1)
+        marks = find_quote_marks(glyphs, "three months from the", page=1)
         assert len(marks) == 2
         assert marks[0].top < marks[1].top
         assert marks[1].left == pytest.approx(100 / 600, abs=0.002)

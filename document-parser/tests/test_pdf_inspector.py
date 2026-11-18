@@ -18,7 +18,7 @@ class TestPageSizes:
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(pdf_with_pages((612, 792), (842, 595)))
 
-        pages = PdfiumInspector().page_sizes(str(pdf))
+        pages = PdfiumInspector().read_page_sizes(str(pdf))
 
         assert [(p.page_number, p.width, p.height) for p in pages] == [
             (1, 612, 792),
@@ -33,7 +33,7 @@ class TestPageSizes:
 
         target = "infra.pdf_inspector.pdfium.PdfDocument"
         with patch(target, wraps=pdfium.PdfDocument) as opened:
-            PdfiumInspector().page_sizes(str(pdf))
+            PdfiumInspector().read_page_sizes(str(pdf))
 
         assert opened.call_args.args == (str(pdf),)
 
@@ -42,11 +42,11 @@ class TestPageSizes:
         broken.write_bytes(b"%PDF-not really")
 
         with pytest.raises(pdfium.PdfiumError):
-            PdfiumInspector().page_sizes(str(broken))
+            PdfiumInspector().read_page_sizes(str(broken))
 
     def test_raises_file_not_found_on_a_missing_file(self, tmp_path):
         with pytest.raises(FileNotFoundError):
-            PdfiumInspector().page_sizes(str(tmp_path / "gone.pdf"))
+            PdfiumInspector().read_page_sizes(str(tmp_path / "gone.pdf"))
 
 
 class TestPageCount:
@@ -54,20 +54,20 @@ class TestPageCount:
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(pdf_with_pages((612, 792), (612, 792), (612, 792)))
 
-        assert PdfiumInspector().page_count(str(pdf)) == 3
+        assert PdfiumInspector().count_pages(str(pdf)) == 3
 
     def test_raises_on_a_file_that_is_not_a_pdf(self, tmp_path):
         broken = tmp_path / "broken.pdf"
         broken.write_bytes(b"%PDF-not really")
 
         with pytest.raises(pdfium.PdfiumError):
-            PdfiumInspector().page_count(str(broken))
+            PdfiumInspector().count_pages(str(broken))
 
 
 class TestPdfiumLock:
     """pdfium is not thread-safe: every read holds the lock Docling shares."""
 
-    @pytest.mark.parametrize("read", ["page_sizes", "page_count"])
+    @pytest.mark.parametrize("read", ["read_page_sizes", "count_pages"])
     def test_reads_hold_the_shared_lock(self, tmp_path, read):
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(pdf_with_pages((612, 792)))
@@ -89,7 +89,7 @@ class TestPdfiumLock:
         done = threading.Event()
 
         def read():
-            PdfiumInspector().page_count(str(pdf))
+            PdfiumInspector().count_pages(str(pdf))
             done.set()
 
         with pdfium_lock:
@@ -126,7 +126,7 @@ class TestPageSizesStayLight:
         pdf.write_bytes(pdf_with_pages((612, 792), (842, 595)))
 
         with patch.object(pdfium.PdfDocument, "__getitem__") as load_page:
-            pages = PdfiumInspector().page_sizes(str(pdf))
+            pages = PdfiumInspector().read_page_sizes(str(pdf))
 
         load_page.assert_not_called()
         assert [(p.width, p.height) for p in pages] == [(612, 792), (842, 595)]

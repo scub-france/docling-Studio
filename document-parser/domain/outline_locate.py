@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from domain.navigation import is_heading
 from domain.outline_builder import find_preamble_range
-from domain.parse_index import get_label, page_ref, parse_page_ref
+from domain.parse_index import build_page_ref, get_label, parse_page_ref
 from domain.spans import get_span_start
 
 if TYPE_CHECKING:
@@ -37,7 +37,7 @@ def find_containing_chain(
     target = get_span_start(ref)
     if mode == "pages":
         page = parse_page_ref(target) or index.page_of.get(target)
-        return [page_ref(page)] if page is not None else []
+        return [build_page_ref(page)] if page is not None else []
 
     position = index.position.get(target)
     if position is None:

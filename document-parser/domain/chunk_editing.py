@@ -34,7 +34,7 @@ def _generate_id() -> str:
     return uuid.uuid4().hex
 
 
-def _index_of(chunks: list[Chunk], chunk_id: str) -> int:
+def _find_index(chunks: list[Chunk], chunk_id: str) -> int:
     for idx, c in enumerate(chunks):
         if c.id == chunk_id:
             return idx
@@ -87,7 +87,7 @@ def update(
     Returns the updated chunkset and the modified chunk. The chunk's
     id and sequence are preserved.
     """
-    idx = _index_of(chunks, chunk_id)
+    idx = _find_index(chunks, chunk_id)
     target = chunks[idx]
     if target.deleted_at is not None:
         raise ChunkEditingError(f"chunk is deleted: {chunk_id}")
@@ -102,7 +102,7 @@ def update(
 def delete(chunks: list[Chunk], chunk_id: str) -> tuple[list[Chunk], Chunk]:
     """Soft-delete a chunk. Returns the updated chunkset and the
     deleted chunk (still present in the list, with `deleted_at` set)."""
-    idx = _index_of(chunks, chunk_id)
+    idx = _find_index(chunks, chunk_id)
     target = chunks[idx]
     if target.deleted_at is not None:
         return list(chunks), target  # idempotent
@@ -130,7 +130,7 @@ def merge(
     """
     if len(chunk_ids) < 2:
         raise ChunkEditingError("merge requires at least two chunks")
-    indices = [_index_of(chunks, cid) for cid in chunk_ids]
+    indices = [_find_index(chunks, cid) for cid in chunk_ids]
     sources = [chunks[i] for i in indices]
     if any(c.deleted_at for c in sources):
         raise ChunkEditingError("cannot merge a deleted chunk")
@@ -175,7 +175,7 @@ def split(
 
     Returns the updated chunkset and the two new chunks `(left, right)`.
     """
-    idx = _index_of(chunks, chunk_id)
+    idx = _find_index(chunks, chunk_id)
     target = chunks[idx]
     if target.deleted_at is not None:
         raise ChunkEditingError(f"chunk is deleted: {chunk_id}")

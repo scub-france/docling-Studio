@@ -48,7 +48,7 @@ class ChunkWriteResult:
     derived_from_edges: int
 
 
-def _chunk_id(doc_id: str, index: int) -> str:
+def _build_chunk_id(doc_id: str, index: int) -> str:
     return f"{doc_id}::chunk::{index}"
 
 
@@ -65,7 +65,7 @@ async def write_chunks(
     chunk_rows: list[dict[str, Any]] = []
     derived_rows: list[dict[str, Any]] = []
     for idx, c in enumerate(active):
-        cid = _chunk_id(doc_id, idx)
+        cid = _build_chunk_id(doc_id, idx)
         chunk_rows.append(
             {
                 "id": cid,

@@ -29,7 +29,7 @@ PAGE_REF_PREFIX = "#/pages/"
 _MAX_TITLE_LEN = 96
 
 
-def page_ref(page: int) -> str:
+def build_page_ref(page: int) -> str:
     return f"{PAGE_REF_PREFIX}{page}"
 
 

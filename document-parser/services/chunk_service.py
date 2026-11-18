@@ -886,12 +886,12 @@ def _make_node(
     return {
         "ref": ref,
         "type": label_type,
-        "label": _display_label(item, inline_meta, tree_reader),
+        "label": _pick_display_label(item, inline_meta, tree_reader),
         "children": [],
     }
 
 
-def _display_label(item: dict, inline_meta: dict[str, dict], tree_reader) -> str:
+def _pick_display_label(item: dict, inline_meta: dict[str, dict], tree_reader) -> str:
     """Pick the most human-readable label for the tree node."""
     ref = item.get("self_ref") or ""
     label_type = (item.get("label") or "").lower()

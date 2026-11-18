@@ -74,7 +74,7 @@
                 <rect x="9" y="9" width="13" height="13" rx="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
-              {{ copyLabel('url') }}
+              {{ getCopyLabel('url') }}
             </button>
           </div>
         </AccordionRow>
@@ -95,7 +95,7 @@
                   data-e2e="mcp-config-copy-desktop"
                   @click="copy('desktop', desktopJson)"
                 >
-                  {{ copyLabel('desktop') }}
+                  {{ getCopyLabel('desktop') }}
                 </button>
               </div>
               <pre class="code-block" data-e2e="mcp-config-desktop-json">{{ desktopJson }}</pre>
@@ -120,7 +120,7 @@
                   data-e2e="mcp-config-copy-code"
                   @click="copy('code', codeCmd)"
                 >
-                  {{ copyLabel('code') }}
+                  {{ getCopyLabel('code') }}
                 </button>
               </div>
               <pre class="code-block" data-e2e="mcp-config-code-cmd">{{ codeCmd }}</pre>
@@ -520,7 +520,7 @@ async function copy(key: string, text: string): Promise<void> {
   }
 }
 
-function copyLabel(key: string): string {
+function getCopyLabel(key: string): string {
   return copied.value === key ? t('settings.mcp.copied') : t('settings.mcp.copy')
 }
 

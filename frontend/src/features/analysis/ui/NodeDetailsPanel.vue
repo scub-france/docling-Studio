@@ -78,7 +78,7 @@
             >
               {{ getKindLabel(child) }}
             </span>
-            <span class="nd-child-text">{{ previewText(child) }}</span>
+            <span class="nd-child-text">{{ formatPreviewText(child) }}</span>
           </button>
         </li>
       </ul>
@@ -192,7 +192,7 @@ function getKindColor(n: GraphNode): string {
  * Short label for a child row. Prefer the node's own text (truncated), fall
  * back to its self_ref so users can still recognise / debug missing text.
  */
-function previewText(n: GraphNode): string {
+function formatPreviewText(n: GraphNode): string {
   const raw = (n.text as string | undefined) ?? ''
   const clean = raw.replace(/\s+/g, ' ').trim()
   if (clean) return clean.length > 80 ? clean.slice(0, 80) + '…' : clean
