@@ -1,7 +1,7 @@
 """Hexagonal architecture tests — enforce layer dependency rules.
 
-Uses pytestarch for inter-layer dependency rules and ast-based import
-scanning for external (third-party) dependency constraints.
+Uses AST import scanning for layer and third-party dependency constraints.
+Existing layer violations are listed exactly, so new ones fail the suite.
 
 Rules enforced:
 - domain   -> no import from api, services, infra, persistence
@@ -17,72 +17,14 @@ Rules enforced:
 from __future__ import annotations
 
 import ast
+import sys
 from pathlib import Path
 from typing import ClassVar
 
 import pytest
 
-pytestarch = pytest.importorskip(
-    "pytestarch",
-    reason="pytestarch not installed — `pip install -r requirements-test.txt` to enforce layer rules",
-)
-Rule = pytestarch.Rule
-get_evaluable_architecture = pytestarch.get_evaluable_architecture
-
-# ---------------------------------------------------------------------------
-# pytestarch evaluable (project root = document-parser/)
-# ---------------------------------------------------------------------------
-
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
 _SKIP_PATH_PARTS = {"__pycache__", ".venv", ".ruff_cache", "uploads", "data"}
-
-_PYTESTARCH_EXCLUSIONS = (
-    "*__pycache__*",
-    "*.pyc",
-    "*.lock",
-    "*.sqlite*",
-    "*.db",
-    "*.json",
-    "*.log",
-    "*.pdf",
-    "*.png",
-    "*.jpg",
-    "*.jpeg",
-    "*.gif",
-    "*.webp",
-    "*.svg",
-    "*.ico",
-    "*.bin",
-    "*.so",
-    "*.dylib",
-    "*.dll",
-    "*.a",
-    "*.o",
-    "*.whl",
-    "*.egg-info*",
-    "*.dist-info*",
-    "*.venv*",
-    "*.ruff_cache*",
-    "*uploads*",
-    "*data*",
-)
-
-# pytestarch uses the directory name as module prefix when given absolute paths.
-# We use the directory name to build qualified module references.
-_PREFIX = _PROJECT_ROOT.name  # "document-parser"
-
-_evaluable = get_evaluable_architecture(
-    str(_PROJECT_ROOT),
-    str(_PROJECT_ROOT),
-    exclusions=_PYTESTARCH_EXCLUSIONS,
-)
-
-
-def _mod(layer: str) -> str:
-    """Return the fully-qualified pytestarch module name for a layer."""
-    return f"{_PREFIX}.{layer}"
-
 
 # ---------------------------------------------------------------------------
 # Helper: collect top-level imports from all .py files in a package
@@ -107,100 +49,70 @@ def _collect_imports(package: str) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# Inter-layer dependency rules (pytestarch)
+# Inter-layer dependency rules (AST; import targets resolve as written)
 # ---------------------------------------------------------------------------
 
+_LAYER_RULES = {
+    "domain": {"api", "services", "infra", "persistence"},
+    "services": {"api", "infra", "persistence"},
+    "api": {"infra", "persistence"},
+    "infra": {"api", "services"},
+    "mcp_adapter": {"api", "infra", "persistence"},
+    "persistence": {"api", "services", "infra"},
+}
 
-class TestDomainLayerIsolation:
-    """domain must not depend on any other layer."""
-
-    @pytest.mark.parametrize("forbidden", ["api", "services", "infra", "persistence"])
-    def test_domain_does_not_import(self, forbidden: str):
-        rule = (
-            Rule()
-            .modules_that()
-            .are_sub_modules_of(_mod("domain"))
-            .should_not()
-            .import_modules_that()
-            .are_sub_modules_of(_mod(forbidden))
-        )
-        rule.assert_applies(_evaluable)
-
-
-class TestServicesLayerIsolation:
-    """services may import domain only."""
-
-    @pytest.mark.parametrize("forbidden", ["api", "infra", "persistence"])
-    def test_services_does_not_import(self, forbidden: str):
-        rule = (
-            Rule()
-            .modules_that()
-            .are_sub_modules_of(_mod("services"))
-            .should_not()
-            .import_modules_that()
-            .are_sub_modules_of(_mod(forbidden))
-        )
-        rule.assert_applies(_evaluable)
+# Pre-existing violations, recorded as exact source and target modules. They
+# remain migration debt; a new import or a different target cannot use this list.
+_LEGACY_LAYER_IMPORTS = {
+    ("services/store_service.py", "persistence.document_repo"),
+    ("services/store_service.py", "persistence.document_store_link_repo"),
+    ("services/store_service.py", "persistence.store_repo"),
+    ("services/chunk_service.py", "persistence.document_store_link_repo"),
+    ("services/chunk_service.py", "persistence.store_repo"),
+    ("services/store_backend_resolver.py", "infra.neo4j.driver_pool"),
+    ("services/store_backend_resolver.py", "infra.opensearch_pool"),
+    ("services/store_backend_resolver.py", "infra.opensearch_store"),
+    ("services/store_backend_resolver.py", "persistence.store_repo"),
+    ("services/version_service.py", "persistence.document_version_repo"),
+    ("persistence/store_repo.py", "infra.secrets"),
+}
 
 
-class TestApiLayerIsolation:
-    """api may import services and domain, but not infra or persistence."""
-
-    @pytest.mark.parametrize("forbidden", ["infra", "persistence"])
-    def test_api_does_not_import(self, forbidden: str):
-        rule = (
-            Rule()
-            .modules_that()
-            .are_sub_modules_of(_mod("api"))
-            .should_not()
-            .import_modules_that()
-            .are_sub_modules_of(_mod(forbidden))
-        )
-        rule.assert_applies(_evaluable)
+def _import_targets(tree: ast.AST) -> set[str]:
+    targets: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            targets.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            targets.add(node.module)
+    return targets
 
 
-class TestInfraLayerIsolation:
-    """infra may import domain (ports), but not api or services."""
-
-    @pytest.mark.parametrize("forbidden", ["api", "services"])
-    def test_infra_does_not_import(self, forbidden: str):
-        rule = (
-            Rule()
-            .modules_that()
-            .are_sub_modules_of(_mod("infra"))
-            .should_not()
-            .import_modules_that()
-            .are_sub_modules_of(_mod(forbidden))
-        )
-        rule.assert_applies(_evaluable)
+def _layer_violations(layer: str) -> set[tuple[str, str]]:
+    violations: set[tuple[str, str]] = set()
+    for py_file in (_PROJECT_ROOT / layer).rglob("*.py"):
+        if any(part in _SKIP_PATH_PARTS for part in py_file.parts):
+            continue
+        source = str(py_file.relative_to(_PROJECT_ROOT))
+        for target in _import_targets(ast.parse(py_file.read_text(), filename=source)):
+            if target.split(".")[0] in _LAYER_RULES[layer]:
+                violations.add((source, target))
+    return violations
 
 
-class TestMcpAdapterLayerIsolation:
-    """mcp_adapter is a driving adapter: it may reach services + domain only.
+@pytest.mark.parametrize("layer", sorted(_LAYER_RULES))
+def test_layer_imports(layer: str):
+    unexpected = _layer_violations(layer) - _LEGACY_LAYER_IMPORTS
+    assert not unexpected, f"New forbidden layer imports: {sorted(unexpected)}"
 
-    Same contract as `api/`. The MCP surface is allowed to *shape* responses
-    for an agent (budgets, anchors, content delimiters); it is not allowed to
-    reach past the services layer to do it.
 
-    Asserted with the ast scanner rather than a pytestarch rule on purpose.
-    The pytestarch rules above resolve import *targets* against graph nodes
-    named `document-parser.<layer>.<module>`, while the source says
-    `from persistence.database import …` — the project root is a hyphenated
-    directory, not an importable package, so those targets match no node and
-    the rules never see an edge. Verified by hand: adding
-    `from persistence.database import get_connection` to a `services/` module
-    leaves every rule green. Fixing that machinery is a change of its own
-    (it will surface whatever the rules have been missing); until then, a new
-    package gets an assertion that actually bites.
-    """
-
-    @pytest.mark.parametrize("forbidden", ["api", "infra", "persistence"])
-    def test_mcp_adapter_does_not_import(self, forbidden: str):
-        imports = _collect_imports("mcp_adapter")
-        assert forbidden not in imports, (
-            f"mcp_adapter imports forbidden layer '{forbidden}' — a driving adapter "
-            "reaches the services layer, never past it"
-        )
+def test_layer_scanner_detects_a_forbidden_import(tmp_path, monkeypatch):
+    """Guard against a green suite when the import graph is not resolved."""
+    source = tmp_path / "api" / "probe.py"
+    source.parent.mkdir()
+    source.write_text("from infra.preview_cache import PreviewCache\n")
+    monkeypatch.setattr(sys.modules[__name__], "_PROJECT_ROOT", tmp_path)
+    assert ("api/probe.py", "infra.preview_cache") in _layer_violations("api")
 
 
 class TestDocumentAgentServicesAreFrameworkFree:
@@ -272,22 +184,6 @@ class TestDocumentAgentServicesAreFrameworkFree:
                     f"services/{module}.py imports peer service '{peer}' — add a port, or "
                     "record the injection in PEERS with a reason"
                 )
-
-
-class TestPersistenceLayerIsolation:
-    """persistence may import domain, but not api, services, or infra."""
-
-    @pytest.mark.parametrize("forbidden", ["api", "services", "infra"])
-    def test_persistence_does_not_import(self, forbidden: str):
-        rule = (
-            Rule()
-            .modules_that()
-            .are_sub_modules_of(_mod("persistence"))
-            .should_not()
-            .import_modules_that()
-            .are_sub_modules_of(_mod(forbidden))
-        )
-        rule.assert_applies(_evaluable)
 
 
 # ---------------------------------------------------------------------------

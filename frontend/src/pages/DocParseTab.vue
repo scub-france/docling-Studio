@@ -393,6 +393,15 @@ function openDeepLink(): void {
 
 watch(() => [props.focusRef, props.page], openDeepLink)
 
+// The analysis detail route first supplies page dimensions, then fills in
+// Docling elements. Keep the viewer mounted while its overlays arrive.
+watch(
+  () => props.analysis,
+  (analysis) => {
+    if (analysis) documentStore.setWorkspaceAnalysis(analysis)
+  },
+)
+
 watch(
   () => props.docId,
   async (id) => {

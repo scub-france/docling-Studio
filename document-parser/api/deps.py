@@ -22,6 +22,7 @@ from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.ingestion_service import IngestionService
 from services.mcp_config_service import McpConfigService
+from services.preview_service import PreviewService
 from services.reasoning_service import ReasoningService
 from services.store_service import StoreService
 from services.version_service import VersionService
@@ -34,6 +35,13 @@ def get_document_service(state: AppStateDep) -> DocumentService:
 
 
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
+
+
+def get_preview_service(state: AppStateDep) -> PreviewService:
+    return require(state.preview_service, detail="Preview service not available")
+
+
+PreviewServiceDep = Annotated[PreviewService, Depends(get_preview_service)]
 
 
 def get_analysis_service(state: AppStateDep) -> AnalysisService:

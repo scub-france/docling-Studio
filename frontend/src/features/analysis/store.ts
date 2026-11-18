@@ -1,6 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Analysis, Chunk, ChunkingOptions, Page, PipelineOptions } from '../../shared/types'
+import type {
+  Analysis,
+  AnalysisSummary,
+  Chunk,
+  ChunkingOptions,
+  Page,
+  PipelineOptions,
+} from '../../shared/types'
 import * as api from './api'
 import { hasActive, mergeSummaries } from './batch'
 
@@ -20,7 +27,7 @@ export interface BatchLaunch {
 }
 
 export const useAnalysisStore = defineStore('analysis', () => {
-  const analyses = ref<Analysis[]>([])
+  const analyses = ref<AnalysisSummary[]>([])
   const currentAnalysis = ref<Analysis | null>(null)
   const running = ref(false)
   const lastOutcome = ref<AnalysisOutcome | null>(null)
@@ -51,7 +58,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
     loading.value = true
     try {
       error.value = null
-      analyses.value = await api.fetchAnalyses()
+      analyses.value = await api.fetchAnalysisSummaries()
     } catch (e) {
       error.value = (e as Error).message || 'Failed to load analyses'
       console.error('Failed to load analyses', e)

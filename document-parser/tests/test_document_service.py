@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pypdfium2 as pdfium
 import pytest
+from PIL import Image
 
 from domain.models import Document
 from services.document_service import DocumentConfig, DocumentService, _count_pages
@@ -149,6 +150,19 @@ class TestGeneratePreview:
             result = DocumentService.generate_preview(b"%PDF-fake", page=1, dpi=72)
 
         assert result == b"PNG-DATA"
+
+    def test_returns_webp_bytes_at_the_same_page_size(self):
+        image = Image.new("RGB", (32, 48), "white")
+        with patch("services.document_service.convert_from_bytes", return_value=[image]):
+            result = DocumentService.generate_preview(
+                b"%PDF-fake", page=1, dpi=150, image_format="WEBP"
+            )
+
+        assert result[:4] == b"RIFF"
+        assert result[8:12] == b"WEBP"
+        with Image.open(io.BytesIO(result)) as decoded:
+            assert decoded.size == (32, 48)
+            assert decoded.convert("RGB").tobytes() == image.tobytes()
 
 
 class TestCountPages:

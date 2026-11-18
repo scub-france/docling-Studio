@@ -103,7 +103,18 @@
         </button>
       </div>
     </header>
-    <div v-if="store.loading" class="state">{{ t('analysisEditor.loading') }}</div>
+    <div v-if="store.loading" class="editor-loading-preview">
+      <PagePreviewWithOverlay
+        v-if="previewPages?.length"
+        :document-id="documentId"
+        :pages="previewPages"
+        :current-page="currentPage"
+        :hidden-types="new Set<string>()"
+        :show-labels="false"
+        @update:current-page="currentPage = $event"
+      />
+      <div class="state">{{ t('analysisEditor.loading') }}</div>
+    </div>
     <div v-else-if="store.error" class="state error">{{ store.error }}</div>
     <template v-else>
       <div v-if="store.previewError" class="editor-error" role="alert">
@@ -295,14 +306,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import type { PageElement } from '../../../shared/types'
+import type { Page, PageElement } from '../../../shared/types'
 import { useAnalysisEditorStore } from '../store'
 import { useI18n } from '../../../shared/i18n'
 import EditableStructureNode from './EditableStructureNode.vue'
 import ElementEditPanel from './ElementEditPanel.vue'
 import { PagePreviewWithOverlay } from '../../document'
 
-const props = defineProps<{ documentId: string; analysisId?: string }>()
+const props = defineProps<{ documentId: string; analysisId?: string; previewPages?: Page[] }>()
 const emit = defineEmits<{ discard: []; saved: [] }>()
 const store = useAnalysisEditorStore()
 const { t } = useI18n()
@@ -511,6 +522,23 @@ watch(
   min-height: 0;
   overflow: hidden;
   background: var(--bg-surface);
+}
+.editor-loading-preview {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.editor-loading-preview :deep(.preview-with-overlay) {
+  height: 100%;
+}
+.editor-loading-preview > .state {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 .editor-toolbar {
   display: flex;

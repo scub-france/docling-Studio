@@ -93,15 +93,24 @@
           :style="frameStyle(page)"
           :ref="(el) => registerFrame(page.page_number, el as HTMLElement | null)"
         >
+          <PdfPageCanvas
+            v-if="shouldRenderPage(page.page_number) && pdfDocument && !pdfFailed"
+            :document="pdfDocument"
+            :page-number="page.page_number"
+            :ref="(el) => registerPdf(page.page_number, el)"
+            @ready="(canvas) => onPdfReady(page.page_number, canvas)"
+            @error="onPdfError(page.page_number)"
+          />
           <img
-            v-if="shouldRenderPage(page.page_number)"
+            v-else-if="shouldRenderPage(page.page_number) && pdfFailed"
             :src="getPreviewUrl(documentId, page.page_number)"
             :alt="`Page ${page.page_number}`"
             class="preview-image"
-            loading="lazy"
+            :fetchpriority="page.page_number === currentPage ? 'high' : 'low'"
             decoding="async"
             :ref="(el) => registerImage(page.page_number, el as HTMLImageElement | null)"
             @load="onImageLoad(page.page_number)"
+            @error="onImageError(page.page_number)"
           />
           <BboxCanvas
             v-if="loadedImages[page.page_number]"
@@ -133,13 +142,19 @@
  * `currentPage` remains the external selection source for side panels.
  * In scroll mode it is synchronized to the page mostly visible in the viewport.
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRef, watch } from 'vue'
 import type { Page, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToRect, computeScale } from '@/shared/bboxScaling'
 import { getPreviewUrl, PREVIEW_DPI } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
-import { clampPageInput, pageInputWidthCh } from './PagePreviewWithOverlay.logic'
+import PdfPageCanvas from './PdfPageCanvas.vue'
+import { usePdfDocument } from './usePdfDocument'
+import {
+  clampPageInput,
+  pageInRenderWindow,
+  pageInputWidthCh,
+} from './PagePreviewWithOverlay.logic'
 import {
   centeredScrollPosition,
   isFocusScrollRequest,
@@ -177,20 +192,22 @@ const emit = defineEmits<{
 
 const stageRef = ref<HTMLDivElement | null>(null)
 const imageRefs = reactive<Record<number, HTMLImageElement | null>>({})
-const loadedImages = reactive<Record<number, HTMLImageElement | null>>({})
+const loadedImages = reactive<Record<number, HTMLElement | null>>({})
+const { document: pdfDocument, failed: pdfFailed } = usePdfDocument(toRef(props, 'documentId'))
+const loadedPageNumbers = reactive(new Set<number>())
+const settledPageNumbers = reactive(new Set<number>())
+const pendingPageNumbers = reactive(new Set<number>())
 const pageCardRefs = reactive<Record<number, HTMLElement | null>>({})
 // The frame is the page's *reserved* box (#336): unlike the image it exists
 // and measures correctly whether or not the raster has been mounted, so it is
 // what the focus scroll uses to place a bbox.
 const frameRefs = reactive<Record<number, HTMLElement | null>>({})
 const visiblePage = ref<number | null>(null)
-const renderedPageNumbers = reactive(new Set<number>())
 const viewMode = ref<'page' | 'scroll'>('scroll')
 const pageInput = ref('1')
 const pageInputFocused = ref(false)
 
 let pageObserver: IntersectionObserver | null = null
-let renderObserver: IntersectionObserver | null = null
 const visibilityRatios = new Map<number, number>()
 
 const totalPages = computed(() => props.pages.length)
@@ -220,7 +237,21 @@ const renderedPages = computed<Page[]>(() => {
 
 function registerImage(pageNumber: number, el: HTMLImageElement | null): void {
   imageRefs[pageNumber] = el
-  if (!el) loadedImages[pageNumber] = null
+  if (el) {
+    if (!settledPageNumbers.has(pageNumber)) pendingPageNumbers.add(pageNumber)
+  } else {
+    pendingPageNumbers.delete(pageNumber)
+    loadedImages[pageNumber] = null
+  }
+}
+
+function registerPdf(pageNumber: number, el: unknown): void {
+  if (el) {
+    if (!settledPageNumbers.has(pageNumber)) pendingPageNumbers.add(pageNumber)
+  } else {
+    pendingPageNumbers.delete(pageNumber)
+    loadedImages[pageNumber] = null
+  }
 }
 
 function registerFrame(pageNumber: number, el: HTMLElement | null): void {
@@ -256,6 +287,9 @@ function registerPageCard(pageNumber: number, el: HTMLElement | null): void {
 }
 
 function onImageLoad(pageNumber: number): void {
+  pendingPageNumbers.delete(pageNumber)
+  loadedPageNumbers.add(pageNumber)
+  settledPageNumbers.add(pageNumber)
   loadedImages[pageNumber] = imageRefs[pageNumber] ?? null
   // With the box reserved, decoding shifts no layout and the focus scroll has
   // already run against the final geometry. Only a page we could *not* reserve
@@ -265,6 +299,24 @@ function onImageLoad(pageNumber: number): void {
   if (highlightTarget()?.page.page_number === pageNumber) requestScroll('focus')
 }
 
+function onImageError(pageNumber: number): void {
+  pendingPageNumbers.delete(pageNumber)
+  settledPageNumbers.add(pageNumber)
+}
+
+function onPdfReady(pageNumber: number, canvas: HTMLCanvasElement): void {
+  pendingPageNumbers.delete(pageNumber)
+  loadedPageNumbers.add(pageNumber)
+  settledPageNumbers.add(pageNumber)
+  loadedImages[pageNumber] = canvas
+}
+
+function onPdfError(pageNumber: number): void {
+  pendingPageNumbers.delete(pageNumber)
+  loadedImages[pageNumber] = null
+  pdfFailed.value = true
+}
+
 function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent): void {
   // No re-scroll guard needed: a bbox the user just clicked is on screen, and
   // `centerHighlighted` leaves an already-visible target alone.
@@ -272,10 +324,13 @@ function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent):
 }
 
 function shouldRenderPage(pageNumber: number): boolean {
-  return (
-    viewMode.value === 'page' ||
-    renderedPageNumbers.has(pageNumber) ||
-    pageNumber === focusedPage.value
+  return pageInRenderWindow(
+    pageNumber,
+    props.currentPage,
+    viewMode.value,
+    focusedPage.value,
+    settledPageNumbers.has(props.currentPage),
+    loadedPageNumbers.has(pageNumber) || pendingPageNumbers.has(pageNumber),
   )
 }
 
@@ -337,18 +392,13 @@ function scrollToPage(pageNumber: number): void {
 function setupObserver(): void {
   if (viewMode.value !== 'scroll') {
     pageObserver?.disconnect()
-    renderObserver?.disconnect()
     pageObserver = null
-    renderObserver = null
-    renderedPageNumbers.clear()
     return
   }
   pageObserver?.disconnect()
-  renderObserver?.disconnect()
   visibilityRatios.clear()
   const stage = stageRef.value
   if (!stage) return
-  renderedPageNumbers.add(props.currentPage)
 
   pageObserver = new IntersectionObserver(
     (entries) => {
@@ -368,38 +418,13 @@ function setupObserver(): void {
     },
   )
 
-  renderObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        const page = Number((entry.target as HTMLElement).dataset.pageNumber)
-        if (page) updateRenderWindow(page, entry.isIntersecting)
-      }
-    },
-    { root: stage, rootMargin: '100% 0px' },
-  )
-
   for (const page of props.pages) {
     if (viewMode.value !== 'scroll' && page.page_number !== props.currentPage) continue
     const card = pageCardRefs[page.page_number]
     if (!card) continue
     card.dataset.pageNumber = String(page.page_number)
     pageObserver.observe(card)
-    renderObserver.observe(card)
   }
-}
-
-function updateRenderWindow(pageNumber: number, isIntersecting: boolean): void {
-  if (isIntersecting) {
-    renderedPageNumbers.add(pageNumber)
-    return
-  }
-  renderedPageNumbers.delete(pageNumber)
-  // Hold on to the raster of the page carrying the highlight (#336): the focus
-  // scroll may still be travelling towards it, and dropping it mid-flight would
-  // take the bbox overlay down with it. `shouldRenderPage` keeps the `<img>`
-  // mounted for exactly as long, so the page is released — image and overlay
-  // together — as soon as the focus moves on.
-  if (pageNumber !== focusedPage.value) loadedImages[pageNumber] = null
 }
 
 function highlightTarget(): { page: Page; element: PageElement } | null {
@@ -497,6 +522,17 @@ watch(
   { deep: true },
 )
 
+watch(
+  () => props.documentId,
+  () => {
+    loadedPageNumbers.clear()
+    settledPageNumbers.clear()
+    pendingPageNumbers.clear()
+    for (const page of Object.keys(loadedImages)) loadedImages[Number(page)] = null
+  },
+  { flush: 'sync' },
+)
+
 watch(viewMode, async () => {
   await nextTick()
   setupObserver()
@@ -527,7 +563,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   pageObserver?.disconnect()
-  renderObserver?.disconnect()
 })
 </script>
 
