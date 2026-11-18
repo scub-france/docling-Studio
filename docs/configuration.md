@@ -137,7 +137,7 @@ When PDF.js cannot load the PDF or draw a page, the page falls back to an image 
 
 | Parameter | Default | Values |
 |-----------|---------|--------|
-| `page` | `1` | 1 to the page count. Past the last page: `400`. |
+| `page` | `1` | 1 to the page count. Past the last page: `400`, or `404` when the document's page count is not known. |
 | `dpi` | `150` | 72 to 300. |
 | `format` | `png` | `png` or `webp`. |
 

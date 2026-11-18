@@ -38,7 +38,7 @@ Save or discard your current draft before changing saved history. If a later edi
 
 While **Edit analysis** is open, **Download** exports the *saved* edited Markdown or Docling JSON. Save a draft before downloading if you want it included. **Inspect analysis** shows the original conversion result, and its Download action exports that original analysis. PDF download always returns the source PDF.
 
-Each analysis has its own edit history. Starting a new conversion creates a new analysis and a new edit stream; it does not rewrite an older analysis. Document-scoped reads such as the active tree and rechunking use the active saved result. Existing chunks become stale after an edit and need explicit rechunking. **Ask** and the [MCP server](mcp-server.md) do not see editor changes: they read the original result of the latest completed analysis that has a Docling document, even when another analysis is active.
+Each analysis has its own edit history. Starting a new conversion creates a new analysis and a new edit stream; it does not rewrite an older analysis. Document-scoped reads such as the active tree and rechunking use the active saved result. Existing chunks become stale after an edit and need explicit rechunking. **Ask** and the [MCP server](mcp-server.md) do not see editor changes: they read the original result of the latest completed analysis that has a Docling document, or of the analysis an MCP anchor pins, even when another analysis is active.
 
 The editor is controlled by `ANALYSIS_EDITOR_ENABLED` (on by default). When it is off, editing controls, editor API routes and `edited=true` exports are unavailable; you can still inspect the original analyses. Turning it off does not discard saved edits: they keep applying to the document's active result, so default exports, the document tree and rechunking still include them.
 
@@ -79,8 +79,8 @@ Errors:
 
 | Status | When |
 | --- | --- |
-| `404` | The editor is turned off (`ANALYSIS_EDITOR_ENABLED=false`), the document does not exist, the analysis does not belong to it, or the document has no active analysis. Also an `edited=true` export without `analysisId`. |
-| `409` | Another save came first (`expectedAppliedThroughSequence` is stale), or the analysis is not completed or has no Docling document. |
+| `404` | The editor is turned off (`ANALYSIS_EDITOR_ENABLED=false`), the document does not exist, the analysis does not belong to it, or the document has no active analysis. Also an `edited=true` Markdown or JSON export without `analysisId`, or of an analysis that is not completed or has no Docling document. |
+| `409` | Another save came first (`expectedAppliedThroughSequence` is stale), or, on an editor route, the analysis is not completed or has no Docling document. |
 | `400` | An edit that cannot be applied, for example a merge of text with a paragraph, or a revert that a later edit depends on. |
 
 For the persistence details, see the [analysis editor design](https://github.com/scub-france/Docling-Studio/blob/main/docs/design/analysis-editor.md).
