@@ -307,7 +307,7 @@ async function runIngestion() {
   padding: 10px 20px;
   font-size: 14px;
   font-weight: 600;
-  color: white;
+  color: var(--on-accent);
   background: var(--success);
   border: none;
   border-radius: var(--radius-sm);
@@ -333,7 +333,7 @@ async function runIngestion() {
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }

@@ -136,16 +136,19 @@ function draw(): void {
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
   }
 
-  // Draw chunk-highlighted bboxes on top with accent color
+  // Draw chunk-highlighted bboxes on top with the --chunk-highlight token
+  // (app/App.vue), read once per draw; the fill keeps the former 0x30 alpha.
   if (hasChunkHighlight) {
-    const CHUNK_COLOR = '#F59E0B'
+    const chunkColor = getComputedStyle(canvas).getPropertyValue('--chunk-highlight').trim()
     for (const cb of props.highlightedBboxes) {
       const rect = bboxToRect(cb.bbox, scale)
-      ctx.strokeStyle = CHUNK_COLOR
+      ctx.strokeStyle = chunkColor
       ctx.lineWidth = 3
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
-      ctx.fillStyle = CHUNK_COLOR + '30'
+      ctx.fillStyle = chunkColor
+      ctx.globalAlpha = 0x30 / 255
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+      ctx.globalAlpha = 1
     }
   }
 }

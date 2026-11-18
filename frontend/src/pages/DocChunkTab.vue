@@ -192,7 +192,7 @@ watch(
   background: var(--accent);
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
-  color: white;
+  color: var(--on-accent);
   font-size: 12px;
   cursor: pointer;
   transition: filter var(--transition);
@@ -211,7 +211,7 @@ watch(
   width: 10px;
   height: 10px;
   border: 1.5px solid rgba(255, 255, 255, 0.4);
-  border-top-color: white;
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }

@@ -117,7 +117,7 @@ async function runAnalysis() {
   gap: 8px;
   padding: 12px 20px;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   border: none;
   border-radius: var(--radius-sm);
   font-size: 14px;
@@ -142,7 +142,7 @@ async function runAnalysis() {
   width: 18px;
   height: 18px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }

@@ -854,7 +854,7 @@ onBeforeUnmount(() => {
 .topbar-btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .topbar-btn.primary:hover:not(:disabled) {
@@ -875,7 +875,7 @@ onBeforeUnmount(() => {
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
@@ -1261,7 +1261,7 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 1.5;
   color: var(--text-secondary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
   pointer-events: none;
 }
@@ -1398,7 +1398,7 @@ onBeforeUnmount(() => {
 
 .toggle-input:checked + .toggle-switch::after {
   left: 18px;
-  background: white;
+  background: var(--on-accent);
 }
 
 .toggle-text {

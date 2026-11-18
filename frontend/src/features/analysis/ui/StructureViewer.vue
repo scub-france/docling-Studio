@@ -100,8 +100,6 @@ const emit = defineEmits<{
   elementFocus: [selfRef: string]
 }>()
 
-const REASONING_COLOR = '#EA580C'
-
 const selectedPage = ref(1)
 const hiddenTypes = reactive(new Set<string>())
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -167,6 +165,12 @@ function drawOverlay() {
 
   const scale = computeScale(img.clientWidth, img.clientHeight, page.width, page.height)
 
+  // Reasoning colours come from the design tokens in app/App.vue, read once
+  // per draw (empty in jsdom: the canvas then ignores the assignment).
+  const styles = getComputedStyle(canvas)
+  const reasoning = styles.getPropertyValue('--reasoning').trim()
+  const onAccent = styles.getPropertyValue('--on-accent').trim()
+
   // Two-pass draw so reasoning overlays (highlight + pulse) sit on top of
   // the base element strokes without being painted over by subsequent
   // elements. First pass = base, second pass = accents.
@@ -180,11 +184,13 @@ function drawOverlay() {
       // Reasoning-visited element — reasoning accent color, bolder stroke,
       // more saturated fill than the base element. The visit-order badge
       // is drawn in the second pass below.
-      ctx.strokeStyle = REASONING_COLOR
+      ctx.strokeStyle = reasoning
       ctx.lineWidth = 3
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
-      ctx.fillStyle = REASONING_COLOR + '33'
+      ctx.fillStyle = reasoning
+      ctx.globalAlpha = 0x33 / 255
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+      ctx.globalAlpha = 1
     } else {
       // Dim non-visited when focus mode is on and a visited set is present,
       // so visited bboxes pop. Otherwise keep the regular styling.
@@ -205,10 +211,10 @@ function drawOverlay() {
         ? props.visitedBySelfRef.get(el.self_ref)
         : undefined
     if (order !== undefined) {
-      drawVisitBadge(ctx, rect.x, rect.y, order)
+      drawVisitBadge(ctx, rect.x, rect.y, order, reasoning, onAccent)
     }
     if (props.focusedSelfRef && el.self_ref === props.focusedSelfRef) {
-      ctx.strokeStyle = REASONING_COLOR
+      ctx.strokeStyle = reasoning
       ctx.lineWidth = 2
       ctx.setLineDash([6, 4])
       ctx.strokeRect(rect.x - 4, rect.y - 4, rect.w + 8, rect.h + 8)
@@ -217,15 +223,22 @@ function drawOverlay() {
   }
 }
 
-function drawVisitBadge(ctx: CanvasRenderingContext2D, x: number, y: number, order: number): void {
+function drawVisitBadge(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  order: number,
+  fill: string,
+  ink: string,
+): void {
   const radius = 10
   const cx = x
   const cy = y
-  ctx.fillStyle = REASONING_COLOR
+  ctx.fillStyle = fill
   ctx.beginPath()
   ctx.arc(cx, cy, radius, 0, Math.PI * 2)
   ctx.fill()
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = ink
   ctx.font = 'bold 11px -apple-system, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'

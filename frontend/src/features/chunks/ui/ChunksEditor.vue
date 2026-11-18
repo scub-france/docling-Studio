@@ -367,13 +367,13 @@ onMounted(() => {
 .toolbar-btn--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .toolbar-btn--primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
-  color: white;
+  color: var(--on-accent);
 }
 
 /* Diff bar */
@@ -593,7 +593,7 @@ onMounted(() => {
 .modal-btn--primary {
   background: var(--accent);
   border: 1px solid var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .modal-btn--primary:hover:not(:disabled) {

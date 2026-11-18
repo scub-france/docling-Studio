@@ -451,7 +451,7 @@ async function doRechunk() {
   left: 2px;
   width: 14px;
   height: 14px;
-  background: white;
+  background: var(--on-accent);
   border-radius: 50%;
   transition: transform 0.2s;
 }
@@ -480,7 +480,7 @@ async function doRechunk() {
 
 .chunk-btn.primary {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .chunk-btn.primary:disabled {
@@ -522,11 +522,11 @@ async function doRechunk() {
 }
 
 .chunk-card:hover {
-  border-color: #f59e0b;
+  border-color: var(--chunk-highlight);
 }
 
 .chunk-card.highlighted {
-  border-color: #f59e0b;
+  border-color: var(--chunk-highlight);
   background: rgba(245, 158, 11, 0.08);
 }
 
@@ -570,7 +570,7 @@ async function doRechunk() {
 .chunk-modified {
   font-size: 10px;
   font-weight: 600;
-  color: #f59e0b;
+  color: var(--chunk-highlight);
   background: rgba(245, 158, 11, 0.12);
   padding: 1px 6px;
   border-radius: 4px;
@@ -619,7 +619,7 @@ async function doRechunk() {
 }
 
 .chunk-delete-icon:hover {
-  color: #ef4444;
+  color: var(--error);
   background: rgba(239, 68, 68, 0.1);
 }
 
@@ -666,7 +666,7 @@ async function doRechunk() {
 
 .chunk-edit-btn.save {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .chunk-edit-btn.save:disabled {
@@ -700,7 +700,7 @@ async function doRechunk() {
   padding: 20px;
   max-width: 300px;
   width: 90%;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-lg);
 }
 
 .chunk-confirm-text {
@@ -726,8 +726,8 @@ async function doRechunk() {
 }
 
 .chunk-confirm-btn.danger {
-  background: #ef4444;
-  color: white;
+  background: var(--error);
+  color: var(--on-accent);
 }
 
 .chunk-confirm-btn.danger:disabled {
@@ -790,7 +790,7 @@ async function doRechunk() {
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
