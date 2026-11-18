@@ -126,6 +126,7 @@ class AppStateBuilder:
             document_repo=document_repo,
             selection_repo=document_analysis_repo,
             chunk_source_repo=document_analysis_repo,
+            chunk_repo=chunk_repo,
             edit_repo=SqliteAnalysisEditRepository(),
             editor=DoclingDocumentEditor(),
             projector=DoclingAnalysisProjector(),
