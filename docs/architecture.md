@@ -5,11 +5,12 @@
 ```mermaid
 flowchart TB
     subgraph Studio ["Docling Studio"]
-        Front("Frontend<br/>Vue 3, served by nginx") -->|/api| Back("Backend<br/>FastAPI")
+        Front("Frontend<br/>Vue 3, served by nginx") -->|/api, /mcp| Back("Backend<br/>FastAPI")
         Back --> DB[("SQLite<br/>+ uploaded PDFs")]
         Back --> Docling("Docling<br/>in the backend")
     end
     Browser(["Browser"]) --> Front
+    Agent(["MCP client"]) -->|/mcp| Front
     Back -.-> Serve("Docling Serve<br/>remote engine")
     Back -.-> Ollama("Ollama<br/>for Ask")
     Back -.-> Stores[("OpenSearch, Neo4j<br/>ingestion, deprecated")]
@@ -19,7 +20,7 @@ flowchart TB
     classDef blue fill:#2196F31F,stroke:#2196F3,stroke-width:1.5px
     classDef teal fill:#0096881F,stroke:#009688,stroke-width:1.5px
     classDef deprecated fill:#9E9E9E0D,stroke:#9E9E9E,stroke-width:1.5px,stroke-dasharray:5 4,color:#9E9E9E
-    class Browser grey
+    class Browser,Agent grey
     class Front,Back orange
     class Docling,Serve,Ollama blue
     class DB teal
@@ -45,7 +46,9 @@ The backend follows ports and adapters. The core (`domain/`) defines what the ap
 ```mermaid
 flowchart TB
     Bootstrap("bootstrap/<br/>builds everything at start") --> API("api/<br/>HTTP routes")
+    Bootstrap --> MCP("mcp_adapter/<br/>MCP tools")
     API --> Services("services/<br/>use cases")
+    MCP --> Services
     Services --> Domain{{"domain/<br/>models, rules, ports"}}
     Infra("infra/<br/>Docling, Ollama, OpenSearch, Neo4j…") -.->|implements| Domain
     Persistence("persistence/<br/>SQLite") -.->|implements| Domain
@@ -55,7 +58,7 @@ flowchart TB
     classDef orange fill:#FF57221F,stroke:#FF5722,stroke-width:2px
     classDef teal fill:#0096881F,stroke:#009688,stroke-width:1.5px
     class Bootstrap grey
-    class API,Services blue
+    class API,MCP,Services blue
     class Domain orange
     class Infra,Persistence teal
 ```
@@ -69,10 +72,11 @@ in that test until they are migrated:
 | `domain` | Any other layer, FastAPI, SQLAlchemy, httpx, the OpenSearch client |
 | `services` | `api`, `infra`, `persistence`, FastAPI |
 | `api` | `infra`, `persistence` |
+| `mcp_adapter` | `api`, `infra`, `persistence` |
 | `infra` | `api`, `services` |
 | `persistence` | `api`, `services`, `infra` |
 
-`main.py` creates the app and mounts the routes. `bootstrap/` builds the adapters and services from the settings.
+`main.py` creates the app, mounts the routes and, unless `MCP_ENABLED=false`, the MCP server at `/mcp`. `bootstrap/` builds the adapters and services from the settings. `mcp_adapter/` publishes the MCP tools on top of the services, as `api/` does for HTTP. See [MCP server](mcp-server.md).
 
 ### API rules
 
@@ -81,12 +85,14 @@ in that test until they are migrated:
 
 | Prefix | What it serves |
 |--------|----------------|
-| `/api/documents` | Documents, their chunks, versions, graph (Neo4j, deprecated), and Ask (`POST /api/documents/{id}/reasoning`) |
-| `/api/analyses` | Analyses: start, read, delete |
+| `/api/documents` | Documents, their PDF (`/export`, `/preview`, `/pages`), chunks, versions, graph (Neo4j, deprecated), Ask (`POST /api/documents/{id}/reasoning`), and the [analysis editor](analysis-editor.md#api) (`/analysis-editor`, `/analysis-edits/…`) |
+| `/api/analyses` | Analyses: start, import, list (in full or as light `/summaries`), read, rechunk and edit its chunks, delete |
 | `/api/stores` | Ingestion targets (OpenSearch, Neo4j). Deprecated, removed in 0.8.0 |
 | `/api/ingestion` | Sending chunks to stores, when ingestion is on. Deprecated, removed in 0.8.0 |
-| `/api/config` | The reasoning settings edited in **Settings** |
+| `/api/config` | The reasoning and MCP settings edited in **Settings** (`/reasoning`, `/mcp`) |
+| `/api/mcp` | Read only: what the MCP server published at start (`GET /api/mcp/server`) |
 | `/api/health` | Status, engine, version, and the flags the frontend reads |
+| `/mcp` | The MCP server itself (streamable HTTP), outside `/api`. See [MCP server](mcp-server.md) |
 
 ### An analysis
 
@@ -128,7 +134,7 @@ An analysis waits in `PENDING` until one of the `MAX_CONCURRENT_ANALYSES` slots 
 
 A feature uses another feature only through its `index.ts`. ESLint enforces it (`no-restricted-imports`).
 
-On start, the app reads `/api/health`. The answer decides which pages exist (`STUDIO_MODE_ENABLED`, `RAG_PIPELINE_ENABLED`) and whether the Ask tab shows up (`ASK_MODE`, and a wired reasoning runner).
+On start, the app reads `/api/health`. The answer decides which pages exist (`STUDIO_MODE_ENABLED`, `RAG_PIPELINE_ENABLED`), whether the Ask tab shows up (`ASK_MODE`, and a wired reasoning runner), and whether **Edit analysis** does (`ANALYSIS_EDITOR_ENABLED`).
 
 ## Going further
 

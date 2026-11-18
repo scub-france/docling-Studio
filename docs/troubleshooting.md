@@ -31,6 +31,10 @@ The file is over `MAX_FILE_SIZE_MB` (50 MB by default). Raise it, and keep `NGIN
 
 More than `RATE_LIMIT_RPM` requests in a minute (100 by default). Behind the bundled nginx, all users share this one limit. Raise it, or set `0` to turn it off.
 
+## Large PDFs take long to show behind a proxy
+
+The viewer loads the PDF in parts, with HTTP `Range` requests. A proxy that drops them makes the browser download the whole file before the first page shows. Let `Range` requests and their `206` answers through: see [Behind your own proxy](configuration.md#behind-your-own-proxy).
+
 ## My documents are gone
 
 `docker run` keeps the data inside the container: a restart keeps it, but removing the container or starting a new one from the image loses it. Mount volumes for `/app/data` and `/app/uploads`: see [Keep your data](getting-started.md#keep-your-data).

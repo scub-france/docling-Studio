@@ -101,7 +101,7 @@ How it behaves:
 
 - One question at a time. The answer arrives in one piece.
 - Questions and answers live in your browser tab. They are not saved.
-- Ask always reads the latest completed analysis of the document, even when you opened an older one.
+- Ask always reads the latest completed analysis of the document, even when you opened an older one. It reads the original result, without the changes saved in **Edit analysis**.
 - To use another model, type its name in **model override**. It applies to your next questions until you clear the field.
 
 ## Download
@@ -122,7 +122,7 @@ There is no undo.
 
 ## Not in the default screens
 
-These features are in the code but no default screen reaches them in 0.7.3:
+These features are in the code but no default screen reaches them:
 
 - chunking (splitting the text into pieces for a RAG pipeline),
 - sending chunks to OpenSearch or Neo4j (deprecated, removed in 0.8.0),
