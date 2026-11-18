@@ -6,10 +6,16 @@ on:
   pull_request:
     branches: [main, 'release/**']
 
-# Cancel previous runs on the same branch/PR
+# These jobs only read the repository: third-party code they install must
+# not get a token that can write to it.
+permissions:
+  contents: read
+
+# Cancel superseded runs of a pull request. A push to main or to a release
+# branch always runs to the end, so every merged commit keeps its result.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

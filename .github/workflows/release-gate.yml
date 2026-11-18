@@ -87,6 +87,8 @@ jobs:
           uv run pytest tests/ -v --tb=short 2>&1 | tee /tmp/backend-tests.txt
 
       - name: Frontend tests
+        # Still run when the backend tests fail: the report needs both results.
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           cd frontend

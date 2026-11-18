@@ -3,9 +3,9 @@
 
 # Python caches & venv
 .venv/
-__pycache__/
-*.pyc
-*.pyo
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 *.egg-info/
 
 # Linter / type-checker / test caches
