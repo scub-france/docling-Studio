@@ -299,11 +299,17 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     }
   }
 
-  function discard(): void {
+  /** Stop the debounced and in-flight preview, e.g. when the editor closes. */
+  function cancelPreview(): void {
     if (previewTimer) clearTimeout(previewTimer)
+    previewTimer = null
     abortController.value?.abort()
     abortController.value = null
     previewing.value = false
+  }
+
+  function discard(): void {
+    cancelPreview()
     previewError.value = null
     pendingCommands.value = []
     redoCommands.value = []
@@ -428,6 +434,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     previewNow,
     save,
     setSavedCommandActive,
+    cancelPreview,
     discard,
     restoreRecoveredPending,
     discardRecoveredPending,

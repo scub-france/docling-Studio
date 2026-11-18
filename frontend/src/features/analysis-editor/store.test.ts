@@ -206,6 +206,46 @@ describe('analysis editor selection state', () => {
     expect(store.previewing).toBe(false)
   })
 
+  it('cancels the debounced preview when the editor closes', () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(previewAnalysisEdits).mockClear()
+      const store = useAnalysisEditorStore()
+      store.documentId = 'doc-1'
+      store.saved = { appliedThroughSequence: 0 } as never
+      store.queueReplaceText('element-1', 'Pending')
+
+      store.cancelPreview()
+      vi.advanceTimersByTime(1000)
+
+      expect(previewAnalysisEdits).not.toHaveBeenCalled()
+      expect(store.hasUnsavedChanges).toBe(true)
+      expect(store.previewing).toBe(false)
+      store.discard()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('aborts an in-flight preview when the editor closes', async () => {
+    let signal!: AbortSignal
+    vi.mocked(previewAnalysisEdits).mockImplementation((_doc, _body, s) => {
+      signal = s as AbortSignal
+      return new Promise(() => {})
+    })
+    const store = useAnalysisEditorStore()
+    store.documentId = 'doc-1'
+    store.saved = { appliedThroughSequence: 0 } as never
+    store.queueReplaceText('element-1', 'Pending')
+    void store.previewNow()
+
+    store.cancelPreview()
+
+    expect(signal.aborted).toBe(true)
+    expect(store.previewing).toBe(false)
+    store.discard()
+  })
+
   it('undoes and redoes saved edits through the history endpoint', async () => {
     const store = useAnalysisEditorStore()
     store.documentId = 'doc-1'

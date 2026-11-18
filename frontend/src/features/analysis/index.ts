@@ -1,6 +1,6 @@
 export { useAnalysisStore } from './store'
 export type { AnalysisOutcome, BatchLaunch } from './store'
-export { fetchAnalysis, fetchAnalysisSummaries } from './api'
+export { deleteAnalysis, fetchAnalysis, fetchAnalysisSummaries } from './api'
 export { importAnalysis } from './api'
 export { default as AnalysisImportButton } from './ui/AnalysisImportButton.vue'
 export { default as AnalysisPanel } from './ui/AnalysisPanel.vue'

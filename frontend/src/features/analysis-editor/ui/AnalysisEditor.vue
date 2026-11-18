@@ -510,6 +510,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('beforeunload', onBeforeUnload)
   if (saveNoticeTimer) clearTimeout(saveNoticeTimer)
+  store.cancelPreview()
 })
 onBeforeRouteLeave(() => confirmLeave())
 watch(

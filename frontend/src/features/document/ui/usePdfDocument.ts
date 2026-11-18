@@ -3,6 +3,9 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url'
 import { getExportUrl } from '../api'
 
+// 256 KiB ranges: a page is fetched in a few requests instead of the whole file.
+const PDF_RANGE_CHUNK_BYTES = 256 * 1024
+
 /** Load one PDF per viewer, leaving page selection to the caller. */
 export function usePdfDocument(documentId: Ref<string | undefined>) {
   const document = shallowRef<PDFDocumentProxy | null>(null)
@@ -26,7 +29,7 @@ export function usePdfDocument(documentId: Ref<string | undefined>) {
         url: getExportUrl(id, 'pdf'),
         disableStream: true,
         disableAutoFetch: true,
-        rangeChunkSize: 262144,
+        rangeChunkSize: PDF_RANGE_CHUNK_BYTES,
       })
       task = loadingTask
       const loaded = await loadingTask.promise
