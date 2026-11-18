@@ -54,8 +54,8 @@
             </span>
           </label>
 
-          <span class="launch-state" :class="`launch-state--${stateBucket(row.state)}`">
-            {{ t(stateLabelKey(row.state)) }}
+          <span class="launch-state" :class="`launch-state--${getStateBucket(row.state)}`">
+            {{ t(getStateLabelKey(row.state)) }}
           </span>
 
           <span v-if="row.status === 'running'" class="launch-spinner-wrap">
@@ -117,12 +117,12 @@ import { useI18n } from '../shared/i18n'
 import {
   type LaunchRow,
   buildRows,
-  defaultLaunchSelection,
+  buildDefaultLaunchSelection,
   hasSelection,
   isLaunchDone,
-  selectedSlugs,
-  stateBucket,
-  stateLabelKey,
+  listSelectedSlugs,
+  getStateBucket,
+  getStateLabelKey,
 } from './DocIngestTab.logic'
 
 const props = defineProps<{
@@ -141,7 +141,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const rows = reactive<LaunchRow[]>(
-  defaultLaunchSelection(buildRows(props.stores, props.storeLinks)),
+  buildDefaultLaunchSelection(buildRows(props.stores, props.storeLinks)),
 )
 
 const running = computed(() => rows.some((r) => r.status === 'running'))
@@ -168,7 +168,7 @@ async function onConfirm(): Promise<void> {
     onCloseAttempt()
     return
   }
-  const slugs = selectedSlugs(rows)
+  const slugs = listSelectedSlugs(rows)
   for (const slug of slugs) {
     const row = rows.find((r) => r.slug === slug)
     if (!row) continue

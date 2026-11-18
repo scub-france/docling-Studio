@@ -36,8 +36,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { kindColor } from '../kindColors'
-import { fmtDur } from '../timeline.logic'
+import { getKindColor } from '../kindColors'
+import { formatDuration } from '../timeline.logic'
 import type { ReasoningStep } from '../types'
 
 const props = defineProps<{
@@ -52,13 +52,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{ select: [stepId: string] }>()
 
-const colors = computed(() => kindColor(props.step.kind))
+const colors = computed(() => getKindColor(props.step.kind))
 const answered = computed(() => props.step.payload?.canAnswer === true)
 const explored = computed(() => props.step.kind === 'read' && !answered.value)
 
 const meta = computed(() => {
   const parts: string[] = []
-  if (props.hasTiming) parts.push(fmtDur(props.step.durationMs))
+  if (props.hasTiming) parts.push(formatDuration(props.step.durationMs))
   if (props.step.tokenCount > 0) parts.push(`${props.step.tokenCount} tok`)
   return parts.join(' · ')
 })

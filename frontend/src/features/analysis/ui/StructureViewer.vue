@@ -232,7 +232,7 @@ function drawVisitBadge(ctx: CanvasRenderingContext2D, x: number, y: number, ord
   ctx.fillText(String(order), cx, cy + 0.5)
 }
 
-function elementAt(e: MouseEvent): PageElement | null {
+function findElementAt(e: MouseEvent): PageElement | null {
   const canvas = canvasRef.value
   const page = currentPageData.value
   const img = pageEl.value
@@ -254,7 +254,7 @@ function onMouseMove(e: MouseEvent) {
   const mx = e.clientX - canvasRect.left
   const my = e.clientY - canvasRect.top
 
-  const found = elementAt(e)
+  const found = findElementAt(e)
   hoveredElement.value = found
   if (found) {
     tooltipStyle.value = {
@@ -266,7 +266,7 @@ function onMouseMove(e: MouseEvent) {
 
 function onCanvasClick(e: MouseEvent): void {
   if (!props.selectable) return
-  const el = elementAt(e)
+  const el = findElementAt(e)
   if (el?.self_ref) emit('elementFocus', el.self_ref)
 }
 

@@ -53,7 +53,7 @@
         <AccordionRow :label="t('settings.mcp.address')">
           <template #hint>
             <span class="with-icon" :class="{ warn: !localOnly }">
-              <svg v-bind="icon(13)">
+              <svg v-bind="buildIconAttrs(13)">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
               {{ localOnly ? t('settings.mcp.localOnly') : t('settings.mcp.unauthenticated') }}
@@ -70,7 +70,7 @@
               data-e2e="mcp-config-copy-url"
               @click="copy('url', clientUrl)"
             >
-              <svg v-bind="icon(14)">
+              <svg v-bind="buildIconAttrs(14)">
                 <rect x="9" y="9" width="13" height="13" rx="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
@@ -82,7 +82,7 @@
         <details class="sub">
           <summary class="sub-summary">
             <span class="sub-label">{{ t('settings.mcp.connectDesktop') }}</span>
-            <svg class="sub-chevron" v-bind="icon(16)"><path d="m9 18 6-6-6-6" /></svg>
+            <svg class="sub-chevron" v-bind="buildIconAttrs(16)"><path d="m9 18 6-6-6-6" /></svg>
           </summary>
           <div class="sub-body">
             <p class="step">1. {{ t('settings.mcp.desktopStep') }}</p>
@@ -107,7 +107,7 @@
         <details class="sub">
           <summary class="sub-summary">
             <span class="sub-label">{{ t('settings.mcp.connectCode') }}</span>
-            <svg class="sub-chevron" v-bind="icon(16)"><path d="m9 18 6-6-6-6" /></svg>
+            <svg class="sub-chevron" v-bind="buildIconAttrs(16)"><path d="m9 18 6-6-6-6" /></svg>
           </summary>
           <div class="sub-body">
             <p class="step">{{ t('settings.mcp.codeStep') }}</p>
@@ -132,7 +132,7 @@
           <summary class="sub-summary">
             <span class="sub-label">{{ t('settings.mcp.published') }}</span>
             <span class="sub-meta">{{ publishedSummary }}</span>
-            <svg class="sub-chevron" v-bind="icon(16)"><path d="m9 18 6-6-6-6" /></svg>
+            <svg class="sub-chevron" v-bind="buildIconAttrs(16)"><path d="m9 18 6-6-6-6" /></svg>
           </summary>
           <div class="sub-body tool-grid" data-e2e="mcp-config-tools">
             <template v-for="group in toolGroups" :key="group.key">
@@ -170,8 +170,8 @@
         <template v-if="store.view.sources.maxRounds === 'db'">
           {{ t('settings.mcp.maxRoundsHint') }}
         </template>
-        <template v-if="differs('maxRounds')">
-          {{ envNote('maxRounds') }} ·
+        <template v-if="isOverridden('maxRounds')">
+          {{ formatEnvNote('maxRounds') }} ·
           <button
             type="button"
             class="link-btn"
@@ -228,8 +228,8 @@
       </template>
       <template #hint>
         {{ t('settings.mcp.maxReadTokensHint') }}
-        <template v-if="differs('maxReadTokens')">
-          {{ envNote('maxReadTokens') }} ·
+        <template v-if="isOverridden('maxReadTokens')">
+          {{ formatEnvNote('maxReadTokens') }} ·
           <button
             type="button"
             class="link-btn"
@@ -270,8 +270,8 @@
       </template>
       <template #hint>
         {{ t('settings.mcp.baseUrlHint') }}
-        <template v-if="differs('studioBaseUrl')">
-          {{ envNote('studioBaseUrl') }} ·
+        <template v-if="isOverridden('studioBaseUrl')">
+          {{ formatEnvNote('studioBaseUrl') }} ·
           <button
             type="button"
             class="link-btn"
@@ -360,11 +360,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { useMcpConfigStore } from '../store'
 import {
-  claudeCodeCommand,
-  claudeDesktopConfig,
+  buildClaudeCodeCommand,
+  buildClaudeDesktopConfig,
   groupTools,
-  hostAllowed,
-  mcpClientUrl,
+  isHostAllowed,
+  buildMcpClientUrl,
 } from '../client'
 import {
   MAX_ROUNDS_MAX,
@@ -385,7 +385,7 @@ const store = useMcpConfigStore()
 const { t } = useI18n()
 
 /** Attributes of a decorative stroke icon of `size` px. */
-function icon(size: number) {
+function buildIconAttrs(size: number) {
   return {
     'aria-hidden': true,
     width: size,
@@ -401,11 +401,11 @@ function icon(size: number) {
 
 const host = window.location.host
 const clientUrl = computed(() =>
-  store.server ? mcpClientUrl(window.location.origin, store.server.path) : '',
+  store.server ? buildMcpClientUrl(window.location.origin, store.server.path) : '',
 )
-const hostOk = computed(() => !store.server || hostAllowed(host, store.server.allowedHosts))
-const desktopJson = computed(() => claudeDesktopConfig(clientUrl.value))
-const codeCmd = computed(() => claudeCodeCommand(clientUrl.value))
+const hostOk = computed(() => !store.server || isHostAllowed(host, store.server.allowedHosts))
+const desktopJson = computed(() => buildClaudeDesktopConfig(clientUrl.value))
+const codeCmd = computed(() => buildClaudeCodeCommand(clientUrl.value))
 
 /** Only loopback hosts are allowed. A browser guard (DNS rebinding), not network isolation:
  * a client that reaches the port can still send an allowed Host header. */
@@ -464,18 +464,18 @@ const budgetsSummary = computed(() =>
     : '',
 )
 
-function formValue(field: McpBudgetField): string | number {
+function getFormValue(field: McpBudgetField): string | number {
   return field === 'studioBaseUrl' ? store.form.studioBaseUrl.trim() : store.form[field]
 }
 
 /** The form holds something other than the environment's value. */
-function differs(field: McpBudgetField): boolean {
+function isOverridden(field: McpBudgetField): boolean {
   const defaults = store.view?.defaults
-  return defaults !== undefined && formValue(field) !== defaults[field]
+  return defaults !== undefined && getFormValue(field) !== defaults[field]
 }
 
 /** "Environment: 4000", the value a field returns to. */
-function envNote(field: McpBudgetField): string {
+function formatEnvNote(field: McpBudgetField): string {
   const value = store.view?.defaults[field]
   const shown = value === '' || value === undefined ? t('settings.mcp.envNone') : String(value)
   return t('settings.mcp.envValue', { value: shown })

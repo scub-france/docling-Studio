@@ -6,13 +6,13 @@
 import type { ReasoningStep } from './types'
 
 /** Duration label: `Nms` under 1s, `N.NNs` above (one trailing zero stripped). */
-export function fmtDur(ms: number | null | undefined): string {
+export function formatDuration(ms: number | null | undefined): string {
   if (ms == null) return '—'
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(2).replace(/0$/, '')}s`
 }
 
 /** Axis tick label: ms while the run is under 5s total, else seconds. */
-export function fmtTick(ms: number, totalMs: number): string {
+export function formatTick(ms: number, totalMs: number): string {
   if (totalMs < 5000) return `${Math.round(ms)}${ms === 0 ? '' : 'ms'}`
   return ms === 0 ? '0' : `${(ms / 1000).toFixed(1)}s`
 }
@@ -27,7 +27,7 @@ export function hasTiming(steps: ReasoningStep[]): boolean {
 }
 
 /** Cumulative sum of step durations (the shared time axis total). */
-export function totalDuration(steps: ReasoningStep[]): number {
+export function computeTotalDuration(steps: ReasoningStep[]): number {
   return steps.reduce((acc, s) => acc + (s.durationMs || 0), 0)
 }
 
@@ -46,7 +46,7 @@ export interface TraceBar {
  */
 export function computeBars(steps: ReasoningStep[]): TraceBar[] {
   const timed = hasTiming(steps)
-  const total = timed ? totalDuration(steps) : 0
+  const total = timed ? computeTotalDuration(steps) : 0
   let cum = 0
   return steps.map((s, i) => {
     let left: number
@@ -67,8 +67,8 @@ export function computeBars(steps: ReasoningStep[]): TraceBar[] {
  * The 5 axis tick labels (0/25/50/75/100% of total) when timing is available,
  * or a single `step order` label for the degraded state.
  */
-export function axisTicks(steps: ReasoningStep[]): string[] {
+export function computeAxisTicks(steps: ReasoningStep[]): string[] {
   if (!hasTiming(steps)) return ['step order']
-  const total = totalDuration(steps)
-  return [0, 0.25, 0.5, 0.75, 1].map((f) => fmtTick(total * f, total))
+  const total = computeTotalDuration(steps)
+  return [0, 0.25, 0.5, 0.75, 1].map((f) => formatTick(total * f, total))
 }

@@ -102,7 +102,7 @@ export function mergeParentMaps(
 }
 
 /** Extract the explicit PARENT_OF map from the edge list — convenience. */
-export function explicitParentMap(edges: readonly GraphEdge[]): Map<string, string> {
+export function buildExplicitParentMap(edges: readonly GraphEdge[]): Map<string, string> {
   const out = new Map<string, string>()
   for (const e of edges) {
     if (e.type === 'PARENT_OF') out.set(e.target, e.source)

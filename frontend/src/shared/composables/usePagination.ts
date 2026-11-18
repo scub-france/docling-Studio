@@ -10,8 +10,8 @@ export interface PaginationReturn<T> {
   pageCount: Ref<number>
   paginatedItems: Ref<T[]>
   totalItems: Ref<number>
-  next: () => void
-  prev: () => void
+  goNext: () => void
+  goPrev: () => void
   goTo: (target: number) => void
   setPageSize: (size: number) => void
 }
@@ -45,11 +45,11 @@ export function usePagination<T>(
     page.value = clamp(target)
   }
 
-  function next(): void {
+  function goNext(): void {
     goTo(page.value + 1)
   }
 
-  function prev(): void {
+  function goPrev(): void {
     goTo(page.value - 1)
   }
 
@@ -63,8 +63,8 @@ export function usePagination<T>(
     pageCount,
     paginatedItems,
     totalItems,
-    next,
-    prev,
+    goNext,
+    goPrev,
     goTo,
     setPageSize,
   }

@@ -51,7 +51,7 @@ import { computed } from 'vue'
 import type { PageElement } from '../../../shared/types'
 import { colorFor, LAYER_ORDER } from '@/shared/elementColors'
 import { useI18n } from '@/shared/i18n'
-import { allLayersHidden, toggleAllLayers } from '../layerVisibility'
+import { areAllLayersHidden, toggleAllLayers } from '../layerVisibility'
 
 const props = defineProps<{
   elements: readonly PageElement[]
@@ -86,7 +86,7 @@ function toggle(type: string): void {
 
 // Derived from `hiddenTypes`, so hiding every chip by hand flips it too.
 const chipTypes = computed(() => chipEntries.value.map((entry) => entry.type))
-const allHidden = computed(() => allLayersHidden(chipTypes.value, props.hiddenTypes))
+const allHidden = computed(() => areAllLayersHidden(chipTypes.value, props.hiddenTypes))
 
 function onToggleAll(): void {
   emit('update:hiddenTypes', toggleAllLayers(chipTypes.value, props.hiddenTypes))

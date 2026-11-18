@@ -12,7 +12,7 @@ export type AnalysisProgress =
   | { kind: 'pages'; percent: number; done: number; total: number }
   | { kind: 'elapsed'; seconds: number }
 
-export function analysisProgress(
+export function computeAnalysisProgress(
   analysis: Pick<Analysis, 'progressCurrent' | 'progressTotal' | 'startedAt' | 'createdAt'>,
   now: number,
 ): AnalysisProgress {

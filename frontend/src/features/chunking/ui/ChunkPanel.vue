@@ -91,13 +91,15 @@
           class="chunk-card"
           data-e2e="chunk-card"
           v-for="(chunk, localIdx) in pagination.paginatedItems.value"
-          :key="globalIndex(localIdx)"
-          :class="{ highlighted: hoveredChunkIdx === globalIndex(localIdx) }"
+          :key="toGlobalIndex(localIdx)"
+          :class="{ highlighted: hoveredChunkIdx === toGlobalIndex(localIdx) }"
           @mouseenter="onChunkHover(chunk, localIdx)"
           @mouseleave="onChunkLeave"
         >
           <div class="chunk-header">
-            <span class="chunk-index" data-e2e="chunk-index">#{{ globalIndex(localIdx) + 1 }}</span>
+            <span class="chunk-index" data-e2e="chunk-index"
+              >#{{ toGlobalIndex(localIdx) + 1 }}</span
+            >
             <span class="chunk-tokens" data-e2e="chunk-tokens" v-if="chunk.tokenCount">
               {{ chunk.tokenCount }} tokens
             </span>
@@ -106,11 +108,11 @@
               {{ t('chunking.modified') }}
             </span>
             <button
-              v-if="editingIdx !== globalIndex(localIdx)"
+              v-if="editingIdx !== toGlobalIndex(localIdx)"
               class="chunk-edit-icon"
               data-e2e="chunk-edit-btn"
               :title="t('chunking.edit')"
-              @click.stop="startEdit(globalIndex(localIdx), chunk.text)"
+              @click.stop="startEdit(toGlobalIndex(localIdx), chunk.text)"
             >
               <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
                 <path
@@ -122,7 +124,7 @@
               class="chunk-delete-icon"
               data-e2e="chunk-delete-btn"
               :title="t('chunking.delete')"
-              @click.stop="confirmDelete(globalIndex(localIdx))"
+              @click.stop="confirmDelete(toGlobalIndex(localIdx))"
             >
               <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
                 <path
@@ -138,7 +140,7 @@
           </div>
 
           <!-- Edit mode -->
-          <div v-if="editingIdx === globalIndex(localIdx)" class="chunk-edit">
+          <div v-if="editingIdx === toGlobalIndex(localIdx)" class="chunk-edit">
             <textarea
               ref="editTextarea"
               class="chunk-edit-textarea"
@@ -151,7 +153,7 @@
                 class="chunk-edit-btn save"
                 data-e2e="chunk-edit-save"
                 :disabled="chunkingStore.saving"
-                @click="saveEdit(globalIndex(localIdx))"
+                @click="saveEdit(toGlobalIndex(localIdx))"
               >
                 {{ chunkingStore.saving ? t('chunking.saving') : t('chunking.save') }}
               </button>
@@ -170,7 +172,7 @@
             v-else
             class="chunk-text"
             data-e2e="chunk-text"
-            @dblclick="startEdit(globalIndex(localIdx), chunk.text)"
+            @dblclick="startEdit(toGlobalIndex(localIdx), chunk.text)"
           >
             {{ chunk.text }}
           </div>
@@ -271,7 +273,7 @@ const pageChunks = computed(() =>
 )
 const pagination = usePagination(pageChunks, { pageSize: 20 })
 
-function globalIndex(localIdx: number): number {
+function toGlobalIndex(localIdx: number): number {
   const pageLocalIdx = (pagination.page.value - 1) * pagination.pageSize.value + localIdx
   const pageChunk = pageChunks.value[pageLocalIdx]
   return props.chunks.indexOf(pageChunk)
@@ -319,7 +321,7 @@ async function saveEdit(chunkIndex: number) {
 const hoveredChunkIdx = ref(-1)
 
 function onChunkHover(chunk: Chunk, localIdx: number) {
-  hoveredChunkIdx.value = globalIndex(localIdx)
+  hoveredChunkIdx.value = toGlobalIndex(localIdx)
   const pageBboxes = chunk.bboxes.filter((b) => b.page === props.currentPage)
   emit('highlight-bboxes', pageBboxes)
 }

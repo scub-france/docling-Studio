@@ -66,7 +66,7 @@ import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import { useI18n } from '../../../shared/i18n'
 import { fetchDocumentGraph, type GraphNode, type GraphPayload } from '../graphApi'
 import { LEGEND_CHIPS, findChip } from '../legendFilters'
-import { computeSectionParents, explicitParentMap, mergeParentMaps } from '../sectionParenting'
+import { computeSectionParents, buildExplicitParentMap, mergeParentMaps } from '../sectionParenting'
 import NodeDetailsPanel from './NodeDetailsPanel.vue'
 
 const props = defineProps<{
@@ -146,14 +146,14 @@ const NODE_COLORS: Record<string, string> = {
   Chunk: '#DC2626',
 }
 
-function nodeColor(n: GraphPayload['nodes'][number]): string {
+function getNodeColor(n: GraphPayload['nodes'][number]): string {
   if (n.group === 'document') return NODE_COLORS.document
   if (n.group === 'page') return NODE_COLORS.Page
   if (n.group === 'chunk') return NODE_COLORS.Chunk
   return NODE_COLORS[n.label || 'TextElement'] || NODE_COLORS.TextElement
 }
 
-function nodeLabel(n: GraphPayload['nodes'][number]): string {
+function getNodeLabel(n: GraphPayload['nodes'][number]): string {
   if (n.group === 'document') return n.title || n.id
   if (n.group === 'page') return `p.${n.page_no}`
   if (n.group === 'chunk') return `chunk #${n.chunk_index}`
@@ -215,7 +215,7 @@ async function renderGraph(): Promise<void> {
   // and the expand-collapse plugin). Also persisted on `parentMap` so the
   // NodeDetailsPanel can list what a given section contains.
   const computedParentMap = mergeParentMaps(
-    explicitParentMap(payload.value.edges),
+    buildExplicitParentMap(payload.value.edges),
     computeSectionParents(payload.value.nodes, payload.value.edges),
   )
   parentMap.value = computedParentMap
@@ -224,12 +224,12 @@ async function renderGraph(): Promise<void> {
     ...payload.value.nodes.map((n) => ({
       data: {
         id: n.id,
-        label: nodeLabel(n),
+        label: getNodeLabel(n),
         // `kindLabel` is the specific Neo4j label (SectionHeader, Paragraph,
         // Figure, …) — kept as a data attribute so legend filters can match
         // on it. `label` above is the human display string for Cytoscape.
         kindLabel: n.label ?? null,
-        bg: nodeColor(n),
+        bg: getNodeColor(n),
         group: n.group,
         // Compound-node parent: used by the expand-collapse plugin to
         // fold/unfold a section's scope. `undefined` = this node is a root
@@ -393,7 +393,7 @@ async function renderGraph(): Promise<void> {
   cy.value.on('mouseover', 'node', (evt) => {
     const raw = evt.target.data('raw') as GraphNode | undefined
     if (!raw) return
-    const text = tooltipTextFor(raw)
+    const text = formatTooltipText(raw)
     if (!text) return
     const pos = evt.target.renderedPosition()
     tooltip.value = { x: pos.x, y: pos.y, text }
@@ -411,7 +411,7 @@ async function renderGraph(): Promise<void> {
  * What to show on hover: prefer the node's full text, then title, then ref.
  * Keeps the tooltip useful across node kinds (Document/Page/Chunk too).
  */
-function tooltipTextFor(n: GraphNode): string {
+function formatTooltipText(n: GraphNode): string {
   if (n.group === 'document') return (n.title as string | undefined) ?? n.id
   if (n.group === 'page') return `Page ${n.page_no ?? '?'}`
   if (n.group === 'chunk') {

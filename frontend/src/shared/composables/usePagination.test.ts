@@ -27,30 +27,30 @@ describe('usePagination', () => {
 
   it('navigates with next and prev', () => {
     const items = ref(makeItems(30))
-    const { paginatedItems, page, next, prev } = usePagination(items, { pageSize: 10 })
+    const { paginatedItems, page, goNext, goPrev } = usePagination(items, { pageSize: 10 })
 
-    next()
+    goNext()
     expect(page.value).toBe(2)
     expect(paginatedItems.value[0]).toBe('item-11')
 
-    next()
+    goNext()
     expect(page.value).toBe(3)
     expect(paginatedItems.value[0]).toBe('item-21')
 
-    prev()
+    goPrev()
     expect(page.value).toBe(2)
     expect(paginatedItems.value[0]).toBe('item-11')
   })
 
   it('clamps page within valid range', () => {
     const items = ref(makeItems(10))
-    const { page, prev, next, goTo } = usePagination(items, { pageSize: 5 })
+    const { page, goPrev, goNext, goTo } = usePagination(items, { pageSize: 5 })
 
-    prev()
+    goPrev()
     expect(page.value).toBe(1)
 
-    next()
-    next()
+    goNext()
+    goNext()
     expect(page.value).toBe(2)
 
     goTo(99)
@@ -75,10 +75,10 @@ describe('usePagination', () => {
 
   it('resets to page 1 when items change', async () => {
     const items = ref(makeItems(30))
-    const { page, next } = usePagination(items, { pageSize: 10 })
+    const { page, goNext } = usePagination(items, { pageSize: 10 })
 
-    next()
-    next()
+    goNext()
+    goNext()
     expect(page.value).toBe(3)
 
     items.value = makeItems(5)
@@ -88,10 +88,10 @@ describe('usePagination', () => {
 
   it('resets to page 1 when page size changes', async () => {
     const items = ref(makeItems(50))
-    const { page, next, setPageSize } = usePagination(items, { pageSize: 10 })
+    const { page, goNext, setPageSize } = usePagination(items, { pageSize: 10 })
 
-    next()
-    next()
+    goNext()
+    goNext()
     expect(page.value).toBe(3)
 
     setPageSize(20)

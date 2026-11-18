@@ -179,7 +179,7 @@ import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
 import { chunkForElement } from '../features/document/linkedView'
-import { ancestorRefs } from '../features/document/treeReveal'
+import { collectAncestorRefs } from '../features/document/treeReveal'
 import DocTreeRail from '../features/document/ui/DocTreeRail.vue'
 import ElementProperties from '../features/document/ui/ElementProperties.vue'
 import LayersBar from '../features/document/ui/LayersBar.vue'
@@ -217,7 +217,7 @@ function onRunReasoning(query: string, model: string | undefined): void {
   void reasoningStore.run(props.docId, query, model)
 }
 
-function analysisChunks(analysis: Analysis): DocChunk[] {
+function extractAnalysisChunks(analysis: Analysis): DocChunk[] {
   if (!analysis.chunksJson) return []
   try {
     return (JSON.parse(analysis.chunksJson) as Chunk[]).map((chunk, sequence) => ({
@@ -301,7 +301,7 @@ const linkedChunk = computed<DocChunk | null>(() => {
 })
 
 const activeChunks = computed<DocChunk[]>(() =>
-  props.analysis ? analysisChunks(props.analysis) : chunksStore.chunks,
+  props.analysis ? extractAnalysisChunks(props.analysis) : chunksStore.chunks,
 )
 
 const nodeCount = computed(() => countNodes(tree.value))
@@ -320,7 +320,9 @@ const highlightedRefs = computed<ReadonlySet<string>>(() => {
 
 // #303 (design §337) — ancestor chain of the focused element; the tree forces
 // these nodes open so the focused row is revealed before the rail scrolls to it.
-const revealedRefs = computed<Set<string>>(() => ancestorRefs(tree.value, documentStore.focusedRef))
+const revealedRefs = computed<Set<string>>(() =>
+  collectAncestorRefs(tree.value, documentStore.focusedRef),
+)
 
 async function loadTree(): Promise<void> {
   treeLoading.value = true

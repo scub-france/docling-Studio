@@ -76,7 +76,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import type { DocStoreLink, PageElement } from '../shared/types'
 import { useChunksStore } from '../features/chunks/store'
 import { useDocumentStore } from '../features/document/store'
-import { chunkForElement, elementRefsForChunk } from '../features/document/linkedView'
+import { chunkForElement, findElementRefsForChunk } from '../features/document/linkedView'
 import LayersBar from '../features/document/ui/LayersBar.vue'
 import PagePreviewWithOverlay from '../features/document/ui/PagePreviewWithOverlay.vue'
 import ChunksPanel from '../features/chunks/ui/ChunksPanel.vue'
@@ -110,7 +110,7 @@ const highlightedRefs = computed<ReadonlySet<string>>(() => {
   if (!id) return new Set()
   const chunk = chunksStore.chunks.find((c) => c.id === id)
   if (!chunk) return new Set()
-  return elementRefsForChunk(chunk)
+  return findElementRefsForChunk(chunk)
 })
 
 function onHoverElement(el: PageElement | null): void {

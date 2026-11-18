@@ -35,7 +35,7 @@ export interface AccordionOptions {
   storage?: KeyValueStorage | null
 }
 
-function browserStorage(): KeyValueStorage | null {
+function getBrowserStorage(): KeyValueStorage | null {
   try {
     return window.localStorage
   } catch {
@@ -56,7 +56,7 @@ function readClosed(storage: KeyValueStorage | null, key: string): string[] | nu
 }
 
 export function createAccordion(options: AccordionOptions): Accordion {
-  const storage = options.storage === undefined ? browserStorage() : options.storage
+  const storage = options.storage === undefined ? getBrowserStorage() : options.storage
   const closed = ref<ReadonlySet<string>>(
     new Set(readClosed(storage, options.storageKey) ?? options.defaultClosed ?? []),
   )

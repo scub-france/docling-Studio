@@ -1,23 +1,23 @@
 import { describe, it, expect } from 'vitest'
 import {
-  claudeCodeCommand,
-  claudeDesktopConfig,
+  buildClaudeCodeCommand,
+  buildClaudeDesktopConfig,
   groupTools,
-  hostAllowed,
-  mcpClientUrl,
+  isHostAllowed,
+  buildMcpClientUrl,
 } from './client'
 import type { McpTool } from './types'
 
-describe('mcpClientUrl', () => {
+describe('buildMcpClientUrl', () => {
   it('joins the UI origin and the server path', () => {
-    expect(mcpClientUrl('http://localhost:3000', '/mcp')).toBe('http://localhost:3000/mcp')
-    expect(mcpClientUrl('http://localhost:3000/', '/mcp')).toBe('http://localhost:3000/mcp')
+    expect(buildMcpClientUrl('http://localhost:3000', '/mcp')).toBe('http://localhost:3000/mcp')
+    expect(buildMcpClientUrl('http://localhost:3000/', '/mcp')).toBe('http://localhost:3000/mcp')
   })
 })
 
-describe('claudeDesktopConfig', () => {
+describe('buildClaudeDesktopConfig', () => {
   it('bridges through mcp-remote, allowing plain http', () => {
-    const config = JSON.parse(claudeDesktopConfig('http://127.0.0.1:8000/mcp'))
+    const config = JSON.parse(buildClaudeDesktopConfig('http://127.0.0.1:8000/mcp'))
     expect(config).toEqual({
       mcpServers: {
         'docling-studio': {
@@ -36,37 +36,37 @@ describe('claudeDesktopConfig', () => {
   })
 
   it('does not allow http for an https URL', () => {
-    const args = JSON.parse(claudeDesktopConfig('https://studio.example/mcp')).mcpServers[
+    const args = JSON.parse(buildClaudeDesktopConfig('https://studio.example/mcp')).mcpServers[
       'docling-studio'
     ].args
     expect(args).not.toContain('--allow-http')
   })
 })
 
-describe('claudeCodeCommand', () => {
+describe('buildClaudeCodeCommand', () => {
   it('adds the server over http', () => {
-    expect(claudeCodeCommand('http://localhost:3000/mcp')).toBe(
+    expect(buildClaudeCodeCommand('http://localhost:3000/mcp')).toBe(
       'claude mcp add --transport http docling-studio http://localhost:3000/mcp',
     )
   })
 })
 
-describe('hostAllowed', () => {
+describe('isHostAllowed', () => {
   const shipped = ['127.0.0.1:*', 'localhost:*', '[::1]:*']
 
   it('accepts any port of a wildcard entry', () => {
-    expect(hostAllowed('localhost:3000', shipped)).toBe(true)
-    expect(hostAllowed('[::1]:8000', shipped)).toBe(true)
+    expect(isHostAllowed('localhost:3000', shipped)).toBe(true)
+    expect(isHostAllowed('[::1]:8000', shipped)).toBe(true)
   })
 
   it('refuses a host outside the list', () => {
-    expect(hostAllowed('studio.example:3000', shipped)).toBe(false)
-    expect(hostAllowed('localhost.evil.com:3000', shipped)).toBe(false)
+    expect(isHostAllowed('studio.example:3000', shipped)).toBe(false)
+    expect(isHostAllowed('localhost.evil.com:3000', shipped)).toBe(false)
   })
 
   it('accepts an exact entry and the "*" escape hatch', () => {
-    expect(hostAllowed('studio.example', ['studio.example'])).toBe(true)
-    expect(hostAllowed('anything:1', ['*'])).toBe(true)
+    expect(isHostAllowed('studio.example', ['studio.example'])).toBe(true)
+    expect(isHostAllowed('anything:1', ['*'])).toBe(true)
   })
 })
 

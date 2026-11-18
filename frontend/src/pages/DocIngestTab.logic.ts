@@ -38,15 +38,15 @@ export const STATE_LABEL_KEYS: Record<StateBucket, string> = {
   failed: 'ingest.stateFailed',
 }
 
-export function stateBucket(state: RowState): StateBucket {
+export function getStateBucket(state: RowState): StateBucket {
   if (state === 'Ingested') return 'upToDate'
   if (state === 'Stale') return 'stale'
   if (state === 'Failed') return 'failed'
   return 'notPushed'
 }
 
-export function stateLabelKey(state: RowState): string {
-  return STATE_LABEL_KEYS[stateBucket(state)]
+export function getStateLabelKey(state: RowState): string {
+  return STATE_LABEL_KEYS[getStateBucket(state)]
 }
 
 /**
@@ -124,7 +124,7 @@ export interface LaunchRow extends IngestRow {
  * (Stale or NotPushed). Up-to-date and disconnected rows start
  * unchecked; the user can opt-in.
  */
-export function defaultLaunchSelection(rows: readonly IngestRow[]): LaunchRow[] {
+export function buildDefaultLaunchSelection(rows: readonly IngestRow[]): LaunchRow[] {
   return rows.map((row) => ({
     ...row,
     selected: row.connected && (row.state === 'Stale' || row.state === 'NotPushed'),
@@ -139,7 +139,7 @@ export function hasSelection(rows: readonly LaunchRow[]): boolean {
 }
 
 /** Slugs the modal will push to, in stable order (stores list order). */
-export function selectedSlugs(rows: readonly LaunchRow[]): string[] {
+export function listSelectedSlugs(rows: readonly LaunchRow[]): string[] {
   return rows.filter((r) => r.selected).map((r) => r.slug)
 }
 
@@ -153,7 +153,7 @@ export function isLaunchDone(rows: readonly LaunchRow[]): boolean {
  * Drives whether the parent should refetch the document
  * (storeLinks update + history feed refresh).
  */
-export function anyLaunchSucceeded(rows: readonly LaunchRow[]): boolean {
+export function hasAnyLaunchSucceeded(rows: readonly LaunchRow[]): boolean {
   return rows.some((r) => r.status === 'success')
 }
 

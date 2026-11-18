@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { DocChunk, PageElement } from '../../shared/types'
-import { chunkBboxesOnPage, chunkForElement, elementRefsForChunk } from './linkedView'
+import { chunkBboxesOnPage, chunkForElement, findElementRefsForChunk } from './linkedView'
 
 const makeChunk = (id: string, overrides: Partial<DocChunk> = {}): DocChunk => ({
   id,
@@ -76,7 +76,7 @@ describe('chunkForElement', () => {
   })
 })
 
-describe('elementRefsForChunk', () => {
+describe('findElementRefsForChunk', () => {
   it('extracts the self_ref strings from docItems', () => {
     const c = makeChunk('a', {
       docItems: [
@@ -84,16 +84,16 @@ describe('elementRefsForChunk', () => {
         { selfRef: '#/tables/0', label: 'table' },
       ],
     })
-    expect(elementRefsForChunk(c)).toEqual(new Set(['#/texts/1', '#/tables/0']))
+    expect(findElementRefsForChunk(c)).toEqual(new Set(['#/texts/1', '#/tables/0']))
   })
 
   it('returns an empty set when the chunk has no docItems', () => {
-    expect(elementRefsForChunk(makeChunk('a'))).toEqual(new Set())
+    expect(findElementRefsForChunk(makeChunk('a'))).toEqual(new Set())
   })
 
   it('skips empty self_ref entries', () => {
     const c = makeChunk('a', { docItems: [{ selfRef: '', label: 'text' }] })
-    expect(elementRefsForChunk(c)).toEqual(new Set())
+    expect(findElementRefsForChunk(c)).toEqual(new Set())
   })
 })
 

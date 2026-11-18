@@ -223,9 +223,9 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
    *
    * `ingestionAvailable` from `/api/health` is still exposed via the
    * `ingestion` registry entry below — components that drive the
-   * actual push action consult that flag, not `modeFlags()`.
+   * actual push action consult that flag, not `getModeFlags()`.
    */
-  function modeFlags(): { parse: boolean } {
+  function getModeFlags(): { parse: boolean } {
     return {
       parse: inspectModeEnabled.value,
     }
@@ -248,7 +248,7 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
     loaded,
     error,
     isEnabled,
-    modeFlags,
+    getModeFlags,
     load,
     reload,
   }

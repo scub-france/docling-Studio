@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  centeredScrollPosition,
+  computeCenteredScrollPosition,
   isFocusScrollRequest,
   isRectVisible,
-  mostVisiblePage,
+  findMostVisiblePage,
   pageFrameGeometry,
   pageTopScrollPosition,
 } from './previewScroll'
 
-describe('mostVisiblePage', () => {
+describe('findMostVisiblePage', () => {
   it('selects the highest ratio from the complete visibility snapshot', () => {
     expect(
-      mostVisiblePage(
+      findMostVisiblePage(
         new Map([
           [1, 0.25],
           [2, 0.75],
@@ -24,14 +24,14 @@ describe('mostVisiblePage', () => {
 
   it('ignores pages whose stored ratio is zero', () => {
     expect(
-      mostVisiblePage(
+      findMostVisiblePage(
         new Map([
           [1, 0],
           [2, 0.4],
         ]),
       ),
     ).toBe(2)
-    expect(mostVisiblePage(new Map([[1, 0]]))).toBeNull()
+    expect(findMostVisiblePage(new Map([[1, 0]]))).toBeNull()
   })
 })
 
@@ -47,10 +47,10 @@ describe('isRectVisible', () => {
   })
 })
 
-describe('centeredScrollPosition', () => {
+describe('computeCenteredScrollPosition', () => {
   it('centers viewport-relative element geometry in scroll space', () => {
     expect(
-      centeredScrollPosition(
+      computeCenteredScrollPosition(
         { scrollTop: 300, scrollLeft: 100, clientWidth: 400, clientHeight: 600 },
         { top: 50, left: 20 },
         { x: 220, y: 450, w: 40, h: 100 },
@@ -60,7 +60,7 @@ describe('centeredScrollPosition', () => {
 
   it('clamps positions at the scroll origin', () => {
     expect(
-      centeredScrollPosition(
+      computeCenteredScrollPosition(
         { scrollTop: 0, scrollLeft: 0, clientWidth: 400, clientHeight: 600 },
         { top: 0, left: 0 },
         { x: 10, y: 10, w: 20, h: 20 },

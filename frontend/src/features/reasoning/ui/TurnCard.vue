@@ -24,7 +24,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from '../../../shared/i18n'
-import { fmtDur } from '../timeline.logic'
+import { formatDuration } from '../timeline.logic'
 import type { ConversationTurn } from '../types'
 
 const props = defineProps<{
@@ -43,7 +43,7 @@ const stats = computed(() => {
   if (!trace || props.turn.status === 'running') return ''
   return t('ask.turnStats', {
     n: trace.steps.length,
-    dur: fmtDur(trace.totalDurationMs),
+    dur: formatDuration(trace.totalDurationMs),
     model: trace.modelId,
   })
 })

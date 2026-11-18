@@ -1,25 +1,25 @@
 import { describe, expect, it } from 'vitest'
 
-import { allLayersHidden, toggleAllLayers } from './layerVisibility'
+import { areAllLayersHidden, toggleAllLayers } from './layerVisibility'
 
 const TYPES = ['section_header', 'text', 'table']
 
-describe('allLayersHidden', () => {
+describe('areAllLayersHidden', () => {
   it('is false while at least one type is visible', () => {
-    expect(allLayersHidden(TYPES, new Set())).toBe(false)
-    expect(allLayersHidden(TYPES, new Set(['text', 'table']))).toBe(false)
+    expect(areAllLayersHidden(TYPES, new Set())).toBe(false)
+    expect(areAllLayersHidden(TYPES, new Set(['text', 'table']))).toBe(false)
   })
 
   it('is true once every type is hidden, however it got there', () => {
-    expect(allLayersHidden(TYPES, new Set(TYPES))).toBe(true)
+    expect(areAllLayersHidden(TYPES, new Set(TYPES))).toBe(true)
   })
 
   it('ignores hidden types the bar does not list', () => {
-    expect(allLayersHidden(TYPES, new Set(['text', 'table', 'formula']))).toBe(false)
+    expect(areAllLayersHidden(TYPES, new Set(['text', 'table', 'formula']))).toBe(false)
   })
 
   it('is false when the bar lists no type', () => {
-    expect(allLayersHidden([], new Set())).toBe(false)
+    expect(areAllLayersHidden([], new Set())).toBe(false)
   })
 })
 

@@ -5,7 +5,7 @@
  *  - chunkForElement(element, chunks): which chunk does this OCR element
  *    belong to? Used when the user clicks a bbox on the preview → scroll
  *    to the matching chunk card.
- *  - elementRefsForChunk(chunk): which element `self_ref`s does this chunk
+ *  - findElementRefsForChunk(chunk): which element `self_ref`s does this chunk
  *    cover? Used when the user hovers a chunk card → highlight the
  *    corresponding bboxes on the preview.
  *
@@ -42,7 +42,7 @@ export function chunkForElement(
   for (const chunk of chunks) {
     for (const cb of chunk.bboxes) {
       if (cb.page !== pageNumber) continue
-      const coverage = overlapCoverage(elRect, bboxToRect(cb.bbox))
+      const coverage = computeOverlapCoverage(elRect, bboxToRect(cb.bbox))
       if (coverage >= OVERLAP_MIN_COVERAGE && (!best || coverage > best.coverage)) {
         best = { chunk, coverage }
       }
@@ -56,7 +56,7 @@ export function chunkForElement(
  * `pageNumber`. Empty set when the chunk has no `docItems` (caller can
  * fall back to bbox overlap rendering).
  */
-export function elementRefsForChunk(chunk: DocChunk): Set<string> {
+export function findElementRefsForChunk(chunk: DocChunk): Set<string> {
   const refs = new Set<string>()
   for (const di of chunk.docItems) {
     if (di.selfRef) refs.add(di.selfRef)
@@ -66,7 +66,7 @@ export function elementRefsForChunk(chunk: DocChunk): Set<string> {
 
 /**
  * Returns the chunk's bboxes that fall on `pageNumber`. Used as the
- * fallback highlight when `elementRefsForChunk` is empty (no self_ref
+ * fallback highlight when `findElementRefsForChunk` is empty (no self_ref
  * link available).
  */
 export function chunkBboxesOnPage(chunk: DocChunk, pageNumber: number): ChunkBbox[] {
@@ -81,7 +81,7 @@ function bboxToRect(bbox: readonly [number, number, number, number]): Rect {
 }
 
 /** Fraction of `a`'s area that overlaps with `b`. Zero on no overlap. */
-function overlapCoverage(a: Rect, b: Rect): number {
+function computeOverlapCoverage(a: Rect, b: Rect): number {
   if (a.w <= 0 || a.h <= 0) return 0
   const xOverlap = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
   const yOverlap = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y))

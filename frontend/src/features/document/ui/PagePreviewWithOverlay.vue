@@ -90,7 +90,7 @@
         </header>
         <div
           class="preview-frame"
-          :style="frameStyle(page)"
+          :style="getFrameStyle(page)"
           :ref="(el) => registerFrame(page.page_number, el as HTMLElement | null)"
         >
           <PdfPageCanvas
@@ -156,10 +156,10 @@ import {
   pageInputWidthCh,
 } from './PagePreviewWithOverlay.logic'
 import {
-  centeredScrollPosition,
+  computeCenteredScrollPosition,
   isFocusScrollRequest,
   isRectVisible,
-  mostVisiblePage,
+  findMostVisiblePage,
   pageFrameGeometry,
   pageTopScrollPosition,
 } from '../previewScroll'
@@ -259,7 +259,7 @@ function registerFrame(pageNumber: number, el: HTMLElement | null): void {
 }
 
 /** Inline geometry that makes a card hold its height with no image mounted. */
-function frameStyle(page: Page): Record<string, string> {
+function getFrameStyle(page: Page): Record<string, string> {
   return pageFrameGeometry(page, PREVIEW_DPI) ?? {}
 }
 
@@ -407,7 +407,7 @@ function setupObserver(): void {
         if (!page) continue
         visibilityRatios.set(page, entry.isIntersecting ? entry.intersectionRatio : 0)
       }
-      const bestPage = mostVisiblePage(visibilityRatios)
+      const bestPage = findMostVisiblePage(visibilityRatios)
       if (!bestPage || bestPage === visiblePage.value) return
       visiblePage.value = bestPage
       emit('update:currentPage', bestPage)
@@ -485,7 +485,7 @@ function centerHighlighted(): boolean {
   }
   if (isRectVisible(bboxViewportRect, stageRect)) return true
 
-  const position = centeredScrollPosition(stage, stageRect, {
+  const position = computeCenteredScrollPosition(stage, stageRect, {
     x: bboxLeft,
     y: bboxTop,
     w: rect.w,
@@ -735,7 +735,7 @@ onBeforeUnmount(() => {
 }
 
 /* Sized from the page's own dimensions via the inline `aspect-ratio` /
- * `max-width` set by `frameStyle` (#336) — the box is therefore correct before
+ * `max-width` set by `getFrameStyle` (#336) — the box is therefore correct before
  * the raster mounts, and stays put when it is evicted. `max-width` reproduces
  * the raster's natural width, so a page narrower than the column is not
  * upscaled; `width: 100%` is what the old `fit-content` resolved to for every

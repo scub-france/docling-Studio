@@ -23,8 +23,8 @@ import {
   STATE_LABEL_KEYS,
   buildRows,
   countStalePushable,
-  stateBucket,
-  stateLabelKey,
+  getStateBucket,
+  getStateLabelKey,
   summarizeDiff,
 } from './DocIngestTab.logic'
 
@@ -42,7 +42,7 @@ function makeStore(overrides: Partial<StoreInfo> = {}): StoreInfo {
   }
 }
 
-describe('stateBucket', () => {
+describe('getStateBucket', () => {
   it.each([
     ['Ingested', 'upToDate'],
     ['Stale', 'stale'],
@@ -52,16 +52,16 @@ describe('stateBucket', () => {
     ['Uploaded', 'notPushed'],
     ['Parsed', 'notPushed'],
   ] as const)('maps %s → %s', (state, bucket) => {
-    expect(stateBucket(state)).toBe(bucket)
+    expect(getStateBucket(state)).toBe(bucket)
   })
 })
 
-describe('stateLabelKey', () => {
+describe('getStateLabelKey', () => {
   it('returns the i18n key for the matching bucket', () => {
-    expect(stateLabelKey('Ingested')).toBe('ingest.stateUpToDate')
-    expect(stateLabelKey('Stale')).toBe('ingest.stateStale')
-    expect(stateLabelKey('Failed')).toBe('ingest.stateFailed')
-    expect(stateLabelKey('NotPushed')).toBe('ingest.stateNotPushed')
+    expect(getStateLabelKey('Ingested')).toBe('ingest.stateUpToDate')
+    expect(getStateLabelKey('Stale')).toBe('ingest.stateStale')
+    expect(getStateLabelKey('Failed')).toBe('ingest.stateFailed')
+    expect(getStateLabelKey('NotPushed')).toBe('ingest.stateNotPushed')
   })
 
   it('STATE_LABEL_KEYS covers every bucket', () => {
@@ -196,17 +196,17 @@ describe('summarizeDiff', () => {
 // ---------------------------------------------------------------------------
 
 import {
-  anyLaunchSucceeded,
-  defaultLaunchSelection,
+  hasAnyLaunchSucceeded,
+  buildDefaultLaunchSelection,
   hasSelection,
   isLaunchDone,
-  selectedSlugs,
+  listSelectedSlugs,
   toHistoryEntry,
   type LaunchRow,
 } from './DocIngestTab.logic'
 import type { ChunkPushEntry } from '../features/chunks/api'
 
-describe('defaultLaunchSelection', () => {
+describe('buildDefaultLaunchSelection', () => {
   it('preselects connected + (stale OR not pushed) rows only', () => {
     const rows = buildRows(
       [
@@ -224,7 +224,7 @@ describe('defaultLaunchSelection', () => {
         { store: 'd', state: 'Ingested', pushedAt: '2026-05-01T00:00:00Z' },
       ],
     )
-    const launch = defaultLaunchSelection(rows)
+    const launch = buildDefaultLaunchSelection(rows)
     const selected = launch.filter((r) => r.selected).map((r) => r.slug)
     // `b` defaults to NotPushed via the missing-link path (no
     // storeLinks row); included here for completeness.
@@ -233,7 +233,7 @@ describe('defaultLaunchSelection', () => {
 
   it('every row starts idle with no error', () => {
     const rows = buildRows([makeStore({ slug: 'a' })], [])
-    const launch = defaultLaunchSelection(rows)
+    const launch = buildDefaultLaunchSelection(rows)
     expect(launch[0].status).toBe('idle')
     expect(launch[0].errorMessage).toBeNull()
   })
@@ -286,7 +286,7 @@ describe('hasSelection', () => {
   })
 })
 
-describe('selectedSlugs', () => {
+describe('listSelectedSlugs', () => {
   it('preserves the row order', () => {
     const rows: LaunchRow[] = [
       {
@@ -323,7 +323,7 @@ describe('selectedSlugs', () => {
         errorMessage: null,
       },
     ]
-    expect(selectedSlugs(rows)).toEqual(['c', 'b'])
+    expect(listSelectedSlugs(rows)).toEqual(['c', 'b'])
   })
 })
 
@@ -374,7 +374,7 @@ describe('isLaunchDone', () => {
   })
 })
 
-describe('anyLaunchSucceeded', () => {
+describe('hasAnyLaunchSucceeded', () => {
   it('is true on at least one success row', () => {
     const rows: LaunchRow[] = [
       {
@@ -400,7 +400,7 @@ describe('anyLaunchSucceeded', () => {
         errorMessage: null,
       },
     ]
-    expect(anyLaunchSucceeded(rows)).toBe(true)
+    expect(hasAnyLaunchSucceeded(rows)).toBe(true)
   })
 
   it('is false when every run failed', () => {
@@ -417,7 +417,7 @@ describe('anyLaunchSucceeded', () => {
         errorMessage: 'x',
       },
     ]
-    expect(anyLaunchSucceeded(rows)).toBe(false)
+    expect(hasAnyLaunchSucceeded(rows)).toBe(false)
   })
 })
 

@@ -49,7 +49,7 @@ router.beforeEach(async (to) => {
 
   if (to.name !== ROUTES.DOC_WORKSPACE) return true
 
-  const flags = flagStore.modeFlags()
+  const flags = flagStore.getModeFlags()
   const requestedRaw = Array.isArray(to.query.mode) ? to.query.mode[0] : to.query.mode
   const requested = isDocMode(requestedRaw) ? requestedRaw : undefined
   const resolved = resolveMode(requested, flags)

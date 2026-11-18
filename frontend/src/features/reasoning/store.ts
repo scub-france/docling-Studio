@@ -6,7 +6,7 @@ import type { ConversationTurn, ReasoningTrace } from './types'
 
 let turnSeq = 0
 
-function nowHHMM(): string {
+function formatNowHHMM(): string {
   const d = new Date()
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
@@ -85,7 +85,7 @@ export const useReasoningStore = defineStore('reasoning', () => {
     // 'running'). Wrapping here makes `turn` the proxy, so every mutation fires.
     const turn: ConversationTurn = reactive({
       id: `turn-${++turnSeq}`,
-      time: nowHHMM(),
+      time: formatNowHHMM(),
       status: 'running',
       question: q,
       trace: null,

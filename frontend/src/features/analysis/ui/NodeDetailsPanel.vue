@@ -51,7 +51,8 @@
         <li v-for="(p, i) in provs" :key="i" class="nd-prov">
           <span class="nd-prov-page">p.{{ p.page_no ?? '?' }}</span>
           <span class="nd-prov-bbox">
-            [{{ fmt(p.bbox_l) }}, {{ fmt(p.bbox_t) }}, {{ fmt(p.bbox_r) }}, {{ fmt(p.bbox_b) }}]
+            [{{ formatCoord(p.bbox_l) }}, {{ formatCoord(p.bbox_t) }}, {{ formatCoord(p.bbox_r) }},
+            {{ formatCoord(p.bbox_b) }}]
           </span>
           <span v-if="p.coord_origin" class="nd-prov-origin">{{ p.coord_origin }}</span>
         </li>
@@ -72,10 +73,10 @@
           >
             <span
               class="nd-child-chip"
-              :style="{ background: kindColorFor(child) }"
+              :style="{ background: getKindColor(child) }"
               :title="child.label ?? child.group"
             >
-              {{ kindLabelFor(child) }}
+              {{ getKindLabel(child) }}
             </span>
             <span class="nd-child-text">{{ previewText(child) }}</span>
           </button>
@@ -166,21 +167,21 @@ const chunkIndex = computed<number | null>(() => {
 const text = computed<string>(() => (props.node?.text as string | undefined) ?? '')
 const provs = computed<GraphProvenance[]>(() => (props.node?.provs as GraphProvenance[]) ?? [])
 
-function fmt(n: number | null | undefined): string {
+function formatCoord(n: number | null | undefined): string {
   if (n == null) return '—'
   return n.toFixed(1)
 }
 
 // Label + color helpers factored so they work for children too, not just the
 // currently-selected node. Keep them consistent with the chips above.
-function kindLabelFor(n: GraphNode): string {
+function getKindLabel(n: GraphNode): string {
   if (n.group === 'document') return 'Document'
   if (n.group === 'page') return 'Page'
   if (n.group === 'chunk') return 'Chunk'
   return n.label ?? 'Element'
 }
 
-function kindColorFor(n: GraphNode): string {
+function getKindColor(n: GraphNode): string {
   if (n.group === 'document') return KIND_COLORS.document
   if (n.group === 'page') return KIND_COLORS.Page
   if (n.group === 'chunk') return KIND_COLORS.Chunk

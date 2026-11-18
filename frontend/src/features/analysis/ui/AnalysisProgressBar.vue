@@ -24,7 +24,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { Analysis } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
-import { analysisProgress, formatElapsed } from '../progress'
+import { computeAnalysisProgress, formatElapsed } from '../progress'
 
 const props = defineProps<{ analysis: Analysis }>()
 
@@ -39,7 +39,7 @@ onUnmounted(() => {
   if (clock) clearInterval(clock)
 })
 
-const progress = computed(() => analysisProgress(props.analysis, now.value))
+const progress = computed(() => computeAnalysisProgress(props.analysis, now.value))
 const label = computed(() => {
   const p = progress.value
   return p.kind === 'pages'
