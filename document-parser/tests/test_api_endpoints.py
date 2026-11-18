@@ -8,10 +8,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 from domain.models import AnalysisJob, Document
+from infra.page_raster import PdfPageRasterizer
+from infra.pdf_inspector import PdfiumInspector
 from infra.preview_cache import PreviewCache
 from main import app
 from services.preview_service import PreviewService
 from tests.app_state import state_override
+
+
+def _preview_service(documents, *, rasterizer=None, cache=None) -> PreviewService:
+    return PreviewService(
+        documents=documents,
+        rasterizer=rasterizer or PdfPageRasterizer(),
+        inspector=PdfiumInspector(),
+        cache=cache or PreviewCache(),
+    )
 
 
 @pytest.fixture
@@ -37,7 +48,7 @@ def mock_document_service(client):
     with state_override(
         app,
         document_service=mock_svc,
-        preview_service=PreviewService(mock_svc, PreviewCache()),
+        preview_service=_preview_service(mock_svc),
     ):
         yield mock_svc
 
@@ -258,6 +269,20 @@ class TestDocumentEndpoints:
         assert response.status_code == 404
         assert response.json()["detail"] == "Document not found"
 
+    def test_preview_page_poppler_does_not_render(self, client, mock_document_service, tmp_path):
+        pdf = tmp_path / "short.pdf"
+        pdf.write_bytes(b"%PDF-short")
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="short.pdf", storage_path=str(pdf))
+        )
+
+        with patch("infra.page_raster.convert_from_path", return_value=[]):
+            resp = client.get("/api/documents/d1/preview?page=7")
+
+        assert resp.status_code == 404
+        # The adapter's message names the file; the response does not.
+        assert resp.json()["detail"] == "Page 7 not found"
+
     def test_preview_reuses_raster_and_invalidates_when_pdf_changes(
         self, client, mock_document_service, tmp_path
     ):
@@ -267,10 +292,12 @@ class TestDocumentEndpoints:
             return_value=Document(id="d1", filename="preview.pdf", storage_path=str(pdf))
         )
 
-        with patch(
-            "services.preview_service.DocumentService.generate_preview",
-            return_value=b"rendered-png",
-        ) as render:
+        rasterizer = MagicMock()
+        rasterizer.render_page.return_value = b"rendered-png"
+        render = rasterizer.render_page
+        with state_override(
+            app, preview_service=_preview_service(mock_document_service, rasterizer=rasterizer)
+        ):
             first = client.get("/api/documents/d1/preview?page=1")
             second = client.get("/api/documents/d1/preview?page=1")
             different_dpi = client.get("/api/documents/d1/preview?page=1&dpi=200")
@@ -287,9 +314,9 @@ class TestDocumentEndpoints:
         assert webp.headers["content-type"] == "image/webp"
         assert render.call_count == 4
         # The renderer opens the PDF by path (#398): it never receives its bytes.
-        assert render.call_args_list[0].args[0] == pdf
-        assert render.call_args_list[2].kwargs["image_format"] == "WEBP"
-        assert render.call_args_list[-1].args[0] == pdf
+        assert render.call_args_list[0].args[0] == str(pdf)
+        assert render.call_args_list[2].kwargs["fmt"] == "WEBP"
+        assert render.call_args_list[-1].args[0] == str(pdf)
 
     def test_preview_accepts_a_replacement_cache(self, client, mock_document_service, tmp_path):
         pdf = tmp_path / "preview.pdf"
@@ -300,9 +327,13 @@ class TestDocumentEndpoints:
         cache = MagicMock()
         cache.get.return_value = b"cached-preview"
 
-        with (
-            state_override(app, preview_service=PreviewService(mock_document_service, cache)),
-            patch("services.preview_service.DocumentService.generate_preview") as render,
+        rasterizer = MagicMock()
+        render = rasterizer.render_page
+        with state_override(
+            app,
+            preview_service=_preview_service(
+                mock_document_service, rasterizer=rasterizer, cache=cache
+            ),
         ):
             response = client.get("/api/documents/d1/preview?page=1")
 
@@ -332,7 +363,10 @@ class TestDocumentEndpoints:
     def test_page_sizes_unknown_document(self, client, mock_document_service):
         mock_document_service.find_by_id = AsyncMock(return_value=None)
 
-        assert client.get("/api/documents/nope/pages").status_code == 404
+        resp = client.get("/api/documents/nope/pages")
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Document not found"
 
     def test_page_sizes_missing_file(self, client, mock_document_service, tmp_path):
         mock_document_service.find_by_id = AsyncMock(

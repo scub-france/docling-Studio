@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from domain.models import AnalysisJob
-    from domain.ports import AnalysisRepository, DocumentRepository
+    from domain.ports import ActiveAnalysisResultReader, AnalysisRepository, DocumentRepository
 
 
 class ExportFormat(StrEnum):
@@ -40,7 +40,7 @@ class ExportService:
         self,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
-        active_result_service=None,
+        active_result_service: ActiveAnalysisResultReader | None = None,
     ) -> None:
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
@@ -58,7 +58,7 @@ class ExportService:
         active document result. The PDF is always the source file.
         """
         return await self._export(
-            doc_id, format, lambda: self._original_analysis(doc_id, format, analysis_id)
+            doc_id, format, lambda: self._resolve_original_analysis(doc_id, format, analysis_id)
         )
 
     async def export_edited(
@@ -69,7 +69,7 @@ class ExportService:
     ) -> ExportResult:
         """Export like `export`, with Markdown / JSON taken from the saved editor result."""
         return await self._export(
-            doc_id, format, lambda: self._edited_analysis(doc_id, analysis_id)
+            doc_id, format, lambda: self._load_edited_analysis(doc_id, analysis_id)
         )
 
     async def _export(
@@ -111,18 +111,18 @@ class ExportService:
             filename=_build_export_filename(doc.filename, doc_id, ExportFormat.JSON),
         )
 
-    async def _original_analysis(
+    async def _resolve_original_analysis(
         self, doc_id: str, format: ExportFormat, analysis_id: str | None
     ) -> AnalysisJob | None:
         if analysis_id:
-            return await self._requested_analysis(doc_id, analysis_id)
+            return await self._load_requested_analysis(doc_id, analysis_id)
         if self._active_result_service is not None:
-            return await self._active_analysis(doc_id)
+            return await self._load_active_analysis(doc_id)
         if format is ExportFormat.MD:
             return await self._analysis_repo.find_latest_completed(doc_id)
         return await self._analysis_repo.find_latest_completed_by_document(doc_id)
 
-    async def _requested_analysis(self, doc_id: str, analysis_id: str) -> AnalysisJob:
+    async def _load_requested_analysis(self, doc_id: str, analysis_id: str) -> AnalysisJob:
         """The analysis the caller asked for: it must be a completed one of `doc_id`."""
         analysis = await self._analysis_repo.find_by_id(analysis_id)
         if (
@@ -133,16 +133,16 @@ class ExportService:
             raise ExportNotFoundError(f"Analysis not found: {analysis_id}")
         return analysis
 
-    async def _active_analysis(self, doc_id: str) -> AnalysisJob:
+    async def _load_active_analysis(self, doc_id: str) -> AnalysisJob:
         try:
             return (await self._active_result_service.load_active_result(doc_id)).job
         except AnalysisEditUnavailableError as exc:
             raise ExportNotFoundError(str(exc)) from exc
 
-    async def _edited_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:
+    async def _load_edited_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:
         if not analysis_id or self._active_result_service is None:
             raise ExportNotFoundError("Edited analysis export is unavailable")
-        await self._requested_analysis(doc_id, analysis_id)
+        await self._load_requested_analysis(doc_id, analysis_id)
         try:
             return (await self._active_result_service.load_editor(doc_id, analysis_id)).job
         except AnalysisEditUnavailableError as exc:

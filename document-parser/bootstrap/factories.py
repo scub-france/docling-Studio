@@ -213,6 +213,7 @@ def build_analysis_service(document_repo, analysis_repo, graph_writer) -> Analys
         ),
         graph_writer=graph_writer,
         docling_importer=DoclingDocumentImporter(),
+        pdf_inspector=_build_pdf_inspector(),
     )
 
 
@@ -298,6 +299,12 @@ def _build_page_text():
     from infra.page_text import PdfPageTextReader
 
     return PdfPageTextReader()
+
+
+def _build_pdf_inspector():
+    from infra.pdf_inspector import PdfiumInspector
+
+    return PdfiumInspector()
 
 
 def _build_rasterizer():

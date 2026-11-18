@@ -64,16 +64,6 @@ _LAYER_RULES = {
 # Pre-existing violations, recorded as exact source and target modules. They
 # remain migration debt; a new import or a different target cannot use this list.
 _LEGACY_LAYER_IMPORTS = {
-    ("services/store_service.py", "persistence.document_repo"),
-    ("services/store_service.py", "persistence.document_store_link_repo"),
-    ("services/store_service.py", "persistence.store_repo"),
-    ("services/chunk_service.py", "persistence.document_store_link_repo"),
-    ("services/chunk_service.py", "persistence.store_repo"),
-    ("services/store_backend_resolver.py", "infra.neo4j.driver_pool"),
-    ("services/store_backend_resolver.py", "infra.opensearch_pool"),
-    ("services/store_backend_resolver.py", "infra.opensearch_store"),
-    ("services/store_backend_resolver.py", "persistence.store_repo"),
-    ("services/version_service.py", "persistence.document_version_repo"),
     ("persistence/store_repo.py", "infra.secrets"),
 }
 
@@ -122,8 +112,8 @@ class TestDocumentAgentServicesAreFrameworkFree:
     read and an import of another service, in the middle of a use case. The
     `PageRasterizer` port moved all three behind `infra/page_raster.py`; this
     is what stops them coming back. Scoped to these four modules rather than
-    all of `services/` because `document_service.py` rasterises directly and
-    predates the port.
+    all of `services/` because `document_service.py` still counts upload pages
+    with pdf2image and predates the port.
     """
 
     MODULES = (

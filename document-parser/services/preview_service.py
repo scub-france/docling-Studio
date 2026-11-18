@@ -1,27 +1,52 @@
-"""Render and cache PDF previews behind one application operation."""
+"""Render and cache PDF previews, and read page sizes, behind ports."""
 
 from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
 
-from services.document_service import DocumentService
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
-    from domain.ports import PreviewImageCache
+    from pathlib import Path
+
+    from domain.ports import DocumentFileLocator, PageRasterizer, PdfInspector, PreviewImageCache
+    from domain.value_objects import PageDetail
 
 
-class PreviewDocumentNotFoundError(Exception):
+class PreviewDocumentNotFoundError(ServiceError):
     """The requested document does not exist."""
 
+    http_status = 404
 
-class PreviewPageOutOfRangeError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("Document not found")
+
+
+class PreviewPageOutOfRangeError(ServiceError):
     """The requested page exceeds the document's known page count."""
+
+    http_status = 400
+
+
+class PreviewPageNotFoundError(ServiceError):
+    """Poppler rendered nothing for the requested page."""
+
+    http_status = 404
 
 
 class PreviewService:
-    def __init__(self, documents: DocumentService, cache: PreviewImageCache) -> None:
+    def __init__(
+        self,
+        *,
+        documents: DocumentFileLocator,
+        rasterizer: PageRasterizer,
+        inspector: PdfInspector,
+        cache: PreviewImageCache,
+    ) -> None:
         self._documents = documents
+        self._rasterizer = rasterizer
+        self._inspector = inspector
         self._cache = cache
 
     async def get_preview(self, doc_id: str, *, page: int, dpi: int, image_format: str) -> bytes:
@@ -38,13 +63,26 @@ class PreviewService:
         key = (str(path), stat.st_size, stat.st_mtime_ns, page, dpi, image_format)
         image = self._cache.get(key)
         if image is None:
-            # Poppler opens the PDF by path: the file is never read whole (#398).
-            image = await asyncio.to_thread(
-                DocumentService.generate_preview,
-                path,
-                page=page,
-                dpi=dpi,
-                image_format=image_format.upper(),
-            )
+            image = await self._render(path, page=page, dpi=dpi, fmt=image_format.upper())
             self._cache.put(key, image)
         return image
+
+    async def page_sizes(self, doc_id: str) -> list[PageDetail]:
+        """Size of each page of the PDF, so the preview can lay out its pages
+        before any analysis (#352)."""
+        document = await self._documents.find_by_id(doc_id)
+        if document is None:
+            raise PreviewDocumentNotFoundError()
+        path = self._documents.resolve_storage_path(document.storage_path)
+        return await asyncio.to_thread(self._inspector.page_sizes, str(path))
+
+    async def _render(self, path: Path, *, page: int, dpi: int, fmt: str) -> bytes:
+        # Poppler opens the PDF by path: the file is never read whole (#398).
+        try:
+            return await asyncio.to_thread(
+                self._rasterizer.render_page, str(path), page=page, dpi=dpi, fmt=fmt
+            )
+        except ValueError as exc:
+            # The adapter's message names the server path: keep it out of the
+            # HTTP detail.
+            raise PreviewPageNotFoundError(f"Page {page} not found") from exc

@@ -11,10 +11,12 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from pathlib import Path
 
     from domain.analysis_editing import (
         EditCommand,
         EditedAnalysisCache,
+        EditorSnapshot,
         EditStream,
         ProjectedAnalysis,
         StoredEditCommand,
@@ -28,6 +30,7 @@ if TYPE_CHECKING:
         DocumentAnalysisSelection,
         DocumentChunkSource,
         DocumentStoreLink,
+        DocumentVersion,
         Store,
     )
     from domain.navigation import RasterCrop
@@ -40,6 +43,7 @@ if TYPE_CHECKING:
         DocumentLifecycleState,
         GraphPayload,
         LLMProviderType,
+        PageDetail,
         ReasoningResult,
     )
     from domain.vector_schema import IndexedChunk, SearchResult
@@ -127,6 +131,8 @@ class DocumentRepository(Protocol):
 
     async def find_by_id(self, doc_id: str) -> Document | None: ...
 
+    async def find_by_ids(self, doc_ids: list[str]) -> dict[str, Document]: ...
+
     async def update_page_count(self, doc_id: str, page_count: int) -> None: ...
 
     async def update_lifecycle(
@@ -137,6 +143,14 @@ class DocumentRepository(Protocol):
     ) -> None: ...
 
     async def delete(self, doc_id: str) -> bool: ...
+
+
+class DocumentFileLocator(Protocol):
+    """Find a document and resolve the file it is stored in."""
+
+    async def find_by_id(self, doc_id: str) -> Document | None: ...
+
+    def resolve_storage_path(self, storage_path: str) -> Path: ...
 
 
 # Source path, byte size, modification time, page, DPI, and image format.
@@ -170,7 +184,7 @@ class ChunkSourceRepository(Protocol):
 class StoreRepository(Protocol):
     """Port for `Store` persistence (introduced by #203)."""
 
-    async def insert(self, store: Store) -> None: ...
+    async def insert(self, store: Store, *, password: str | None = None) -> None: ...
 
     async def find_all(self) -> list[Store]: ...
 
@@ -178,7 +192,20 @@ class StoreRepository(Protocol):
 
     async def find_by_id(self, store_id: str) -> Store | None: ...
 
+    async def find_by_name(self, name: str) -> Store | None: ...
+
     async def get_default(self) -> Store | None: ...
+
+    async def update(self, store: Store) -> None: ...
+
+    async def clear_default_except(self, store_id: str) -> None: ...
+
+    async def delete(self, store_id: str) -> bool: ...
+
+    # Plaintext secret: never log or serialise it.
+    async def get_connection_password(self, store_id: str) -> str | None: ...
+
+    async def set_connection_password(self, store_id: str, plaintext: str | None) -> bool: ...
 
 
 class DocumentStoreLinkRepository(Protocol):
@@ -191,6 +218,8 @@ class DocumentStoreLinkRepository(Protocol):
     async def find_for_document(self, document_id: str) -> list[DocumentStoreLink]: ...
 
     async def find_for_store(self, store_id: str) -> list[DocumentStoreLink]: ...
+
+    async def count_by_store(self) -> dict[str, int]: ...
 
     async def find_one(self, document_id: str, store_id: str) -> DocumentStoreLink | None: ...
 
@@ -242,6 +271,28 @@ class ChunkPushRepository(Protocol):
 
     async def find_latest(self, document_id: str, store_id: str) -> ChunkPush | None: ...
 
+    async def find_for_document(
+        self,
+        document_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[ChunkPush]: ...
+
+    async def count_for_document(self, document_id: str) -> int: ...
+
+
+class DocumentVersionRepository(Protocol):
+    """Port for frozen (analysis, chunks) document versions (#267)."""
+
+    async def insert(self, version: DocumentVersion) -> None: ...
+
+    async def find_by_id(self, version_id: str) -> DocumentVersion | None: ...
+
+    async def find_for_document(self, document_id: str) -> list[DocumentVersion]: ...
+
+    async def find_latest_for_document(self, document_id: str) -> DocumentVersion | None: ...
+
 
 class AnalysisRepository(Protocol):
     """Port for analysis job persistence."""
@@ -255,6 +306,10 @@ class AnalysisRepository(Protocol):
         ...
 
     async def find_by_id(self, job_id: str) -> AnalysisJob | None: ...
+
+    async def find_by_document(
+        self, document_id: str, *, limit: int = 200, offset: int = 0
+    ) -> list[AnalysisJob]: ...
 
     async def find_latest_completed(self, document_id: str) -> AnalysisJob | None: ...
 
@@ -300,6 +355,20 @@ class AnalysisEditRepository(Protocol):
     ) -> list[StoredEditCommand]: ...
 
     async def replace_cache(self, cache: EditedAnalysisCache) -> None: ...
+
+
+class ActiveAnalysisResultReader(Protocol):
+    """Read the analysis result downstream features use, edits included.
+
+    Implemented by the analysis editor service; chunking and export depend on
+    this read side only.
+    """
+
+    async def load_active_result(self, document_id: str) -> EditorSnapshot: ...
+
+    async def load_editor(
+        self, document_id: str, analysis_id: str | None = None
+    ) -> EditorSnapshot: ...
 
 
 class AnalysisDocumentEngine(Protocol):
@@ -378,6 +447,17 @@ class VectorStore(Protocol):
         """
         ...
 
+    async def search_fulltext(
+        self,
+        index_name: str,
+        query_text: str,
+        *,
+        k: int = 10,
+        doc_id: str | None = None,
+    ) -> list[SearchResult]:
+        """Full-text search on the chunk content, optionally within one document."""
+        ...
+
     async def get_chunks(
         self,
         index_name: str,
@@ -396,6 +476,37 @@ class VectorStore(Protocol):
         """Cheap reachability probe — True if the backing store responds.
         Used by health checks; should not throw."""
         ...
+
+
+class VectorStorePool(Protocol):
+    """Per-connection cache of vector store clients, keyed by `(url, username)` (#279)."""
+
+    async def get(
+        self,
+        url: str,
+        *,
+        username: str | None = None,
+        password: str | None = None,
+        verify_certs: bool = False,
+        default_limit: int = 1000,
+    ) -> VectorStore: ...
+
+
+class GraphDriverPool(Protocol):
+    """Per-connection cache of graph store drivers, keyed by `(uri, user)` (#279).
+
+    The driver stays opaque to services: it is handed straight to an injected
+    `GraphWriter` factory.
+    """
+
+    async def get(
+        self,
+        uri: str,
+        user: str,
+        password: str,
+        *,
+        database: str = "neo4j",
+    ) -> Any: ...
 
 
 class AppSettingsRepository(Protocol):
@@ -520,8 +631,9 @@ class PageRasterizer(Protocol):
     decides what to ask for.
     """
 
-    def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
-        """Return `page` of the document at `storage_path` as PNG bytes."""
+    def render_page(self, storage_path: str, *, page: int, dpi: int, fmt: str = "PNG") -> bytes:
+        """Return `page` of the document at `storage_path` as `fmt` bytes:
+        `"PNG"`, or `"WEBP"` encoded losslessly."""
         ...
 
     def crop(
@@ -533,6 +645,20 @@ class PageRasterizer(Protocol):
     ) -> RasterCrop:
         """Crop a PNG to `box` (left, top, right, bottom in pixels), clamped
         to the image, and re-encode it as `fmt` (`"PNG"` or `"WEBP"`)."""
+        ...
+
+
+@runtime_checkable
+class PdfInspector(Protocol):
+    """Port for reading a stored PDF's page geometry, without rendering it."""
+
+    def page_sizes(self, storage_path: str) -> list[PageDetail]:
+        """Size of each page, in points, without elements. Raises
+        `FileNotFoundError` when the file is missing."""
+        ...
+
+    def page_count(self, storage_path: str) -> int:
+        """Number of pages. Raises when the file is not a readable PDF."""
         ...
 
 

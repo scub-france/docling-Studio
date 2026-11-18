@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Literal
 
@@ -10,10 +9,10 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from api import deps  # noqa: TC001
+from api.errors import http_error
 from api.schemas import DocStoreLinkResponse, DocumentResponse, PageSizeResponse
-from services.document_service import DocumentService
-from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
-from services.preview_service import PreviewDocumentNotFoundError, PreviewPageOutOfRangeError
+from services.errors import ServiceError
+from services.export_service import ExportFormat, build_content_disposition
 
 if TYPE_CHECKING:
     from domain.ports import DocumentStoreLinkRepository, StoreRepository
@@ -153,8 +152,8 @@ async def export_document(
             if edited
             else await service.export(doc_id, format, analysis_id)
         )
-    except ExportNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ServiceError as exc:
+        raise http_error(exc) from exc
 
     if export.file_path is not None:
         return FileResponse(
@@ -186,10 +185,8 @@ async def preview(
             media_type=f"image/{format}",
             headers={"Cache-Control": "private, max-age=86400, immutable"},
         )
-    except PreviewDocumentNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Document not found") from exc
-    except PreviewPageOutOfRangeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ServiceError as exc:
+        raise http_error(exc) from exc
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except FileNotFoundError as exc:
@@ -203,16 +200,13 @@ async def preview(
 
 
 @router.get("/{doc_id}/pages", response_model=list[PageSizeResponse])
-async def page_sizes(doc_id: str, service: deps.DocumentServiceDep) -> list[PageSizeResponse]:
+async def page_sizes(doc_id: str, service: deps.PreviewServiceDep) -> list[PageSizeResponse]:
     """Size of each page of the PDF, so the preview can lay out its pages
     before any analysis (#352)."""
-    doc = await service.find_by_id(doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
     try:
-        pdf_path = service.resolve_storage_path(doc.storage_path)
-        pages = await asyncio.to_thread(DocumentService.page_sizes, pdf_path)
+        pages = await service.page_sizes(doc_id)
+    except ServiceError as exc:
+        raise http_error(exc) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
     except Exception as exc:

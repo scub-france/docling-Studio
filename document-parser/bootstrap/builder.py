@@ -41,6 +41,8 @@ from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import deps_present, deps_provenance
 from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.llm.ollama_probe import OllamaProbe
+from infra.page_raster import PdfPageRasterizer
+from infra.pdf_inspector import PdfiumInspector
 from infra.preview_cache import PreviewCache
 from infra.settings import settings
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
@@ -169,7 +171,12 @@ class AppStateBuilder:
             store_repo=store_repo,
             document_store_link_repo=link_repo,
             document_service=document_service,
-            preview_service=PreviewService(document_service, PreviewCache()),
+            preview_service=PreviewService(
+                documents=document_service,
+                rasterizer=PdfPageRasterizer(),
+                inspector=PdfiumInspector(),
+                cache=PreviewCache(),
+            ),
             analysis_service=analysis_service,
             analysis_edit_service=analysis_edit_service,
             export_service=ExportService(

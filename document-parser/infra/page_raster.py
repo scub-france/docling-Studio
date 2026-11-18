@@ -2,8 +2,8 @@
 
 Everything poppler and PIL know how to do, and nothing about why. The dpi
 ladder, the byte budget and the bounding-box arithmetic that drive this live
-in the services and domain layers; here a page is rendered at the dpi it is
-asked for and a PNG is cropped to the box it is given.
+in the services and domain layers; here a page is rendered at the dpi and in
+the format it is asked for, and a PNG is cropped to the box it is given.
 
 Reads the file itself so no caller above `infra/` has to touch the
 filesystem — the service passes a `storage_path` from the `Document` entity
@@ -23,7 +23,7 @@ from domain.navigation import RasterCrop
 class PdfPageRasterizer:
     """Stateless adapter for the `PageRasterizer` port."""
 
-    def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
+    def render_page(self, storage_path: str, *, page: int, dpi: int, fmt: str = "PNG") -> bytes:
         # Poppler opens the file by path and renders only the requested
         # page: the PDF is never read whole into memory (#398).
         if not Path(storage_path).is_file():
@@ -32,7 +32,12 @@ class PdfPageRasterizer:
         if not images:
             raise ValueError(f"Page {page} not found in {storage_path}")
         buffer = io.BytesIO()
-        images[0].save(buffer, format="PNG")
+        if fmt.upper() == "WEBP":
+            # Lossless: a full page preview must match its PNG pixel for
+            # pixel, at about half the bytes.
+            images[0].save(buffer, format="WEBP", lossless=True)
+        else:
+            images[0].save(buffer, format="PNG")
         return buffer.getvalue()
 
     def crop(

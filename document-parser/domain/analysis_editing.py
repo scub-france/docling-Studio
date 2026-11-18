@@ -6,9 +6,13 @@ materialized projection and may be rebuilt at any time.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from domain.models import AnalysisJob
 
 CommandType = Literal[
     "replaceText",
@@ -102,6 +106,24 @@ class EditedAnalysisCache:
     command_stream_hash: str
     result_hash: str
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class EditorSnapshot:
+    job: AnalysisJob
+    projection: ProjectedAnalysis
+    applied_through_sequence: int
+    chunks_stale: bool
+    base_analysis_id: str
+
+
+def result_hash(document_json: str) -> str:
+    """Fingerprint of an analysis result.
+
+    Chunks record it as their source, and the editor compares it to decide
+    whether they are stale: both sides must compute it the same way.
+    """
+    return hashlib.sha256(document_json.encode("utf-8")).hexdigest()
 
 
 class AnalysisEditError(ValueError):

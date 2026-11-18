@@ -21,9 +21,7 @@ from domain.value_objects import StoreKind
 from services.errors import ServiceError
 
 if TYPE_CHECKING:
-    from persistence.document_repo import SqliteDocumentRepository
-    from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
-    from persistence.store_repo import SqliteStoreRepository
+    from domain.ports import DocumentRepository, DocumentStoreLinkRepository, StoreRepository
     from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
@@ -141,9 +139,9 @@ class StoreService:
 
     def __init__(
         self,
-        store_repo: SqliteStoreRepository,
-        link_repo: SqliteDocumentStoreLinkRepository,
-        document_repo: SqliteDocumentRepository | None = None,
+        store_repo: StoreRepository,
+        link_repo: DocumentStoreLinkRepository,
+        document_repo: DocumentRepository | None = None,
         backend_resolver: StoreBackendResolver | None = None,
     ):
         self._stores = store_repo

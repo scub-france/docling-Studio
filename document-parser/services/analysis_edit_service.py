@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -17,9 +16,11 @@ from domain.analysis_editing import (
     AnalysisEditUnavailableError,
     EditCommand,
     EditedAnalysisCache,
+    EditorSnapshot,
     EditStream,
     ProjectedAnalysis,
     active_edit_commands,
+    result_hash,
 )
 from domain.models import AnalysisJob, AnalysisStatus
 
@@ -32,20 +33,12 @@ if TYPE_CHECKING:
         ChunkRepository,
         ChunkSourceRepository,
         DocumentRepository,
+        GraphWriter,
     )
 
 
 ENGINE_VERSION = "analysis-editor-1"
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class EditorSnapshot:
-    job: AnalysisJob
-    projection: ProjectedAnalysis
-    applied_through_sequence: int
-    chunks_stale: bool
-    base_analysis_id: str
 
 
 class AnalysisEditService:
@@ -60,7 +53,7 @@ class AnalysisEditService:
         chunk_source_repo: ChunkSourceRepository,
         edit_repo: AnalysisEditRepository,
         engine: AnalysisDocumentEngine,
-        graph_writer=None,
+        graph_writer: GraphWriter | None = None,
         chunk_repo: ChunkRepository | None = None,
     ) -> None:
         self._analyses = analysis_repo
@@ -80,7 +73,7 @@ class AnalysisEditService:
         stored = await self._edits.list_commands(base.id) if stream else []
         sequence = stored[-1].sequence if stored else 0
         if not stored:
-            base_hash = _hash_text(base.document_json)
+            base_hash = result_hash(base.document_json)
             cached = self._unedited_projection
             if cached is not None and cached[0] == base.id and cached[1] == base_hash:
                 return await self._snapshot(document, base, cached[2], sequence)
@@ -145,7 +138,7 @@ class AnalysisEditService:
         base = await self._base_analysis(document, analysis_id)
         if not base.document_json:
             raise AnalysisEditUnavailableError("This analysis has no canonical Docling document")
-        base_hash = _hash_text(base.document_json)
+        base_hash = result_hash(base.document_json)
         stream = await self._edits.find_stream(base.id)
         if stream is None:
             stream = EditStream(
@@ -172,7 +165,7 @@ class AnalysisEditService:
         projection = await self._project(base, all_commands, operation="save")
         sequence = actual_sequence + len(pending_commands)
         stream_hash = _hash_stream(stored, pending_commands)
-        result_hash = _hash_text(projection.document_json)
+        projection_hash = result_hash(projection.document_json)
         cache = EditedAnalysisCache(
             analysis_id=base.id,
             applied_through_sequence=sequence,
@@ -182,7 +175,7 @@ class AnalysisEditService:
             pages_json=projection.pages_json,
             editor_model_json=projection.editor_model_json,
             command_stream_hash=stream_hash,
-            result_hash=result_hash,
+            result_hash=projection_hash,
             updated_at=datetime.now(UTC),
         )
         selection = await self._selection.get_selection(document_id)
@@ -262,7 +255,7 @@ class AnalysisEditService:
                 pages_json=projection.pages_json,
                 editor_model_json=projection.editor_model_json,
                 command_stream_hash=_hash_stream(stored, []),
-                result_hash=_hash_text(projection.document_json),
+                result_hash=result_hash(projection.document_json),
                 updated_at=datetime.now(UTC),
             )
             await self._edits.replace_cache(cache)
@@ -377,11 +370,7 @@ class AnalysisEditService:
             return (
                 self._chunks is not None and await self._chunks.count_for_document(document_id) > 0
             )
-        return source.analysis_id != base_id or source.result_hash != _hash_text(document_json)
-
-
-def _hash_text(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+        return source.analysis_id != base_id or source.result_hash != result_hash(document_json)
 
 
 def _hash_stream(stored, pending: list[EditCommand]) -> str:

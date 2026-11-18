@@ -35,6 +35,7 @@ if TYPE_CHECKING:
         DocumentConverter,
         DocumentRepository,
         GraphWriter,
+        PdfInspector,
     )
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ class AnalysisService:
         config: AnalysisConfig | None = None,
         graph_writer: GraphWriter | None = None,
         docling_importer: DoclingDocumentImporter | None = None,
+        pdf_inspector: PdfInspector | None = None,
     ):
         self._converter = converter
         self._chunker = chunker
@@ -105,6 +107,7 @@ class AnalysisService:
         # the hex-arch fix. None when no graph store is wired in.
         self._graph_writer = graph_writer
         self._docling_importer = docling_importer
+        self._pdf_inspector = pdf_inspector
         # Duck-typed callable injected at startup. Wired in main.py to
         # `ChunkService.promote_from_analysis_if_empty` so the canonical
         # chunkset (#205) is populated on the first successful analysis,
@@ -433,6 +436,20 @@ class AnalysisService:
             opts_dict = {**opts_dict, "table_mode": self._config.default_table_mode}
         return ConversionOptions(**opts_dict)
 
+    async def _count_pages(self, file_path: str) -> int:
+        """Page count for batching, 0 when the file is not a readable PDF.
+
+        Through the inspector when wired: it holds the pdfium lock shared with
+        Docling's own threads, and runs off the event loop.
+        """
+        if self._pdf_inspector is None:
+            return _count_pdf_pages(file_path)
+        try:
+            return await asyncio.to_thread(self._pdf_inspector.page_count, file_path)
+        except Exception:
+            logger.debug("Cannot open %s as PDF, batching disabled", file_path)
+            return 0
+
     async def _run_conversion(
         self,
         job_id: str,
@@ -446,7 +463,7 @@ class AnalysisService:
         converter merges the batches back into one document (#344). In remote
         mode the Serve instance manages its own resources.
         """
-        total_pages = _count_pdf_pages(file_path)
+        total_pages = await self._count_pages(file_path)
         batch_size = self._config.batch_page_size
         if batch_size > 0 and total_pages > batch_size and self._converter.supports_page_batching:
             return await self._run_batched_conversion(

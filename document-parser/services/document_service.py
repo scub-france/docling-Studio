@@ -1,9 +1,8 @@
-"""Document service — file upload, storage, and preview orchestration."""
+"""Document service — file upload, storage, and lookup."""
 
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import os
 import uuid
@@ -11,11 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pypdfium2 as pdfium
-from pdf2image import convert_from_path, pdfinfo_from_bytes
+from pdf2image import pdfinfo_from_bytes
 
 from domain.models import Document
-from domain.value_objects import PageDetail
 
 if TYPE_CHECKING:
     from domain.ports import AnalysisRepository, DocumentRepository
@@ -39,7 +36,7 @@ class DocumentConfig:
 
 
 class DocumentService:
-    """Orchestrates document upload, storage, and preview."""
+    """Orchestrates document upload, storage, and lookup."""
 
     def __init__(
         self,
@@ -155,51 +152,6 @@ class DocumentService:
             logger.warning("Could not delete file: %s", doc.storage_path, exc_info=True)
 
         return await self._document_repo.delete(doc_id)
-
-    @staticmethod
-    def generate_preview(
-        pdf_path: str | Path, page: int = 1, dpi: int = 150, image_format: str = "PNG"
-    ) -> bytes:
-        """Generate a PNG or WebP preview of a specific PDF page.
-
-        Poppler reads the file by path: only the requested page is rendered and
-        the PDF is never loaded whole into memory (#398).
-        """
-        if not Path(pdf_path).is_file():
-            raise FileNotFoundError(str(pdf_path))
-        images = convert_from_path(pdf_path, first_page=page, last_page=page, dpi=dpi)
-        if not images:
-            raise ValueError(f"Page {page} not found")
-
-        buf = io.BytesIO()
-        if image_format == "WEBP":
-            images[0].save(buf, format="WEBP", lossless=True)
-        else:
-            images[0].save(buf, format="PNG")
-        return buf.getvalue()
-
-    @staticmethod
-    def page_sizes(pdf_path: str | Path) -> list[PageDetail]:
-        """Size of each page of a PDF, in points, without its elements (#352).
-
-        Lets the page preview reserve each page's box before any analysis.
-        pdfium opens the file by path, so the PDF is not read into memory (#398).
-        """
-        if not Path(pdf_path).is_file():
-            raise FileNotFoundError(str(pdf_path))
-        pdf = pdfium.PdfDocument(str(pdf_path))
-        try:
-            sizes: list[PageDetail] = []
-            for index in range(len(pdf)):
-                page = pdf[index]
-                try:
-                    width, height = page.get_size()
-                finally:
-                    page.close()
-                sizes.append(PageDetail(page_number=index + 1, width=width, height=height))
-            return sizes
-        finally:
-            pdf.close()
 
 
 def _persist_and_count(upload_dir: str, file_path: str, file_content: bytes) -> int | None:
