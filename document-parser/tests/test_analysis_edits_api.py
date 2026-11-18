@@ -25,8 +25,10 @@ BASE = "/api/documents/doc-1"
 
 def _docling_json() -> str:
     document = DoclingDocument(name="fixture")
+    document.add_heading(text="Heading", level=1)
     document.add_text(label=DocItemLabel.TEXT, text="First")
     document.add_text(label=DocItemLabel.TEXT, text="Second")
+    document.add_text(label=DocItemLabel.TEXT, text="Third")
     return document.model_dump_json()
 
 
@@ -72,8 +74,25 @@ def client(tmp_path, monkeypatch):
 
 
 def _first_text_id(client: TestClient) -> str:
+    return _ids_by_text(client)["First"]
+
+
+def _ids_by_text(client: TestClient) -> dict[str, str]:
     model = client.get(f"{BASE}/analysis-editor").json()["model"]
-    return next(element["id"] for element in model["elements"] if element["text"] == "First")
+    return {element["text"]: element["id"] for element in model["elements"] if element["text"]}
+
+
+def _texts_in_reading_order(body: dict) -> list[str]:
+    by_id = {element["id"]: element for element in body["model"]["elements"]}
+    return [by_id[i]["text"] for i in body["readingOrder"] if by_id[i]["text"] is not None]
+
+
+def _element_with_text(body: dict, text: str) -> dict:
+    return next(element for element in body["model"]["elements"] if element["text"] == text)
+
+
+def _preview(client: TestClient, *commands: dict):
+    return client.post(f"{BASE}/analysis-edits/preview", json={"commands": list(commands)})
 
 
 def _replace(element_id: str, text: str) -> dict:
@@ -165,6 +184,111 @@ def test_rebuild_replays_the_saved_stream(client):
 
     assert response.status_code == 200
     assert "Saved" in response.json()["result"]["contentMarkdown"]
+
+
+# --- Every command type the request schema accepts, through HTTP -------------
+
+
+def test_set_heading_level_changes_the_heading_level(client):
+    ids = _ids_by_text(client)
+
+    response = _preview(
+        client, {"type": "setHeadingLevel", "elementId": ids["Heading"], "level": 3}
+    )
+
+    assert response.status_code == 200
+    assert _element_with_text(response.json(), "Heading")["headingLevel"] == 3
+    assert "### Heading" in response.json()["result"]["contentMarkdown"]
+
+
+def test_merge_text_joins_the_paragraphs_with_the_separator(client):
+    ids = _ids_by_text(client)
+
+    response = _preview(
+        client,
+        {"type": "mergeText", "elementIds": [ids["First"], ids["Second"]], "separator": " + "},
+    )
+
+    assert response.status_code == 200
+    assert _texts_in_reading_order(response.json()) == ["Heading", "First + Second", "Third"]
+
+
+def test_delete_element_removes_one_element(client):
+    ids = _ids_by_text(client)
+
+    response = _preview(client, {"type": "deleteElement", "elementId": ids["Second"]})
+
+    assert response.status_code == 200
+    assert _texts_in_reading_order(response.json()) == ["Heading", "First", "Third"]
+
+
+def test_delete_elements_removes_every_listed_element(client):
+    ids = _ids_by_text(client)
+
+    response = _preview(
+        client, {"type": "deleteElements", "elementIds": [ids["First"], ids["Third"]]}
+    )
+
+    assert response.status_code == 200
+    assert _texts_in_reading_order(response.json()) == ["Heading", "Second"]
+
+
+def test_move_element_before_another_element(client):
+    ids = _ids_by_text(client)
+
+    response = _preview(
+        client,
+        {"type": "moveElement", "elementId": ids["Third"], "beforeElementId": ids["First"]},
+    )
+
+    assert response.status_code == 200
+    assert _texts_in_reading_order(response.json()) == ["Heading", "Third", "First", "Second"]
+
+
+def test_move_element_after_a_target(client):
+    ids = _ids_by_text(client)
+
+    response = _preview(
+        client,
+        {
+            "type": "moveElement",
+            "elementId": ids["First"],
+            "targetElementId": ids["Third"],
+            "placement": "after",
+        },
+    )
+
+    assert response.status_code == 200
+    assert _texts_in_reading_order(response.json()) == ["Heading", "Second", "Third", "First"]
+
+
+def test_move_element_inside_a_heading(client):
+    ids = _ids_by_text(client)
+
+    response = _preview(
+        client,
+        {
+            "type": "moveElement",
+            "elementId": ids["Third"],
+            "targetElementId": ids["Heading"],
+            "placement": "inside",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    heading = _element_with_text(body, "Heading")
+    assert _element_with_text(body, "Third")["parentId"] == heading["id"]
+    assert heading["children"] == [_element_with_text(body, "Third")["id"]]
+
+
+def test_merge_of_a_heading_with_a_paragraph_is_a_bad_request(client):
+    ids = _ids_by_text(client)
+
+    response = _preview(client, {"type": "mergeText", "elementIds": [ids["Heading"], ids["First"]]})
+
+    assert response.status_code == 400
+    assert "merged" in response.json()["detail"]
 
 
 # --- Error cases --------------------------------------------------------------

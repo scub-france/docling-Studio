@@ -1,8 +1,9 @@
 """Shared fixtures for Neo4j integration tests.
 
 These tests are skipped unless a live Neo4j is reachable via NEO4J_TEST_URI
-(defaulting to bolt://localhost:7687). CI spins up `neo4j:5.15-community`
-alongside the job; locally run `docker compose -f docker-compose.dev.yml up neo4j`.
+(defaulting to bolt://localhost:7687). No CI workflow starts a Neo4j service,
+so they are skipped in CI; to run them locally, start one with
+`docker compose -f docker-compose.dev.yml up neo4j` (`neo4j:5.15-community`).
 """
 
 from __future__ import annotations

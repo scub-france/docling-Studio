@@ -323,6 +323,12 @@ class TestConvertDocumentRouting:
 # ---------------------------------------------------------------------------
 
 
+def _close_and_stub_task(coro):
+    """Stand-in for `asyncio.create_task`: drop the background run without leaking it."""
+    coro.close()
+    return MagicMock()
+
+
 class TestServiceForwardsPipelineOptions:
     """Verify analysis_service.create and _run_analysis forward pipeline options."""
 
@@ -335,7 +341,10 @@ class TestServiceForwardsPipelineOptions:
         mock_analysis_repo.update_status = AsyncMock()
         mock_analysis_repo.complete_and_select = AsyncMock()
         mock_document_repo = MagicMock()
-        mock_document_repo.find_by_id = AsyncMock()
+        # None, not a bare AsyncMock: the lifecycle transition calls the sync
+        # `Document.transition_to`, which on an AsyncMock child would return a
+        # coroutine nobody awaits.
+        mock_document_repo.find_by_id = AsyncMock(return_value=None)
         mock_document_repo.update_page_count = AsyncMock()
         return AnalysisService(
             converter=converter,
@@ -363,7 +372,9 @@ class TestServiceForwardsPipelineOptions:
 
         opts = {"do_ocr": False, "table_mode": "fast"}
 
-        with patch("services.analysis_service.asyncio.create_task") as mock_task:
+        with patch(
+            "services.analysis_service.asyncio.create_task", side_effect=_close_and_stub_task
+        ) as mock_task:
             await svc.create("d1", pipeline_options=opts)
             mock_task.assert_called_once()
 
@@ -373,7 +384,9 @@ class TestServiceForwardsPipelineOptions:
         svc = self._make_service(mock_converter)
         svc._document_repo.find_by_id = AsyncMock(return_value=mock_doc)
 
-        with patch("services.analysis_service.asyncio.create_task") as mock_task:
+        with patch(
+            "services.analysis_service.asyncio.create_task", side_effect=_close_and_stub_task
+        ) as mock_task:
             await svc.create("d1")
             mock_task.assert_called_once()
 

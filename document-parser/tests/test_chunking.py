@@ -483,8 +483,9 @@ class TestRemoteChunkingPath:
         ``LocalChunker`` would force docling-core to load the ``HybridChunker``
         tokenizer from HuggingFace Hub, which (a) makes a unit test depend on
         public network and (b) gets 429-rate-limited on shared CI runners.
-        Real chunker integration is covered by ``test_local_chunker.py`` and
-        the e2e suite.
+        No pytest test runs a real ``LocalChunker`` (``test_serve_converter.py``
+        only checks that the factory builds one); real chunking is exercised by
+        the e2e API suite (``e2e/api/.../analyses/rechunk.feature``).
         """
         from services.analysis_service import AnalysisService
 
