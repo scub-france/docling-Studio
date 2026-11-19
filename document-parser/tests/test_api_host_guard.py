@@ -55,8 +55,14 @@ class TestMiddleware:
         assert response.text == "Invalid Host header"
 
     def test_loopback_is_always_allowed(self):
-        for base in ("http://localhost:8000", "http://127.0.0.1", "http://[::1]:8000"):
+        for base in ("http://localhost:8000", "http://127.0.0.1"):
             assert _get(["studio.example.com"], base).status_code == 200, base
+
+    def test_ipv6_loopback_is_allowed(self):
+        # The test client cannot build an IPv6 base URL: send the Host header itself.
+        with TestClient(_app(["studio.example.com"])) as client:
+            response = client.get("/api/documents", headers={"host": "[::1]:8000"})
+        assert response.status_code == 200
 
     def test_health_answers_a_container_health_check(self):
         response = _get(["studio.example.com"], "http://127.0.0.1:8000", "/api/health")

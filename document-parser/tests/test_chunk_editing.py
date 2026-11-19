@@ -195,9 +195,9 @@ def test_merge_of_the_same_chunk_twice_is_not_contiguous() -> None:
 
 def test_merge_requires_at_least_two_chunks() -> None:
     c0, _, _ = _make(count=3)
-    with pytest.raises(ChunkEditingError, match="^merge requires at least 2 chunk ids$"):
+    with pytest.raises(ChunkEditingError, match=r"^merge requires at least 2 chunk ids$"):
         merge([c0], document_id="doc-1")
-    with pytest.raises(ChunkEditingError, match="^merge requires at least 2 chunk ids$"):
+    with pytest.raises(ChunkEditingError, match=r"^merge requires at least 2 chunk ids$"):
         check_merge_count(["c-0"])
     check_merge_count(["c-0", "c-1"])
 

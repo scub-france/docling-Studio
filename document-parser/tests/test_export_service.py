@@ -131,7 +131,7 @@ class TestExportAnalysisSelection:
             id="d1", filename="report.pdf", storage_path="/srv/uploads/gone.pdf"
         )
 
-        with pytest.raises(ExportNotFoundError, match="^PDF file not found$"):
+        with pytest.raises(ExportNotFoundError, match=r"^PDF file not found$"):
             await service.export("d1", ExportFormat.PDF)
 
         file_store.has_file.assert_called_once_with("/srv/uploads/gone.pdf")

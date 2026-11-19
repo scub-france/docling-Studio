@@ -586,9 +586,7 @@ async def edit_service(tmp_path: Path, monkeypatch):
         analysis_repo=analyses,
         document_repo=documents,
         analysis_state_repo=analysis_state,
-        current_analysis=CurrentAnalysisResolver(
-            state_repo=analysis_state, analysis_repo=analyses
-        ),
+        current_analysis=CurrentAnalysisResolver(state_repo=analysis_state, analysis_repo=analyses),
         edit_repo=edits,
         engine=DoclingAnalysisEngine(),
     )

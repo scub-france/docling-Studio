@@ -500,9 +500,7 @@ class TestDocumentEndpoints:
         assert resp.json()["detail"] == "Failed to generate preview"
 
     @pytest.mark.parametrize("route", ["preview", "pages"])
-    def test_a_failed_document_lookup_is_a_server_error(
-        self, client, mock_document_service, route
-    ):
+    def test_a_failed_document_lookup_is_a_server_error(self, client, mock_document_service, route):
         """Only reading the PDF answers 422: a database error is a 500."""
         mock_document_service.find_by_id = AsyncMock(side_effect=RuntimeError("database"))
 

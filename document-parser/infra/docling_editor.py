@@ -297,9 +297,7 @@ class DoclingDocumentEditor:
             if placement == "after":
                 target_index += 1
         source_parent = item.parent.resolve(doc=document) if item.parent is not None else None
-        if parent is source_parent and target_index > list(parent.children).index(
-            item.get_ref()
-        ):
+        if parent is source_parent and target_index > list(parent.children).index(item.get_ref()):
             target_index -= 1
         self._move_subtree(document, item, parent, target_index)
 

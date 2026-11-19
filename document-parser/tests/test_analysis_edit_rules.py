@@ -118,7 +118,7 @@ class TestExpectedSequence:
 class TestPlainValueEditRules:
     def test_command_version(self):
         check_command_version(1)
-        with pytest.raises(AnalysisEditError, match="^Unsupported command version: 2$"):
+        with pytest.raises(AnalysisEditError, match=r"^Unsupported command version: 2$"):
             check_command_version(2)
 
     @pytest.mark.parametrize("level", [-1, 0, 1, 6])
@@ -127,12 +127,12 @@ class TestPlainValueEditRules:
 
     @pytest.mark.parametrize("level", [-2, 7])
     def test_heading_levels_out_of_bounds(self, level):
-        with pytest.raises(AnalysisEditError, match="^Heading level must be -1, 0, or between"):
+        with pytest.raises(AnalysisEditError, match=r"^Heading level must be -1, 0, or between"):
             check_heading_level(level, title_exists=False)
 
     def test_only_one_title(self):
         check_heading_level(1, title_exists=True)
-        with pytest.raises(AnalysisEditError, match="^A document can contain only one title$"):
+        with pytest.raises(AnalysisEditError, match=r"^A document can contain only one title$"):
             check_heading_level(0, title_exists=True)
 
     @pytest.mark.parametrize(
@@ -140,7 +140,7 @@ class TestPlainValueEditRules:
         [(["a"], " "), ("ab", " "), (None, " "), (["a", "b"], None)],
     )
     def test_merge_request_shape(self, ids, separator):
-        with pytest.raises(AnalysisEditError, match="^mergeText requires at least two element"):
+        with pytest.raises(AnalysisEditError, match=r"^mergeText requires at least two element"):
             check_merge_request(ids, separator)
 
     def test_merge_request_accepts_two_ids(self):
@@ -152,12 +152,12 @@ class TestPlainValueEditRules:
 
     @pytest.mark.parametrize("labels", [{"text", "paragraph"}, {"section_header"}, set()])
     def test_unmergeable_labels(self, labels):
-        with pytest.raises(AnalysisEditError, match="^Only compatible paragraph text items"):
+        with pytest.raises(AnalysisEditError, match=r"^Only compatible paragraph text items"):
             check_mergeable_labels(labels)
 
     @pytest.mark.parametrize("ids", [[], None, "a"])
     def test_delete_request_shape(self, ids):
-        with pytest.raises(AnalysisEditError, match="^deleteElements requires at least one"):
+        with pytest.raises(AnalysisEditError, match=r"^deleteElements requires at least one"):
             check_delete_request(ids)
 
     @pytest.mark.parametrize("placement", ["before", "after", "inside"])
@@ -169,5 +169,5 @@ class TestPlainValueEditRules:
         [(None, "before"), (1, "after"), ("base:#/texts/1", "below"), ("x", None)],
     )
     def test_move_target_rejects(self, target_id, placement):
-        with pytest.raises(AnalysisEditError, match="^moveElement requires a target"):
+        with pytest.raises(AnalysisEditError, match=r"^moveElement requires a target"):
             check_move_target(target_id, placement)

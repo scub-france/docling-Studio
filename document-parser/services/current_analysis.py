@@ -42,9 +42,7 @@ class CurrentAnalysisResolver:
             return {}
         states = await self._states.find_states(document_ids)
         without_state = [doc_id for doc_id in document_ids if doc_id not in states]
-        latest = (
-            await self._analyses.find_latest_parsed_ids(without_state) if without_state else {}
-        )
+        latest = await self._analyses.find_latest_parsed_ids(without_state) if without_state else {}
         current: dict[str, str] = {}
         for doc_id in document_ids:
             analysis_id = resolve_current_analysis_id(states.get(doc_id), latest.get(doc_id))
