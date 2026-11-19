@@ -24,14 +24,14 @@ from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.store_repo import SqliteStoreRepository
-from services.chunk_service import (
+from services.chunk_errors import (
     ChunkConflictError,
     ChunkNotFoundError,
-    ChunkService,
     ChunkServiceError,
     ChunkValidationError,
     DocumentNotFoundError,
 )
+from services.chunk_service import ChunkService
 from services.current_analysis import CurrentAnalysisResolver
 from services.ingestion_service import IngestionResult
 

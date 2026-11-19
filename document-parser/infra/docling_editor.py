@@ -222,6 +222,20 @@ class DoclingDocumentEditor:
         if any(not isinstance(item, TextItem) for item in items):
             raise AnalysisEditError("Only text items can be merged")
         check_mergeable_labels({str(item.label) for item in items})
+        self._gather_merge_run(document, items)
+        target = items[0]
+        target.text, target.orig = _join_merged_text(items, separator)
+        target.prov = [prov for item in items for prov in item.prov]
+        if any(item.hyperlink != target.hyperlink for item in items[1:]):
+            target.hyperlink = None
+        document.delete_items(node_items=items[1:])
+
+    def _gather_merge_run(self, document: DoclingDocument, items: list[Any]) -> None:
+        """Move `items[1:]` right after `items[0]`, under its parent, in order.
+
+        A merge command makes its selected text a contiguous run under the
+        first item's parent before applying the text-level merge.
+        """
         target = items[0]
         if target.parent is None:
             raise AnalysisEditError("The document root cannot be merged")
@@ -235,31 +249,8 @@ class DoclingDocumentEditor:
                 old_index = list(parent.children).index(item.get_ref())
                 if old_index < insertion_index:
                     insertion_index -= 1
-            # A merge command makes its selected text a contiguous run under
-            # the first item's parent before applying the text-level merge.
             self._move_subtree(document, item, parent, insertion_index)
             insertion_index += 1
-        target_text = target.text
-        target_orig = target.orig or target.text
-        for item in items[1:]:
-            continuation = item.text.lstrip()
-            original_continuation = (item.orig or item.text).lstrip()
-            is_word_continuation = target_text.endswith("\u00ad") or (
-                target_text.endswith("-") and continuation and continuation[0].islower()
-            )
-            joiner = "" if is_word_continuation else separator
-            if is_word_continuation:
-                target_text = target_text[:-1]
-                if target_orig.endswith(("\u00ad", "-")):
-                    target_orig = target_orig[:-1]
-            target_text += joiner + continuation
-            target_orig += joiner + original_continuation
-        target.text = target_text
-        target.orig = target_orig
-        target.prov = [prov for item in items for prov in item.prov]
-        if any(item.hyperlink != target.hyperlink for item in items[1:]):
-            target.hyperlink = None
-        document.delete_items(node_items=items[1:])
 
     def _move_element(
         self,
@@ -267,33 +258,59 @@ class DoclingDocumentEditor:
         logical_objects: dict[str, Any],
         payload: dict[str, Any],
     ) -> None:
+        """Dispatch a move to its protocol.
+
+        A payload with `targetElementId` or `placement` drops the element
+        before, after or inside a target; one without names the sibling to
+        land before (`beforeElementId`), or none for the end of its parent.
+        """
         item = self._get(logical_objects, str(payload.get("elementId", "")))
+        if payload.get("targetElementId") is not None or payload.get("placement") is not None:
+            self._move_relative_to_target(document, logical_objects, item, payload)
+        else:
+            self._move_before_sibling(document, logical_objects, item, payload)
+
+    def _move_relative_to_target(
+        self,
+        document: DoclingDocument,
+        logical_objects: dict[str, Any],
+        item: Any,
+        payload: dict[str, Any],
+    ) -> None:
+        """Move `item` before, after or inside (a section heading) the target."""
         target_id = payload.get("targetElementId")
         placement = payload.get("placement")
-        if target_id is not None or placement is not None:
-            check_move_target(target_id, placement)
-            target = self._get(logical_objects, target_id)
-            if target is item or self._is_descendant(target, item, document):
-                raise AnalysisEditError("Move would create a cycle")
-            if placement == "inside":
-                if not isinstance(target, SectionHeaderItem):
-                    raise AnalysisEditError("Elements can only be moved inside a section heading")
-                parent = target
-                target_index = len(parent.children)
-            else:
-                if target.parent is None:
-                    raise AnalysisEditError("The document root cannot be used as a move target")
-                parent = target.parent.resolve(doc=document)
-                target_index = list(parent.children).index(target.get_ref())
-                if placement == "after":
-                    target_index += 1
-            source_parent = item.parent.resolve(doc=document) if item.parent is not None else None
-            if parent is source_parent and target_index > list(parent.children).index(
-                item.get_ref()
-            ):
-                target_index -= 1
-            self._move_subtree(document, item, parent, target_index)
-            return
+        check_move_target(target_id, placement)
+        target = self._get(logical_objects, target_id)
+        if target is item or self._is_descendant(target, item, document):
+            raise AnalysisEditError("Move would create a cycle")
+        if placement == "inside":
+            if not isinstance(target, SectionHeaderItem):
+                raise AnalysisEditError("Elements can only be moved inside a section heading")
+            parent = target
+            target_index = len(parent.children)
+        else:
+            if target.parent is None:
+                raise AnalysisEditError("The document root cannot be used as a move target")
+            parent = target.parent.resolve(doc=document)
+            target_index = list(parent.children).index(target.get_ref())
+            if placement == "after":
+                target_index += 1
+        source_parent = item.parent.resolve(doc=document) if item.parent is not None else None
+        if parent is source_parent and target_index > list(parent.children).index(
+            item.get_ref()
+        ):
+            target_index -= 1
+        self._move_subtree(document, item, parent, target_index)
+
+    def _move_before_sibling(
+        self,
+        document: DoclingDocument,
+        logical_objects: dict[str, Any],
+        item: Any,
+        payload: dict[str, Any],
+    ) -> None:
+        """Move `item` before `beforeElementId`, or to the end of its parent without one."""
         before_id = payload.get("beforeElementId")
         before = self._get(logical_objects, str(before_id)) if before_id else None
         if item.parent is None:
@@ -338,3 +355,28 @@ class DoclingDocumentEditor:
             if current is ancestor:
                 return True
         return False
+
+
+def _join_merged_text(items: list[Any], separator: str) -> tuple[str, str]:
+    """The merged `text` and `orig` of `items`, the first one's followed by the others'.
+
+    A word broken across items (soft hyphen, or a hyphen before a lowercase
+    continuation) is joined without the hyphen and without the separator.
+    """
+    target = items[0]
+    target_text = target.text
+    target_orig = target.orig or target.text
+    for item in items[1:]:
+        continuation = item.text.lstrip()
+        original_continuation = (item.orig or item.text).lstrip()
+        is_word_continuation = target_text.endswith("­") or (
+            target_text.endswith("-") and continuation and continuation[0].islower()
+        )
+        joiner = "" if is_word_continuation else separator
+        if is_word_continuation:
+            target_text = target_text[:-1]
+            if target_orig.endswith(("­", "-")):
+                target_orig = target_orig[:-1]
+        target_text += joiner + continuation
+        target_orig += joiner + original_continuation
+    return target_text, target_orig

@@ -78,21 +78,73 @@ class DocumentIndex:
         return max(self.page_numbers) if self.page_numbers else 0
 
 
+@dataclass(frozen=True)
+class _Provenance:
+    """Where each located element sits: see the fields of `DocumentIndex`."""
+
+    page_of: dict[str, int]
+    pages_of: dict[str, frozenset[int]]
+    bbox_of: dict[str, BoundingBox]
+    boxes_of: dict[str, tuple[BoundingBox, ...]]
+
+
 def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> DocumentIndex:
     """Walk a parse once and pre-compute order, breadcrumbs and provenance."""
     skip_refs, inline_meta = tree_reader.build_collapse_index(doc_data)
+    by_ref = index_items_by_ref(doc_data, tree_reader)
 
+    order = [ref for ref in tree_reader.list_dfs_order(doc_data, skip_refs) if ref in by_ref]
+    position = {ref: idx for idx, ref in enumerate(order)}
+    heading_path, section_end = _map_sections(order, by_ref, inline_meta)
+    page_sizes = _read_page_sizes(doc_data, tree_reader)
+    located = _locate_items(by_ref, inline_meta, page_sizes, tree_reader)
+
+    # Union, not `or`: a parse whose `pages` map is partial (a page with no
+    # `size`) would otherwise drop that page from the map entirely — and the
+    # page fallback exists precisely for scans, where that metadata is the
+    # first thing to be missing. A page an element sits on is a page.
+    page_numbers = sorted(
+        set(page_sizes) | {number for pages in located.pages_of.values() for number in pages}
+    )
+
+    return DocumentIndex(
+        by_ref=by_ref,
+        order=order,
+        position=position,
+        heading_path=heading_path,
+        section_end=section_end,
+        page_of=located.page_of,
+        pages_of=located.pages_of,
+        bbox_of=located.bbox_of,
+        inline_meta=inline_meta,
+        page_numbers=page_numbers,
+        page_sizes=page_sizes,
+        boxes_of=located.boxes_of,
+    )
+
+
+def index_items_by_ref(
+    doc_data: dict[str, Any], tree_reader: DocumentTreeReader
+) -> dict[str, dict[str, Any]]:
+    """Every item of the parse that has a `self_ref`, by that ref."""
     by_ref: dict[str, dict[str, Any]] = {}
     for _, item in tree_reader.iter_items(doc_data):
         ref = item.get("self_ref")
         if ref:
             by_ref[ref] = item
+    return by_ref
 
-    order = [ref for ref in tree_reader.list_dfs_order(doc_data, skip_refs) if ref in by_ref]
-    position = {ref: idx for idx, ref in enumerate(order)}
 
-    # A section ends where the next heading at its level or above starts, or
-    # at the end of the document; the breadcrumb is the open headings' titles.
+def _map_sections(
+    order: list[str],
+    by_ref: dict[str, dict[str, Any]],
+    inline_meta: dict[str, dict[str, Any]],
+) -> tuple[dict[str, list[str]], dict[str, int]]:
+    """Each element's heading breadcrumb, and where each heading's section ends.
+
+    A section ends where the next heading at its level or above starts, or
+    at the end of the document; the breadcrumb is the open headings' titles.
+    """
     heading_path: dict[str, list[str]] = {}
     section_end: dict[str, int] = {}
     titles: dict[int, str] = {}
@@ -106,7 +158,12 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
             titles[step.position] = get_title(by_ref[ref], inline_meta)
     for still_open in reversed(nesting.still_open):
         section_end[order[still_open]] = len(order)
+    return heading_path, section_end
 
+
+def _read_page_sizes(
+    doc_data: dict[str, Any], tree_reader: DocumentTreeReader
+) -> dict[int, tuple[float, float]]:
     page_sizes: dict[int, tuple[float, float]] = {}
     for page in tree_reader.iter_pages(doc_data):
         number = page.get("page_no")
@@ -115,11 +172,17 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         width, height = page.get("width"), page.get("height")
         if width and height:
             page_sizes[int(number)] = (float(width), float(height))
+    return page_sizes
 
-    page_of: dict[str, int] = {}
-    pages_of: dict[str, frozenset[int]] = {}
-    bbox_of: dict[str, BoundingBox] = {}
-    boxes_of: dict[str, tuple[BoundingBox, ...]] = {}
+
+def _locate_items(
+    by_ref: dict[str, dict[str, Any]],
+    inline_meta: dict[str, dict[str, Any]],
+    page_sizes: dict[int, tuple[float, float]],
+    tree_reader: DocumentTreeReader,
+) -> _Provenance:
+    """The pages and boxes of every element with a located provenance."""
+    located_items = _Provenance(page_of={}, pages_of={}, bbox_of={}, boxes_of={})
     for ref, item in by_ref.items():
         provs = tree_reader.iter_provs(item)
         if not provs and ref in inline_meta:
@@ -127,34 +190,12 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         located = [p for p in provs if p.get("page_no") is not None]
         if not located:
             continue
-        page_of[ref] = int(located[0]["page_no"])
-        pages_of[ref] = frozenset(int(p["page_no"]) for p in located)
+        located_items.page_of[ref] = int(located[0]["page_no"])
+        located_items.pages_of[ref] = frozenset(int(p["page_no"]) for p in located)
         boxes = tuple(_to_box(prov, page_sizes) for prov in located)
-        bbox_of[ref] = boxes[0]
-        boxes_of[ref] = boxes
-
-    # Union, not `or`: a parse whose `pages` map is partial (a page with no
-    # `size`) would otherwise drop that page from the map entirely — and the
-    # page fallback exists precisely for scans, where that metadata is the
-    # first thing to be missing. A page an element sits on is a page.
-    page_numbers = sorted(
-        set(page_sizes) | {number for pages in pages_of.values() for number in pages}
-    )
-
-    return DocumentIndex(
-        by_ref=by_ref,
-        order=order,
-        position=position,
-        heading_path=heading_path,
-        section_end=section_end,
-        page_of=page_of,
-        pages_of=pages_of,
-        bbox_of=bbox_of,
-        inline_meta=inline_meta,
-        page_numbers=page_numbers,
-        page_sizes=page_sizes,
-        boxes_of=boxes_of,
-    )
+        located_items.bbox_of[ref] = boxes[0]
+        located_items.boxes_of[ref] = boxes
+    return located_items
 
 
 def _to_box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> BoundingBox:

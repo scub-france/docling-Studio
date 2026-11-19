@@ -85,6 +85,7 @@ class AnalysisService:
         converter: DocumentConverter,
         analysis_repo: AnalysisRepository,
         document_repo: DocumentRepository,
+        *,
         chunker: DocumentChunker | None = None,
         conversion_timeout: int = 600,
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
@@ -485,13 +486,7 @@ class AnalysisService:
     ) -> None:
         """Serialize results, optionally chunk, mark job completed, update page count."""
         pages_json = json.dumps([asdict(p) for p in result.pages])
-
-        chunks_json = None
-        if chunking_options and self._chunker and result.document_json:
-            chunk_opts = ChunkingOptions(**chunking_options)
-            chunks = await self._chunker.chunk(result.document_json, chunk_opts)
-            chunks_json = json.dumps([_chunk_to_dict(c) for c in chunks])
-            logger.info("Chunking produced %d chunks for job %s", len(chunks), job_id)
+        chunks_json = await self._chunk_result(job_id, result, chunking_options)
 
         # Re-read the job so we don't lose progress_current/progress_total
         # written to the DB during batched conversion.
@@ -510,20 +505,7 @@ class AnalysisService:
         # workspace History timeline (#267). Done BEFORE the status flip
         # to COMPLETED so the frontend polling never observes a
         # completed analysis without its version row in the DB.
-        # Snapshots the LIVE chunks at this moment so user edits since
-        # the previous version are preserved alongside the new analysis
-        # pointer.
-        if self._version_recorder is not None:
-            try:
-                await self._version_recorder.record_on_analysis(job.document_id, job_id)
-            except Exception:
-                # Versioning is a best-effort side hook — never fail the
-                # analysis itself if the snapshot write hits a snag.
-                logger.exception(
-                    "Version snapshot failed for doc %s after analysis %s",
-                    job.document_id,
-                    job_id,
-                )
+        await self._record_analysis_version(job.document_id, job_id)
 
         await self._analysis_repo.complete_and_select(job)
 
@@ -551,6 +533,41 @@ class AnalysisService:
         await self._write_tree_to_graph(job, result.document_json)
 
         logger.info("Analysis completed: %s (%d pages)", job_id, result.page_count)
+
+    async def _chunk_result(
+        self,
+        job_id: str,
+        result: ConversionResult,
+        chunking_options: dict | None,
+    ) -> str | None:
+        """The result's chunks as `chunks_json`, None when chunking was not asked for
+        or cannot run."""
+        if not (chunking_options and self._chunker and result.document_json):
+            return None
+        chunk_opts = ChunkingOptions(**chunking_options)
+        chunks = await self._chunker.chunk(result.document_json, chunk_opts)
+        chunks_json = json.dumps([_chunk_to_dict(c) for c in chunks])
+        logger.info("Chunking produced %d chunks for job %s", len(chunks), job_id)
+        return chunks_json
+
+    async def _record_analysis_version(self, document_id: str, job_id: str) -> None:
+        """Snapshot the LIVE chunks with the new analysis in History (#267).
+
+        Snapshots the chunks at this moment so user edits since the previous
+        version are preserved alongside the new analysis pointer.
+        """
+        if self._version_recorder is None:
+            return
+        try:
+            await self._version_recorder.record_on_analysis(document_id, job_id)
+        except Exception:
+            # Versioning is a best-effort side hook — never fail the
+            # analysis itself if the snapshot write hits a snag.
+            logger.exception(
+                "Version snapshot failed for doc %s after analysis %s",
+                document_id,
+                job_id,
+            )
 
     async def _write_tree_to_graph(self, job, document_json: str | None) -> None:
         """Mirror the DoclingDocument tree into the graph store if configured.

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from domain.models import Chunk
 from main import app
-from services.chunk_service import (
+from services.chunk_errors import (
     ChunkConflictError,
     ChunkNotFoundError,
     ChunkValidationError,

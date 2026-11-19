@@ -364,6 +364,33 @@ def test_move_subtree_rejects_an_incompatible_docling_private_api():
         DoclingDocumentEditor._move_subtree(IncompatibleDocument(), object(), object(), 0)
 
 
+@pytest.mark.parametrize(
+    ("payload", "protocol"),
+    [
+        (
+            {"elementId": "base:a", "targetElementId": "base:b", "placement": "after"},
+            "_move_relative_to_target",
+        ),
+        ({"elementId": "base:a", "placement": "inside"}, "_move_relative_to_target"),
+        ({"elementId": "base:a", "targetElementId": "base:b"}, "_move_relative_to_target"),
+        ({"elementId": "base:a", "beforeElementId": "base:b"}, "_move_before_sibling"),
+        ({"elementId": "base:a"}, "_move_before_sibling"),
+    ],
+)
+def test_move_element_hands_each_protocol_to_its_own_mover(payload, protocol):
+    editor = DoclingDocumentEditor()
+    movers = {name: Mock() for name in ("_move_relative_to_target", "_move_before_sibling")}
+    for name, mover in movers.items():
+        setattr(editor, name, mover)
+    document, item = object(), object()
+    logical_objects = {"base:a": item}
+
+    editor._move_element(document, logical_objects, payload)
+
+    movers[protocol].assert_called_once_with(document, logical_objects, item, payload)
+    assert all(not mover.called for name, mover in movers.items() if name != protocol)
+
+
 def test_projector_normalizes_bottom_left_bboxes_for_the_frontend():
     document = DoclingDocument(name="bbox")
     document.pages[1] = PageItem(page_no=1, size=Size(width=100, height=200))

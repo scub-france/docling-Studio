@@ -14,12 +14,12 @@ from typing import Any
 import pytest
 from docling_core.types.doc import DocItemLabel, DoclingDocument
 
+from domain.document_tree import build_tree_nodes
 from domain.heading_tree import nest_by_heading
 from domain.outline_builder import build_outline
 from domain.parse_index import build_index
 from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.docling_tree import DoclingTreeReader
-from services.chunk_service import _build_tree_nodes
 
 # Reading order of the shared fixture: (label, level, text). It has text
 # before any heading, an H1 -> H3 jump, an H2 that closes the H3, and a
@@ -211,23 +211,23 @@ def _chunk_tree_shape(nodes: list[dict]) -> list:
 
 class TestChunkTreeNesting:
     def test_nests_like_the_other_views(self):
-        tree = _build_tree_nodes(_payload(_ITEMS), DoclingTreeReader())
+        tree = build_tree_nodes(_payload(_ITEMS), DoclingTreeReader())
         assert _chunk_tree_shape(tree) == _EXPECTED_SHAPE
         assert [node["type"] for node in tree] == ["text", "section_header", "title"]
 
     def test_a_section_header_without_level_is_level_one(self):
         items = [("section_header", 2, "A"), ("section_header", None, "B")]
-        tree = _build_tree_nodes(_payload(items), DoclingTreeReader())
+        tree = build_tree_nodes(_payload(items), DoclingTreeReader())
         assert _chunk_tree_shape(tree) == [("A", []), ("B", [])]
 
     def test_a_level_that_is_not_a_number_fails(self):
         # Unlike the parse index, the chunk tree has never guessed a level.
         items = [("section_header", 1, "A"), ("section_header", "x", "B")]
         with pytest.raises(ValueError):
-            _build_tree_nodes(_payload(items), DoclingTreeReader())
+            build_tree_nodes(_payload(items), DoclingTreeReader())
 
     def test_an_empty_document(self):
-        assert _build_tree_nodes(_payload([]), DoclingTreeReader()) == []
+        assert build_tree_nodes(_payload([]), DoclingTreeReader()) == []
 
 
 # ---------------------------------------------------------------------------

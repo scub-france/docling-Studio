@@ -148,22 +148,7 @@ class AnalysisEditService:
         base = await self._load_base_analysis(document, analysis_id)
         if not base.document_json:
             raise AnalysisEditUnavailableError("This analysis has no canonical Docling document")
-        base_hash = hash_result(base.document_json)
-        stream = await self._edits.find_stream(base.id)
-        if stream is None:
-            stream = EditStream(
-                analysis_id=base.id,
-                base_document_hash=base_hash,
-                engine_version=ENGINE_VERSION,
-                created_at=datetime.now(UTC),
-            )
-            await self._edits.create_stream(stream)
-            # Another writer may have created this stream first.
-            stream = await self._edits.find_stream(base.id)
-            if stream is None:
-                raise AnalysisEditConflictError("The editor stream could not be created")
-        if stream.base_document_hash != base_hash:
-            raise AnalysisEditConflictError("The immutable base analysis changed")
+        stream = await self._ensure_stream(base)
 
         stored = await self._edits.list_commands(base.id)
         actual_sequence = get_last_sequence(stored)
@@ -171,20 +156,10 @@ class AnalysisEditService:
         all_commands, _ = resolve_active_edit_commands(stored, pending_commands)
         projection = await self._project(base, all_commands, operation="save")
         sequence = actual_sequence + len(pending_commands)
-        stream_hash = hash_command_stream(stored, pending_commands)
-        projection_hash = hash_result(projection.document_json)
-        cache = EditedAnalysisCache(
-            analysis_id=base.id,
-            applied_through_sequence=sequence,
-            document_json=projection.document_json,
-            content_markdown=projection.content_markdown,
-            content_html=projection.content_html,
-            pages_json=projection.pages_json,
-            editor_model_json=projection.editor_model_json,
-            command_stream_hash=stream_hash,
-            result_hash=projection_hash,
-            updated_at=datetime.now(UTC),
+        cache = _build_cache(
+            base.id, projection, sequence, hash_command_stream(stored, pending_commands)
         )
+        # The graph mirrors the current analysis only.
         activate = await self._current.find_current_analysis_id(document_id) == base.id
         await self._edits.save_commands_and_cache(
             stream=stream,
@@ -192,17 +167,8 @@ class AnalysisEditService:
             expected_sequence=actual_sequence,
             cache=cache,
         )
-        if activate and self._graph_writer is not None:
-            try:
-                await self._graph_writer.write_document_tree(
-                    doc_id=document_id,
-                    filename=document.filename,
-                    document_json=projection.document_json,
-                )
-            except Exception:
-                # SQLite is authoritative; graph storage is a rebuildable
-                # projection and must not make a saved user edit disappear.
-                logger.exception("Graph refresh failed after analysis edit for %s", document_id)
+        if activate:
+            await self._refresh_graph(document_id, document.filename, projection.document_json)
         return await self._build_snapshot(document, base, projection, sequence)
 
     async def set_command_active(
@@ -248,20 +214,47 @@ class AnalysisEditService:
         projection = await self._replay(base, stored)
         sequence = get_last_sequence(stored)
         if stream is not None:
-            cache = EditedAnalysisCache(
-                analysis_id=base.id,
-                applied_through_sequence=sequence,
-                document_json=projection.document_json,
-                content_markdown=projection.content_markdown,
-                content_html=projection.content_html,
-                pages_json=projection.pages_json,
-                editor_model_json=projection.editor_model_json,
-                command_stream_hash=hash_command_stream(stored, []),
-                result_hash=hash_result(projection.document_json),
-                updated_at=datetime.now(UTC),
-            )
+            cache = _build_cache(base.id, projection, sequence, hash_command_stream(stored, []))
             await self._edits.replace_cache(cache)
         return await self._build_snapshot(document, base, projection, sequence)
+
+    async def _ensure_stream(self, base) -> EditStream:
+        """The base analysis's edit stream, created on its first save.
+
+        Refuses a stream whose recorded base no longer hashes like the base.
+        """
+        base_hash = hash_result(base.document_json)
+        stream = await self._edits.find_stream(base.id)
+        if stream is None:
+            stream = EditStream(
+                analysis_id=base.id,
+                base_document_hash=base_hash,
+                engine_version=ENGINE_VERSION,
+                created_at=datetime.now(UTC),
+            )
+            await self._edits.create_stream(stream)
+            # Another writer may have created this stream first.
+            stream = await self._edits.find_stream(base.id)
+            if stream is None:
+                raise AnalysisEditConflictError("The editor stream could not be created")
+        if stream.base_document_hash != base_hash:
+            raise AnalysisEditConflictError("The immutable base analysis changed")
+        return stream
+
+    async def _refresh_graph(self, document_id: str, filename: str, document_json: str) -> None:
+        """Mirror the saved projection into the graph store, when one is wired."""
+        if self._graph_writer is None:
+            return
+        try:
+            await self._graph_writer.write_document_tree(
+                doc_id=document_id,
+                filename=filename,
+                document_json=document_json,
+            )
+        except Exception:
+            # SQLite is authoritative; graph storage is a rebuildable
+            # projection and must not make a saved user edit disappear.
+            logger.exception("Graph refresh failed after analysis edit for %s", document_id)
 
     async def _require_document(self, document_id: str):
         document = await self._documents.find_by_id(document_id)
@@ -370,3 +363,21 @@ class AnalysisEditService:
             and await self._chunks.count_for_document(document_id) > 0
         )
         return state.are_chunks_stale(base_id, hash_result(document_json), has_chunks=has_chunks)
+
+
+def _build_cache(
+    analysis_id: str, projection: ProjectedAnalysis, sequence: int, stream_hash: str
+) -> EditedAnalysisCache:
+    """The working copy of `projection`, applied through `sequence` of the stream."""
+    return EditedAnalysisCache(
+        analysis_id=analysis_id,
+        applied_through_sequence=sequence,
+        document_json=projection.document_json,
+        content_markdown=projection.content_markdown,
+        content_html=projection.content_html,
+        pages_json=projection.pages_json,
+        editor_model_json=projection.editor_model_json,
+        command_stream_hash=stream_hash,
+        result_hash=hash_result(projection.document_json),
+        updated_at=datetime.now(UTC),
+    )

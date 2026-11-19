@@ -33,7 +33,7 @@ from api.schemas import (
     SplitChunkRequest,
     UpdateChunkRequest,
 )
-from services.chunk_service import (
+from services.chunk_errors import (
     ChunkServiceError,
 )
 
