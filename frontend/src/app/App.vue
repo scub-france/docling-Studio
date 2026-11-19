@@ -105,11 +105,9 @@ function dismissDisclaimer() {
   --on-bright: #18181b;
   --banner-bg: #f59e0b;
 
-  /* Overlay marks, the same in both themes: a hovered/selected or edited
-     chunk and its boxes on the page; reasoning-visited elements on the
-     structure canvas (read in JS by StructureViewer.vue). */
+  /* Overlay mark, the same in both themes: a hovered/selected or edited
+     chunk and its boxes on the page. */
   --chunk-highlight: #f59e0b;
-  --reasoning: #ea580c;
 
   --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.15);
 

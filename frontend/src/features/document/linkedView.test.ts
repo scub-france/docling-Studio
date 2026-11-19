@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { DocChunk, PageElement } from '../../shared/types'
-import { filterChunkBboxesOnPage, findChunkForElement, findElementRefsForChunk } from './linkedView'
+import { findChunkForElement } from './linkedView'
 
 const makeChunk = (id: string, overrides: Partial<DocChunk> = {}): DocChunk => ({
   id,
@@ -73,41 +73,5 @@ describe('findChunkForElement', () => {
     ]
     const el = makeElement({ self_ref: '#/texts/3', bbox: [10, 10, 90, 90] })
     expect(findChunkForElement(el, 1, chunks)?.id).toBe('b')
-  })
-})
-
-describe('findElementRefsForChunk', () => {
-  it('extracts the self_ref strings from docItems', () => {
-    const c = makeChunk('a', {
-      docItems: [
-        { selfRef: '#/texts/1', label: 'text' },
-        { selfRef: '#/tables/0', label: 'table' },
-      ],
-    })
-    expect(findElementRefsForChunk(c)).toEqual(new Set(['#/texts/1', '#/tables/0']))
-  })
-
-  it('returns an empty set when the chunk has no docItems', () => {
-    expect(findElementRefsForChunk(makeChunk('a'))).toEqual(new Set())
-  })
-
-  it('skips empty self_ref entries', () => {
-    const c = makeChunk('a', { docItems: [{ selfRef: '', label: 'text' }] })
-    expect(findElementRefsForChunk(c)).toEqual(new Set())
-  })
-})
-
-describe('filterChunkBboxesOnPage', () => {
-  it('filters bboxes by page', () => {
-    const c = makeChunk('a', {
-      bboxes: [
-        { page: 1, bbox: [0, 0, 10, 10] },
-        { page: 2, bbox: [0, 0, 20, 20] },
-        { page: 1, bbox: [0, 0, 30, 30] },
-      ],
-    })
-    expect(filterChunkBboxesOnPage(c, 1)).toHaveLength(2)
-    expect(filterChunkBboxesOnPage(c, 2)).toHaveLength(1)
-    expect(filterChunkBboxesOnPage(c, 3)).toHaveLength(0)
   })
 })
