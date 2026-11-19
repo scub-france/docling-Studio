@@ -93,24 +93,19 @@
           :style="getFrameStyle(page)"
           :ref="(el) => registerFrame(page.page_number, el as HTMLElement | null)"
         >
-          <PdfPageCanvas
-            v-if="shouldRenderPage(page.page_number) && pdfDocument && !pdfFailed"
+          <!-- Keyed on the render path so a PDF failure remounts the raster and
+               `registerRaster` sees the canvas leave and the image arrive. -->
+          <PageRaster
+            v-if="shouldRenderPage(page.page_number) && (pdfDocument || pdfFailed)"
+            :key="pdfFailed ? 'image' : 'pdf'"
+            :document-id="documentId"
             :document="pdfDocument"
+            :failed="pdfFailed"
             :page-number="page.page_number"
-            :ref="(el) => registerPdf(page.page_number, el)"
-            @ready="(canvas) => onPdfReady(page.page_number, canvas)"
-            @error="onPdfError(page.page_number)"
-          />
-          <img
-            v-else-if="shouldRenderPage(page.page_number) && pdfFailed"
-            :src="getPreviewUrl(documentId, page.page_number)"
-            :alt="`Page ${page.page_number}`"
-            class="preview-image"
-            :fetchpriority="page.page_number === currentPage ? 'high' : 'low'"
-            decoding="async"
-            :ref="(el) => registerImage(page.page_number, el as HTMLImageElement | null)"
-            @load="onImageLoad(page.page_number)"
-            @error="onImageError(page.page_number)"
+            :priority="page.page_number === currentPage ? 'high' : 'low'"
+            :ref="(el) => registerRaster(page.page_number, el)"
+            @ready="(raster, source) => onRasterReady(page.page_number, raster, source)"
+            @error="(source) => onRasterError(page.page_number, source)"
           />
           <BboxCanvas
             v-if="loadedImages[page.page_number]"
@@ -146,9 +141,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRef, w
 import type { Page, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToRect, computeScale } from '@/shared/bboxScaling'
-import { getPreviewUrl, PREVIEW_DPI } from '../api'
+import { PREVIEW_DPI } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
-import PdfPageCanvas from './PdfPageCanvas.vue'
+import PageRaster from './PageRaster.vue'
 import { usePdfDocument } from './usePdfDocument'
 import {
   clampPageInput,
@@ -191,7 +186,6 @@ const emit = defineEmits<{
 }>()
 
 const stageRef = ref<HTMLDivElement | null>(null)
-const imageRefs = reactive<Record<number, HTMLImageElement | null>>({})
 const loadedImages = reactive<Record<number, HTMLElement | null>>({})
 const { document: pdfDocument, failed: pdfFailed } = usePdfDocument(toRef(props, 'documentId'))
 const loadedPageNumbers = reactive(new Set<number>())
@@ -235,17 +229,8 @@ const renderedPages = computed<Page[]>(() => {
   return currentPageData.value ? [currentPageData.value] : []
 })
 
-function registerImage(pageNumber: number, el: HTMLImageElement | null): void {
-  imageRefs[pageNumber] = el
-  if (el) {
-    if (!settledPageNumbers.has(pageNumber)) pendingPageNumbers.add(pageNumber)
-  } else {
-    pendingPageNumbers.delete(pageNumber)
-    loadedImages[pageNumber] = null
-  }
-}
-
-function registerPdf(pageNumber: number, el: unknown): void {
+/** A raster mounting asks for its page; unmounting drops the request and the overlay. */
+function registerRaster(pageNumber: number, el: unknown): void {
   if (el) {
     if (!settledPageNumbers.has(pageNumber)) pendingPageNumbers.add(pageNumber)
   } else {
@@ -286,33 +271,33 @@ function registerPageCard(pageNumber: number, el: HTMLElement | null): void {
   pageCardRefs[pageNumber] = el
 }
 
-function onImageLoad(pageNumber: number): void {
+function onRasterReady(pageNumber: number, raster: HTMLElement, source: 'pdf' | 'image'): void {
   pendingPageNumbers.delete(pageNumber)
   loadedPageNumbers.add(pageNumber)
   settledPageNumbers.add(pageNumber)
-  loadedImages[pageNumber] = imageRefs[pageNumber] ?? null
-  // With the box reserved, decoding shifts no layout and the focus scroll has
-  // already run against the final geometry. Only a page we could *not* reserve
-  // (degenerate dimensions) still grows on load and needs a second pass.
+  loadedImages[pageNumber] = raster
+  if (source === 'image') refocusUnreservedPage(pageNumber)
+}
+
+/**
+ * With the box reserved, decoding shifts no layout and the focus scroll has
+ * already run against the final geometry. Only a page we could *not* reserve
+ * (degenerate dimensions) still grows on load and needs a second pass.
+ */
+function refocusUnreservedPage(pageNumber: number): void {
   const page = props.pages.find((p) => p.page_number === pageNumber)
   if (!page || computePageFrameGeometry(page, PREVIEW_DPI)) return
   if (highlightTarget()?.page.page_number === pageNumber) requestScroll('focus')
 }
 
-function onImageError(pageNumber: number): void {
+function onRasterError(pageNumber: number, source: 'pdf' | 'image'): void {
   pendingPageNumbers.delete(pageNumber)
-  settledPageNumbers.add(pageNumber)
-}
-
-function onPdfReady(pageNumber: number, canvas: HTMLCanvasElement): void {
-  pendingPageNumbers.delete(pageNumber)
-  loadedPageNumbers.add(pageNumber)
-  settledPageNumbers.add(pageNumber)
-  loadedImages[pageNumber] = canvas
-}
-
-function onPdfError(pageNumber: number): void {
-  pendingPageNumbers.delete(pageNumber)
+  if (source === 'image') {
+    // The PNG was the last resort: the page is settled, with no overlay.
+    settledPageNumbers.add(pageNumber)
+    return
+  }
+  // The PDF cannot render this page: fall back to the PNGs for every page.
   loadedImages[pageNumber] = null
   pdfFailed.value = true
 }
@@ -749,13 +734,5 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--bg-surface);
-}
-
-/* Fills the reserved box exactly, so the bbox scale derived from the frame
- * maps onto the raster one-to-one. */
-.preview-image {
-  display: block;
-  width: 100%;
-  height: 100%;
 }
 </style>
