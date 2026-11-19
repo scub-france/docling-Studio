@@ -101,7 +101,7 @@ How it behaves:
 
 - One question at a time. The answer arrives in one piece.
 - Questions and answers live in your browser tab. They are not saved.
-- Ask reads the document's active analysis: the newest one, until you restore another from **History**. Opening an older analysis from **Analyses** does not change it. It reads the original result, without the changes saved in **Edit analysis**.
+- Ask reads the document's active analysis, which is not always the one on screen: the analysis that completed last. Opening an older analysis from **Analyses** does not change it, and Ask still answers from the active one. Ask reads that analysis as Docling produced it, without the changes saved in **Edit analysis**.
 - To use another model, type its name in **model override**. It applies to your next questions until you clear the field.
 
 ## Download
@@ -116,7 +116,7 @@ On a result page, the Markdown and JSON download follows the current mode: the s
 ## Delete
 
 - A document: in **Docs**, click **Delete** on its row. Its analyses are deleted with it.
-- An analysis: in **Analyses**, click **Delete analysis** on its row.
+- An analysis: in **Analyses**, click **Delete analysis** on its row. If it was the document's active analysis, the last remaining completed analysis becomes the active one. If none remains, the document has no active analysis: Ask, the MCP tools, the default download and the document tree have nothing to read until a new analysis completes.
 
 There is no undo.
 

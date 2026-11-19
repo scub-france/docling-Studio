@@ -16,12 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Faster PDF viewing** (#401): analysis, editor, document, and Studio previews render the visible PDF page in the browser using byte ranges. Nearby pages load as needed; server-rendered previews remain a fallback. The fallback previews are cached in memory (up to 64 MB per backend process) and by the browser, and `GET /api/documents/{id}/preview` takes `format=webp` for a lossless WebP (`png` stays the default). A proxy placed in front of Studio must pass `Range` requests, or the browser downloads the whole PDF.
 - **Faster analysis lists** (#401): analysis and history lists fetch lightweight summaries instead of full Docling results.
-- **Analysis editor active result**: documents explicitly select an analysis, and document reads always apply its saved edits. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits.
+- **Analysis editor active result**: each document has one active analysis: the last one that completed, unless the versions API made an older one active again. The document workspace, the tree, the default export and rechunking read it with its saved edits; Ask and the MCP tools read its original result. A shared document-analysis state row records which analysis and result hash produced the current chunks, so stale chunks are identified accurately without false warnings after equivalent edits. A document with no state row, such as one in a database the 0.7.3 upgrade did not reach, falls back to its latest completed analysis that has a Docling document.
 - **Analysis editor persistence**: each analysis owns one edit stream and an optional, replaceable edited result cache. The unused chunk edit audit table and its write path have been removed; document History still stores chunk snapshots.
-- **Default Markdown and JSON export**: without `analysisId`, the export now returns the document's active analysis with its saved edits, instead of the latest completed conversion.
-- **Ask and the MCP server read the active analysis**: they used to read the latest completed analysis, whatever the workspace showed. They now read the document's active analysis, like the tree, the default export and rechunk. After you restore an older analysis from History, Ask and the MCP tools called without an anchor read that one, and `verify_citation` answers `stale_version` for an anchor that pins the newer parse. A document whose active analysis was deleted, or has no Docling document, has no current analysis for Ask and MCP until an analysis is selected again. Both still read the original result, without editor changes.
-- **Doc workspace opens the active analysis**: `/docs/:id` opened the newest History entry, which could be an analysis still running or one that is not the active one. `GET /api/documents/{id}` now returns `currentAnalysisId`, and the workspace opens that analysis.
-- **Restoring a version and regenerating chunks are atomic**: the chunks and the record of which analysis produced them are written in one transaction. A failure in the middle no longer leaves new chunks with the old source, or the reverse.
+- **Default Markdown and JSON export**: without `analysisId`, the export returns the document's active analysis with its saved edits. It used to return the latest completed analysis without edits; the two differ once edits are saved, or after an older analysis was made active again. An active analysis without a Docling document answers 404.
+- **Ask and the MCP server read the active analysis**: they used to read the latest completed analysis, whatever the workspace showed. They now read the document's active analysis, like the tree, the default export and rechunk. After an older analysis is made active again (the versions API's restore; no screen offers it in this release), Ask and the MCP tools called without an anchor read that one, and `verify_citation` answers `stale_version` for an anchor that pins another parse; its detail now reads "the anchor pins a parse that is no longer current". `find_documents` returns the active analysis as `version_id`, `null` when the document has none with a Docling document. Both still read the original result, without editor changes.
+- **Active analysis on the document API**: `GET /api/documents/{id}` returns `currentAnalysisId`, the document's active analysis. The list and upload responses carry the field too, always `null`: read it from `GET /api/documents/{id}`.
+- **Deleting the active analysis**: when the analysis you delete is the document's active one, the last remaining completed analysis that has a Docling document becomes active, in the same transaction. Ask, the MCP tools, the default export and the tree keep something to read. When none remains, the document has no active analysis until a new one completes.
+- **Restoring a version and regenerating chunks are atomic** (versions and chunks APIs): the chunks and the record of which analysis produced them are written in one transaction. A failure in the middle no longer leaves new chunks with the old source, or the reverse.
+- **Page preview errors**: `GET /api/documents/{id}/preview` and `/pages` answer 500 for a failure that is not reading the PDF, such as a database error, instead of 422. A PDF that cannot be read or rendered still answers 422, a missing file 404.
 - **MCP cards in English by default** (#397): the citation and sources cards follow the browser language, English unless it is French. The analysis editor's remaining hard-coded labels are translated.
 - **Theme colours**: screens that used colours the theme did not define now take them from the theme. The breadcrumb follows the light theme, the reading-order badges on the page follow the theme, the store form's main button and the "coming soon" badge use the accent colour instead of blue, and the chunk panel's fields and badges have a visible background.
 - **Analysis editor API schemas**: the editor's responses (model, tree, history payloads) have typed schemas in the OpenAPI document instead of free-form objects. The JSON returned is unchanged. Editor requests are bounded: an id or a separator up to 1,000 characters, a text up to 1,000,000, a list of ids up to 100,000, a batch of commands up to 10,000. Beyond that the API answers 422.
@@ -29,6 +31,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Import size limit**: new `MAX_IMPORT_SIZE_MB` (default `200`, `0` for no limit). **Import analysis** above the limit answers 413.
 - **Static files cached and compressed**: nginx now caches the fingerprinted files under `/assets/` for a year and compresses JavaScript, CSS and SVG, not only JSON. The PDF viewer's 1.7 MB of scripts used to be sent uncompressed on every visit. The logo, also used as the favicon, went from 878 kB to 61 kB.
 - **Docker images build the frontend on Node 22**: the PDF viewer's library requires Node 22.13 or later. Use Node 22 to build the frontend from source.
+
+### Deprecated
+
+- **`LLM_PROVIDER_TYPE`**: Ollama is the only provider Ask can use, so the variable no longer selects anything. It is still read: a value other than `ollama` keeps Ask off with a warning, as before. It will be removed in a later release.
 
 ### Fixed
 
@@ -42,15 +48,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Analysis editor merge**: the Merge button is only enabled when all selected elements have the same type, so a mix of text and paragraph no longer fails with an error after the click (#395).
 - **Analysis editor result id**: the id of an edited result now includes its base analysis, so two analyses of one document no longer return edited results with the same id (#395).
 - **Analysis editor missing resources**: the editor API now answers 404 for an unknown document or analysis instead of 409, so the editor no longer shows an edit conflict for something that does not exist (#395).
-
-### Deprecated
-
-- **`LLM_PROVIDER_TYPE`**: Ollama is the only provider Ask can use, so the variable no longer selects anything. It is still read: a value other than `ollama` keeps Ask off with a warning, as before. It will be removed in a later release.
+- **PDF export of a document stored under another path**: the export looked for the PDF at the path recorded at upload, while the preview also looked in the current upload folder. A document uploaded under Docker and opened from a host install previewed but answered 404 on **Download PDF**. Both now resolve the path the same way.
 
 ### Security
 
 - **Optional `Host` check on `/api`**: new `API_ALLOWED_HOSTS`. When set, a request to `/api/*` whose `Host` header is not listed answers 421; loopback names are always accepted. It protects an instance running on your own machine against DNS rebinding from a web page. Unset, the default, changes nothing: on a workstation, set it to `localhost:*,127.0.0.1:*,[::1]:*`. See [docs/configuration.md](docs/configuration.md).
-
 
 ## [0.7.3] - 2026-11-02
 

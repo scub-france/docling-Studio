@@ -82,5 +82,6 @@ Errors:
 | `404` | The editor is turned off (`ANALYSIS_EDITOR_ENABLED=false`), the document does not exist, the analysis does not belong to it, or the document has no active analysis. Also an `edited=true` Markdown or JSON export without `analysisId`, or of an analysis that is not completed or has no Docling document. |
 | `409` | Another save came first (`expectedAppliedThroughSequence` is stale), or, on an editor route, the analysis is not completed or has no Docling document. |
 | `400` | An edit that cannot be applied, for example a merge of text with a paragraph, or a revert that a later edit depends on. |
+| `422` | A malformed body, or a request over the editor's bounds: an id or a separator over 1,000 characters, a text over 1,000,000 characters, more than 100,000 ids, or more than 10,000 commands. |
 
 For the persistence details, see the [analysis editor design](https://github.com/scub-france/Docling-Studio/blob/main/docs/design/analysis-editor.md).

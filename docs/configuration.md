@@ -29,7 +29,7 @@ Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT`
 | `MAX_PAGE_COUNT` | `0` | Most pages per PDF. `0` means no limit. |
 | `MAX_FILE_SIZE` | `0` | Local engine only. Largest file Docling itself accepts, in bytes. `0` means no limit. Uploads are already capped by `MAX_FILE_SIZE_MB`. |
 | `MAX_IMPORT_SIZE_MB` | `200` | Largest Docling JSON accepted by **Import analysis** (`POST /api/analyses/import`), in MB. Over it, the backend answers `413`. `0` means no limit. A JSON with page or picture images embedded is much larger than the same JSON without them. |
-| `NGINX_MAX_BODY_SIZE` | `200M` | Body limit in nginx for every `/api` request, in nginx format. Keep it above `MAX_FILE_SIZE_MB` and `MAX_IMPORT_SIZE_MB`: over it, nginx answers `413` itself, before the backend. |
+| `NGINX_MAX_BODY_SIZE` | `200M` | Body limit in nginx for every `/api` request, in nginx format. Over it, nginx answers `413` itself, before the backend. Keep it at least as large as `MAX_FILE_SIZE_MB` and `MAX_IMPORT_SIZE_MB`. With the defaults it equals `MAX_IMPORT_SIZE_MB`, so an import over 200 MB gets nginx's `413` page rather than the backend's message: raise both together. |
 | `RATE_LIMIT_RPM` | `100` | Requests per minute per client address, as the backend sees it. Behind the bundled nginx, that address is nginx itself, so all users share the limit. `0` turns it off. `/api/health` is not counted. |
 | `MAX_PASTE_IMAGE_SIZE_MB`, `PASTE_ALLOWED_IMAGE_TYPES` | `10`, `image/png,image/jpeg,image/webp` | Limits for pasted images. `/api/health` reports them, but no screen uses them yet. |
 

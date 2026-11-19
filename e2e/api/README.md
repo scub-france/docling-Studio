@@ -51,7 +51,7 @@ No runner scans `ingestion/`, so nothing runs it. To run it, start the ingestion
 
 ## Tags in CI
 
-- `ci.yml` runs `@smoke` on every pull request to `main` or a `release/*` branch, and on every push to `main`. Pull requests to a `release/*` branch run `@smoke,@regression,@e2e` instead.
+- `ci.yml` runs `@smoke` on every pull request to `main` and on every push to `main`. Pull requests to a `release/*` branch, and pushes to one, run `@smoke,@regression,@e2e` instead.
 - `release-gate.yml` runs `@smoke,@regression,@e2e` on every pull request to `main`.
 
 ## Reports

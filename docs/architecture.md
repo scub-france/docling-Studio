@@ -70,7 +70,7 @@ in that test until they are migrated:
 | Layer | Never imports |
 |-------|---------------|
 | `domain` | Any other layer, FastAPI, SQLAlchemy, httpx, the OpenSearch client |
-| `services` | `api`, `infra`, `persistence`, FastAPI, and the Docling, PDF, HTTP, graph, search and cryptography libraries: services reach them through ports |
+| `services` | `api`, `infra`, `persistence`, FastAPI, the Docling, PDF, HTTP, graph, search and cryptography libraries, and the filesystem (`os`, `shutil`, `pathlib.Path`, `open()`): services reach them through ports |
 | `api` | `infra`, `persistence` |
 | `mcp_adapter` | `api`, `infra`, `persistence` |
 | `infra` | `api`, `services` |

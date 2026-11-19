@@ -94,7 +94,7 @@ npm run type-check
 npm run test:run
 ```
 
-New behavior needs a test. The CI runs the lint, type-check and tests on every pull request. The format checks are yours to run.
+New behavior needs a test. The CI runs the lint, type-check and tests on every pull request. The tests that need Docling itself run on pull requests to `main` and on every push to `main` or a `release/*` branch. The format checks are yours to run.
 
 ### End-to-end tests
 
