@@ -133,15 +133,15 @@ These compose settings are for a laptop: OpenSearch runs without security and Ne
 
 `API_ALLOWED_HOSTS` is empty by default, and then `/api` answers whatever `Host` header a request carries. **On a workstation, that leaves `/api` open to DNS rebinding**: a web page you visit can point its own domain name at `127.0.0.1` and then read and change your documents through your browser. CORS does not stop it, because the browser takes those calls as same-origin.
 
-Set `API_ALLOWED_HOSTS` to turn the check on. A request to `/api/*` whose `Host` is not listed then gets `421 Invalid Host header`, as `/mcp` does with `MCP_ALLOWED_HOSTS`. For a local install:
+Set `API_ALLOWED_HOSTS` to turn the check on. A request to `/api/*` whose `Host` is not listed, or is malformed, then gets `421` with `{"detail": "Invalid Host header"}`. For a local install:
 
 ```
-API_ALLOWED_HOSTS=localhost:*,127.0.0.1:*,[::1]:*
+API_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
 ```
 
-- The values are written like `MCP_ALLOWED_HOSTS`: `name:port` for one port, `name:*` for any port, `*` for no check. `name:*` also matches the name without a port, which is what the bundled nginx forwards (`Host $host`).
+- Only the host name is compared: against DNS rebinding the port does not matter, and the bundled nginx forwards `Host` without it. An entry may carry a port (`name:3000`, `name:*`) so that one list can serve `MCP_ALLOWED_HOSTS` too; the port is ignored here. `*` means no check.
 - `localhost`, `127.0.0.1` and `[::1]` are always accepted once the check is on, so health checks such as `curl http://localhost:8000/api/health` keep working.
-- If people open Studio by a LAN name, an IP address or a domain, list it: `API_ALLOWED_HOSTS=localhost:*,studio.lan:*`. Behind your own proxy, list the name the proxy forwards in `Host`.
+- If people open Studio by a LAN name, an IP address or a domain, list it: `API_ALLOWED_HOSTS=localhost,studio.lan`. Behind your own proxy, list the name the proxy forwards in `Host`.
 - Only `/api/*` is checked. `/mcp` has its own list; the web app itself is static.
 - At start-up, the backend logs one line saying whether the check is on and for which hosts.
 

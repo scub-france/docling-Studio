@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Theme colours**: screens that used colours the theme did not define now take them from the theme. The breadcrumb follows the light theme, the reading-order badges on the page follow the theme, the store form's main button and the "coming soon" badge use the accent colour instead of blue, and the chunk panel's fields and badges have a visible background.
 - **Analysis editor API schemas**: the editor's responses (model, tree, history payloads) have typed schemas in the OpenAPI document instead of free-form objects. The JSON returned is unchanged. Editor requests are bounded: an id or a separator up to 1,000 characters, a text up to 1,000,000, a list of ids up to 100,000, a batch of commands up to 10,000. Beyond that the API answers 422.
 - **Analysis summaries by document**: `GET /api/analyses/summaries` accepts `documentId` and then returns every analysis of that document. Deleting a document counts its analyses from these light rows instead of loading them all.
-- **Import size limit**: new `MAX_IMPORT_SIZE_MB` (default `200`, `0` for no limit). **Import analysis** above the limit answers 413.
+- **Import size limit**: new `MAX_IMPORT_SIZE_MB` (default `200`, `0` for no limit). **Import analysis** above the limit answers 413. A malformed `Content-Length` on that route answers 400 instead of a server error.
 - **Static files cached and compressed**: nginx now caches the fingerprinted files under `/assets/` for a year and compresses JavaScript, CSS and SVG, not only JSON. The PDF viewer's 1.7 MB of scripts used to be sent uncompressed on every visit. The logo, also used as the favicon, went from 878 kB to 61 kB.
 - **Docker images build the frontend on Node 22**: the PDF viewer's library requires Node 22.13 or later. Use Node 22 to build the frontend from source.
 
@@ -41,7 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Upgrade from 0.7.3** (#391): booting on a 0.7.3 database now adds the two new `document_versions` columns and selects an active analysis for each already-analysed document, so versions, chunking, exports and the editor keep working without re-analysing anything.
 - **Analysis editor merge order** (#392): merging keeps the document's reading order whatever order the paragraphs were clicked in, and an edit typed after a merge is no longer folded into an edit made before it, which duplicated the merged text.
 - **Stale chunks warning** (#393): chunks with no recorded source analysis, such as chunks generated before 0.7.4, are now reported as possibly stale instead of silently trusted, and saving an empty set of editor changes answers for the analysis being edited rather than the active one.
-- **Analysis editor responsiveness** (#394): replaying and projecting edits (editor load, preview, save, default export, rechunk) now runs in a worker thread instead of blocking the server; the Docling engine sits behind a domain port.
+- **Analysis editor responsiveness** (#394): replaying and projecting edits (editor load, preview, save, default export, rechunk) now runs in a worker thread instead of blocking the server; the Docling engine sits behind a domain port. The editor's responses are also built off the event loop, and deleting or merging thousands of elements no longer takes quadratic time.
 - **Element types in the document workspace** (#396): the page boxes of the edited result now use the same element types as a fresh conversion, so list items keep their colour and layer.
 - **Chunk edits and page rendering** (#398): inserting, splitting, merging, regenerating and restoring chunks write in one SQL statement instead of one per chunk, and page previews open the PDF by path instead of reading the whole file for every page.
 - **Analysis editor corrupt cache**: a damaged edited result cache is now ignored and the saved edits are replayed, instead of the editor failing with a server error (#395).
@@ -52,7 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Security
 
-- **Optional `Host` check on `/api`**: new `API_ALLOWED_HOSTS`. When set, a request to `/api/*` whose `Host` header is not listed answers 421; loopback names are always accepted. It protects an instance running on your own machine against DNS rebinding from a web page. Unset, the default, changes nothing: on a workstation, set it to `localhost:*,127.0.0.1:*,[::1]:*`. See [docs/configuration.md](docs/configuration.md).
+- **Optional `Host` check on `/api`**: new `API_ALLOWED_HOSTS`. When set, a request to `/api/*` whose `Host` header names a host that is not listed, or is malformed, answers 421 with `{"detail": "Invalid Host header"}`; loopback names are always accepted. Only the host name is compared, a port in an entry is ignored. It protects an instance running on your own machine against DNS rebinding from a web page. Unset, the default, changes nothing: on a workstation, set it to `localhost,127.0.0.1,[::1]`. See [docs/configuration.md](docs/configuration.md#host-check-on-the-api).
 
 ## [0.7.3] - 2026-11-02
 
