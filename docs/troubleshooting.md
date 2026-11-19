@@ -31,6 +31,10 @@ The file is over `MAX_FILE_SIZE_MB` (50 MB by default). Raise it, and keep `NGIN
 
 More than `RATE_LIMIT_RPM` requests in a minute (100 by default). Behind the bundled nginx, all users share this one limit. Raise it, or set `0` to turn it off.
 
+## The API answers 421 "Invalid Host header"
+
+`API_ALLOWED_HOSTS` is set and the name in the address bar is not in it. Add that name, without the port, or the name your proxy forwards in `Host`. An entry that is not a host name, such as a URL or a wildcard pattern, is ignored: the start-up log names it. See [Host check on the API](configuration.md#host-check-on-the-api).
+
 ## Large PDFs take long to show behind a proxy
 
 The viewer loads the PDF in parts, with HTTP `Range` requests. A proxy that drops them makes the browser download the whole file before the first page shows. Let `Range` requests and their `206` answers through: see [Behind your own proxy](configuration.md#behind-your-own-proxy).

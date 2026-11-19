@@ -51,7 +51,7 @@ flowchart LR
 
 ## What the release gate checks
 
-It runs on every pull request to `main` and posts a verdict: GO, GO CONDITIONAL (only the dependency audit failed), or NO-GO.
+It runs on every pull request to `main` and posts a verdict: GO, GO CONDITIONAL (only the dependency audit failed), or NO-GO (any other check that did not succeed, a skipped one included). A cancelled run, for example one replaced by a newer push, posts none.
 
 | Check | What it runs |
 |-------|--------------|

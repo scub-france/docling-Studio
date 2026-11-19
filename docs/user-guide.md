@@ -46,7 +46,7 @@ To look at the pages first, open the document from **Docs**. It shows in the sam
 ## Run an analysis
 
 1. In **Docs**, click **Open visualization** on the document.
-2. Click **New analysis**. While Docling works, a bar under the title shows how far it is: the percentage and the pages done for a long PDF, the time elapsed otherwise. When the analysis completes, its result opens by itself. If it fails, the reason shows next to the button.
+2. Open the **Document actions** menu (`⋯`) and click **New analysis**. While Docling works, a bar under the title shows how far it is: the percentage and the pages done for a long PDF, the time elapsed otherwise. When the analysis completes, its result opens by itself. If it fails, the reason shows next to the button.
 
 There are no options to choose here. The server settings apply: OCR on, table structure on, and the table mode set by the admin ("accurate" by default).
 
@@ -116,7 +116,7 @@ On a result page, the Markdown and JSON download follows the current mode: the s
 ## Delete
 
 - A document: in **Docs**, click **Delete** on its row. Its analyses are deleted with it.
-- An analysis: in **Analyses**, click **Delete analysis** on its row. If it was the document's active analysis, the last remaining completed analysis that has a Docling document becomes the active one. If none remains, the document has no active analysis: Ask, the MCP tools, the default download and the document tree have nothing to read until a new analysis completes.
+- An analysis: in **Analyses**, click **Delete analysis** on its row. If it was the document's active analysis, the last remaining completed analysis that has a Docling document becomes the active one. If none remains, the document has no active analysis: Ask and the MCP tools have nothing to read until a new analysis completes.
 
 There is no undo.
 
