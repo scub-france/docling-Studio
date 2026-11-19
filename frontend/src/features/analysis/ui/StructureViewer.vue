@@ -65,6 +65,7 @@ import { PdfPagePreview } from '@/features/document'
 import { computeScale, bboxToRect, isPointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
+import { createCssTokenReader } from '@/shared/cssTokens'
 
 const props = defineProps({
   pages: { type: Array as () => Page[], default: () => [] },
@@ -167,9 +168,9 @@ function drawOverlay() {
 
   // Reasoning colours come from the design tokens in app/App.vue, read once
   // per draw (empty in jsdom: the canvas then ignores the assignment).
-  const styles = getComputedStyle(canvas)
-  const reasoning = styles.getPropertyValue('--reasoning').trim()
-  const onAccent = styles.getPropertyValue('--on-accent').trim()
+  const readToken = createCssTokenReader(canvas)
+  const reasoning = readToken('--reasoning')
+  const onAccent = readToken('--on-accent')
 
   // Two-pass draw so reasoning overlays (highlight + pulse) sit on top of
   // the base element strokes without being painted over by subsequent
@@ -211,7 +212,7 @@ function drawOverlay() {
         ? props.visitedBySelfRef.get(el.self_ref)
         : undefined
     if (order !== undefined) {
-      drawVisitBadge(ctx, rect.x, rect.y, order, reasoning, onAccent)
+      drawVisitBadge(ctx, { x: rect.x, y: rect.y, order, fill: reasoning, ink: onAccent })
     }
     if (props.focusedSelfRef && el.self_ref === props.focusedSelfRef) {
       ctx.strokeStyle = reasoning
@@ -223,17 +224,23 @@ function drawOverlay() {
   }
 }
 
+interface VisitBadge {
+  /** Badge centre, in canvas pixels. */
+  x: number
+  y: number
+  /** Visit order printed in the badge. */
+  order: number
+  /** Badge disc colour. */
+  fill: string
+  /** Number colour. */
+  ink: string
+}
+
 function drawVisitBadge(
   ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  order: number,
-  fill: string,
-  ink: string,
+  { x: cx, y: cy, order, fill, ink }: VisitBadge,
 ): void {
   const radius = 10
-  const cx = x
-  const cy = y
   ctx.fillStyle = fill
   ctx.beginPath()
   ctx.arc(cx, cy, radius, 0, Math.PI * 2)

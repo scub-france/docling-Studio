@@ -39,6 +39,7 @@ import { ref, computed, watch, nextTick, reactive, onBeforeUnmount } from 'vue'
 import { computeScale, bboxToRect, isPointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement, ChunkBbox } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
+import { createCssTokenReader } from '@/shared/cssTokens'
 
 const props = withDefaults(
   defineProps<{
@@ -139,7 +140,7 @@ function draw(): void {
   // Draw chunk-highlighted bboxes on top with the --chunk-highlight token
   // (app/App.vue), read once per draw; the fill keeps the former 0x30 alpha.
   if (hasChunkHighlight) {
-    const chunkColor = getComputedStyle(canvas).getPropertyValue('--chunk-highlight').trim()
+    const chunkColor = createCssTokenReader(canvas)('--chunk-highlight')
     for (const cb of props.highlightedBboxes) {
       const rect = bboxToRect(cb.bbox, scale)
       ctx.strokeStyle = chunkColor

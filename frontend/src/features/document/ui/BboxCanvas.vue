@@ -23,9 +23,11 @@
  * pages with many elements.
  */
 import { onBeforeUnmount, ref, watch } from 'vue'
-import type { PageElement } from '../../../shared/types'
+import type { PageElement, Scale } from '../../../shared/types'
 import { bboxToRect, computeScale, isPointInRect } from '@/shared/bboxScaling'
+import { createCssTokenReader, type CssTokenReader } from '@/shared/cssTokens'
 import { getElementColor, UNKNOWN_ELEMENT_COLOR } from '@/shared/elementColors'
+import { computeBadgeRect } from './BboxCanvas.logic'
 
 const props = defineProps<{
   imageEl: HTMLElement | null
@@ -46,6 +48,23 @@ const emit = defineEmits<{
   clickElement: [el: PageElement, pageNumber: number, event: MouseEvent]
 }>()
 
+/** What every drawing step needs: the context, its canvas and the page scale. */
+interface DrawFrame {
+  ctx: CanvasRenderingContext2D
+  canvas: HTMLCanvasElement
+  scale: Scale
+}
+
+/** Theme colours of the reading-order badges. */
+interface BadgeColors {
+  accent: string
+  success: string
+  background: string
+  foreground: string
+  border: string
+  onBright: string
+}
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let rafId: number | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -62,26 +81,46 @@ function listVisibleElements(): PageElement[] {
   return props.elements.filter((e) => !props.hiddenTypes.has(e.type))
 }
 
-function computeBadgeRect(
-  rect: { x: number; y: number },
-  order: number,
-  canvas: HTMLCanvasElement,
-): { x: number; y: number; w: number; h: number } {
-  const w = Math.max(18, String(order).length * 7 + 10)
-  const h = 18
-  return {
-    x: Math.max(0, Math.min(rect.x + 2, canvas.width - w)),
-    y: Math.max(0, Math.min(rect.y + 2, canvas.height - h)),
-    w,
-    h,
-  }
-}
-
 function draw(): void {
   const canvas = canvasRef.value
   const img = props.imageEl
   if (!canvas || !img) return
 
+  const ctx = prepareCanvas(canvas, img)
+  if (!ctx) return
+
+  const scale = computeScale(img.clientWidth, img.clientHeight, props.pageWidth, props.pageHeight)
+  const frame: DrawFrame = { ctx, canvas, scale }
+  const highlighted = props.highlightedRefs ?? new Set<string>()
+
+  drawElementBoxes(frame, highlighted)
+  // Second pass so the highlighted element ends up on top, fully crisp.
+  if (highlighted.size > 0) drawHighlightedBoxes(frame, highlighted)
+
+  // Theme colours come from the design tokens in app/App.vue (no literal
+  // copies here), so the overlay follows the light/dark theme.
+  const order = props.readingOrderByRef
+  const readToken: CssTokenReader =
+    props.nextRef || order?.size ? createCssTokenReader(canvas) : () => ''
+  const success = readToken('--success')
+  if (props.nextRef) drawNextElementMarker(frame, props.nextRef, success)
+  if (order?.size) {
+    drawReadingOrderBadges(frame, order, {
+      accent: readToken('--accent'),
+      success,
+      background: readToken('--bg-elevated'),
+      foreground: readToken('--text'),
+      border: readToken('--border-light'),
+      onBright: readToken('--on-bright'),
+    })
+  }
+}
+
+/** Sizes the canvas to the page and clears it; null when 2D is unavailable. */
+function prepareCanvas(
+  canvas: HTMLCanvasElement,
+  img: HTMLElement,
+): CanvasRenderingContext2D | null {
   // Match canvas pixel size to the image's displayed size — keeps drawing
   // crisp under CSS scaling without dealing with devicePixelRatio
   // (acceptable for this UI; bumped to DPR later if blur becomes visible).
@@ -89,15 +128,15 @@ function draw(): void {
   canvas.height = img.clientHeight
 
   const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  if (!ctx) return null
   ctx.clearRect(0, 0, canvas.width, canvas.height)
+  return ctx
+}
 
-  const scale = computeScale(img.clientWidth, img.clientHeight, props.pageWidth, props.pageHeight)
-  const highlighted = props.highlightedRefs ?? new Set<string>()
+/** First pass: every visible box but the highlighted ones, dimmed in focus mode. */
+function drawElementBoxes({ ctx, scale }: DrawFrame, highlighted: ReadonlySet<string>): void {
   const showLabels = props.showLabels ?? false
-
   const focusMode = highlighted.size > 0
-  // Two-pass draw so the highlighted element ends up on top, fully crisp.
   for (const el of listVisibleElements()) {
     const rect = bboxToRect(el.bbox, scale)
     if (rect.w <= 0 || rect.h <= 0) continue
@@ -120,86 +159,84 @@ function draw(): void {
       ctx.fillText(el.type, rect.x + 2, Math.max(10, rect.y - 2))
     }
   }
+}
 
-  // Second pass — focused element, drawn on top with a bold stroke and a
-  // dashed halo so it pops over the dimmed neighbours.
-  if (focusMode) {
-    for (const el of listVisibleElements()) {
-      if (!el.self_ref || !highlighted.has(el.self_ref)) continue
-      const rect = bboxToRect(el.bbox, scale)
-      if (rect.w <= 0 || rect.h <= 0) continue
-      const color = getElementColor(el.type)
+/**
+ * Second pass: the focused elements, drawn on top with a bold stroke and a
+ * dashed halo so they pop over the dimmed neighbours.
+ */
+function drawHighlightedBoxes({ ctx, scale }: DrawFrame, highlighted: ReadonlySet<string>): void {
+  const showLabels = props.showLabels ?? false
+  for (const el of listVisibleElements()) {
+    if (!el.self_ref || !highlighted.has(el.self_ref)) continue
+    const rect = bboxToRect(el.bbox, scale)
+    if (rect.w <= 0 || rect.h <= 0) continue
+    const color = getElementColor(el.type)
 
-      // Halo (dashed outline a few px outside the rect).
-      ctx.setLineDash([5, 3])
-      ctx.lineWidth = 1.5
-      ctx.strokeStyle = color + '88'
-      ctx.strokeRect(rect.x - 4, rect.y - 4, rect.w + 8, rect.h + 8)
-      ctx.setLineDash([])
+    // Halo (dashed outline a few px outside the rect).
+    ctx.setLineDash([5, 3])
+    ctx.lineWidth = 1.5
+    ctx.strokeStyle = color + '88'
+    ctx.strokeRect(rect.x - 4, rect.y - 4, rect.w + 8, rect.h + 8)
+    ctx.setLineDash([])
 
-      // Bold stroke + saturated fill on the rect itself.
-      ctx.lineWidth = 3
-      ctx.strokeStyle = color
-      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
-      ctx.fillStyle = color + '33'
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+    // Bold stroke + saturated fill on the rect itself.
+    ctx.lineWidth = 3
+    ctx.strokeStyle = color
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+    ctx.fillStyle = color + '33'
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
 
-      if (showLabels) {
-        ctx.font = 'bold 11px -apple-system, sans-serif'
-        ctx.fillStyle = color
-        ctx.fillText(el.type, rect.x + 2, Math.max(11, rect.y - 2))
-      }
+    if (showLabels) {
+      ctx.font = 'bold 11px -apple-system, sans-serif'
+      ctx.fillStyle = color
+      ctx.fillText(el.type, rect.x + 2, Math.max(11, rect.y - 2))
     }
   }
+}
 
-  // Theme colours come from the design tokens in app/App.vue (no literal
-  // copies here), so the overlay follows the light/dark theme.
-  const styles = props.nextRef || props.readingOrderByRef?.size ? getComputedStyle(canvas) : null
-  const readToken = (name: string): string => styles?.getPropertyValue(name).trim() ?? ''
-  const success = readToken('--success')
-  if (props.nextRef) {
-    for (const el of listVisibleElements()) {
-      if (el.self_ref !== props.nextRef) continue
-      const rect = bboxToRect(el.bbox, scale)
-      if (rect.w <= 0 || rect.h <= 0) continue
-      ctx.setLineDash([4, 3])
-      ctx.lineWidth = 2
-      ctx.strokeStyle = success
-      ctx.strokeRect(rect.x - 2, rect.y - 2, rect.w + 4, rect.h + 4)
-      ctx.setLineDash([])
-    }
+/** Dashed outline around the element the next reading-order click will target. */
+function drawNextElementMarker({ ctx, scale }: DrawFrame, nextRef: string, color: string): void {
+  for (const el of listVisibleElements()) {
+    if (el.self_ref !== nextRef) continue
+    const rect = bboxToRect(el.bbox, scale)
+    if (rect.w <= 0 || rect.h <= 0) continue
+    ctx.setLineDash([4, 3])
+    ctx.lineWidth = 2
+    ctx.strokeStyle = color
+    ctx.strokeRect(rect.x - 2, rect.y - 2, rect.w + 4, rect.h + 4)
+    ctx.setLineDash([])
   }
+}
 
-  const order = props.readingOrderByRef
-  if (order?.size) {
-    const accent = readToken('--accent')
-    const background = readToken('--bg-elevated')
-    const foreground = readToken('--text')
-    const border = readToken('--border-light')
-    const onBright = readToken('--on-bright')
-    ctx.save()
-    ctx.font = '600 11px "IBM Plex Mono", monospace'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    for (const el of listVisibleElements()) {
-      if (!el.self_ref) continue
-      const number = order.get(el.self_ref)
-      if (number === undefined) continue
-      const rect = bboxToRect(el.bbox, scale)
-      if (rect.w <= 0 || rect.h <= 0) continue
-      const badge = computeBadgeRect(rect, number, canvas)
-      const selected = el.self_ref === props.selectedRef
-      const next = el.self_ref === props.nextRef
-      ctx.fillStyle = selected ? accent : next ? success : background
-      ctx.fillRect(badge.x, badge.y, badge.w, badge.h)
-      ctx.lineWidth = 1
-      ctx.strokeStyle = selected ? accent : next ? success : border
-      ctx.strokeRect(badge.x, badge.y, badge.w, badge.h)
-      ctx.fillStyle = selected || next ? onBright : foreground
-      ctx.fillText(String(number), badge.x + badge.w / 2, badge.y + badge.h / 2 + 0.5)
-    }
-    ctx.restore()
+/** Numbered reading-order badge on each ordered element; selected and next stand out. */
+function drawReadingOrderBadges(
+  { ctx, canvas, scale }: DrawFrame,
+  order: ReadonlyMap<string, number>,
+  colors: BadgeColors,
+): void {
+  ctx.save()
+  ctx.font = '600 11px "IBM Plex Mono", monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  for (const el of listVisibleElements()) {
+    if (!el.self_ref) continue
+    const number = order.get(el.self_ref)
+    if (number === undefined) continue
+    const rect = bboxToRect(el.bbox, scale)
+    if (rect.w <= 0 || rect.h <= 0) continue
+    const badge = computeBadgeRect(rect, number, canvas)
+    const selected = el.self_ref === props.selectedRef
+    const next = el.self_ref === props.nextRef
+    ctx.fillStyle = selected ? colors.accent : next ? colors.success : colors.background
+    ctx.fillRect(badge.x, badge.y, badge.w, badge.h)
+    ctx.lineWidth = 1
+    ctx.strokeStyle = selected ? colors.accent : next ? colors.success : colors.border
+    ctx.strokeRect(badge.x, badge.y, badge.w, badge.h)
+    ctx.fillStyle = selected || next ? colors.onBright : colors.foreground
+    ctx.fillText(String(number), badge.x + badge.w / 2, badge.y + badge.h / 2 + 0.5)
   }
+  ctx.restore()
 }
 
 function findElementAt(e: MouseEvent): PageElement | null {
