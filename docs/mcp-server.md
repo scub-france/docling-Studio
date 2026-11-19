@@ -213,7 +213,7 @@ says what the document says. Its `status` is one of:
 | Status | Meaning |
 |--------|---------|
 | `verified` | The quote is there. `citation` carries the precise anchor to cite (an element inside a section, or a span), its page and its `deep_link`. |
-| `stale_version` | The quote is there, but a newer parse exists. |
+| `stale_version` | The quote is there, but the anchor pins a parse that is no longer the document's current one. |
 | `quote_drift` | The quote is not at the anchor. `actual_quote` holds what is. |
 | `unknown_ref` / `unknown_version` | No such element, or no such parse. |
 
