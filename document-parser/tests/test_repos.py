@@ -246,6 +246,24 @@ class TestAnalysisRepo:
         assert completed.pages_json is None
         assert by_id["job-2"].status == AnalysisStatus.PENDING
 
+    async def test_find_summaries_by_document_keeps_to_that_document(
+        self, document_repo, analysis_repo
+    ):
+        # 12 INFO — counted before a delete, so no cap may cut it short.
+        await self._insert_doc(document_repo)
+        await document_repo.insert(
+            Document(id="doc-2", filename="other.pdf", storage_path="/tmp/other.pdf")
+        )
+        for i in range(3):
+            await analysis_repo.insert(AnalysisJob(id=f"job-{i}", document_id="doc-1"))
+        await analysis_repo.insert(AnalysisJob(id="job-other", document_id="doc-2"))
+
+        summaries = await analysis_repo.find_summaries_by_document("doc-1")
+
+        assert {s.id for s in summaries} == {"job-0", "job-1", "job-2"}
+        assert all(s.content_markdown is None for s in summaries)
+        assert await analysis_repo.find_summaries_by_document("missing") == []
+
     async def test_update_status(self, document_repo, analysis_repo):
         await self._insert_doc(document_repo)
         job = AnalysisJob(id="job-1", document_id="doc-1")

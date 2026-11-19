@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Query
 
 from api import deps  # noqa: TC001
@@ -9,12 +11,17 @@ from api.errors import to_http_error
 from api.schemas import (
     AnalysisEditHistoryActionRequest,
     AnalysisEditHistoryEntryResponse,
+    AnalysisEditorModelResponse,
     AnalysisEditorResponse,
     AnalysisEditRequest,
     AnalysisEditSaveResponse,
     AnalysisResponse,
+    EditorTreeNodeResponse,
 )
 from domain.analysis_editing import AnalysisEditError, EditCommand
+
+if TYPE_CHECKING:
+    from domain.analysis_editing import EditorTreeNode
 
 router = APIRouter(prefix="/api/documents", tags=["analysis-editor"])
 
@@ -39,19 +46,21 @@ def _to_analysis_response(job) -> AnalysisResponse:
     )
 
 
-def _serialize_tree(node) -> dict:
-    return {
-        "elementId": node.element_id,
-        "type": node.type,
-        "label": node.label,
-        "children": [_serialize_tree(child) for child in node.children],
-    }
+def _to_tree_node_response(node: EditorTreeNode) -> EditorTreeNodeResponse:
+    return EditorTreeNodeResponse(
+        element_id=node.element_id,
+        type=node.type,
+        label=node.label,
+        children=[_to_tree_node_response(child) for child in node.children],
+    )
 
 
 def _to_editor_response(snapshot) -> AnalysisEditorResponse:
     return AnalysisEditorResponse(
-        model=snapshot.projection.read_editor_model(),
-        tree=[_serialize_tree(node) for node in snapshot.projection.tree],
+        # The projector writes this JSON on every projection, cached or not,
+        # so it always has the shape the model declares.
+        model=AnalysisEditorModelResponse.model_validate(snapshot.projection.read_editor_model()),
+        tree=[_to_tree_node_response(node) for node in snapshot.projection.tree],
         reading_order=[element.id for element in snapshot.projection.elements],
         result=_to_analysis_response(snapshot.job),
         applied_through_sequence=snapshot.applied_through_sequence,

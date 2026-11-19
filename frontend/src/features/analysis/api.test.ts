@@ -5,7 +5,7 @@ import {
   fetchAnalyses,
   fetchAnalysis,
   deleteAnalysis,
-  fetchDocumentAnalyses,
+  fetchDocumentAnalysisSummaries,
 } from './api'
 
 vi.mock('../../shared/api/http', () => ({
@@ -88,13 +88,13 @@ describe('analysis API', () => {
     expect(apiFetch).toHaveBeenCalledWith('/api/analyses/42', { method: 'DELETE' })
   })
 
-  it('fetchDocumentAnalyses calls GET /api/analyses?documentId=:id', async () => {
-    const analyses = [{ id: '1', documentId: 'doc-42', status: 'COMPLETED' }]
-    apiFetch.mockResolvedValue(analyses)
+  it('fetchDocumentAnalysisSummaries filters the summaries by document', async () => {
+    const summaries = [{ id: '1', documentId: 'doc 42', status: 'COMPLETED' }]
+    apiFetch.mockResolvedValue(summaries)
 
-    const result = await fetchDocumentAnalyses('doc-42')
+    const result = await fetchDocumentAnalysisSummaries('doc 42')
 
-    expect(apiFetch).toHaveBeenCalledWith('/api/analyses?documentId=doc-42')
-    expect(result).toEqual(analyses)
+    expect(apiFetch).toHaveBeenCalledWith('/api/analyses/summaries?documentId=doc%2042')
+    expect(result).toEqual(summaries)
   })
 })

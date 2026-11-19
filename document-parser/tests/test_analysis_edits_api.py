@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.analysis_edits import router
+from api.schemas import MAX_ELEMENT_ID_LENGTH, MAX_ELEMENT_TEXT_LENGTH
 from api.state import AppState, get_app_state
 from domain.models import AnalysisJob, AnalysisStatus, Document, DocumentAnalysisState
 from infra.docling_analysis_engine import DoclingAnalysisEngine
@@ -114,6 +115,109 @@ def test_load_returns_the_active_analysis_with_its_editor_model(client):
     assert body["appliedThroughSequence"] == 0
     assert body["readingOrder"] == [element["id"] for element in body["model"]["elements"]]
     assert "First" in body["result"]["contentMarkdown"]
+
+
+def test_load_answers_the_full_typed_editor_shape(client):
+    # 07-7.4.2: the response models forbid unknown keys, so a key the
+    # projector adds or drops without the contract fails here.
+    body = client.get(f"{BASE}/analysis-editor").json()
+
+    assert set(body) == {
+        "model",
+        "tree",
+        "readingOrder",
+        "result",
+        "appliedThroughSequence",
+        "chunksStale",
+        "warnings",
+        "referenceChanges",
+    }
+    assert set(body["model"]) == {"baseAnalysisId", "elements"}
+    by_id = {element["id"]: element for element in body["model"]["elements"]}
+    assert by_id["analysis-1:#/texts/1"] == {
+        "id": "analysis-1:#/texts/1",
+        "selfRef": "#/texts/1",
+        "parentId": "analysis-1:#/body",
+        "type": "text",
+        "text": "First",
+        "headingLevel": None,
+        "children": [],
+        "provenance": [],
+        "editable": True,
+        "supportedOperations": [
+            "replaceText",
+            "mergeText",
+            "moveElement",
+            "deleteElement",
+            "deleteElements",
+        ],
+        "nonEditableReason": None,
+    }
+    assert by_id["analysis-1:#/texts/0"]["headingLevel"] == 1
+    assert by_id["analysis-1:#/texts/0"]["supportedOperations"] == [
+        "replaceText",
+        "setHeadingLevel",
+        "deleteElement",
+    ]
+    body_group = by_id["analysis-1:#/body"]
+    assert body_group["text"] is None
+    assert body_group["parentId"] is None
+    assert body_group["editable"] is False
+    assert body_group["nonEditableReason"] == "Unspecified elements are not editable yet."
+    assert body["tree"] == [
+        {
+            "elementId": "analysis-1:#/texts/0",
+            "type": "section_header",
+            "label": "Heading",
+            "children": [
+                {
+                    "elementId": f"analysis-1:#/texts/{n}",
+                    "type": "text",
+                    "label": text,
+                    "children": [],
+                }
+                for n, text in ((1, "First"), (2, "Second"), (3, "Third"))
+            ],
+        }
+    ]
+    assert (body["warnings"], body["referenceChanges"], body["chunksStale"]) == ([], {}, False)
+
+
+def test_history_answers_each_payload_with_its_command_keys(client):
+    element_id = _first_text_id(client)
+    client.post(
+        f"{BASE}/analysis-edits",
+        json={"commands": [_replace(element_id, "Saved")], "expectedAppliedThroughSequence": 0},
+    )
+    client.patch(
+        f"{BASE}/analysis-edits/history/1",
+        json={"active": False, "expectedAppliedThroughSequence": 1},
+    )
+
+    entries = client.get(f"{BASE}/analysis-edits/history").json()
+
+    assert [entry["payload"] for entry in entries] == [
+        {"elementId": element_id, "text": "Saved"},
+        {"targetSequence": 1, "active": False},
+    ]
+
+
+def test_move_payload_keeps_its_null_keys_in_the_history(client):
+    ids = _ids_by_text(client)
+    move = {"type": "moveElement", "elementId": ids["Third"], "beforeElementId": ids["First"]}
+    client.post(
+        f"{BASE}/analysis-edits",
+        json={"commands": [move], "expectedAppliedThroughSequence": 0},
+    )
+
+    [entry] = client.get(f"{BASE}/analysis-edits/history").json()
+
+    assert entry["payload"] == {
+        "elementId": ids["Third"],
+        "beforeElementId": ids["First"],
+        "targetElementId": None,
+        "placement": None,
+    }
 
 
 def test_preview_projects_pending_commands_without_saving(client):
@@ -359,3 +463,30 @@ def test_unknown_command_type_is_rejected_by_validation(client):
     )
 
     assert response.status_code == 422
+
+
+# --- Request bounds (08 MIN) --------------------------------------------------
+
+
+def test_an_oversized_replacement_text_is_rejected_by_validation(client):
+    element_id = _first_text_id(client)
+
+    response = _preview(client, _replace(element_id, "x" * (MAX_ELEMENT_TEXT_LENGTH + 1)))
+
+    assert response.status_code == 422
+
+
+def test_an_oversized_element_id_is_rejected_by_validation(client):
+    oversized_id = "x" * (MAX_ELEMENT_ID_LENGTH + 1)
+
+    response = _preview(client, {"type": "deleteElement", "elementId": oversized_id})
+
+    assert response.status_code == 422
+
+
+def test_a_text_at_the_bound_is_accepted(client):
+    element_id = _first_text_id(client)
+
+    response = _preview(client, _replace(element_id, "x" * MAX_ELEMENT_TEXT_LENGTH))
+
+    assert response.status_code == 200

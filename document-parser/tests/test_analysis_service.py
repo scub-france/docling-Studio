@@ -793,3 +793,11 @@ class TestFindAllSummaries:
 
         assert await service.find_all_summaries() == ["summary"]
         analysis_repo.find_all_summaries.assert_awaited_once()
+
+    async def test_reads_one_document_s_light_listing(self):
+        analysis_repo = MagicMock()
+        analysis_repo.find_summaries_by_document = AsyncMock(return_value=["summary"])
+        service = _make_service(analysis_repo=analysis_repo)
+
+        assert await service.find_summaries_by_document("doc-1") == ["summary"]
+        analysis_repo.find_summaries_by_document.assert_awaited_once_with("doc-1")

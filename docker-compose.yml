@@ -171,6 +171,9 @@ services:
       DOCLING_SERVE_API_KEY: ${DOCLING_SERVE_API_KEY:-}
       RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-100}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      MAX_IMPORT_SIZE_MB: ${MAX_IMPORT_SIZE_MB:-200}
+      # Host check on /api (docs/configuration.md): empty = no check.
+      API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
       BATCH_PAGE_SIZE: ${BATCH_PAGE_SIZE:-10}
       OPENSEARCH_URL: ${OPENSEARCH_URL:-}
       EMBEDDING_URL: ${EMBEDDING_URL:-}

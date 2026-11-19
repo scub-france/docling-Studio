@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 import httpx
 
 from domain.ports import LLMProvider
-from domain.value_objects import LLMProviderType
 from infra.llm.ollama_provider import OllamaProvider
 
 if TYPE_CHECKING:
@@ -24,9 +23,8 @@ def test_provider_satisfies_llmprovider_protocol() -> None:
     assert isinstance(p, LLMProvider)
 
 
-def test_provider_exposes_type_host_default_model_id() -> None:
+def test_provider_exposes_host_and_default_model_id() -> None:
     p = OllamaProvider(host="http://ollama:11434", default_model_id="gpt-oss:20b")
-    assert p.type is LLMProviderType.OLLAMA
     assert p.host == "http://ollama:11434"
     assert p.default_model_id == "gpt-oss:20b"
 

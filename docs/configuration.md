@@ -28,7 +28,8 @@ Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT`
 | `MAX_FILE_SIZE_MB` | `50` | Largest upload, in MB. `0` means no limit. |
 | `MAX_PAGE_COUNT` | `0` | Most pages per PDF. `0` means no limit. |
 | `MAX_FILE_SIZE` | `0` | Local engine only. Largest file Docling itself accepts, in bytes. `0` means no limit. Uploads are already capped by `MAX_FILE_SIZE_MB`. |
-| `NGINX_MAX_BODY_SIZE` | `200M` | Upload limit in nginx, in nginx format. Keep it above `MAX_FILE_SIZE_MB`. |
+| `MAX_IMPORT_SIZE_MB` | `200` | Largest Docling JSON accepted by **Import analysis** (`POST /api/analyses/import`), in MB. Over it, the backend answers `413`. `0` means no limit. A JSON with page or picture images embedded is much larger than the same JSON without them. |
+| `NGINX_MAX_BODY_SIZE` | `200M` | Body limit in nginx for every `/api` request, in nginx format. Keep it above `MAX_FILE_SIZE_MB` and `MAX_IMPORT_SIZE_MB`: over it, nginx answers `413` itself, before the backend. |
 | `RATE_LIMIT_RPM` | `100` | Requests per minute per client address, as the backend sees it. Behind the bundled nginx, that address is nginx itself, so all users share the limit. `0` turns it off. `/api/health` is not counted. |
 | `MAX_PASTE_IMAGE_SIZE_MB`, `PASTE_ALLOWED_IMAGE_TYPES` | `10`, `image/png,image/jpeg,image/webp` | Limits for pasted images. `/api/health` reports them, but no screen uses them yet. |
 
@@ -45,7 +46,7 @@ The other values are starting values. **Settings** › **Reasoning** in the app 
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama address, as seen from the backend. In a container, use `http://host.docker.internal:11434`. |
 | `REASONING_MODEL_ID` | `gpt-oss:20b` | Default model. It must be pulled in Ollama. |
 | `REASONING_MAX_ITERATIONS` | `5` | Most reasoning steps per question, from 1 to 20. |
-| `LLM_PROVIDER_TYPE` | `ollama` | Only `ollama` works. |
+| `LLM_PROVIDER_TYPE` | `ollama` | **Deprecated**, to be removed: Ask runs on Ollama only. Leave it unset. Any other value keeps Ask off and logs a warning at start-up, as before. **Settings** › **Reasoning** shows it read-only. |
 
 ## Feature switches
 
@@ -123,9 +124,26 @@ These compose settings are for a laptop: OpenSearch runs without security and Ne
 |----------|---------|--------------|
 | `DEPLOYMENT_MODE` | `self-hosted` | `huggingface` shows a demo banner and makes **Settings** › **Reasoning** read-only. |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Browser origins allowed to call the API, comma-separated. Only needed when the UI is served from another address. |
+| `API_ALLOWED_HOSTS` | empty | `Host` names `/api` answers, comma-separated. Empty: no check. See [Host check on the API](#host-check-on-the-api). |
 | `UPLOAD_DIR` | `/app/uploads` in the images, `./uploads` from source | Folder for uploaded PDFs. |
 | `DB_PATH` | `/app/data/docling_studio.db` in the images, `./data/docling_studio.db` from source | SQLite database: documents, analyses, edits, stores and settings saved in the app. |
 | `APP_VERSION` | `dev` | Version shown in the app. The release build sets it. |
+
+### Host check on the API
+
+`API_ALLOWED_HOSTS` is empty by default, and then `/api` answers whatever `Host` header a request carries. **On a workstation, that leaves `/api` open to DNS rebinding**: a web page you visit can point its own domain name at `127.0.0.1` and then read and change your documents through your browser. CORS does not stop it, because the browser takes those calls as same-origin.
+
+Set `API_ALLOWED_HOSTS` to turn the check on. A request to `/api/*` whose `Host` is not listed then gets `421 Invalid Host header`, as `/mcp` does with `MCP_ALLOWED_HOSTS`. For a local install:
+
+```
+API_ALLOWED_HOSTS=localhost:*,127.0.0.1:*,[::1]:*
+```
+
+- The values are written like `MCP_ALLOWED_HOSTS`: `name:port` for one port, `name:*` for any port, `*` for no check. `name:*` also matches the name without a port, which is what the bundled nginx forwards (`Host $host`).
+- `localhost`, `127.0.0.1` and `[::1]` are always accepted once the check is on, so health checks such as `curl http://localhost:8000/api/health` keep working.
+- If people open Studio by a LAN name, an IP address or a domain, list it: `API_ALLOWED_HOSTS=localhost:*,studio.lan:*`. Behind your own proxy, list the name the proxy forwards in `Host`.
+- Only `/api/*` is checked. `/mcp` has its own list; the web app itself is static.
+- At start-up, the backend logs one line saying whether the check is on and for which hosts.
 
 ### Behind your own proxy
 

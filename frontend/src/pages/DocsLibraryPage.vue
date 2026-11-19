@@ -209,7 +209,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useDocumentStore } from '../features/document/store'
 import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
 import { AnalysisImportButton } from '../features/analysis'
-import { fetchDocumentAnalyses } from '../features/analysis/api'
+import { fetchDocumentAnalysisSummaries } from '../features/analysis/api'
 import { useAnalysisStore } from '../features/analysis/store'
 import type { BatchLaunch } from '../features/analysis/store'
 import { keepListed, getSelectionState, toggleListed, toggleOne } from './DocsLibraryPage.logic'
@@ -342,7 +342,7 @@ function onAnalysisImported(analysisId: string): void {
 async function deleteDoc(id: string, filename: string): Promise<void> {
   let analysisCount = 0
   try {
-    analysisCount = (await fetchDocumentAnalyses(id)).length
+    analysisCount = (await fetchDocumentAnalysisSummaries(id)).length
   } catch (error) {
     console.error('Failed to load analyses before document deletion', error)
     window.alert(t('docs.deleteAnalysisLookupFailed'))

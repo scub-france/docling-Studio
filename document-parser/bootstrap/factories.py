@@ -86,9 +86,9 @@ def build_env_reasoning_config() -> ReasoningConfig:
 
 def build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunner | None:
     """Wire the reasoning runner for `config` if enabled and deps are
-    importable. Today only `LLM_PROVIDER_TYPE=ollama` is supported (cf. the
-    `LLMProvider` docstring); other values fall through to a logged warning +
-    None so the rest of the app boots cleanly.
+    importable. The runner talks to Ollama only; the deprecated
+    `LLM_PROVIDER_TYPE` set to anything else keeps Ask off, as before, with a
+    logged warning + None so the rest of the app boots cleanly (04-4.2).
     """
     if not config.enabled:
         return None
@@ -102,9 +102,9 @@ def build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunn
         return None
     if settings.llm_provider_type != "ollama":
         logger.warning(
-            "Unsupported LLM_PROVIDER_TYPE=%s — reasoning runner disabled (only "
-            "'ollama' is realizable today, see "
-            "https://github.com/docling-project/docling-agent/issues/26)",
+            "Unsupported LLM_PROVIDER_TYPE=%s — reasoning runner disabled. The variable "
+            "is deprecated: reasoning runs on Ollama only; unset it to turn Ask back on "
+            "(see https://github.com/docling-project/docling-agent/issues/26)",
             settings.llm_provider_type,
         )
         return None

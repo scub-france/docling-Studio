@@ -607,6 +607,15 @@ class TestDocumentEndpoints:
         resp = client.get("/api/documents/d1/export?format=docx")
         assert resp.status_code == 422
 
+    def test_editor_export_validates_the_format_before_the_flag(self, client, mock_export_service):
+        # The flag is checked in the route body, so FastAPI's 422 on an invalid
+        # `format` comes before the "editor disabled" 404 (api/documents.py).
+        with state_override(app, analysis_editor_enabled=False):
+            resp = client.get("/api/documents/d1/export?format=docx&edited=true")
+
+        assert resp.status_code == 422
+        mock_export_service.export_edited.assert_not_awaited()
+
     def test_export_document_no_analysis_returns_404(self, client, mock_export_service):
         from services.export_service import ExportNotFoundError
 
@@ -673,6 +682,21 @@ class TestAnalysisEndpoints:
         assert "contentMarkdown" not in summary
         assert "pagesJson" not in summary
         mock_analysis_service.find_all_summaries.assert_awaited_once()
+
+    def test_list_analysis_summaries_of_one_document(self, client, mock_analysis_service):
+        # 12 INFO — the library counts a document's analyses from light rows.
+        mock_analysis_service.find_all_summaries = AsyncMock(return_value=[])
+        mock_analysis_service.find_summaries_by_document = AsyncMock(
+            return_value=[AnalysisJob(id="j1", document_id="d1", document_filename="test.pdf")]
+        )
+
+        resp = client.get("/api/analyses/summaries?documentId=d1")
+
+        assert resp.status_code == 200
+        assert [summary["id"] for summary in resp.json()] == ["j1"]
+        assert "contentMarkdown" not in resp.json()[0]
+        mock_analysis_service.find_summaries_by_document.assert_awaited_once_with("d1")
+        mock_analysis_service.find_all_summaries.assert_not_awaited()
 
     def test_list_analyses_filtered_by_document(self, client, mock_analysis_service):
         mock_analysis_service.find_all = AsyncMock(return_value=[])

@@ -80,6 +80,21 @@ class SqliteAnalysisRepository:
             rows = await cursor.fetchall()
             return [_row_to_job(r) for r in rows]
 
+    async def find_summaries_by_document(self, document_id: str) -> list[AnalysisJob]:
+        """Every analysis of one document without its content, newest first.
+
+        No cap: the 200-row cap bounds the cross-document listing, and one
+        document's analyses are what a user ran on it — a count that must not
+        come out short.
+        """
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"{_SELECT_SUMMARY} WHERE aj.document_id = ? ORDER BY aj.created_at DESC",
+                (document_id,),
+            )
+            rows = await cursor.fetchall()
+            return [_row_to_job(r) for r in rows]
+
     async def find_by_document(
         self, document_id: str, *, limit: int = 200, offset: int = 0
     ) -> list[AnalysisJob]:

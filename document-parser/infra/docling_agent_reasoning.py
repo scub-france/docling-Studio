@@ -17,15 +17,13 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from domain.ports import LLMProvider, ReasoningParseError
-from domain.value_objects import (
-    LLMProviderType,
-    ReasoningIteration,
-    ReasoningResult,
-)
+from domain.ports import ReasoningParseError
+from domain.value_objects import ReasoningIteration, ReasoningResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from domain.ports import LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -134,10 +132,8 @@ class DoclingAgentReasoningRunner:
     """
 
     def __init__(self, provider: LLMProvider, *, max_iterations: int = 5) -> None:
-        if provider.type is not LLMProviderType.OLLAMA:
-            raise NotImplementedError(
-                f"The reasoning runner only supports Ollama, got provider type {provider.type!r}."
-            )
+        # Ollama only: `build_reasoning_runner` is the one place that refuses
+        # another LLM_PROVIDER_TYPE, before a provider is built (04-4.2).
         self._provider = provider
         self._max_iterations = max_iterations
         self._deps_ok = has_usable_deps()

@@ -326,7 +326,8 @@ model's context.
   `Origin` headers: it blocks a web page that tries to reach the server
   through the visitor's browser (DNS rebinding), not a client on the network
   that sets `Host: localhost:3000` itself. nginx passes the client's `Host`
-  through. Keep the published port off untrusted networks, or put an
+  through. The same guard exists for `/api`, off unless `API_ALLOWED_HOSTS`
+  is set (see [Configuration](configuration.md#host-check-on-the-api)). Keep the published port off untrusted networks, or put an
   authenticating proxy in front. Set `MCP_ENABLED=false` where nobody needs
   it. A Hugging Face Space keeps it off unless `MCP_ENABLED=true` is set.
 - **Read-only.** No tool uploads, edits, re-analyses or stores anything.

@@ -40,7 +40,6 @@ if TYPE_CHECKING:
         ConversionResult,
         DocumentLifecycleState,
         GraphPayload,
-        LLMProviderType,
         PageDetail,
         ReasoningResult,
     )
@@ -367,6 +366,10 @@ class AnalysisRepository(Protocol):
         """Like `find_all`, without the content: to follow statuses (#354)."""
         ...
 
+    async def find_summaries_by_document(self, document_id: str) -> list[AnalysisJob]:
+        """Every analysis of one document, without the content and uncapped."""
+        ...
+
     async def find_by_id(self, job_id: str) -> AnalysisJob | None: ...
 
     async def find_by_document(
@@ -608,23 +611,16 @@ class LLMHostProbe(Protocol):
 
 @runtime_checkable
 class LLMProvider(Protocol):
-    """Connection-level abstraction over an LLM backend.
+    """Connection to the LLM host the reasoning runner talks to.
 
-    A provider carries the host/base-URL, the default model identifier, and a
-    type tag that adapters can dispatch on. The reasoning runner consumes a
-    provider — it doesn't construct one — so the runner stays decoupled from
-    Ollama-vs-OpenAI-vs-WatsonX wiring.
+    A provider carries the host/base-URL and the default model identifier.
+    The reasoning runner consumes a provider — it doesn't construct one.
 
-    Today only `OllamaProvider` (in `infra/llm/`) is implemented because
-    docling-agent v0.1.0 is hardwired to Ollama via mellea's
-    `setup_local_session`. Adding a non-Ollama provider requires either
-    docling-agent upstream support or a fork (track
-    https://github.com/docling-project/docling-agent/issues/26 + provider
-    abstraction work upstream).
+    Only Ollama exists (`OllamaProvider` in `infra/llm/`): docling-agent is
+    hardwired to it through mellea, so there is no backend type to dispatch
+    on (04-4.2). A second backend needs docling-agent upstream support first
+    (https://github.com/docling-project/docling-agent/issues/26).
     """
-
-    @property
-    def type(self) -> LLMProviderType: ...
 
     @property
     def host(self) -> str: ...

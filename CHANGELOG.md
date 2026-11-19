@@ -24,6 +24,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Restoring a version and regenerating chunks are atomic**: the chunks and the record of which analysis produced them are written in one transaction. A failure in the middle no longer leaves new chunks with the old source, or the reverse.
 - **MCP cards in English by default** (#397): the citation and sources cards follow the browser language, English unless it is French. The analysis editor's remaining hard-coded labels are translated.
 - **Theme colours**: screens that used colours the theme did not define now take them from the theme. The breadcrumb follows the light theme, the reading-order badges on the page follow the theme, the store form's main button and the "coming soon" badge use the accent colour instead of blue, and the chunk panel's fields and badges have a visible background.
+- **Analysis editor API schemas**: the editor's responses (model, tree, history payloads) have typed schemas in the OpenAPI document instead of free-form objects. The JSON returned is unchanged. Editor requests are bounded: an id or a separator up to 1,000 characters, a text up to 1,000,000, a list of ids up to 100,000, a batch of commands up to 10,000. Beyond that the API answers 422.
+- **Analysis summaries by document**: `GET /api/analyses/summaries` accepts `documentId` and then returns every analysis of that document. Deleting a document counts its analyses from these light rows instead of loading them all.
+- **Import size limit**: new `MAX_IMPORT_SIZE_MB` (default `200`, `0` for no limit). **Import analysis** above the limit answers 413.
 - **Static files cached and compressed**: nginx now caches the fingerprinted files under `/assets/` for a year and compresses JavaScript, CSS and SVG, not only JSON. The PDF viewer's 1.7 MB of scripts used to be sent uncompressed on every visit. The logo, also used as the favicon, went from 878 kB to 61 kB.
 - **Docker images build the frontend on Node 22**: the PDF viewer's library requires Node 22.13 or later. Use Node 22 to build the frontend from source.
 
@@ -39,6 +42,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Analysis editor merge**: the Merge button is only enabled when all selected elements have the same type, so a mix of text and paragraph no longer fails with an error after the click (#395).
 - **Analysis editor result id**: the id of an edited result now includes its base analysis, so two analyses of one document no longer return edited results with the same id (#395).
 - **Analysis editor missing resources**: the editor API now answers 404 for an unknown document or analysis instead of 409, so the editor no longer shows an edit conflict for something that does not exist (#395).
+
+### Deprecated
+
+- **`LLM_PROVIDER_TYPE`**: Ollama is the only provider Ask can use, so the variable no longer selects anything. It is still read: a value other than `ollama` keeps Ask off with a warning, as before. It will be removed in a later release.
+
+### Security
+
+- **Optional `Host` check on `/api`**: new `API_ALLOWED_HOSTS`. When set, a request to `/api/*` whose `Host` header is not listed answers 421; loopback names are always accepted. It protects an instance running on your own machine against DNS rebinding from a web page. Unset, the default, changes nothing: on a workstation, set it to `localhost:*,127.0.0.1:*,[::1]:*`. See [docs/configuration.md](docs/configuration.md).
+
 
 ## [0.7.3] - 2026-11-02
 

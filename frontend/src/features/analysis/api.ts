@@ -60,6 +60,9 @@ export function deleteAnalysis(id: string): Promise<unknown> {
   return apiFetch(`/api/analyses/${id}`, { method: 'DELETE' })
 }
 
-export function fetchDocumentAnalyses(docId: string): Promise<Analysis[]> {
-  return apiFetch<Analysis[]>(`/api/analyses?documentId=${encodeURIComponent(docId)}`)
+/** Every analysis of one document, without content: enough to count them. */
+export function fetchDocumentAnalysisSummaries(docId: string): Promise<AnalysisSummary[]> {
+  return apiFetch<AnalysisSummary[]>(
+    `/api/analyses/summaries?documentId=${encodeURIComponent(docId)}`,
+  )
 }

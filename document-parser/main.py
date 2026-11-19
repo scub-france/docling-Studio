@@ -36,6 +36,8 @@ from api.state import AppState
 from api.stores import router as stores_router
 from bootstrap import AppStateBuilder
 from bootstrap.mcp_mount import mount_mcp_server
+from infra.body_limit import BodySizeLimitMiddleware
+from infra.host_guard import ApiHostGuardMiddleware, describe_host_check, is_host_check_on
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.database import get_connection
@@ -87,6 +89,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Middlewares run outermost-last-added: the Host check, then the rate limiter,
+# then CORS, then the import body limit (inside CORS, so its 413 carries the
+# CORS headers the browser needs to read it).
+if settings.max_import_size_mb > 0:
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        path="/api/analyses/import",  # `import_analysis` in api/analyses.py
+        max_bytes=settings.max_import_size_mb * 1024 * 1024,
+        detail=f"Docling JSON too large (max {settings.max_import_size_mb} MB)",
+    )
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -100,6 +112,11 @@ if settings.rate_limit_rpm > 0:
         requests_per_window=settings.rate_limit_rpm,
         window_seconds=60,
     )
+# Outermost: a request for a foreign Host is refused before it counts
+# against the rate limit or reaches a route.
+if is_host_check_on(settings.api_allowed_hosts):
+    app.add_middleware(ApiHostGuardMiddleware, allowed_hosts=settings.api_allowed_hosts)
+logger.info(describe_host_check(settings.api_allowed_hosts))
 
 app.include_router(documents_router)
 app.include_router(document_chunks_router)

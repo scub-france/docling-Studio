@@ -107,12 +107,20 @@ async def list_analyses(
 @router.get("/summaries", response_model=list[AnalysisSummaryResponse])
 async def list_analysis_summaries(
     service: deps.AnalysisServiceDep,
+    document_id: str | None = Query(default=None, alias="documentId"),
 ) -> list[AnalysisSummaryResponse]:
     """List analysis jobs without their content, to follow their statuses (#354).
 
     The full list carries every analysis's markdown, HTML, pages and chunks,
-    far too heavy to poll while a batch runs.
+    far too heavy to poll while a batch runs. Unfiltered, it holds the 200
+    most recent analyses; filtered by `documentId`, every analysis of that
+    document, uncapped.
     """
+    jobs = (
+        await service.find_summaries_by_document(document_id)
+        if document_id
+        else await service.find_all_summaries()
+    )
     return [
         AnalysisSummaryResponse(
             id=job.id,
@@ -126,7 +134,7 @@ async def list_analysis_summaries(
             completed_at=str(job.completed_at) if job.completed_at else None,
             created_at=str(job.created_at),
         )
-        for job in await service.find_all_summaries()
+        for job in jobs
     ]
 
 

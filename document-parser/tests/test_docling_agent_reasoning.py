@@ -154,20 +154,6 @@ class TestProtocolConformance:
         assert isinstance(runner, ReasoningRunner)
 
 
-class TestProviderRejection:
-    def test_rejects_non_ollama_provider(self) -> None:
-        class _FakeProvider:
-            type = "openai"
-            host = "x"
-            default_model_id = "y"
-
-            def health_check(self) -> bool:
-                return True
-
-        with pytest.raises(NotImplementedError, match="Ollama"):
-            mod.DoclingAgentReasoningRunner(provider=_FakeProvider())  # type: ignore[arg-type]
-
-
 class TestRunHappyPath:
     @pytest.mark.asyncio
     async def test_returns_domain_reasoning_result(self, stub_fork) -> None:

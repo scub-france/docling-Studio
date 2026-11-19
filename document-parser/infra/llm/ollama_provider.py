@@ -11,8 +11,6 @@ import logging
 
 import httpx
 
-from domain.value_objects import LLMProviderType
-
 logger = logging.getLogger(__name__)
 
 # Ollama's tags endpoint returns 200 with an empty list even on a fresh
@@ -25,10 +23,6 @@ class OllamaProvider:
     def __init__(self, host: str, default_model_id: str) -> None:
         self._host = host.rstrip("/")
         self._default_model_id = default_model_id
-
-    @property
-    def type(self) -> LLMProviderType:
-        return LLMProviderType.OLLAMA
 
     @property
     def host(self) -> str:
