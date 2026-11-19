@@ -9,6 +9,11 @@ concurrency:
   group: release-gate-${{ github.ref }}
   cancel-in-progress: true
 
+# Jobs only read the repository unless they say otherwise: the third-party
+# code they install must not get a token that can write to it.
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REGISTRY: ghcr.io
@@ -258,6 +263,8 @@ jobs:
           name: docker-image-${{ matrix.target }}
           path: /tmp/docling-studio-${{ matrix.target }}.tar.gz
           retention-days: 1
+          # Already gzipped: compressing it again only costs time.
+          compression-level: 0
 
       - name: Record image size
         run: |
@@ -460,6 +467,7 @@ jobs:
     needs: [docker-build]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: read
     steps:
       - uses: actions/checkout@v4.3.1
@@ -735,7 +743,8 @@ jobs:
 
   release-summary:
     name: Release summary
-    if: always() && github.event_name == 'pull_request'
+    # Not on a cancelled run: a superseded gate must not publish a verdict.
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs:
       - lint-typecheck
       - unit-tests
@@ -748,6 +757,7 @@ jobs:
       - e2e-ui
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
       actions: read
 
@@ -782,7 +792,9 @@ jobs:
           # Determine verdict
           BLOCKING_FAILED="false"
           for result in "$LINT" "$TESTS" "$BUILD" "$SMOKE" "$SCAN" "$E2E_API" "$E2E_UI"; do
-            if [ "$result" = "failure" ]; then
+            # Anything but success blocks: a job skipped because the one it
+            # needs failed, or cancelled, proves nothing.
+            if [ "$result" != "success" ]; then
               BLOCKING_FAILED="true"
             fi
           done
