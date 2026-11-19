@@ -11,6 +11,7 @@
     :src="getPreviewUrl(documentId, pageNumber)"
     :alt="`Page ${pageNumber}`"
     class="preview-image"
+    data-e2e="preview-fallback-image"
     :fetchpriority="priority"
     decoding="async"
     @load="(event) => emit('ready', event.target as HTMLImageElement, 'image')"

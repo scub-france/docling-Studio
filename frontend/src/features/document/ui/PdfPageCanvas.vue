@@ -2,6 +2,7 @@
   <canvas
     ref="canvasRef"
     class="pdf-page-canvas"
+    data-e2e="pdf-page-canvas"
     :class="{ 'fill-frame': fillFrame !== false }"
     :aria-label="`Page ${pageNumber}`"
   />
