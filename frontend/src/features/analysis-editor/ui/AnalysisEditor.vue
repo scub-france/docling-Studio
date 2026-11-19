@@ -117,99 +117,25 @@
     </div>
     <div v-else-if="store.error" class="state error">{{ store.error }}</div>
     <template v-else>
-      <div v-if="store.previewError" class="editor-error" role="alert">
-        {{ store.previewError }}
-      </div>
-      <div v-if="store.historyError" class="editor-error" role="alert">
-        {{ store.historyError }}
-      </div>
-      <div v-if="store.conflict" class="editor-conflict" role="alert">
-        <span>{{ t('analysisEditor.conflict') }}</span>
-        <button type="button" @click="store.reloadAfterConflict()">
-          {{ t('analysisEditor.conflictReload') }}
-        </button>
-        <button type="button" @click="copyConflictDetails">
-          {{ t('analysisEditor.conflictCopy') }}
-        </button>
-        <button type="button" @click="store.discardConflict()">
-          {{ t('analysisEditor.conflictDiscard') }}
-        </button>
-      </div>
-      <div
-        v-if="store.recoveredPendingCount"
-        class="editor-recovery"
-        data-e2e="analysis-editor-recovered"
-        role="status"
-      >
-        <span>{{ t('analysisEditor.recoveredDraft', { n: store.recoveredPendingCount }) }}</span>
-        <button
-          type="button"
-          data-e2e="analysis-editor-restore-draft"
-          @click="store.restoreRecoveredPending()"
-        >
-          {{ t('analysisEditor.restoreDraft') }}
-        </button>
-        <button
-          type="button"
-          data-e2e="analysis-editor-discard-draft"
-          @click="store.discardRecoveredPending()"
-        >
-          {{ t('analysisEditor.discardDraft') }}
-        </button>
-      </div>
-      <div v-if="saveNotice" class="editor-success" data-e2e="analysis-editor-saved" role="status">
-        {{ saveNotice }}
-      </div>
-      <div v-if="store.effective?.chunksStale" class="editor-warning">
-        {{ t('analysisEditor.chunksStale') }}
-      </div>
-      <section v-if="historyOpen" class="history-panel" data-e2e="analysis-edit-history">
-        <div v-if="!store.history.length" class="history-empty">
-          {{ t('analysisEditor.historyEmpty') }}
-        </div>
-        <article
-          v-for="entry in [...store.history].reverse()"
-          :key="entry.id"
-          class="history-entry"
-          :class="{ 'history-entry--reverted': entry.active === false }"
-        >
-          <div class="history-entry-head">
-            <strong v-if="entry.commandType === 'setCommandActive'">
-              #{{ entry.sequence }}
-              {{
-                entry.payload.active ? t('analysisEditor.reapplied') : t('analysisEditor.reverted')
-              }}
-              #{{ entry.payload.targetSequence }}
-            </strong>
-            <strong v-else>#{{ entry.sequence }} {{ describeCommand(entry.commandType) }}</strong>
-            <time>{{ formatHistoryDate(entry.createdAt) }}</time>
-          </div>
-          <code v-if="entry.commandType !== 'setCommandActive'">{{
-            formatHistoryPayload(entry.payload)
-          }}</code>
-          <div v-if="entry.active !== null" class="history-entry-actions">
-            <span>{{
-              entry.active ? t('analysisEditor.activeEdit') : t('analysisEditor.revertedEdit')
-            }}</span>
-            <button
-              type="button"
-              :data-e2e="`analysis-editor-history-toggle-${entry.sequence}`"
-              :disabled="!store.canChangeSavedHistory"
-              :aria-label="
-                entry.active
-                  ? t('analysisEditor.revertEditNumber', { n: entry.sequence })
-                  : t('analysisEditor.reapplyEditNumber', { n: entry.sequence })
-              "
-              :title="
-                store.canChangeSavedHistory ? undefined : t('analysisEditor.resolveDraftFirst')
-              "
-              @click="store.setSavedCommandActive(entry.sequence, !entry.active)"
-            >
-              {{ entry.active ? t('analysisEditor.revertEdit') : t('analysisEditor.reapplyEdit') }}
-            </button>
-          </div>
-        </article>
-      </section>
+      <EditorBanners
+        :preview-error="store.previewError"
+        :history-error="store.historyError"
+        :conflict="store.conflict"
+        :recovered-count="store.recoveredPendingCount"
+        :save-notice="saveNotice"
+        :chunks-stale="Boolean(store.effective?.chunksStale)"
+        @reload-conflict="store.reloadAfterConflict()"
+        @copy-conflict="copyConflictDetails"
+        @discard-conflict="store.discardConflict()"
+        @restore-draft="store.restoreRecoveredPending()"
+        @discard-draft="store.discardRecoveredPending()"
+      />
+      <AnalysisEditHistoryPanel
+        v-if="historyOpen"
+        :history="store.history"
+        :can-change="store.canChangeSavedHistory"
+        @set-active="(sequence, active) => store.setSavedCommandActive(sequence, active)"
+      />
       <div class="editor-grid">
         <aside class="structure-column">
           <div class="column-heading">
@@ -310,7 +236,9 @@ import { onBeforeRouteLeave } from 'vue-router'
 import type { Page, PageElement } from '../../../shared/types'
 import { useAnalysisEditorStore } from '../store'
 import { useI18n } from '../../../shared/i18n'
+import AnalysisEditHistoryPanel from './AnalysisEditHistoryPanel.vue'
 import EditableStructureNode from './EditableStructureNode.vue'
+import EditorBanners from './EditorBanners.vue'
 import ElementEditPanel from './ElementEditPanel.vue'
 import { PagePreviewWithOverlay } from '../../document'
 
@@ -403,23 +331,6 @@ function extendSelection(id: string): void {
   store.toggleMergeSelection(id)
   store.selectedElementId = id
   focusPage(id)
-}
-/** The translated command type, or the raw type when no translation exists. */
-function describeCommand(commandType: string): string {
-  const key = `analysisEditor.commandType.${commandType}`
-  const label = t(key)
-  return label === key ? commandType : label
-}
-function formatHistoryDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
-    new Date(value),
-  )
-}
-function formatHistoryPayload(payload: Record<string, unknown>): string {
-  const values = Object.entries(payload)
-    .filter(([key]) => key !== 'elementId' && key !== 'elementIds')
-    .map(([key, value]) => `${key}: ${String(value)}`)
-  return values.join(' · ') || t('analysisEditor.structuralChange')
 }
 function toggleMerge(id: string): void {
   store.toggleMergeSelection(id)
@@ -532,6 +443,8 @@ watch(
 )
 </script>
 
+<style scoped src="./editorButton.css"></style>
+
 <style scoped>
 .analysis-editor {
   display: flex;
@@ -590,19 +503,6 @@ watch(
   color: var(--text-muted);
   font-size: 11px;
 }
-button {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 12px;
-}
-button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
 button.primary {
   border-color: var(--accent);
   background: var(--accent-muted);
@@ -625,90 +525,6 @@ button.primary {
   border-color: var(--accent);
   color: var(--accent);
 }
-.editor-warning,
-.editor-error,
-.editor-success,
-.editor-recovery,
-.editor-conflict {
-  padding: 8px 16px;
-  font-size: 12px;
-}
-.editor-warning {
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 10%, transparent);
-}
-.editor-success {
-  color: var(--success);
-  background: color-mix(in srgb, var(--success) 10%, transparent);
-}
-.editor-recovery {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
-  background: var(--bg-elevated);
-}
-.editor-conflict {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--error);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-}
-.history-panel {
-  max-height: 220px;
-  overflow: auto;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elevated);
-}
-.history-entry {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-.history-entry:last-child {
-  border-bottom: 0;
-}
-.history-entry--reverted {
-  opacity: 0.7;
-}
-.history-entry-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-.history-entry time {
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.history-entry code {
-  display: block;
-  margin-top: 4px;
-  color: var(--text-muted);
-  font:
-    10px 'IBM Plex Mono',
-    monospace;
-  white-space: pre-wrap;
-}
-.history-entry-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 6px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-.history-entry-actions button {
-  padding: 3px 8px;
-}
-.history-empty {
-  padding: 12px 0;
-  color: var(--text-muted);
-  font-size: 12px;
-}
 .tree-fold-button {
   margin-left: auto;
   border: 0;
@@ -717,7 +533,6 @@ button.primary {
   cursor: pointer;
   font-size: 11px;
 }
-.editor-error,
 .error {
   color: var(--error);
 }

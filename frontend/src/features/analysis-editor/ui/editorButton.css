@@ -1,0 +1,17 @@
+/* Base look of the analysis editor's buttons. Imported as a scoped style by
+ * AnalysisEditor.vue and by each of its panels, so it reaches their own
+ * buttons and no one else's (the tree, the edit panel and the page preview
+ * keep their own styles). */
+button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
