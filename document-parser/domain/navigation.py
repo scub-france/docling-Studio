@@ -16,8 +16,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from domain.parse_index import DocumentIndex
-
 
 class CitationStatus(StrEnum):
     """Outcome of `verify_citation` — the enum the wire contract publishes.
@@ -377,48 +375,6 @@ def clip_to_tokens(text: str, budget: int) -> str:
     """
     cut = clip_point(text, budget)
     return text if cut == len(text) else f"{text[:cut].rstrip()}{CLIP_MARKER}"
-
-
-def pick_within_budget(
-    index: DocumentIndex,
-    refs: list[str],
-    budget: int,
-    start: int = 0,
-) -> tuple[list[ResolvedElement], int, bool, str | None]:
-    """Take elements in reading order until the budget is spent — the
-    first from character `start`, where a previous read cut it.
-
-    Returns the elements, the tokens they cost, whether the read was cut,
-    and the cursor to resume from.
-    """
-    # Imported here: `domain.element_reader` imports this module.
-    from domain.element_reader import resolve
-
-    picked: list[ResolvedElement] = []
-    spent = 0
-
-    for position, candidate in enumerate(refs):
-        element = resolve(index, candidate)
-        if element is None or not element.text.strip():
-            continue
-        offset = start if position == 0 else 0
-        if offset:
-            element = replace(element, text=element.text[offset:])
-        cost = read_cost(element.text)
-        if picked and spent + cost > budget:
-            return picked, spent, True, candidate
-        if not picked and cost > budget:
-            # Larger than the whole budget: cut at a word boundary, and
-            # the cursor resumes inside the element where the cut fell.
-            room = budget - ANCHOR_TOKENS
-            cut = clip_point(element.text, room)
-            if cut < len(element.text):
-                clipped = replace(element, text=clip_to_tokens(element.text, room))
-                return [clipped], read_cost(clipped.text), True, f"{candidate}@{offset + cut}"
-        picked.append(element)
-        spent += cost
-
-    return picked, spent, False, None
 
 
 def is_heading(label: str) -> bool:

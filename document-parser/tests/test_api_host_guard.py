@@ -16,6 +16,7 @@ from infra.host_guard import (
     ApiHostGuardMiddleware,
     describe_host_check,
     is_host_check_on,
+    log_host_check,
     parse_host_name,
 )
 from infra.settings import Settings
@@ -151,7 +152,27 @@ class TestStartupLine:
     def test_on_names_the_hosts(self):
         assert is_host_check_on(["studio.lan:*"]) is True
         line = describe_host_check(["studio.lan:*"])
-        assert line == "API Host check on: /api accepts loopback and studio.lan:*"
+        assert line == "API Host check on: /api accepts loopback, studio.lan"
+
+    def test_names_only_the_hosts_kept(self):
+        line = describe_host_check(["http://studio.lan", "studio.lan:3000", "*.example.com"])
+        assert line == "API Host check on: /api accepts loopback, studio.lan"
+
+    def test_warns_once_naming_each_ignored_entry(self, caplog):
+        with caplog.at_level(logging.INFO, logger="infra.host_guard"):
+            log_host_check(["http://studio.lan", "studio.lan", "*.example.com"])
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings == [
+            "API_ALLOWED_HOSTS entries ignored, not a host name: http://studio.lan, *.example.com"
+        ]
+        assert "API Host check on: /api accepts loopback, studio.lan" in caplog.messages
+
+    def test_no_warning_when_every_entry_is_kept_or_the_check_is_off(self, caplog):
+        with caplog.at_level(logging.INFO, logger="infra.host_guard"):
+            log_host_check(["studio.lan:*"])
+            log_host_check(["*"])
+            log_host_check([])
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 class TestSetting:

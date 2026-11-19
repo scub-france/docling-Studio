@@ -161,6 +161,43 @@ def resolve_current_analysis_id(
     return latest_parsed_analysis_id
 
 
+def select_after_restore(
+    state: DocumentAnalysisState | None,
+    version_analysis_id: str | None,
+    fallback_analysis_id: str | None,
+) -> str | None:
+    """The active analysis once a version is restored.
+
+    A version with an analysis selects it. A version without one clears the
+    selection of a document that has a state row; a document with no row
+    keeps `fallback_analysis_id` (the latest completed analysis with a
+    Docling document), so the row the restore creates does not hide the
+    analysis the fallback rule was giving behind a NULL selection.
+    """
+    if version_analysis_id is not None:
+        return version_analysis_id
+    if state is not None:
+        return None
+    return fallback_analysis_id
+
+
+def select_after_rechunk(
+    state: DocumentAnalysisState | None, chunked_analysis_id: str
+) -> str | None:
+    """The active analysis once the chunks of `chunked_analysis_id` are written.
+
+    A rechunk never changes an existing selection: an analysis that became
+    active while the chunker ran stays active, and the new chunks report
+    stale against it. A document with no state row adopts the chunked
+    analysis, the one the fallback rule gave it. Persistence applies this
+    rule in the write itself, so a selection made after `state` was read
+    is kept too.
+    """
+    if state is not None:
+        return state.active_analysis_id
+    return chunked_analysis_id
+
+
 @dataclass
 class AnalysisJob:
     id: str = field(default_factory=generate_id)

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from domain.exceptions import AnalysisNotSelectableError
 from domain.models import AnalysisJob, AnalysisStatus, Chunk, Document, Store
 from domain.value_objects import (
     ChunkDocItem,
@@ -91,6 +92,7 @@ def service(repos):
         chunk_repo=repos["chunks"],
         document_repo=repos["documents"],
         active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
+        analysis_state_repo=repos["analysis_state"],
         chunker=None,
     )
 
@@ -515,6 +517,27 @@ class TestRechunkDocument:
         assert state.active_analysis_id == job.id
         assert state.chunk_source.analysis_id == job.id
         assert await repos["current"].find_current_analysis_id(doc.id) == job.id
+
+    async def test_rechunk_409_when_the_analysis_disappears_before_the_write(
+        self, service, repos, doc, monkeypatch
+    ):
+        """An analysis deleted while the chunker runs is a conflict, not a 500."""
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = json.dumps({"texts": []})
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(return_value=[ChunkResult(text="t", source_page=1)])
+        service._chunker = chunker
+        monkeypatch.setattr(
+            repos["chunks"],
+            "replace_for_document",
+            AsyncMock(side_effect=AnalysisNotSelectableError(f"Analysis {job.id} is gone")),
+        )
+
+        with pytest.raises(ChunkConflictError, match=r"no longer available"):
+            await service.rechunk_document(doc.id)
 
 
 # ---------------------------------------------------------------------------

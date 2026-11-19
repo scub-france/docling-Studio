@@ -24,6 +24,7 @@ from domain.models import (
     DocumentVersionKind,
     generate_compact_id,
     get_utc_now,
+    select_after_restore,
 )
 from services.errors import ServiceError
 
@@ -180,11 +181,12 @@ class VersionService:
 
         # History restore is an aggregate operation: the backend, rather
         # than the frontend, owns which immutable analysis is active.
-        active_analysis_id = version.analysis_id
-        if active_analysis_id is None and await self._states.find_state(document_id) is None:
-            # No row yet: the one this write may create keeps the analysis the
-            # fallback rule gives, rather than a NULL selection hiding it.
-            active_analysis_id = await self._current.find_current_analysis_id(document_id)
+        state = await self._states.find_state(document_id)
+        # The fallback is only read when the rule can pick it.
+        fallback_id = None
+        if version.analysis_id is None and state is None:
+            fallback_id = await self._current.find_current_analysis_id(document_id)
+        active_analysis_id = select_after_restore(state, version.analysis_id, fallback_id)
         try:
             await self._chunks.replace_for_document(
                 document_id,

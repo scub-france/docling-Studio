@@ -17,7 +17,12 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from domain.anchors import DocumentAnchor
-from domain.element_reader import list_section_refs, render_markdown, resolve
+from domain.element_reader import (
+    list_section_refs,
+    pick_within_budget,
+    render_markdown,
+    resolve,
+)
 from domain.navigation import (
     DocumentOutline,
     DocumentSearch,
@@ -25,7 +30,6 @@ from domain.navigation import (
     Excerpt,
     OutlineNode,
     is_heading,
-    pick_within_budget,
 )
 from domain.outline_builder import build_outline
 from domain.parse_index import parse_page_ref

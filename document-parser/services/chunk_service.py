@@ -20,7 +20,8 @@ from typing import TYPE_CHECKING
 from domain import chunk_editing
 from domain.analysis_editing import AnalysisEditUnavailableError, hash_result
 from domain.chunk_editing import ChunkEditingError, ChunkMergeGapError
-from domain.models import Chunk, DocumentChunkSource, get_utc_now
+from domain.exceptions import AnalysisNotSelectableError
+from domain.models import Chunk, DocumentChunkSource, get_utc_now, select_after_rechunk
 from domain.value_objects import ChunkingOptions
 from services.chunk_errors import (
     ChunkConflictError,
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from domain.ports import (
         ActiveAnalysisResultReader,
         ChunkRepository,
+        DocumentAnalysisStateRepository,
         DocumentChunker,
         DocumentRepository,
     )
@@ -54,10 +56,12 @@ class ChunkService:
         chunk_repo: ChunkRepository,
         document_repo: DocumentRepository,
         active_result_service: ActiveAnalysisResultReader,
+        analysis_state_repo: DocumentAnalysisStateRepository,
         chunker: DocumentChunker | None = None,
     ) -> None:
         self._chunks = chunk_repo
         self._documents = document_repo
+        self._states = analysis_state_repo
         self._chunker = chunker
         self._active_result_service = active_result_service
         # Document-version recorder (#267), wired at boot to `VersionService`
@@ -179,10 +183,7 @@ class ChunkService:
 
         The current analysis is read with its saved edits. The new chunks and
         the record of their source are written in one transaction (02-2.4.3);
-        the selection is kept, so an analysis that becomes active while the
-        chunker runs stays active and the new chunks report stale against it,
-        which they are. A document with no state row gets one selecting the
-        analysis just chunked, the one the fallback rule gave it. The History
+        the selection follows `domain.models.select_after_rechunk`. The History
         version that follows is a separate, best-effort write: when it fails
         the chunks stand without a matching History entry, as before.
         """
@@ -220,14 +221,24 @@ class ChunkService:
 
         source_analysis_id = current.base_analysis_id
         source_result_hash = hash_result(job.document_json)
-        old_count = await self._chunks.replace_for_document(
-            document_id,
-            new_chunks,
-            at=get_utc_now(),
-            chunk_source=DocumentChunkSource(document_id, source_analysis_id, source_result_hash),
-            active_analysis_id=source_analysis_id,
-            keep_selection=True,
-        )
+        state = await self._states.find_state(document_id)
+        try:
+            # `keep_selection` makes the write itself keep a selection made
+            # after `state` was read, as the rule wants.
+            old_count = await self._chunks.replace_for_document(
+                document_id,
+                new_chunks,
+                at=get_utc_now(),
+                chunk_source=DocumentChunkSource(
+                    document_id, source_analysis_id, source_result_hash
+                ),
+                active_analysis_id=select_after_rechunk(state, source_analysis_id),
+                keep_selection=True,
+            )
+        except AnalysisNotSelectableError as exc:
+            raise ChunkConflictError(
+                "The analysis being chunked is no longer available; reload and try again"
+            ) from exc
         logger.info(
             "chunk.rechunk docId=%s oldCount=%d newCount=%d",
             document_id,

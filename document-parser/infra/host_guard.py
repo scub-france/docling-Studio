@@ -48,8 +48,22 @@ def is_host_check_on(allowed_hosts: Iterable[str]) -> bool:
     return bool(hosts) and "*" not in hosts
 
 
+def split_allowed_hosts(allowed_hosts: Iterable[str]) -> tuple[list[str], list[str]]:
+    """The names the check keeps, and the entries it ignores because they are
+    not a name (`http://studio.lan`, `*.example.com`), each in listed order."""
+    names: list[str] = []
+    ignored: list[str] = []
+    for host in allowed_hosts:
+        name = parse_host_name(host, port_wildcard=True)
+        if name is None:
+            ignored.append(host.strip())
+        elif name not in names:
+            names.append(name)
+    return names, ignored
+
+
 def describe_host_check(allowed_hosts: Iterable[str]) -> str:
-    """The start-up line saying whether `/api` checks `Host`, and for which hosts."""
+    """The start-up line saying whether `/api` checks `Host`, and for which names."""
     hosts = [host.strip() for host in allowed_hosts]
     if "*" in hosts:
         return "API Host check off (API_ALLOWED_HOSTS=*): /api accepts any Host header"
@@ -58,7 +72,22 @@ def describe_host_check(allowed_hosts: Iterable[str]) -> str:
             "API Host check off (API_ALLOWED_HOSTS unset): /api accepts any Host header, "
             "open to DNS rebinding on a workstation"
         )
-    return f"API Host check on: /api accepts loopback and {', '.join(hosts)}"
+    names, _ = split_allowed_hosts(hosts)
+    # The names actually compared, so a dropped entry does not look accepted.
+    return f"API Host check on: /api accepts {', '.join(['loopback', *names])}"
+
+
+def log_host_check(allowed_hosts: Iterable[str]) -> None:
+    """Log the start-up line, and one warning naming the entries the check ignores."""
+    hosts = list(allowed_hosts)
+    if is_host_check_on(hosts):
+        _, ignored = split_allowed_hosts(hosts)
+        if ignored:
+            # Silently dropped, an entry would refuse the host it meant to allow.
+            logger.warning(
+                "API_ALLOWED_HOSTS entries ignored, not a host name: %s", ", ".join(ignored)
+            )
+    logger.info(describe_host_check(hosts))
 
 
 class ApiHostGuardMiddleware:
@@ -72,8 +101,8 @@ class ApiHostGuardMiddleware:
 
     def __init__(self, app: ASGIApp, *, allowed_hosts: Iterable[str]) -> None:
         self._app = app
-        names = {parse_host_name(host, port_wildcard=True) for host in allowed_hosts}
-        self._names = LOOPBACK_HOSTS | (names - {None})
+        names, _ = split_allowed_hosts(allowed_hosts)
+        self._names = LOOPBACK_HOSTS | set(names)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or not scope["path"].startswith("/api/"):

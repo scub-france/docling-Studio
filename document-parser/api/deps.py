@@ -89,14 +89,14 @@ ChunkServiceDep = Annotated[ChunkService, Depends(get_chunk_service)]
 
 
 def get_chunk_push_service(state: AppStateDep) -> ChunkPushService:
-    return require(state.chunk_push_service, detail="Chunk service not available")
+    return require(state.chunk_push_service, detail="Chunk push service not available")
 
 
 ChunkPushServiceDep = Annotated[ChunkPushService, Depends(get_chunk_push_service)]
 
 
 def get_document_tree_service(state: AppStateDep) -> DocumentTreeService:
-    return require(state.document_tree_service, detail="Chunk service not available")
+    return require(state.document_tree_service, detail="Document tree service not available")
 
 
 DocumentTreeServiceDep = Annotated[DocumentTreeService, Depends(get_document_tree_service)]

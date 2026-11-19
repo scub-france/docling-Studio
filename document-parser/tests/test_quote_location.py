@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from domain.anchors import normalise_quote
-from domain.element_reader import resolve
-from domain.navigation import ANCHOR_TOKENS, pick_within_budget, read_cost
+from domain.element_reader import pick_within_budget, resolve
+from domain.navigation import ANCHOR_TOKENS, read_cost
 from domain.parse_index import build_index
 from domain.quote_location import locate_quote
 from domain.spans import is_span

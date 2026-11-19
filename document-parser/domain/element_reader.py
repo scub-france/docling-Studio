@@ -8,9 +8,19 @@ one whose shape varies most between docling versions.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from domain.navigation import BoundingBox, ResolvedElement, is_heading, is_readable
+from domain.navigation import (
+    ANCHOR_TOKENS,
+    BoundingBox,
+    ResolvedElement,
+    clip_point,
+    clip_to_tokens,
+    is_heading,
+    is_readable,
+    read_cost,
+)
 from domain.parse_index import get_heading_level, get_label, parse_page_ref
 from domain.spans import build_span_ref, list_span_members, parse_span
 
@@ -44,6 +54,45 @@ def resolve(index: DocumentIndex, ref: str) -> ResolvedElement | None:
         bbox=index.bbox_of.get(ref),
         headings=list(index.heading_path.get(ref, [])),
     )
+
+
+def pick_within_budget(
+    index: DocumentIndex,
+    refs: list[str],
+    budget: int,
+    start: int = 0,
+) -> tuple[list[ResolvedElement], int, bool, str | None]:
+    """Take elements in reading order until the budget is spent — the
+    first from character `start`, where a previous read cut it.
+
+    Returns the elements, the tokens they cost, whether the read was cut,
+    and the cursor to resume from.
+    """
+    picked: list[ResolvedElement] = []
+    spent = 0
+
+    for position, candidate in enumerate(refs):
+        element = resolve(index, candidate)
+        if element is None or not element.text.strip():
+            continue
+        offset = start if position == 0 else 0
+        if offset:
+            element = replace(element, text=element.text[offset:])
+        cost = read_cost(element.text)
+        if picked and spent + cost > budget:
+            return picked, spent, True, candidate
+        if not picked and cost > budget:
+            # Larger than the whole budget: cut at a word boundary, and
+            # the cursor resumes inside the element where the cut fell.
+            room = budget - ANCHOR_TOKENS
+            cut = clip_point(element.text, room)
+            if cut < len(element.text):
+                clipped = replace(element, text=clip_to_tokens(element.text, room))
+                return [clipped], read_cost(clipped.text), True, f"{candidate}@{offset + cut}"
+        picked.append(element)
+        spent += cost
+
+    return picked, spent, False, None
 
 
 def list_section_refs(index: DocumentIndex, ref: str) -> list[str]:

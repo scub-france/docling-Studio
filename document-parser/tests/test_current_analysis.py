@@ -22,6 +22,8 @@ from domain.models import (
     Document,
     DocumentAnalysisState,
     resolve_current_analysis_id,
+    select_after_rechunk,
+    select_after_restore,
 )
 from persistence import database
 from persistence.analysis_repo import SqliteAnalysisRepository
@@ -49,6 +51,31 @@ def test_a_row_without_selection_has_no_current_analysis():
 def test_only_a_document_without_a_state_row_falls_back_to_the_latest_parse():
     assert resolve_current_analysis_id(None, "newer") == "newer"
     assert resolve_current_analysis_id(None, None) is None
+
+
+def test_a_restored_version_with_an_analysis_selects_it():
+    state = DocumentAnalysisState("doc-1", "newer")
+    assert select_after_restore(state, "older", "latest") == "older"
+    assert select_after_restore(None, "older", "latest") == "older"
+
+
+def test_a_restored_version_without_an_analysis_clears_an_existing_row():
+    state = DocumentAnalysisState("doc-1", "newer")
+    assert select_after_restore(state, None, "latest") is None
+
+
+def test_a_restored_version_without_an_analysis_keeps_the_fallback_without_a_row():
+    assert select_after_restore(None, None, "latest") == "latest"
+    assert select_after_restore(None, None, None) is None
+
+
+def test_a_rechunk_keeps_an_existing_selection():
+    assert select_after_rechunk(DocumentAnalysisState("doc-1", "newer"), "older") == "newer"
+    assert select_after_rechunk(DocumentAnalysisState("doc-1"), "older") is None
+
+
+def test_a_rechunk_without_a_row_adopts_the_chunked_analysis():
+    assert select_after_rechunk(None, "older") == "older"
 
 
 # --- The resolver on SQLite -------------------------------------------------

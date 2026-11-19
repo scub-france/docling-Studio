@@ -6,12 +6,9 @@ All responses use camelCase serialization to match the existing frontend contrac
 
 from __future__ import annotations
 
-import operator
 from dataclasses import asdict
 from datetime import datetime
-from functools import reduce
-from types import UnionType
-from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import (
     AliasChoices,
@@ -19,7 +16,6 @@ from pydantic import (
     ConfigDict,
     Field,
     RootModel,
-    create_model,
     field_validator,
 )
 
@@ -318,32 +314,41 @@ class AnalysisEditHistoryActionRequest(_CamelModel):
 # and without the bounds, so a row written before the bounds still reads back.
 # Payloads are written with every key (`_to_edit_commands`, the history
 # toggle); with unknown keys forbidden, each one matches exactly one model.
-
-
-def _strip_bounds(annotation: Any) -> Any:
-    """`annotation` without the `Annotated` constraints nested anywhere in it."""
-    if get_origin(annotation) is Annotated:
-        return _strip_bounds(get_args(annotation)[0])
-    args = get_args(annotation)
-    if not args or get_origin(annotation) is Literal:
-        return annotation
-    if get_origin(annotation) in (Union, UnionType):
-        return reduce(operator.or_, map(_strip_bounds, args))
-    return get_origin(annotation)[tuple(map(_strip_bounds, args))]
+# tests/test_schemas.py keeps each one in step with its request.
 
 
 class _StoredPayload(_CamelModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _stored_payload_model(request: type[BaseModel]) -> type[BaseModel]:
-    fields: Any = {
-        name: (_strip_bounds(info.annotation), ...)
-        for name, info in request.model_fields.items()
-        if name != "type"
-    }
-    name = request.__name__.replace("EditRequest", "PayloadResponse")
-    return create_model(name, __base__=_StoredPayload, __module__=__name__, **fields)
+class ReplaceTextPayloadResponse(_StoredPayload):
+    element_id: str
+    text: str
+
+
+class MergeTextPayloadResponse(_StoredPayload):
+    element_ids: list[str]
+    separator: str
+
+
+class SetHeadingLevelPayloadResponse(_StoredPayload):
+    element_id: str
+    level: int
+
+
+class MoveElementPayloadResponse(_StoredPayload):
+    element_id: str
+    before_element_id: str | None
+    target_element_id: str | None
+    placement: Literal["before", "after", "inside"] | None
+
+
+class DeleteElementPayloadResponse(_StoredPayload):
+    element_id: str
+
+
+class DeleteElementsPayloadResponse(_StoredPayload):
+    element_ids: list[str]
 
 
 class SetCommandActivePayloadResponse(_StoredPayload):
@@ -353,9 +358,15 @@ class SetCommandActivePayloadResponse(_StoredPayload):
     active: bool
 
 
-_EDIT_REQUESTS = get_args(get_args(AnalysisEditCommandRequest)[0])
-EditCommandPayloadResponse = reduce(
-    operator.or_, [*map(_stored_payload_model, _EDIT_REQUESTS), SetCommandActivePayloadResponse]
+# A plain union: the payload carries no `type` key to discriminate on.
+EditCommandPayloadResponse = (
+    ReplaceTextPayloadResponse
+    | MergeTextPayloadResponse
+    | SetHeadingLevelPayloadResponse
+    | MoveElementPayloadResponse
+    | DeleteElementPayloadResponse
+    | DeleteElementsPayloadResponse
+    | SetCommandActivePayloadResponse
 )
 
 

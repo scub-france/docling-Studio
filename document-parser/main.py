@@ -37,7 +37,7 @@ from api.stores import router as stores_router
 from bootstrap import AppStateBuilder
 from bootstrap.mcp_mount import mount_mcp_server
 from infra.body_limit import BodySizeLimitMiddleware
-from infra.host_guard import ApiHostGuardMiddleware, describe_host_check, is_host_check_on
+from infra.host_guard import ApiHostGuardMiddleware, is_host_check_on, log_host_check
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.database import get_connection
@@ -116,7 +116,7 @@ if settings.rate_limit_rpm > 0:
 # against the rate limit or reaches a route.
 if is_host_check_on(settings.api_allowed_hosts):
     app.add_middleware(ApiHostGuardMiddleware, allowed_hosts=settings.api_allowed_hosts)
-logger.info(describe_host_check(settings.api_allowed_hosts))
+log_host_check(settings.api_allowed_hosts)
 
 app.include_router(documents_router)
 app.include_router(document_chunks_router)

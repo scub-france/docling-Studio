@@ -72,7 +72,10 @@ class ParseLoader:
     async def find_current_parse_ids(self, document_ids: list[str]) -> dict[str, str]:
         """Each document's current analysis, when it has a parse, batched: for
         callers that need the version a document reads by default rather than
-        the one an anchor pins."""
+        the one an anchor pins.
+
+        Kept as a forward on purpose: its three callers already hold the loader,
+        which holds the resolver, so none of them needs it as a dependency."""
         return await self._current.find_current_parse_ids(document_ids)
 
     async def load(self, document_id: str, version_id: str | None = None) -> LoadedParse:

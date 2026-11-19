@@ -310,8 +310,8 @@ class ChunkRepository(Protocol):
         `keep_selection`, `active_analysis_id` becomes the active analysis
         (None clears an existing selection). With it, an existing selection
         is kept and `active_analysis_id` only goes into a state row this
-        write creates: pass the document's current analysis, so creating the
-        row does not change it.
+        write creates: the write applies `domain.models.select_after_rechunk`
+        atomically, so a selection made after the caller read the state wins.
 
         Raises:
             ValueError: `chunk_source` belongs to another document.
