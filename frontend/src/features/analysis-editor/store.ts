@@ -1,7 +1,18 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as api from './api'
-import { canMerge, coalesceCommands, sortInReadingOrder, validateMerge } from './commands'
+import {
+  findSavedRedoTarget,
+  findSavedUndoTarget,
+  queueCommand,
+  redoPending,
+  undoPending,
+  type CommandStacks,
+} from './commandStacks'
+import { canMerge, sortInReadingOrder, validateMerge } from './commands'
+import { toggleSelectedId, toggleSelectedIds } from './mergeSelection'
+import { buildPendingDraftKey, readPendingDraft, writePendingDraft } from './pendingDraft'
+import { createPreviewScheduler } from './previewScheduler'
 import type {
   AnalysisEditCommand,
   AnalysisEditHistoryEntry,
@@ -10,6 +21,8 @@ import type {
   EditorTreeNode,
 } from './types'
 import { parseAnalysisPages } from './types'
+
+const PREVIEW_DEBOUNCE_MS = 400
 
 export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const documentId = ref<string | null>(null)
@@ -29,8 +42,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const conflict = ref<string | null>(null)
   const previewError = ref<string | null>(null)
   const historyError = ref<string | null>(null)
-  const abortController = ref<AbortController | null>(null)
-  let previewTimer: ReturnType<typeof setTimeout> | null = null
+  const previewScheduler = createPreviewScheduler(PREVIEW_DEBOUNCE_MS)
 
   const effective = computed(() => preview.value ?? saved.value)
   const elements = computed(() => effective.value?.model.elements ?? [])
@@ -42,12 +54,8 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const hasUnsavedChanges = computed(() => pendingCommands.value.length > 0)
   const recoveredPendingCount = computed(() => recoveredPendingCommands.value?.length ?? 0)
   const conflictDetails = computed(() => JSON.stringify(pendingCommands.value, null, 2))
-  const savedUndoTarget = computed(() =>
-    [...history.value].reverse().find((entry) => entry.active === true),
-  )
-  const savedRedoTarget = computed(() =>
-    [...history.value].reverse().find((entry) => entry.active === false),
-  )
+  const savedUndoTarget = computed(() => findSavedUndoTarget(history.value))
+  const savedRedoTarget = computed(() => findSavedRedoTarget(history.value))
   const canChangeSavedHistory = computed(
     () =>
       !saving.value &&
@@ -97,47 +105,48 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
 
   function queue(command: AnalysisEditCommand): void {
     if (saving.value) return
-    pendingCommands.value = coalesceCommands([...pendingCommands.value, command])
-    redoCommands.value = []
+    setCommandStacks(queueCommand(pendingCommands.value, command))
     conflict.value = null
     persistPendingCommands()
     previewError.value = null
-    if (previewTimer) clearTimeout(previewTimer)
-    previewTimer = setTimeout(() => void previewNow(), 400)
+    previewScheduler.debounce(() => void previewNow())
   }
 
   function refreshPreview(): void {
-    abortController.value?.abort()
+    previewScheduler.abort()
     preview.value = null
     previewError.value = null
-    if (previewTimer) clearTimeout(previewTimer)
+    previewScheduler.clearDebounce()
     if (pendingCommands.value.length) void previewNow()
+  }
+
+  function setCommandStacks(stacks: CommandStacks): void {
+    pendingCommands.value = stacks.pending
+    redoCommands.value = stacks.redo
   }
 
   async function undo(): Promise<void> {
     if (saving.value) return
-    const command = pendingCommands.value.at(-1)
-    if (!command) {
+    const stacks = undoPending({ pending: pendingCommands.value, redo: redoCommands.value })
+    if (!stacks) {
       if (canChangeSavedHistory.value && savedUndoTarget.value)
         await setSavedCommandActive(savedUndoTarget.value.sequence, false)
       return
     }
-    pendingCommands.value = pendingCommands.value.slice(0, -1)
-    redoCommands.value = [command, ...redoCommands.value]
+    setCommandStacks(stacks)
     persistPendingCommands()
     refreshPreview()
   }
 
   async function redo(): Promise<void> {
     if (saving.value) return
-    const command = redoCommands.value[0]
-    if (!command) {
+    const stacks = redoPending({ pending: pendingCommands.value, redo: redoCommands.value })
+    if (!stacks) {
       if (canChangeSavedHistory.value && savedRedoTarget.value)
         await setSavedCommandActive(savedRedoTarget.value.sequence, true)
       return
     }
-    redoCommands.value = redoCommands.value.slice(1)
-    pendingCommands.value = coalesceCommands([...pendingCommands.value, command])
+    setCommandStacks(stacks)
     persistPendingCommands()
     refreshPreview()
   }
@@ -163,9 +172,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   }
 
   function toggleMergeSelection(elementId: string): void {
-    mergeSelection.value = mergeSelection.value.includes(elementId)
-      ? mergeSelection.value.filter((id) => id !== elementId)
-      : [...mergeSelection.value, elementId]
+    mergeSelection.value = toggleSelectedId(mergeSelection.value, elementId)
   }
 
   function selectMergeSelection(elementId: string): void {
@@ -173,11 +180,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   }
 
   function toggleMergeSelectionMany(elementIds: string[]): void {
-    if (!elementIds.length) return
-    const allSelected = elementIds.every((id) => mergeSelection.value.includes(id))
-    mergeSelection.value = allSelected
-      ? mergeSelection.value.filter((id) => !elementIds.includes(id))
-      : [...new Set([...mergeSelection.value, ...elementIds])]
+    mergeSelection.value = toggleSelectedIds(mergeSelection.value, elementIds)
   }
 
   function mergeSelected(separator = ' '): void {
@@ -203,9 +206,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
 
   async function previewNow(): Promise<void> {
     if (!documentId.value || !saved.value || pendingCommands.value.length === 0) return
-    abortController.value?.abort()
-    const controller = new AbortController()
-    abortController.value = controller
+    const controller = previewScheduler.begin()
     previewing.value = true
     previewError.value = null
     try {
@@ -218,19 +219,20 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
         controller.signal,
         baseAnalysisId.value ?? undefined,
       )
-      if (abortController.value === controller && !controller.signal.aborted) preview.value = result
+      if (previewScheduler.isCurrent(controller) && !controller.signal.aborted)
+        preview.value = result
     } catch (e) {
-      if (abortController.value === controller && (e as Error).name !== 'AbortError')
+      if (previewScheduler.isCurrent(controller) && (e as Error).name !== 'AbortError')
         previewError.value = (e as Error).message
     } finally {
-      if (abortController.value === controller) previewing.value = false
+      if (previewScheduler.isCurrent(controller)) previewing.value = false
     }
   }
 
   async function save(): Promise<void> {
     if (!documentId.value || !saved.value || pendingCommands.value.length === 0) return
     saving.value = true
-    if (previewTimer) clearTimeout(previewTimer)
+    previewScheduler.clearDebounce()
     error.value = null
     historyError.value = null
     conflict.value = null
@@ -272,7 +274,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     saving.value = true
     historyError.value = null
     conflict.value = null
-    abortController.value?.abort()
+    previewScheduler.abort()
     preview.value = null
     try {
       const next = await api.setAnalysisEditActive(
@@ -301,10 +303,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
 
   /** Stop the debounced and in-flight preview, e.g. when the editor closes. */
   function cancelPreview(): void {
-    if (previewTimer) clearTimeout(previewTimer)
-    previewTimer = null
-    abortController.value?.abort()
-    abortController.value = null
+    previewScheduler.cancel()
     previewing.value = false
   }
 
@@ -342,53 +341,19 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     discard()
   }
 
-  function buildPendingStorageKey(): string | null {
-    if (!documentId.value || !baseAnalysisId.value) return null
-    return `analysis-editor-pending:${documentId.value}:${baseAnalysisId.value}`
-  }
-
   function persistPendingCommands(): void {
-    const key = buildPendingStorageKey()
+    const key = buildPendingDraftKey(documentId.value, baseAnalysisId.value)
     if (!key) return
-    try {
-      if (!pendingCommands.value.length) {
-        window.sessionStorage.removeItem(key)
-        return
-      }
-      window.sessionStorage.setItem(
-        key,
-        JSON.stringify({
-          expectedAppliedThroughSequence: saved.value?.appliedThroughSequence ?? 0,
-          commands: pendingCommands.value,
-        }),
-      )
-    } catch {
-      // Browser storage can be unavailable in private or restricted contexts.
-    }
+    writePendingDraft(key, {
+      expectedAppliedThroughSequence: saved.value?.appliedThroughSequence ?? 0,
+      commands: pendingCommands.value,
+    })
   }
 
   function readRecoveredPendingCommands(): AnalysisEditCommand[] | null {
-    const key = buildPendingStorageKey()
+    const key = buildPendingDraftKey(documentId.value, baseAnalysisId.value)
     if (!key) return null
-    try {
-      const value = window.sessionStorage.getItem(key)
-      if (!value) return null
-      const draft = JSON.parse(value) as {
-        expectedAppliedThroughSequence?: unknown
-        commands?: unknown
-      }
-      if (
-        draft.expectedAppliedThroughSequence === saved.value?.appliedThroughSequence &&
-        Array.isArray(draft.commands) &&
-        draft.commands.length
-      ) {
-        return draft.commands as AnalysisEditCommand[]
-      }
-      window.sessionStorage.removeItem(key)
-    } catch {
-      // Ignore malformed and unavailable browser storage.
-    }
-    return null
+    return readPendingDraft(key, saved.value?.appliedThroughSequence)
   }
 
   return {
