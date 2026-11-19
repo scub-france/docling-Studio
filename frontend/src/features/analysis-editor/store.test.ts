@@ -185,6 +185,30 @@ describe('analysis editor selection state', () => {
     store.discard()
   })
 
+  it('keeps pending edits and reports a rejected save apart from load errors', async () => {
+    const store = useAnalysisEditorStore()
+    store.documentId = 'doc-1'
+    store.baseAnalysisId = 'analysis-1'
+    store.saved = { appliedThroughSequence: 3 } as never
+    store.moveElement('moved', 'target', 'after')
+    vi.mocked(saveAnalysisEdits).mockRejectedValue(new Error('422: Too many commands'))
+
+    await store.save()
+
+    expect(store.saveError).toBe('422: Too many commands')
+    expect(store.error).toBeNull()
+    expect(store.conflict).toBeNull()
+    expect(store.hasUnsavedChanges).toBe(true)
+
+    store.queueReplaceText('moved', 'Shorter')
+    expect(store.saveError).toBeNull()
+
+    await store.save()
+    expect(store.saveError).not.toBeNull()
+    store.discard()
+    expect(store.saveError).toBeNull()
+  })
+
   it('ignores an in-flight preview after discarding edits', async () => {
     let resolvePreview!: (value: never) => void
     vi.mocked(previewAnalysisEdits).mockImplementation(

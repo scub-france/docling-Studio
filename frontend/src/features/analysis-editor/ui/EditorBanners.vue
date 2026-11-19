@@ -2,6 +2,10 @@
   <div v-if="previewError" class="editor-error" role="alert">
     {{ previewError }}
   </div>
+  <div v-if="saveError" class="editor-error" data-e2e="analysis-editor-save-error" role="alert">
+    <span>{{ t('analysisEditor.saveRejected') }}</span>
+    <span class="editor-error-detail">{{ saveError }}</span>
+  </div>
   <div v-if="historyError" class="editor-error" role="alert">
     {{ historyError }}
   </div>
@@ -41,7 +45,7 @@
 
 <script setup lang="ts">
 /**
- * The editor's status banners, in display order: preview and history errors,
+ * The editor's status banners, in display order: preview, save and history errors,
  * the save conflict, the recovered draft, the save notice and the stale-chunks
  * warning. Rendered as siblings (no wrapper) inside the editor's column.
  */
@@ -49,6 +53,8 @@ import { useI18n } from '../../../shared/i18n'
 
 defineProps<{
   previewError: string | null
+  /** A save the server refused for another reason than a conflict (e.g. a 422). */
+  saveError: string | null
   historyError: string | null
   /** The 409 message of a save that lost the race, if any. */
   conflict: string | null
@@ -104,5 +110,9 @@ const { t } = useI18n()
 }
 .editor-error {
   color: var(--error);
+}
+.editor-error-detail {
+  margin-left: 4px;
+  overflow-wrap: anywhere;
 }
 </style>

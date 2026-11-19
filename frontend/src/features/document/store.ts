@@ -9,18 +9,18 @@ import { useFeatureFlagStore } from '@/features/feature-flags'
 import * as api from './api'
 
 /**
- * The version the workspace opens on: the newest version of the document's
- * current analysis (the backend's active selection), else the newest version
- * when the document has no current analysis or no version records it.
+ * The version the workspace marks active: the newest version of the
+ * document's current analysis (the backend's active selection). None when
+ * the document has no current analysis (never analysed, or its active
+ * analysis was deleted with no completed one left) or no version records it:
+ * the History list then shows every version, none of them active.
  */
 export function pickWorkspaceVersion(
   versions: DocumentVersion[],
   currentAnalysisId: string | null | undefined,
 ): DocumentVersion | null {
-  const current = currentAnalysisId
-    ? versions.find((v) => v.analysisId === currentAnalysisId)
-    : undefined
-  return current ?? versions[0] ?? null
+  if (!currentAnalysisId) return null
+  return versions.find((v) => v.analysisId === currentAnalysisId) ?? null
 }
 
 export const useDocumentStore = defineStore('document', () => {
@@ -167,11 +167,12 @@ export const useDocumentStore = defineStore('document', () => {
       ])
       workspaceDoc.value = doc
       workspaceVersions.value = versions
-      const version = pickWorkspaceVersion(versions, doc.currentAnalysisId)
-      workspaceCurrentVersionId.value = version?.id ?? null
-      const analysisId = doc.currentAnalysisId ?? version?.analysisId
-      if (analysisId) {
-        workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, analysisId)
+      workspaceCurrentVersionId.value =
+        pickWorkspaceVersion(versions, doc.currentAnalysisId)?.id ?? null
+      // No current analysis: load none, so the Parse view shows its
+      // "no analysis yet" state instead of an analysis Ask and MCP refuse.
+      if (doc.currentAnalysisId) {
+        workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, doc.currentAnalysisId)
       }
     } catch (e) {
       workspaceError.value = (e as Error).message || 'Failed to load workspace'
@@ -200,14 +201,11 @@ export const useDocumentStore = defineStore('document', () => {
         api.fetchDocumentVersions(docId),
       ])
       workspaceVersions.value = versions
-      const version = pickWorkspaceVersion(versions, doc.currentAnalysisId)
-      if (version) {
-        workspaceCurrentVersionId.value = version.id
-        const analysisId = doc.currentAnalysisId ?? version.analysisId
-        if (analysisId) {
-          workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, analysisId)
-        }
-      }
+      workspaceCurrentVersionId.value =
+        pickWorkspaceVersion(versions, doc.currentAnalysisId)?.id ?? null
+      workspaceActiveAnalysis.value = doc.currentAnalysisId
+        ? await fetchWorkspaceAnalysis(docId, doc.currentAnalysisId)
+        : null
     } catch (e) {
       workspaceError.value = (e as Error).message || 'Failed to reload versions'
     }

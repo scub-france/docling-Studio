@@ -26,7 +26,7 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import type { PageElement, Scale } from '../../../shared/types'
 import { bboxToRect, computeScale, isPointInRect } from '@/shared/bboxScaling'
 import { createCssTokenReader, type CssTokenReader } from '@/shared/cssTokens'
-import { getElementColor, UNKNOWN_ELEMENT_COLOR } from '@/shared/elementColors'
+import { getElementColor } from '@/shared/elementColors'
 import { computeBadgeRect } from './BboxCanvas.logic'
 
 const props = defineProps<{
@@ -314,9 +314,6 @@ onBeforeUnmount(() => {
   if (rafId !== null) cancelAnimationFrame(rafId)
   resizeObserver?.disconnect()
 })
-
-// Quieten lint about unused import (kept for color fallback semantics).
-void UNKNOWN_ELEMENT_COLOR
 </script>
 
 <style scoped>

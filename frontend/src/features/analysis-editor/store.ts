@@ -41,6 +41,8 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const error = ref<string | null>(null)
   const conflict = ref<string | null>(null)
   const previewError = ref<string | null>(null)
+  /** A save the server refused (not a 409): the pending edits stay on screen. */
+  const saveError = ref<string | null>(null)
   const historyError = ref<string | null>(null)
   const previewScheduler = createPreviewScheduler(PREVIEW_DEBOUNCE_MS)
 
@@ -84,6 +86,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     loading.value = true
     error.value = null
     historyError.value = null
+    saveError.value = null
     try {
       saved.value = await api.fetchAnalysisEditor(id, undefined, analysisId)
       baseAnalysisId.value = saved.value.model.baseAnalysisId
@@ -123,6 +126,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   function setCommandStacks(stacks: CommandStacks): void {
     pendingCommands.value = stacks.pending
     redoCommands.value = stacks.redo
+    saveError.value = null
   }
 
   async function undo(): Promise<void> {
@@ -233,7 +237,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     if (!documentId.value || !saved.value || pendingCommands.value.length === 0) return
     saving.value = true
     previewScheduler.clearDebounce()
-    error.value = null
+    saveError.value = null
     historyError.value = null
     conflict.value = null
     try {
@@ -263,7 +267,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     } catch (e) {
       const message = (e as Error).message || 'Failed to save analysis edits'
       if (message.startsWith('409:')) conflict.value = message
-      else error.value = message
+      else saveError.value = message
     } finally {
       saving.value = false
     }
@@ -310,6 +314,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   function discard(): void {
     cancelPreview()
     previewError.value = null
+    saveError.value = null
     pendingCommands.value = []
     redoCommands.value = []
     preview.value = null
@@ -383,6 +388,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     conflict,
     conflictDetails,
     previewError,
+    saveError,
     historyError,
     load,
     queueReplaceText,

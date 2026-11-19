@@ -26,6 +26,10 @@
  *
  * Both paths report through the same two events, tagged with the path that
  * fired them, so the owner of the frame keeps a single set of handlers.
+ *
+ * Why `PdfPagePreview` (Studio) does not use it: that one loads its own PDF,
+ * draws at natural height (`fill-frame` off, `height: auto` image) instead of
+ * filling a reserved box, and remounts the canvas per page; sharing would change it.
  */
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { getPreviewUrl } from '../api'

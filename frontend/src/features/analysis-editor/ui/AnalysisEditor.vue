@@ -119,6 +119,7 @@
     <template v-else>
       <EditorBanners
         :preview-error="store.previewError"
+        :save-error="store.saveError"
         :history-error="store.historyError"
         :conflict="store.conflict"
         :recovered-count="store.recoveredPendingCount"
@@ -358,7 +359,7 @@ async function copyConflictDetails(): Promise<void> {
 }
 async function save(): Promise<void> {
   await store.save()
-  if (!store.error && !store.conflict) {
+  if (!store.saveError && !store.conflict) {
     saveNotice.value = t('analysisEditor.saved')
     if (saveNoticeTimer) clearTimeout(saveNoticeTimer)
     saveNoticeTimer = setTimeout(() => (saveNotice.value = null), 4000)
@@ -594,11 +595,6 @@ button.primary {
   font:
     13px/1.6 'IBM Plex Mono',
     monospace;
-}
-.merge-button {
-  width: 100%;
-  margin-top: 12px;
-  color: var(--accent);
 }
 .state {
   display: grid;

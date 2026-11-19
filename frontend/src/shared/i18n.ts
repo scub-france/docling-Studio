@@ -469,15 +469,10 @@ const messages: Messages = {
       'Pour en changer une : modifiez .env, redémarrez le backend, puis quittez Claude Desktop (Cmd+Q) et relancez-le.',
 
     // Inspect tab (#240, #241)
-    'inspect.tabMarkdown': 'Markdown',
-    'inspect.tabElements': '\u00c9l\u00e9ments',
-    'inspect.tabImages': 'Images',
     'inspect.noAnalysis': 'Aucune analyse disponible',
     'inspect.noAnalysisSub': 'Analysez ce document dans le Studio pour voir sa structure.',
     'inspect.goToStudio': 'Aller dans le Studio',
     'inspect.retry': 'R\u00e9essayer',
-    'inspect.noElements':
-      'Aucun \u00e9l\u00e9ment \u2014 lancez une analyse pour g\u00e9n\u00e9rer la structure.',
 
     // Doc workspace (#216, #218 \u2014 switcher refactored in #263, modes renamed
     // in #264, Compare slot replaced by Ingest in #225)
@@ -533,6 +528,8 @@ const messages: Messages = {
     'analysisEditor.deleteSelectedConfirm':
       'Supprimer les {n} éléments sélectionnés ? Vous pouvez annuler cette modification avant de l’enregistrer.',
     'analysisEditor.saved': 'Modifications enregistrées.',
+    'analysisEditor.saveRejected':
+      "Le serveur a refusé l'enregistrement. Vos modifications restent en attente : corrigez-les puis réessayez, ou annulez-les.",
     'analysisEditor.dropBefore': 'Avant',
     'analysisEditor.dropAfter': 'Après',
     'analysisEditor.dropInside': 'Dans la section',
@@ -625,9 +622,7 @@ const messages: Messages = {
     'chunk.panel.emptyOnPage': 'Aucun chunk en page {page}.',
     'chunk.panel.emptyAll':
       'Aucun chunk pour ce document. Générez-en depuis la stratégie ci-dessous.',
-    'chunk.panel.generate': 'Générer les chunks',
     'chunk.panel.edited': 'modifi\u00e9',
-    'chunk.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse.",
 
     // Ingest view (#225, redesigned in #283 \u2014 CTA + history)
     'ingest.title': 'Ingest',
@@ -647,23 +642,6 @@ const messages: Messages = {
     'ingest.loadMore': 'Charger plus',
     'ingest.loadError': "\u00c9chec du chargement de l'historique",
     'ingest.storeDeleted': 'Store supprim\u00e9',
-    'ingest.stateNotPushed': 'Jamais ing\u00e9r\u00e9',
-    'ingest.stateUpToDate': '\u00c0 jour',
-    'ingest.stateStale': 'Obsol\u00e8te',
-    'ingest.stateFailed': '\u00c9chec',
-
-    // Launch-ingest modal (#283)
-    'ingest.launch.title': 'Lancer un ingest',
-    'ingest.launch.hint':
-      'S\u00e9lectionnez les stores cibles. Les pushes sont effectu\u00e9s s\u00e9quentiellement ; les erreurs ne bloquent pas les autres.',
-    'ingest.launch.empty': 'Aucun store \u00e9ligible.',
-    'ingest.launch.confirm': 'Lancer',
-    'ingest.launch.running': 'En cours\u2026',
-    'ingest.launch.cancel': 'Annuler',
-    'ingest.launch.close': 'Fermer',
-    'ingest.launch.closeAction': 'Fermer',
-    'ingest.launch.rowOk': 'OK',
-    'ingest.launch.rowFailed': '\u00c9chec',
 
     // Strategy popover (#268) \u2014 inline rechunk options
     'strategy.title': 'Strat\u00e9gie de chunking',
@@ -1276,14 +1254,10 @@ const messages: Messages = {
       'To change one: edit .env, restart the backend, then quit Claude Desktop (Cmd+Q) and relaunch it.',
 
     // Inspect tab (#240, #241)
-    'inspect.tabMarkdown': 'Markdown',
-    'inspect.tabElements': 'Elements',
-    'inspect.tabImages': 'Images',
     'inspect.noAnalysis': 'No analysis available',
     'inspect.noAnalysisSub': 'Analyze this document in Studio to see its structure.',
     'inspect.goToStudio': 'Go to Studio',
     'inspect.retry': 'Retry',
-    'inspect.noElements': 'No elements — run an analysis to generate structure.',
 
     // Doc workspace (#216, #218 — switcher refactored in #263, modes renamed
     // in #264, Compare slot replaced by Ingest in #225)
@@ -1338,6 +1312,8 @@ const messages: Messages = {
     'analysisEditor.deleteSelectedConfirm':
       'Delete {n} selected elements? You can undo this pending change before saving.',
     'analysisEditor.saved': 'Changes saved.',
+    'analysisEditor.saveRejected':
+      'The server refused to save. Your edits are still pending: fix them and save again, or discard them.',
     'analysisEditor.dropBefore': 'Before',
     'analysisEditor.dropAfter': 'After',
     'analysisEditor.dropInside': 'Inside section',
@@ -1425,9 +1401,7 @@ const messages: Messages = {
     'chunk.panel.emptyOnPage': 'No chunks on page {page}.',
     'chunk.panel.emptyAll':
       'No chunks for this document yet. Generate them from the strategy below.',
-    'chunk.panel.generate': 'Generate chunks',
     'chunk.panel.edited': 'edited',
-    'chunk.noAnalysis': 'No analysis yet — run a parse first.',
 
     // Ingest view (#225, redesigned in #283 — CTA + history)
     'ingest.title': 'Ingest',
@@ -1447,23 +1421,6 @@ const messages: Messages = {
     'ingest.loadMore': 'Load more',
     'ingest.loadError': 'Failed to load history',
     'ingest.storeDeleted': 'Store deleted',
-    'ingest.stateNotPushed': 'Never ingested',
-    'ingest.stateUpToDate': 'Up-to-date',
-    'ingest.stateStale': 'Stale',
-    'ingest.stateFailed': 'Failed',
-
-    // Launch-ingest modal (#283)
-    'ingest.launch.title': 'Launch ingest',
-    'ingest.launch.hint':
-      'Pick the target stores. Pushes run sequentially; failures do not block the others.',
-    'ingest.launch.empty': 'No eligible store.',
-    'ingest.launch.confirm': 'Launch',
-    'ingest.launch.running': 'Running…',
-    'ingest.launch.cancel': 'Cancel',
-    'ingest.launch.close': 'Close',
-    'ingest.launch.closeAction': 'Close',
-    'ingest.launch.rowOk': 'OK',
-    'ingest.launch.rowFailed': 'Failed',
 
     // Strategy popover (#268) — inline rechunk options
     'strategy.title': 'Chunking strategy',

@@ -36,7 +36,10 @@ export function createPreviewScheduler(delayMs: number): PreviewScheduler {
   return {
     debounce(task) {
       clearDebounce()
-      timer = setTimeout(task, delayMs)
+      timer = setTimeout(() => {
+        timer = null
+        task()
+      }, delayMs)
     },
     clearDebounce,
     begin() {

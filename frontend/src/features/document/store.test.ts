@@ -221,8 +221,8 @@ describe('useDocumentStore', () => {
     ...overrides,
   })
 
-  it('loadWorkspace() loads doc + auto-pins the latest version + fetches its analysis', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+  it('loadWorkspace() loads doc + pins the newest version of the current analysis', async () => {
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
     api.fetchDocumentVersions.mockResolvedValue([
       mkVersion({ id: 'v-new', createdAt: '2025-02-01T00:00:00Z' }),
       mkVersion({ id: 'v-old', createdAt: '2025-01-01T00:00:00Z' }),
@@ -244,7 +244,7 @@ describe('useDocumentStore', () => {
     const flags = useFeatureFlagStore()
     flags.loaded = true
     flags.analysisEditorEnabled = true
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
     api.fetchDocumentVersions.mockResolvedValue([mkVersion()])
     analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ contentMarkdown: 'Original' }))
     api.fetchDocumentEditedAnalysisResult.mockResolvedValue(
@@ -279,7 +279,7 @@ describe('useDocumentStore', () => {
     expect(analysisApi.fetchAnalysis).toHaveBeenCalledWith('a-old')
   })
 
-  it('loadWorkspace() loads the current analysis even when no version records it', async () => {
+  it('loadWorkspace() loads the current analysis but marks no version when none records it', async () => {
     api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a-x' })
     api.fetchDocumentVersions.mockResolvedValue([mkVersion({ id: 'v1', analysisId: 'a1' })])
     analysisApi.fetchAnalysis.mockImplementation((id: string) =>
@@ -289,17 +289,36 @@ describe('useDocumentStore', () => {
     const store = useDocumentStore()
     await store.loadWorkspace('d1')
 
-    expect(store.workspaceCurrentVersionId).toBe('v1')
+    expect(store.workspaceCurrentVersionId).toBeNull()
     expect(store.workspaceActiveAnalysis?.id).toBe('a-x')
   })
 
-  it('pickWorkspaceVersion() falls back to the newest version without a current analysis', () => {
+  it('pickWorkspaceVersion() marks only a version of the current analysis', () => {
     const versions = [mkVersion({ id: 'v2', analysisId: 'a2' }), mkVersion({ id: 'v1' })]
-    expect(pickWorkspaceVersion(versions, null)?.id).toBe('v2')
-    expect(pickWorkspaceVersion(versions, undefined)?.id).toBe('v2')
+    expect(pickWorkspaceVersion(versions, null)).toBeNull()
+    expect(pickWorkspaceVersion(versions, undefined)).toBeNull()
     expect(pickWorkspaceVersion(versions, 'a1')?.id).toBe('v1')
-    expect(pickWorkspaceVersion(versions, 'unknown')?.id).toBe('v2')
+    expect(pickWorkspaceVersion(versions, 'unknown')).toBeNull()
     expect(pickWorkspaceVersion([], 'a1')).toBeNull()
+  })
+
+  it('loadWorkspace() loads no analysis when the document has no current analysis', async () => {
+    // D4 — the active analysis was deleted: its version still points at it.
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: null })
+    api.fetchDocumentVersions.mockResolvedValue([
+      mkVersion({ id: 'v2', analysisId: 'a-deleted' }),
+      mkVersion({ id: 'v1', analysisId: 'a1' }),
+    ])
+
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+
+    expect(analysisApi.fetchAnalysis).not.toHaveBeenCalled()
+    expect(store.workspaceError).toBeNull()
+    expect(store.workspaceActiveAnalysis).toBeNull()
+    expect(store.workspacePages).toEqual([])
+    expect(store.workspaceVersions.map((v) => v.id)).toEqual(['v2', 'v1'])
+    expect(store.workspaceCurrentVersionId).toBeNull()
   })
 
   it('loadWorkspace() exposes null active analysis when no versions exist', async () => {
@@ -322,7 +341,7 @@ describe('useDocumentStore', () => {
   })
 
   it('workspacePages parses pages_json lazily, empty on parse error', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
     api.fetchDocumentVersions.mockResolvedValue([mkVersion()])
     analysisApi.fetchAnalysis.mockResolvedValue(
       mkAnalysis({
@@ -340,7 +359,7 @@ describe('useDocumentStore', () => {
   // ---------------------------------------------------------------------------
 
   it('setWorkspaceVersion() POSTs restore + swaps the active version + analysis', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a-new' })
     api.fetchDocumentVersions.mockResolvedValue([
       mkVersion({ id: 'v-new', analysisId: 'a-new' }),
       mkVersion({ id: 'v-old', analysisId: 'a-old' }),
@@ -362,7 +381,7 @@ describe('useDocumentStore', () => {
   })
 
   it('setWorkspaceVersion() returns false for unknown ids and leaves state intact', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
     api.fetchDocumentVersions.mockResolvedValue([mkVersion({ id: 'v1' })])
     analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis())
 
@@ -374,7 +393,7 @@ describe('useDocumentStore', () => {
   })
 
   it('loadWorkspace() is idempotent — pinned version survives a second call for the same doc', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a-new' })
     api.fetchDocumentVersions.mockResolvedValue([
       mkVersion({ id: 'v-new', analysisId: 'a-new' }),
       mkVersion({ id: 'v-old', analysisId: 'a-old' }),
@@ -397,8 +416,12 @@ describe('useDocumentStore', () => {
   // reloadWorkspaceVersions — post-completion refresh
   // ---------------------------------------------------------------------------
 
-  it('reloadWorkspaceVersions() refreshes the list + auto-pins the newest', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
+  it('reloadWorkspaceVersions() refreshes the list + pins the new current analysis', async () => {
+    api.fetchDocument.mockResolvedValueOnce({
+      id: 'd1',
+      filename: 'a.pdf',
+      currentAnalysisId: 'a1',
+    })
     api.fetchDocumentVersions.mockResolvedValueOnce([mkVersion({ id: 'v1', analysisId: 'a1' })])
     analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ id: 'a1' }))
 
@@ -410,11 +433,40 @@ describe('useDocumentStore', () => {
       mkVersion({ id: 'v2', analysisId: 'a2', createdAt: '2025-03-01T00:00:00Z' }),
       mkVersion({ id: 'v1', analysisId: 'a1' }),
     ])
+    api.fetchDocument.mockResolvedValueOnce({
+      id: 'd1',
+      filename: 'a.pdf',
+      currentAnalysisId: 'a2',
+    })
     analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ id: 'a2' }))
 
     await store.reloadWorkspaceVersions('d1')
     expect(store.workspaceCurrentVersionId).toBe('v2')
     expect(store.workspaceActiveAnalysis?.id).toBe('a2')
+  })
+
+  it('reloadWorkspaceVersions() drops the analysis once the document has no current one', async () => {
+    api.fetchDocument.mockResolvedValueOnce({
+      id: 'd1',
+      filename: 'a.pdf',
+      currentAnalysisId: 'a1',
+    })
+    api.fetchDocumentVersions.mockResolvedValue([mkVersion({ id: 'v1', analysisId: 'a1' })])
+    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ id: 'a1' }))
+    const store = useDocumentStore()
+    await store.loadWorkspace('d1')
+    expect(store.workspaceActiveAnalysis?.id).toBe('a1')
+
+    api.fetchDocument.mockResolvedValueOnce({
+      id: 'd1',
+      filename: 'a.pdf',
+      currentAnalysisId: null,
+    })
+    await store.reloadWorkspaceVersions('d1')
+
+    expect(store.workspaceActiveAnalysis).toBeNull()
+    expect(store.workspaceCurrentVersionId).toBeNull()
+    expect(store.workspaceVersions).toHaveLength(1)
   })
 
   it('reloadWorkspaceVersions() follows the backend current analysis', async () => {
