@@ -52,6 +52,50 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v
 
+  # The job above installs the `dev` group only, so the tests that need the
+  # `docling` library skip themselves (importorskip). This job installs the
+  # `local` group (docling, torch and torchvision from the PyTorch CPU index
+  # set in pyproject.toml) and runs just those tests. They build converters
+  # and mock the conversions: no model is downloaded. It costs a few minutes
+  # of wheels, so it runs on pushes to main and release/** and on pull
+  # requests to main, not on every pull request to a release branch.
+  backend-docling:
+    name: Backend tests (docling)
+    if: github.event_name == 'push' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: document-parser
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: document-parser/uv.lock
+          # Keep this cache apart from the dev-only one of the job above.
+          cache-suffix: docling
+
+      - name: Install Python dependencies
+        run: uv sync --frozen --group dev --group local
+
+      - name: Check that docling is importable
+        # Otherwise the tests below would skip and the job would pass empty.
+        run: uv run python -c "import docling; print('docling', docling.__file__)"
+
+      - name: Run docling tests
+        run: >
+          uv run pytest -v
+          tests/test_pipeline_options.py
+          tests/test_robustness.py
+          tests/test_batch_merge.py
+          tests/test_serve_converter.py::TestConverterWiring::test_local_engine_builds_local_converter
+
   frontend:
     name: Frontend tests & build
     runs-on: ubuntu-latest
@@ -165,7 +209,10 @@ jobs:
 
   e2e-ui:
     name: E2E UI tests (Karate UI)
-    if: github.ref == 'refs/heads/main'
+    # Pushes only: main, and release/** so every merge into a release branch
+    # gets the @critical journeys before the Release Gate. Pull requests to a
+    # release branch skip it to stay fast.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
     needs: [backend, frontend]
     runs-on: ubuntu-latest
 
@@ -227,8 +274,11 @@ jobs:
         run: bash .github/scripts/warmup-docling-serve.sh
 
       - name: Run critical UI tests
+        # -Dtest: --tags replaces the tags of every runner method, so without
+        # it each critical scenario ran once per UIRunner method.
         run: >
           mvn test -f e2e/ui/pom.xml
+          -Dtest='UIRunner#testCritical'
           -DbaseUrl=http://localhost:3000
           -DuiBaseUrl=http://localhost:3000
           -Dkarate.options="--tags @critical"
