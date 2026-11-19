@@ -34,12 +34,24 @@ LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "[::1]"})
 _HOST = re.compile(r"(?P<name>[a-z0-9_.-]+|\[[0-9a-f:.]+\])(?::(?:[0-9]{1,5}|\*))?", re.ASCII)
 
 
-def parse_host_name(host: str | None, *, port_wildcard: bool = False) -> str | None:
-    """The lowercased name of a `Host` value, or None when it is malformed."""
-    match = _HOST.fullmatch((host or "").strip().lower())
-    if match is None or (not port_wildcard and match.group(0).endswith(":*")):
+def parse_host_name(host: str | None) -> str | None:
+    """The lowercased name of a request's `Host` value, or None when it is
+    malformed (a `*` port included)."""
+    match = _match_host(host)
+    if match is None or match.group(0).endswith(":*"):
         return None
     return match["name"]
+
+
+def parse_allowed_host_name(host: str | None) -> str | None:
+    """The lowercased name of an allow-list entry, which may end in a `*`
+    port, or None when it is malformed."""
+    match = _match_host(host)
+    return match["name"] if match is not None else None
+
+
+def _match_host(host: str | None) -> re.Match[str] | None:
+    return _HOST.fullmatch((host or "").strip().lower())
 
 
 def is_host_check_on(allowed_hosts: Iterable[str]) -> bool:
@@ -54,7 +66,7 @@ def split_allowed_hosts(allowed_hosts: Iterable[str]) -> tuple[list[str], list[s
     names: list[str] = []
     ignored: list[str] = []
     for host in allowed_hosts:
-        name = parse_host_name(host, port_wildcard=True)
+        name = parse_allowed_host_name(host)
         if name is None:
             ignored.append(host.strip())
         elif name not in names:

@@ -17,6 +17,7 @@ from infra.host_guard import (
     describe_host_check,
     is_host_check_on,
     log_host_check,
+    parse_allowed_host_name,
     parse_host_name,
 )
 from infra.settings import Settings
@@ -137,7 +138,7 @@ class TestParseHostName:
 
     def test_a_port_wildcard_is_for_allow_list_entries_only(self):
         assert parse_host_name("studio.lan:*") is None
-        assert parse_host_name("studio.lan:*", port_wildcard=True) == "studio.lan"
+        assert parse_allowed_host_name("studio.lan:*") == "studio.lan"
 
 
 class TestStartupLine:

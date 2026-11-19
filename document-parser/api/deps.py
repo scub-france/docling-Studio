@@ -40,7 +40,7 @@ DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 
 
 def get_current_analysis(state: AppStateDep) -> CurrentAnalysisReader:
-    return require(state.current_analysis, detail="Document service not available")
+    return require(state.current_analysis, detail="Current analysis service not available")
 
 
 CurrentAnalysisDep = Annotated[CurrentAnalysisReader, Depends(get_current_analysis)]

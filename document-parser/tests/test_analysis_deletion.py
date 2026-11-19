@@ -129,10 +129,10 @@ class TestRepositoryDelete:
 
 def test_the_successor_rule_lives_on_the_aggregate():
     state = DocumentAnalysisState("doc-1", "active")
-    assert state.select_after_deleting("active", "older") == "older"
-    assert state.select_after_deleting("active", None) is None
-    assert state.select_after_deleting("other", "older") == "active"
-    assert DocumentAnalysisState("doc-1").select_after_deleting("x", "older") is None
+    assert state.resolve_selection_after_deleting("active", "older") == "older"
+    assert state.resolve_selection_after_deleting("active", None) is None
+    assert state.resolve_selection_after_deleting("other", "older") == "active"
+    assert DocumentAnalysisState("doc-1").resolve_selection_after_deleting("x", "older") is None
 
 
 @pytest.fixture

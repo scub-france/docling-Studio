@@ -169,7 +169,7 @@ class DoclingDocumentEditor:
         roots = [
             item
             for item in items
-            if not any(id(ancestor) in selected for ancestor in _ancestors(item, document))
+            if not any(id(ancestor) in selected for ancestor in _iter_ancestors(item, document))
         ]
         document.delete_items(node_items=roots)
 
@@ -358,10 +358,10 @@ class DoclingDocumentEditor:
 
     @staticmethod
     def _is_descendant(candidate: Any, ancestor: Any, document: DoclingDocument) -> bool:
-        return any(node is ancestor for node in _ancestors(candidate, document))
+        return any(node is ancestor for node in _iter_ancestors(candidate, document))
 
 
-def _ancestors(item: Any, document: DoclingDocument) -> Iterator[Any]:
+def _iter_ancestors(item: Any, document: DoclingDocument) -> Iterator[Any]:
     """`item`'s parent, its parent's parent, and so on up to the body."""
     while item.parent is not None:
         item = item.parent.resolve(doc=document)

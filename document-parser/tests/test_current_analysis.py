@@ -22,8 +22,8 @@ from domain.models import (
     Document,
     DocumentAnalysisState,
     resolve_current_analysis_id,
-    select_after_rechunk,
-    select_after_restore,
+    resolve_selection_after_rechunk,
+    resolve_selection_after_restore,
 )
 from persistence import database
 from persistence.analysis_repo import SqliteAnalysisRepository
@@ -55,27 +55,29 @@ def test_only_a_document_without_a_state_row_falls_back_to_the_latest_parse():
 
 def test_a_restored_version_with_an_analysis_selects_it():
     state = DocumentAnalysisState("doc-1", "newer")
-    assert select_after_restore(state, "older", "latest") == "older"
-    assert select_after_restore(None, "older", "latest") == "older"
+    assert resolve_selection_after_restore(state, "older", "latest") == "older"
+    assert resolve_selection_after_restore(None, "older", "latest") == "older"
 
 
 def test_a_restored_version_without_an_analysis_clears_an_existing_row():
     state = DocumentAnalysisState("doc-1", "newer")
-    assert select_after_restore(state, None, "latest") is None
+    assert resolve_selection_after_restore(state, None, "latest") is None
 
 
 def test_a_restored_version_without_an_analysis_keeps_the_fallback_without_a_row():
-    assert select_after_restore(None, None, "latest") == "latest"
-    assert select_after_restore(None, None, None) is None
+    assert resolve_selection_after_restore(None, None, "latest") == "latest"
+    assert resolve_selection_after_restore(None, None, None) is None
 
 
 def test_a_rechunk_keeps_an_existing_selection():
-    assert select_after_rechunk(DocumentAnalysisState("doc-1", "newer"), "older") == "newer"
-    assert select_after_rechunk(DocumentAnalysisState("doc-1"), "older") is None
+    assert (
+        resolve_selection_after_rechunk(DocumentAnalysisState("doc-1", "newer"), "older") == "newer"
+    )
+    assert resolve_selection_after_rechunk(DocumentAnalysisState("doc-1"), "older") is None
 
 
 def test_a_rechunk_without_a_row_adopts_the_chunked_analysis():
-    assert select_after_rechunk(None, "older") == "older"
+    assert resolve_selection_after_rechunk(None, "older") == "older"
 
 
 # --- The resolver on SQLite -------------------------------------------------

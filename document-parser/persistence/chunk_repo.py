@@ -20,6 +20,10 @@ from persistence.document_analysis_repo import (
 from persistence.iso_datetime import parse_iso
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    import aiosqlite
+
     from domain.models import DocumentChunkSource
 
 
@@ -129,7 +133,7 @@ class SqliteChunkRepository:
             await db.commit()
             return cursor.rowcount
 
-    async def replace_for_document(
+    async def replace_and_select(
         self,
         document_id: str,
         chunks: list[Chunk],
@@ -137,14 +141,56 @@ class SqliteChunkRepository:
         at: datetime,
         chunk_source: DocumentChunkSource | None,
         active_analysis_id: str | None,
-        keep_selection: bool = False,
+    ) -> int:
+        """Replace a document's live chunks and write its selection, atomically (restore)."""
+        return await self._replace(
+            document_id,
+            chunks,
+            at=at,
+            chunk_source=chunk_source,
+            active_analysis_id=active_analysis_id,
+            write_state_selection=write_selection,
+        )
+
+    async def replace_keeping_selection(
+        self,
+        document_id: str,
+        chunks: list[Chunk],
+        *,
+        at: datetime,
+        chunk_source: DocumentChunkSource | None,
+        active_analysis_id: str | None,
+    ) -> int:
+        """Replace a document's live chunks, keeping its selection, atomically (rechunk).
+
+        `active_analysis_id` is only adopted by a state row this write creates.
+        """
+        return await self._replace(
+            document_id,
+            chunks,
+            at=at,
+            chunk_source=chunk_source,
+            active_analysis_id=active_analysis_id,
+            write_state_selection=adopt_selection,
+        )
+
+    async def _replace(
+        self,
+        document_id: str,
+        chunks: list[Chunk],
+        *,
+        at: datetime,
+        chunk_source: DocumentChunkSource | None,
+        active_analysis_id: str | None,
+        write_state_selection: Callable[[aiosqlite.Connection, str, str | None], Awaitable[None]],
     ) -> int:
         """Replace a document's live chunks and write its analysis state, atomically.
 
         Soft-deletes every live chunk, inserts `chunks`, writes the selection
-        and the chunk source in one transaction (02-2.4.3): the live chunks
-        and the record of where they came from never disagree after a
-        failure. Returns how many chunks were soft-deleted.
+        (with `write_state_selection`) and the chunk source in one transaction
+        (02-2.4.3): the live chunks and the record of where they came from
+        never disagree after a failure. Returns how many chunks were
+        soft-deleted.
         """
         if chunk_source is not None and chunk_source.document_id != document_id:
             raise ValueError("The chunk source must belong to the document")
@@ -157,10 +203,7 @@ class SqliteChunkRepository:
             if chunks:
                 await db.executemany(_INSERT_SQL, [_chunk_to_params(c) for c in chunks])
             try:
-                if keep_selection:
-                    await adopt_selection(db, document_id, active_analysis_id)
-                else:
-                    await write_selection(db, document_id, active_analysis_id)
+                await write_state_selection(db, document_id, active_analysis_id)
             except sqlite3.IntegrityError as exc:
                 raise AnalysisNotSelectableError(
                     f"Analysis {active_analysis_id} is no longer available"

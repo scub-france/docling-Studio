@@ -134,13 +134,12 @@ async def test_a_rechunk_keeps_a_selection_made_meanwhile(tmp_path, monkeypatch)
 
     # The rechunk read analysis-a as current; analysis-b is selected meanwhile.
     await set_selection("doc-a", "analysis-b")
-    await SqliteChunkRepository().replace_for_document(
+    await SqliteChunkRepository().replace_keeping_selection(
         "doc-a",
         [Chunk(document_id="doc-a", sequence=0, text="t")],
         at=get_utc_now(),
         chunk_source=DocumentChunkSource("doc-a", "analysis-a", "a" * 64),
         active_analysis_id="analysis-a",
-        keep_selection=True,
     )
 
     state = await states.find_state("doc-a")
@@ -157,7 +156,7 @@ async def test_a_restore_selecting_a_deleted_analysis_writes_nothing(tmp_path, m
     await chunks.insert(Chunk(document_id="doc-a", sequence=0, text="live"))
 
     with pytest.raises(AnalysisNotSelectableError):
-        await chunks.replace_for_document(
+        await chunks.replace_and_select(
             "doc-a",
             [Chunk(document_id="doc-a", sequence=0, text="restored")],
             at=get_utc_now(),

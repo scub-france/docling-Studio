@@ -126,7 +126,7 @@ class DocumentAnalysisState:
             or self.chunk_source.result_hash != result_hash
         )
 
-    def select_after_deleting(
+    def resolve_selection_after_deleting(
         self, analysis_id: str, latest_remaining_parsed_id: str | None
     ) -> str | None:
         """The active analysis once `analysis_id` is deleted.
@@ -161,7 +161,7 @@ def resolve_current_analysis_id(
     return latest_parsed_analysis_id
 
 
-def select_after_restore(
+def resolve_selection_after_restore(
     state: DocumentAnalysisState | None,
     version_analysis_id: str | None,
     fallback_analysis_id: str | None,
@@ -181,7 +181,7 @@ def select_after_restore(
     return fallback_analysis_id
 
 
-def select_after_rechunk(
+def resolve_selection_after_rechunk(
     state: DocumentAnalysisState | None, chunked_analysis_id: str
 ) -> str | None:
     """The active analysis once the chunks of `chunked_analysis_id` are written.

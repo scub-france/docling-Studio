@@ -397,7 +397,7 @@ class TestRechunkDocument:
         chunker = MagicMock()
         chunker.chunk = AsyncMock(return_value=[ChunkResult(text="new", source_page=1)])
         service._chunker = chunker
-        replace = _spy(monkeypatch, repos["chunks"], "replace_for_document")
+        replace = _spy(monkeypatch, repos["chunks"], "replace_keeping_selection")
         single = _spy(monkeypatch, repos["chunks"], "soft_delete")
 
         await service.rechunk_document(doc.id)
@@ -532,7 +532,7 @@ class TestRechunkDocument:
         service._chunker = chunker
         monkeypatch.setattr(
             repos["chunks"],
-            "replace_for_document",
+            "replace_keeping_selection",
             AsyncMock(side_effect=AnalysisNotSelectableError(f"Analysis {job.id} is gone")),
         )
 

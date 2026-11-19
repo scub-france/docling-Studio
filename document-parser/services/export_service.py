@@ -66,7 +66,7 @@ class ExportService:
         is always the source file.
         """
         return await self._export(
-            doc_id, format, lambda: self._resolve_default_analysis(doc_id, analysis_id)
+            doc_id, format, lambda: self._load_exported_analysis(doc_id, analysis_id)
         )
 
     async def export_edited(
@@ -122,7 +122,7 @@ class ExportService:
             filename=_build_export_filename(doc.filename, doc_id, ExportFormat.JSON),
         )
 
-    async def _resolve_default_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:
+    async def _load_exported_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:
         """The requested analysis as stored, or else the current one with its edits."""
         if analysis_id:
             return await self._load_requested_analysis(doc_id, analysis_id)

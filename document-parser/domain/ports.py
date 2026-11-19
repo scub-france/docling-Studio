@@ -200,8 +200,9 @@ class DocumentAnalysisStateRepository(Protocol):
 
     Its two parts are written by the writers that change them, in their own
     transaction: `AnalysisRepository.complete_and_select` and
-    `AnalysisRepository.delete` (selection), `ChunkRepository.replace_for_document`
-    (chunk source, and selection on restore).
+    `AnalysisRepository.delete` (selection), `ChunkRepository.replace_and_select`
+    (chunk source and selection, on restore) and
+    `ChunkRepository.replace_keeping_selection` (chunk source, on rechunk).
     """
 
     async def find_state(self, document_id: str) -> DocumentAnalysisState | None:
@@ -292,7 +293,7 @@ class ChunkRepository(Protocol):
 
     async def soft_delete_many(self, chunk_ids: list[str], *, at: datetime) -> int: ...
 
-    async def replace_for_document(
+    async def replace_and_select(
         self,
         document_id: str,
         chunks: list[Chunk],
@@ -300,18 +301,40 @@ class ChunkRepository(Protocol):
         at: datetime,
         chunk_source: DocumentChunkSource | None,
         active_analysis_id: str | None,
-        keep_selection: bool = False,
     ) -> int:
         """Soft-delete the live chunks, insert `chunks` and write the document's
         analysis state, in one transaction. Returns how many chunks were
-        soft-deleted.
+        soft-deleted. Used by a restore.
 
-        `chunk_source` is recorded as given (None forgets it). Without
-        `keep_selection`, `active_analysis_id` becomes the active analysis
-        (None clears an existing selection). With it, an existing selection
-        is kept and `active_analysis_id` only goes into a state row this
-        write creates: the write applies `domain.models.select_after_rechunk`
-        atomically, so a selection made after the caller read the state wins.
+        `chunk_source` is recorded as given (None forgets it).
+        `active_analysis_id` becomes the active analysis (None clears an
+        existing selection).
+
+        Raises:
+            ValueError: `chunk_source` belongs to another document.
+            AnalysisNotSelectableError: the analysis to select is gone or
+                belongs to another document; nothing is written.
+        """
+        ...
+
+    async def replace_keeping_selection(
+        self,
+        document_id: str,
+        chunks: list[Chunk],
+        *,
+        at: datetime,
+        chunk_source: DocumentChunkSource | None,
+        active_analysis_id: str | None,
+    ) -> int:
+        """Soft-delete the live chunks, insert `chunks` and record
+        `chunk_source`, in one transaction, keeping the document's selection.
+        Returns how many chunks were soft-deleted. Used by a rechunk.
+
+        `chunk_source` is recorded as given (None forgets it). An existing
+        selection is kept and `active_analysis_id` only goes into a state row
+        this write creates: the write applies
+        `domain.models.resolve_selection_after_rechunk` atomically, so a
+        selection made after the caller read the state wins.
 
         Raises:
             ValueError: `chunk_source` belongs to another document.

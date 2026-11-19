@@ -194,9 +194,9 @@ class TestRestore:
         )
         version = await service.record_on_rechunk(doc.id, "a1", "d" * 64)
         chunk_repo = repos["chunks"]
-        replace = AsyncMock(wraps=chunk_repo.replace_for_document)
+        replace = AsyncMock(wraps=chunk_repo.replace_and_select)
         single = AsyncMock(wraps=chunk_repo.soft_delete)
-        monkeypatch.setattr(chunk_repo, "replace_for_document", replace)
+        monkeypatch.setattr(chunk_repo, "replace_and_select", replace)
         monkeypatch.setattr(chunk_repo, "soft_delete", single)
 
         await service.restore(doc.id, version.id)

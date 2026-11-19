@@ -24,7 +24,7 @@ from domain.models import (
     DocumentVersionKind,
     generate_compact_id,
     get_utc_now,
-    select_after_restore,
+    resolve_selection_after_restore,
 )
 from services.errors import ServiceError
 
@@ -73,7 +73,7 @@ class VersionNotFoundError(VersionServiceError):
     http_status = 404
 
 
-def _version_analysis_gone() -> VersionServiceError:
+def _build_version_analysis_gone_error() -> VersionServiceError:
     return VersionServiceError("Version analysis is no longer available", http_status=409)
 
 
@@ -171,7 +171,7 @@ class VersionService:
         if version.analysis_id is not None:
             analysis = await self._analyses.find_by_id(version.analysis_id)
             if analysis is None or not analysis.can_be_current_of(document_id):
-                raise _version_analysis_gone()
+                raise _build_version_analysis_gone_error()
 
         # The snapshot's chunks come back under fresh ids.
         raw_chunks = json.loads(version.chunks_snapshot or "[]")
@@ -186,9 +186,11 @@ class VersionService:
         fallback_id = None
         if version.analysis_id is None and state is None:
             fallback_id = await self._current.find_current_analysis_id(document_id)
-        active_analysis_id = select_after_restore(state, version.analysis_id, fallback_id)
+        active_analysis_id = resolve_selection_after_restore(
+            state, version.analysis_id, fallback_id
+        )
         try:
-            await self._chunks.replace_for_document(
+            await self._chunks.replace_and_select(
                 document_id,
                 new_chunks,
                 at=get_utc_now(),
@@ -196,7 +198,7 @@ class VersionService:
                 active_analysis_id=active_analysis_id,
             )
         except AnalysisNotSelectableError as exc:
-            raise _version_analysis_gone() from exc
+            raise _build_version_analysis_gone_error() from exc
 
         logger.info(
             "Restored doc %s to version %s (%d chunks)",

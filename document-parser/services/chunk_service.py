@@ -21,7 +21,7 @@ from domain import chunk_editing
 from domain.analysis_editing import AnalysisEditUnavailableError, hash_result
 from domain.chunk_editing import ChunkEditingError, ChunkMergeGapError
 from domain.exceptions import AnalysisNotSelectableError
-from domain.models import Chunk, DocumentChunkSource, get_utc_now, select_after_rechunk
+from domain.models import Chunk, DocumentChunkSource, get_utc_now, resolve_selection_after_rechunk
 from domain.value_objects import ChunkingOptions
 from services.chunk_errors import (
     ChunkConflictError,
@@ -183,7 +183,7 @@ class ChunkService:
 
         The current analysis is read with its saved edits. The new chunks and
         the record of their source are written in one transaction (02-2.4.3);
-        the selection follows `domain.models.select_after_rechunk`. The History
+        the selection follows `domain.models.resolve_selection_after_rechunk`. The History
         version that follows is a separate, best-effort write: when it fails
         the chunks stand without a matching History entry, as before.
         """
@@ -223,17 +223,16 @@ class ChunkService:
         source_result_hash = hash_result(job.document_json)
         state = await self._states.find_state(document_id)
         try:
-            # `keep_selection` makes the write itself keep a selection made
-            # after `state` was read, as the rule wants.
-            old_count = await self._chunks.replace_for_document(
+            # The write itself keeps a selection made after `state` was
+            # read, as the rule wants.
+            old_count = await self._chunks.replace_keeping_selection(
                 document_id,
                 new_chunks,
                 at=get_utc_now(),
                 chunk_source=DocumentChunkSource(
                     document_id, source_analysis_id, source_result_hash
                 ),
-                active_analysis_id=select_after_rechunk(state, source_analysis_id),
-                keep_selection=True,
+                active_analysis_id=resolve_selection_after_rechunk(state, source_analysis_id),
             )
         except AnalysisNotSelectableError as exc:
             raise ChunkConflictError(

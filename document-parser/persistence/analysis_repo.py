@@ -208,7 +208,7 @@ class SqliteAnalysisRepository:
 
         Deleting the document's active analysis hands the selection to the
         latest remaining completed analysis with a Docling document
-        (`DocumentAnalysisState.select_after_deleting`), in the same
+        (`DocumentAnalysisState.resolve_selection_after_deleting`), in the same
         transaction: the foreign key alone would leave the document without
         a current analysis while a usable one remains.
         """
@@ -231,7 +231,7 @@ class SqliteAnalysisRepository:
                 await write_selection(
                     db,
                     document_id,
-                    state.select_after_deleting(job_id, latest.get(document_id)),
+                    state.resolve_selection_after_deleting(job_id, latest.get(document_id)),
                 )
             await db.commit()
             return True
