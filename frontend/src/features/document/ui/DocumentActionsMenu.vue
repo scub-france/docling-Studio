@@ -8,6 +8,7 @@
       :aria-label="t('documentActions.title')"
       :aria-expanded="open"
       aria-haspopup="menu"
+      data-e2e="document-actions-trigger"
       @click="open = !open"
     >
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -22,7 +23,13 @@
       role="menu"
       :aria-label="t('documentActions.title')"
     >
-      <button type="button" role="menuitem" :disabled="startDisabled" @click="start">
+      <button
+        type="button"
+        role="menuitem"
+        :disabled="startDisabled"
+        data-e2e="document-actions-new-analysis"
+        @click="start"
+      >
         {{ t('newAnalysis.title') }}
       </button>
       <button type="button" role="menuitem" :disabled="importing" @click="fileInput?.click()">

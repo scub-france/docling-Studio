@@ -14,8 +14,11 @@ Feature: UI — Doc workspace: New analysis opens the analysis once it completes
 
     # The launch is the UI action under test, so it goes through the page.
     * driver uiBaseUrl + '/docs/' + docId
-    * waitFor('[data-e2e=workspace-new-analysis]')
-    * click('[data-e2e=workspace-new-analysis]')
+    # New analysis sits in the document's actions menu.
+    * waitFor('[data-e2e=document-actions-trigger]')
+    * click('[data-e2e=document-actions-trigger]')
+    * waitForEnabled('[data-e2e=document-actions-new-analysis]')
+    * click('[data-e2e=document-actions-new-analysis]')
 
     # The Parse view only exists on /analyses/:id. A first analysis can take
     # minutes while the models load, so this wait gets a longer budget.
