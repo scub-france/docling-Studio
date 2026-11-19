@@ -11,9 +11,10 @@ Feature: API — Doc chunk endpoint returns the canonical chunkset (#256, no 404
   # GET chunks (no 404, correct DocChunkResponse fields). The removed UI flow
   # (view-switcher / chunk-tab / layers-bar / chunks-panel) is dropped.
   #
-  # Follow-up: the other specs that drove the removed ?mode=chunk UI
-  # (doc-ingest-view, doc-chunk-view, doc-strategy-popover) need the same
-  # treatment — they are not @critical so they do not gate the release.
+  # The other specs that drove the removed ?mode=chunk and ?mode=ingest UI
+  # (doc-ingest-view, doc-chunk-view, doc-strategy-popover) were replaced by
+  # doc-legacy-mode-links.feature, which checks that those links now open the
+  # document viewer in Parse mode.
   #
   # Refreshed for #266: analysis and chunk are independent — running an
   # analysis no longer auto-promotes a canonical chunkset, so we POST
