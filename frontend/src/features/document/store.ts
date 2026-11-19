@@ -145,8 +145,8 @@ export const useDocumentStore = defineStore('document', () => {
    * timeline, pins the version of the document's current analysis
    * (02-2.3.1: the backend's active selection, the one Ask, exports and
    * the MCP tools read), and resolves that analysis so Parse / Chunk
-   * render the right OCR side. Without a current analysis the newest
-   * version is pinned, as before.
+   * render the right OCR side. Without a current analysis, none is
+   * loaded and no version is pinned.
    *
    * Idempotent across view switches: if the workspace is already loaded
    * for `docId`, returns immediately. This preserves a user-pinned

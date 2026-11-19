@@ -116,7 +116,7 @@ On a result page, the Markdown and JSON download follows the current mode: the s
 ## Delete
 
 - A document: in **Docs**, click **Delete** on its row. Its analyses are deleted with it.
-- An analysis: in **Analyses**, click **Delete analysis** on its row. If it was the document's active analysis, the last remaining completed analysis becomes the active one. If none remains, the document has no active analysis: Ask, the MCP tools, the default download and the document tree have nothing to read until a new analysis completes.
+- An analysis: in **Analyses**, click **Delete analysis** on its row. If it was the document's active analysis, the last remaining completed analysis that has a Docling document becomes the active one. If none remains, the document has no active analysis: Ask, the MCP tools, the default download and the document tree have nothing to read until a new analysis completes.
 
 There is no undo.
 
