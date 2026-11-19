@@ -16,18 +16,23 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 
+from domain import chunk_editing
 from domain.analysis_editing import AnalysisEditUnavailableError, hash_result
+from domain.chunk_editing import ChunkEditingError, ChunkMergeGapError
+from domain.heading_tree import nest_by_heading
 from domain.models import (
     AnalysisStatus,
     Chunk,
     ChunkPush,
     DocumentChunkSource,
     DocumentStoreLink,
+    generate_id,
+    get_utc_now,
 )
+from domain.navigation import is_heading
 from domain.value_objects import (
     ChunkBbox,
     ChunkDocItem,
@@ -86,14 +91,6 @@ class ChunkValidationError(ChunkServiceError):
 # ---------------------------------------------------------------------------
 # Helpers — chunk ↔ dict conversions for analysis chunks_json.
 # ---------------------------------------------------------------------------
-
-
-def _get_utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
-def _generate_id() -> str:
-    return str(uuid.uuid4())
 
 
 def _bbox_from_dict(d: dict) -> ChunkBbox:
@@ -237,8 +234,8 @@ class ChunkService:
             document_id=document_id,
             sequence=sequence,
             text=text,
-            created_at=_get_utc_now(),
-            updated_at=_get_utc_now(),
+            created_at=get_utc_now(),
+            updated_at=get_utc_now(),
         )
         await self._chunks.insert(new_chunk)
         logger.info(
@@ -259,50 +256,30 @@ class ChunkService:
             chunk.text = text
         if headings is not None:
             chunk.headings = list(headings)
-        chunk.updated_at = _get_utc_now()
+        chunk.updated_at = get_utc_now()
         await self._chunks.update(chunk)
         logger.info("chunk.update docId=%s chunkId=%s", document_id, chunk.id)
         return chunk
 
     async def delete_chunk(self, document_id: str, chunk_id: str) -> None:
         chunk = await self._require_chunk(document_id, chunk_id)
-        deleted = await self._chunks.soft_delete(chunk_id, at=_get_utc_now())
+        deleted = await self._chunks.soft_delete(chunk_id, at=get_utc_now())
         if not deleted:
             raise ChunkNotFoundError(f"Chunk not found: {chunk_id}")
         logger.info("chunk.delete docId=%s chunkId=%s", document_id, chunk.id)
 
     async def split_chunk(self, document_id: str, chunk_id: str, cursor_offset: int) -> list[Chunk]:
         source = await self._require_chunk(document_id, chunk_id)
-        if cursor_offset <= 0 or cursor_offset >= len(source.text):
-            raise ChunkValidationError(
-                f"cursorOffset {cursor_offset} out of range for chunk of length {len(source.text)}"
+        try:
+            head, tail = chunk_editing.split(
+                source, at_offset=cursor_offset, document_id=document_id
             )
-        # Both halves inherit headings, source_page, bboxes, doc_items.
-        # Token counts are unknown post-split; leave as None.
-        head_text = source.text[:cursor_offset]
-        tail_text = source.text[cursor_offset:]
-        head = Chunk(
-            document_id=document_id,
-            sequence=source.sequence,
-            text=head_text,
-            headings=list(source.headings),
-            source_page=source.source_page,
-            bboxes=list(source.bboxes),
-            doc_items=list(source.doc_items),
-        )
-        tail = Chunk(
-            document_id=document_id,
-            sequence=source.sequence + 1,
-            text=tail_text,
-            headings=list(source.headings),
-            source_page=source.source_page,
-            bboxes=list(source.bboxes),
-            doc_items=list(source.doc_items),
-        )
+        except ChunkEditingError as exc:
+            raise ChunkValidationError(str(exc)) from exc
 
         # Push subsequent sequences by 1 to make room for `tail`.
         await self._shift_sequences(document_id, from_sequence=source.sequence + 1)
-        await self._chunks.soft_delete(source.id, at=_get_utc_now())
+        await self._chunks.soft_delete(source.id, at=get_utc_now())
         await self._chunks.insert_many([head, tail])
 
         logger.info(
@@ -315,8 +292,10 @@ class ChunkService:
         return [head, tail]
 
     async def merge_chunks(self, document_id: str, ids: list[str]) -> Chunk:
-        if len(ids) < 2:
-            raise ChunkValidationError("merge requires at least 2 chunk ids")
+        try:
+            chunk_editing.check_merge_count(ids)
+        except ChunkEditingError as exc:
+            raise ChunkValidationError(str(exc)) from exc
         existing = await self._chunks.find_for_document(document_id)
         by_id = {c.id: c for c in existing}
         targets = [by_id.get(i) for i in ids]
@@ -324,31 +303,14 @@ class ChunkService:
             missing = [i for i, t in zip(ids, targets, strict=True) if t is None]
             raise ChunkNotFoundError(f"Chunks not found: {missing}")
 
-        ordered = sorted(targets, key=lambda c: c.sequence)
-        sequences = [c.sequence for c in ordered]
-        if sequences != list(range(sequences[0], sequences[0] + len(sequences))):
-            raise ChunkConflictError("merge requires contiguous chunks (by sequence)")
+        try:
+            ordered, merged = chunk_editing.merge(targets, document_id=document_id)
+        except ChunkMergeGapError as exc:
+            raise ChunkConflictError(str(exc)) from exc
+        except ChunkEditingError as exc:
+            raise ChunkValidationError(str(exc)) from exc
 
-        merged_text = "\n".join(c.text for c in ordered)
-        bboxes: list[ChunkBbox] = []
-        doc_items: list[ChunkDocItem] = []
-        for c in ordered:
-            bboxes.extend(c.bboxes)
-            doc_items.extend(c.doc_items)
-        token_total = sum((c.token_count or 0) for c in ordered) or None
-
-        merged = Chunk(
-            document_id=document_id,
-            sequence=ordered[0].sequence,
-            text=merged_text,
-            headings=list(ordered[0].headings),
-            source_page=ordered[0].source_page,
-            bboxes=bboxes,
-            doc_items=doc_items,
-            token_count=token_total,
-        )
-
-        await self._chunks.soft_delete_many([c.id for c in ordered], at=_get_utc_now())
+        await self._chunks.soft_delete_many([c.id for c in ordered], at=get_utc_now())
         await self._chunks.insert(merged)
 
         logger.info(
@@ -385,7 +347,7 @@ class ChunkService:
         chunk_opts = ChunkingOptions(**options) if options else ChunkingOptions()
         new_results = await self._chunker.chunk(job.document_json, chunk_opts)
 
-        old_count = await self._chunks.soft_delete_for_document(document_id, at=_get_utc_now())
+        old_count = await self._chunks.soft_delete_for_document(document_id, at=get_utc_now())
 
         new_chunks = [
             Chunk(
@@ -551,9 +513,9 @@ class ChunkService:
             raise
 
         chunk_ids = [c.id for c in canonical]
-        pushed_at = _get_utc_now()
+        pushed_at = get_utc_now()
         push = ChunkPush(
-            id=_generate_id(),
+            id=generate_id(),
             document_id=document_id,
             store_id=resolved_store_id,
             chunkset_hash=chunkset_hash,
@@ -742,7 +704,7 @@ class ChunkService:
     async def _shift_sequences(self, document_id: str, *, from_sequence: int) -> None:
         """Push live chunks at >= from_sequence one slot up to make room, in one UPDATE."""
         await self._chunks.shift_sequences(
-            document_id, from_sequence=from_sequence, at=_get_utc_now()
+            document_id, from_sequence=from_sequence, at=get_utc_now()
         )
 
 
@@ -811,36 +773,45 @@ def _build_tree_nodes(doc_data: dict, tree_reader: DocumentTreeReader) -> list[d
             by_ref[ref] = item
 
     body = doc_data.get("body") or {}
+    entries: list[tuple[str, dict]] = []
+    for ch in body.get("children") or []:
+        ref = ch.get("$ref") or ch.get("cref")
+        if not ref or ref in skip_refs:
+            continue
+        item = by_ref.get(ref)
+        if item is None:
+            continue
+        entries.append((ref, item))
+
     root: list[dict] = []
-    # Stack entries: (heading_level, children_list). The sentinel level -1
-    # represents the document root so any heading nests inside it.
-    stack: list[tuple[int, list[dict]]] = [(-1, root)]
-
-    def walk(children: list[dict] | None) -> None:
-        if not children:
-            return
-        for ch in children:
-            ref = ch.get("$ref") or ch.get("cref")
-            if not ref or ref in skip_refs:
-                continue
-            item = by_ref.get(ref)
-            if item is None:
-                continue
-            label_type = (item.get("label") or "").lower() or "text"
-
-            if label_type in {"title", "section_header"}:
-                level = 0 if label_type == "title" else max(int(item.get("level") or 1), 1)
-                while len(stack) > 1 and stack[-1][0] >= level:
-                    stack.pop()
-                node = _make_node(ref, label_type, item, inline_meta, tree_reader)
-                stack[-1][1].append(node)
-                stack.append((level, node["children"]))
-            else:
-                node = _build_item_subtree(ref, item, by_ref, skip_refs, inline_meta, tree_reader)
-                stack[-1][1].append(node)
-
-    walk(body.get("children"))
+    nodes: dict[int, dict] = {}
+    nesting = nest_by_heading([item for _, item in entries], level_of=_read_tree_heading_level)
+    for step in nesting.steps:
+        ref, item = entries[step.position]
+        if step.level is not None:
+            node = _make_node(ref, _get_label_type(item), item, inline_meta, tree_reader)
+        else:
+            node = _build_item_subtree(ref, item, by_ref, skip_refs, inline_meta, tree_reader)
+        siblings = root if step.parent is None else nodes[step.parent]["children"]
+        siblings.append(node)
+        nodes[step.position] = node
     return root
+
+
+def _get_label_type(item: dict) -> str:
+    return (item.get("label") or "").lower() or "text"
+
+
+def _read_tree_heading_level(item: dict) -> int | None:
+    """`title` is level 0, a `section_header` its declared level (at least 1).
+
+    Unlike the parse index, a level that is not a number raises here: the
+    tree has always failed on such a document rather than guess.
+    """
+    label_type = _get_label_type(item)
+    if not is_heading(label_type):
+        return None
+    return 0 if label_type == "title" else max(int(item.get("level") or 1), 1)
 
 
 def _build_item_subtree(
@@ -858,7 +829,7 @@ def _build_item_subtree(
     Other items are emitted as leaves — pictures and inline groups had their
     descendants pruned upstream by `build_collapse_index`.
     """
-    label_type = (item.get("label") or "").lower() or "text"
+    label_type = _get_label_type(item)
     node = _make_node(ref, label_type, item, inline_meta, tree_reader)
     if label_type in {"list", "group", "form_area", "key_value_area"}:
         for ch in item.get("children") or []:

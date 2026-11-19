@@ -19,7 +19,16 @@ from docling_core.types.doc import (
     TitleItem,
 )
 
-from domain.analysis_editing import AnalysisEditError, EditCommand
+from domain.analysis_editing import (
+    AnalysisEditError,
+    EditCommand,
+    check_command_version,
+    check_delete_request,
+    check_heading_level,
+    check_merge_request,
+    check_mergeable_labels,
+    check_move_target,
+)
 
 
 @dataclass(frozen=True)
@@ -110,8 +119,7 @@ class DoclingDocumentEditor:
         logical_objects: dict[str, Any],
         command: EditCommand,
     ) -> None:
-        if command.command_version != 1:
-            raise AnalysisEditError(f"Unsupported command version: {command.command_version}")
+        check_command_version(command.command_version)
         payload = command.payload
         if command.command_type == "replaceText":
             item = self._get(logical_objects, str(payload.get("elementId", "")))
@@ -146,8 +154,7 @@ class DoclingDocumentEditor:
         payload: dict[str, Any],
     ) -> None:
         raw_ids = payload.get("elementIds")
-        if not isinstance(raw_ids, list) or not raw_ids:
-            raise AnalysisEditError("deleteElements requires at least one element")
+        check_delete_request(raw_ids)
         items: list[Any] = []
         for item_id in raw_ids:
             item = self._get(logical_objects, str(item_id))
@@ -173,11 +180,10 @@ class DoclingDocumentEditor:
     ) -> None:
         if not isinstance(item, SectionHeaderItem) or not isinstance(value, int):
             raise AnalysisEditError("setHeadingLevel requires a section header and integer level")
-        if value < -1 or value > 6:
-            raise AnalysisEditError("Heading level must be -1, 0, or between 1 and 6")
+        # The title scan only matters, and only runs, for level 0.
+        title_exists = value == 0 and any(isinstance(text, TitleItem) for text in document.texts)
+        check_heading_level(value, title_exists=title_exists)
         if value in {-1, 0}:
-            if value == 0 and any(isinstance(candidate, TitleItem) for candidate in document.texts):
-                raise AnalysisEditError("A document can contain only one title")
             replacement_type = TitleItem if value == 0 else TextItem
             replacement = replacement_type(
                 self_ref=item.self_ref,
@@ -209,16 +215,13 @@ class DoclingDocumentEditor:
     ) -> None:
         raw_ids = payload.get("elementIds")
         separator = payload.get("separator", " ")
-        if not isinstance(raw_ids, list) or len(raw_ids) < 2 or not isinstance(separator, str):
-            raise AnalysisEditError("mergeText requires at least two element IDs and a separator")
+        check_merge_request(raw_ids, separator)
         items = self._sort_in_document_order(
             document, [self._get(logical_objects, str(item_id)) for item_id in raw_ids]
         )
         if any(not isinstance(item, TextItem) for item in items):
             raise AnalysisEditError("Only text items can be merged")
-        labels = {str(item.label) for item in items}
-        if len(labels) != 1 or next(iter(labels)).lower() not in {"text", "paragraph"}:
-            raise AnalysisEditError("Only compatible paragraph text items can be merged")
+        check_mergeable_labels({str(item.label) for item in items})
         target = items[0]
         if target.parent is None:
             raise AnalysisEditError("The document root cannot be merged")
@@ -268,8 +271,7 @@ class DoclingDocumentEditor:
         target_id = payload.get("targetElementId")
         placement = payload.get("placement")
         if target_id is not None or placement is not None:
-            if not isinstance(target_id, str) or placement not in {"before", "after", "inside"}:
-                raise AnalysisEditError("moveElement requires a target and placement")
+            check_move_target(target_id, placement)
             target = self._get(logical_objects, target_id)
             if target is item or self._is_descendant(target, item, document):
                 raise AnalysisEditError("Move would create a cycle")

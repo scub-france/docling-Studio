@@ -9,11 +9,13 @@ from typing import Any
 from docling_core.types.doc import DoclingDocument, SectionHeaderItem, TableItem, TextItem
 
 from domain.analysis_editing import (
+    MERGEABLE_TEXT_LABELS,
     EditorElement,
     EditorProvenance,
     EditorTreeNode,
     ProjectedAnalysis,
 )
+from domain.heading_tree import nest_by_heading
 from domain.value_objects import DEFAULT_PAGE_HEIGHT
 from infra.bbox import to_topleft_list
 from infra.docling_pages import extract_pages_detail
@@ -95,6 +97,14 @@ class DoclingAnalysisProjector:
         value = getattr(item, "label", "text")
         return str(getattr(value, "value", value)).lower()
 
+    @classmethod
+    def _read_heading_level(cls, item: Any) -> int | None:
+        """Section headers by class and the title by label; a title has no
+        `level`, so it is 0 and contains the sections after it."""
+        if not isinstance(item, SectionHeaderItem) and cls._get_label(item) != "title":
+            return None
+        return int(getattr(item, "level", 0) or 0)
+
     def _build_editor_element(
         self,
         item: Any,
@@ -133,7 +143,7 @@ class DoclingAnalysisProjector:
         operations: tuple[str, ...] = ("replaceText", "deleteElement") if editable else ()
         if isinstance(item, SectionHeaderItem):
             operations = ("replaceText", "setHeadingLevel", "deleteElement")
-        if label in {"text", "paragraph"} and editable:
+        if label in MERGEABLE_TEXT_LABELS and editable:
             operations = (
                 "replaceText",
                 "mergeText",
@@ -179,25 +189,18 @@ class DoclingAnalysisProjector:
         # Docling keeps ordinary body items in reading order and stores
         # heading levels as metadata.  Build the semantic outline here so
         # the editor tree reflects the same hierarchy users see in Markdown.
+        top_level = [
+            child
+            for child_ref in document.body.children
+            if (child := by_ref.get(child_ref.cref)) is not None and id(child) in object_to_id
+        ]
         roots: list[dict[str, Any]] = []
-        heading_stack: list[tuple[int, dict[str, Any]]] = []
-        for child_ref in document.body.children:
-            child = by_ref.get(child_ref.cref)
-            if child is None or id(child) not in object_to_id:
-                continue
-            built = build_node(child)
-            is_heading = isinstance(child, SectionHeaderItem) or self._get_label(child) == "title"
-            if is_heading:
-                level = int(getattr(child, "level", 0) or 0)
-                while heading_stack and heading_stack[-1][0] >= level:
-                    heading_stack.pop()
-                target = heading_stack[-1][1]["children"] if heading_stack else roots
-                entry = {"node": built, "children": []}
-                target.append(entry)
-                heading_stack.append((level, entry))
-            else:
-                target = heading_stack[-1][1]["children"] if heading_stack else roots
-                target.append({"node": built, "children": []})
+        placed: list[dict[str, Any]] = []
+        for step in nest_by_heading(top_level, level_of=self._read_heading_level).steps:
+            entry = {"node": build_node(top_level[step.position]), "children": []}
+            siblings = roots if step.parent is None else placed[step.parent]["children"]
+            siblings.append(entry)
+            placed.append(entry)
 
         def freeze(entries: list[dict[str, Any]]) -> tuple[EditorTreeNode, ...]:
             return tuple(

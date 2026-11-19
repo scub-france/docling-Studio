@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from domain.heading_tree import nest_by_heading
 from domain.navigation import BoundingBox, is_heading
 
 if TYPE_CHECKING:
@@ -90,25 +91,21 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
     order = [ref for ref in tree_reader.list_dfs_order(doc_data, skip_refs) if ref in by_ref]
     position = {ref: idx for idx, ref in enumerate(order)}
 
+    # A section ends where the next heading at its level or above starts, or
+    # at the end of the document; the breadcrumb is the open headings' titles.
     heading_path: dict[str, list[str]] = {}
     section_end: dict[str, int] = {}
-    stack: list[tuple[int, str, str]] = []  # (level, ref, title)
-
-    for idx, ref in enumerate(order):
-        item = by_ref[ref]
-        label = get_label(item)
-        if is_heading(label):
-            level = get_heading_level(item)
-            while stack and stack[-1][0] >= level:
-                _, closed, _ = stack.pop()
-                section_end[closed] = idx
-            heading_path[ref] = [title for _, _, title in stack]
-            stack.append((level, ref, get_title(item, inline_meta)))
-        else:
-            heading_path[ref] = [title for _, _, title in stack]
-    while stack:
-        _, closed, _ = stack.pop()
-        section_end[closed] = len(order)
+    titles: dict[int, str] = {}
+    nesting = nest_by_heading([by_ref[ref] for ref in order], level_of=read_heading_level)
+    for step in nesting.steps:
+        ref = order[step.position]
+        for closed in step.closed:
+            section_end[order[closed]] = step.position
+        heading_path[ref] = [titles[ancestor] for ancestor in step.ancestors]
+        if step.opened:
+            titles[step.position] = get_title(by_ref[ref], inline_meta)
+    for still_open in reversed(nesting.still_open):
+        section_end[order[still_open]] = len(order)
 
     page_sizes: dict[int, tuple[float, float]] = {}
     for page in tree_reader.iter_pages(doc_data):
@@ -184,6 +181,15 @@ def get_heading_level(item: dict[str, Any]) -> int:
         return max(int(item.get("level") or 1), 1)
     except (TypeError, ValueError):
         return 1
+
+
+def read_heading_level(item: dict[str, Any]) -> int | None:
+    """The heading level of an item, None when its label is not a heading.
+
+    The rule the parse index and the outline nest by: `HEADING_LABELS` for
+    what a heading is, `get_heading_level` for its level.
+    """
+    return get_heading_level(item) if is_heading(get_label(item)) else None
 
 
 def get_label(item: dict[str, Any]) -> str:

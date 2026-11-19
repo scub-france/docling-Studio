@@ -6,6 +6,8 @@ import pytest
 
 from domain.chunk_editing import (
     ChunkEditingError,
+    ChunkMergeGapError,
+    check_merge_count,
     delete,
     insert,
     merge,
@@ -13,6 +15,7 @@ from domain.chunk_editing import (
     update,
 )
 from domain.models import Chunk
+from domain.value_objects import ChunkBbox, ChunkDocItem
 
 
 def _make(document_id: str = "doc-1", count: int = 3) -> list[Chunk]:
@@ -26,6 +29,8 @@ def _make(document_id: str = "doc-1", count: int = 3) -> list[Chunk]:
                 text=f"text {i}",
                 headings=[f"H{i}"],
                 source_page=i + 1,
+                bboxes=[ChunkBbox(page=i + 1, bbox=[0.0, 0.0, 1.0, 1.0])],
+                doc_items=[ChunkDocItem(self_ref=f"#/texts/{i}", label="text")],
             )
         )
     return out
@@ -55,6 +60,12 @@ def test_insert_in_middle_shifts_subsequent_sequences() -> None:
     assert out[1].id == new.id
     # Original chunk-1 was shifted to sequence 2.
     assert next(c for c in out if c.id == "c-1").sequence == 2
+
+
+def test_insert_gives_a_compact_id() -> None:
+    _, new = insert(_make(count=1), at_position=0, text="x", document_id="doc-1")
+    assert len(new.id) == 32
+    assert "-" not in new.id
 
 
 def test_insert_out_of_range_raises() -> None:
@@ -119,78 +130,128 @@ def test_delete_is_idempotent() -> None:
 
 
 # ---------------------------------------------------------------------------
-# merge
+# merge — the rules `ChunkService.merge_chunks` applies
 # ---------------------------------------------------------------------------
 
 
-def test_merge_removes_sources_and_returns_new_chunk() -> None:
-    chunks = _make(count=3)
-    out, merged = merge(chunks, ["c-0", "c-1"])
-    ids = {c.id for c in out}
-    assert "c-0" not in ids
-    assert "c-1" not in ids
-    assert merged.id in ids
+def test_merge_orders_the_sources_by_sequence() -> None:
+    c0, c1, _ = _make(count=3)
+    ordered, merged = merge([c1, c0], document_id="doc-1")
+    assert [c.id for c in ordered] == ["c-0", "c-1"]
     assert merged.text == "text 0\ntext 1"
-    # Merged chunk inherits headings from first source.
+    assert merged.sequence == 0
+
+
+def test_merge_keeps_the_first_source_headings_and_page() -> None:
+    c0, c1, _ = _make(count=3)
+    c0.source_page = None
+    _, merged = merge([c0, c1], document_id="doc-1")
     assert merged.headings == ["H0"]
-    # Source page is the min.
-    assert merged.source_page == 1
+    # The first source's page, even when it has none: not the smallest.
+    assert merged.source_page is None
+
+
+def test_merge_concatenates_bboxes_and_doc_items() -> None:
+    c0, c1, c2 = _make(count=3)
+    _, merged = merge([c2, c0, c1], document_id="doc-1")
+    assert [b.page for b in merged.bboxes] == [1, 2, 3]
+    assert [d.self_ref for d in merged.doc_items] == ["#/texts/0", "#/texts/1", "#/texts/2"]
+
+
+def test_merge_sums_token_counts() -> None:
+    c0, c1, _ = _make(count=3)
+    c0.token_count = 3
+    _, merged = merge([c0, c1], document_id="doc-1")
+    assert merged.token_count == 3
+
+
+def test_merge_token_count_is_none_when_the_sum_is_zero() -> None:
+    c0, c1, _ = _make(count=3)
+    c0.token_count = 0
+    _, merged = merge([c0, c1], document_id="doc-1")
+    assert merged.token_count is None
+
+
+def test_merge_gives_a_fresh_chunk_of_the_document() -> None:
+    c0, c1, _ = _make(count=3)
+    _, merged = merge([c0, c1], document_id="doc-1")
+    assert merged.id not in {"c-0", "c-1"}
+    assert len(merged.id) == 36  # the `Chunk` default, dashed UUID4
+    assert merged.document_id == "doc-1"
+    assert merged.deleted_at is None
+
+
+def test_merge_requires_contiguous_sequences() -> None:
+    c0, _, c2 = _make(count=3)
+    with pytest.raises(ChunkMergeGapError, match=r"^merge requires contiguous chunks \(by"):
+        merge([c0, c2], document_id="doc-1")
+
+
+def test_merge_of_the_same_chunk_twice_is_not_contiguous() -> None:
+    c0, _, _ = _make(count=3)
+    with pytest.raises(ChunkMergeGapError):
+        merge([c0, c0], document_id="doc-1")
 
 
 def test_merge_requires_at_least_two_chunks() -> None:
-    chunks = _make()
-    with pytest.raises(ChunkEditingError):
-        merge(chunks, ["c-0"])
+    c0, _, _ = _make(count=3)
+    with pytest.raises(ChunkEditingError, match="^merge requires at least 2 chunk ids$"):
+        merge([c0], document_id="doc-1")
+    with pytest.raises(ChunkEditingError, match="^merge requires at least 2 chunk ids$"):
+        check_merge_count(["c-0"])
+    check_merge_count(["c-0", "c-1"])
 
 
-def test_merge_across_documents_raises() -> None:
-    chunks = _make(document_id="doc-1", count=2)
-    other = Chunk(id="x-0", document_id="doc-2", sequence=10, text="other")
-    chunks.append(other)
-    with pytest.raises(ChunkEditingError):
-        merge(chunks, ["c-0", "x-0"])
+def test_a_gap_is_a_chunk_editing_error() -> None:
+    assert issubclass(ChunkMergeGapError, ChunkEditingError)
 
 
 # ---------------------------------------------------------------------------
-# split
+# split — the rules `ChunkService.split_chunk` applies
 # ---------------------------------------------------------------------------
 
 
-def test_split_creates_two_new_chunks() -> None:
-    chunks = _make(count=2)
-    out, left, right = split(chunks, "c-0", at_offset=4)
-    assert left.text == "text"
-    assert right.text == " 0"
-    ids = {c.id for c in out}
-    # Source replaced by two new chunks.
-    assert "c-0" not in ids
-    assert left.id in ids
-    assert right.id in ids
+def test_split_cuts_the_text_at_the_offset() -> None:
+    source = _make(count=1)[0]
+    head, tail = split(source, at_offset=4, document_id="doc-1")
+    assert head.text == "text"
+    assert tail.text == " 0"
 
 
-def test_split_preserves_headings_on_both_halves() -> None:
-    chunks = _make(count=1)
-    _, left, right = split(chunks, "c-0", at_offset=2)
-    assert left.headings == ["H0"]
-    assert right.headings == ["H0"]
+def test_split_halves_follow_the_source_sequence() -> None:
+    source = _make(count=3)[1]
+    head, tail = split(source, at_offset=2, document_id="doc-1")
+    assert (head.sequence, tail.sequence) == (1, 2)
 
 
-def test_split_shifts_subsequent_sequences() -> None:
-    chunks = _make(count=3)
-    out, _, _ = split(chunks, "c-0", at_offset=2)
-    # After split, c-1 (was seq=1) and c-2 (was seq=2) shift up by 1.
-    seqs = sorted(c.sequence for c in out)
-    assert seqs == [0, 1, 2, 3]
+def test_split_halves_inherit_the_source_metadata() -> None:
+    source = _make(count=1)[0]
+    source.token_count = 12
+    head, tail = split(source, at_offset=2, document_id="doc-1")
+    for half in (head, tail):
+        assert half.headings == ["H0"]
+        assert half.source_page == 1
+        assert half.bboxes == source.bboxes
+        assert half.doc_items == source.doc_items
+        # Unknown after a split.
+        assert half.token_count is None
+        assert half.id != source.id
+        assert half.document_id == "doc-1"
+    # Copies, not the source's lists.
+    assert head.headings is not source.headings
+    assert head.bboxes is not source.bboxes
 
 
-def test_split_at_zero_offset_raises() -> None:
-    chunks = _make()
-    with pytest.raises(ChunkEditingError):
-        split(chunks, "c-0", at_offset=0)
+def test_split_leaves_the_source_untouched() -> None:
+    source = _make(count=1)[0]
+    split(source, at_offset=2, document_id="doc-1")
+    assert source.text == "text 0"
+    assert source.deleted_at is None
 
 
-def test_split_beyond_text_length_raises() -> None:
-    chunks = _make()
-    target = next(c for c in chunks if c.id == "c-0")
-    with pytest.raises(ChunkEditingError):
-        split(chunks, "c-0", at_offset=len(target.text))
+@pytest.mark.parametrize("offset", [0, -1, 6, 99])
+def test_split_offset_out_of_range_raises(offset: int) -> None:
+    source = _make(count=1)[0]
+    with pytest.raises(ChunkEditingError) as caught:
+        split(source, at_offset=offset, document_id="doc-1")
+    assert str(caught.value) == f"cursorOffset {offset} out of range for chunk of length 6"

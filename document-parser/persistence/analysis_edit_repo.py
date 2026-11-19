@@ -7,11 +7,14 @@ import uuid
 from datetime import UTC, datetime
 
 from domain.analysis_editing import (
-    AnalysisEditConflictError,
+    STORED_SEQUENCE_CONFLICT,
     EditCommand,
     EditedAnalysisCache,
     EditStream,
     StoredEditCommand,
+    check_expected_sequence,
+    hash_command,
+    serialize_command_payload,
 )
 from persistence.database import get_connection
 from persistence.iso_datetime import require_iso
@@ -152,23 +155,15 @@ class SqliteAnalysisEditRepository:
                 )
                 last = await cursor.fetchone()
                 actual_sequence = int(last["sequence"]) if last else 0
-                if actual_sequence != expected_sequence:
-                    raise AnalysisEditConflictError(
-                        f"Edit stream changed: expected sequence {expected_sequence}, "
-                        f"actual sequence {actual_sequence}"
-                    )
+                check_expected_sequence(
+                    expected_sequence, actual_sequence, STORED_SEQUENCE_CONFLICT
+                )
                 previous_hash = last["command_hash"] if last else ""
                 saved: list[StoredEditCommand] = []
                 for offset, command in enumerate(commands, start=1):
                     sequence = actual_sequence + offset
-                    payload = json.dumps(command.payload, sort_keys=True, separators=(",", ":"))
-                    command_hash = _hash_command(
-                        previous_hash,
-                        sequence,
-                        command.command_type,
-                        command.command_version,
-                        payload,
-                    )
+                    payload = serialize_command_payload(command.payload)
+                    command_hash = hash_command(previous_hash, sequence, command)
                     record_id = uuid.uuid4().hex
                     created = datetime.now(UTC)
                     await db.execute(
@@ -206,10 +201,3 @@ class SqliteAnalysisEditRepository:
         async with get_connection() as db:
             await db.execute(_CACHE_UPSERT, _to_cache_params(cache))
             await db.commit()
-
-
-def _hash_command(previous: str, sequence: int, kind: str, version: int, payload: str) -> str:
-    import hashlib
-
-    raw = f"{previous}|{sequence}|{kind}|{version}|{payload}".encode()
-    return hashlib.sha256(raw).hexdigest()

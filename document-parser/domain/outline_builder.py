@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from domain.element_reader import list_section_refs, read_element_text
+from domain.heading_tree import nest_by_heading
 from domain.navigation import OutlineNode, is_heading, read_cost
 from domain.parse_index import (
     build_page_ref,
@@ -80,24 +81,25 @@ def _build_section_nodes(
     max_nodes: int,
 ) -> tuple[list[OutlineNode], bool, bool]:
     roots: list[OutlineNode] = []
-    # Stack of (level, mutable children list) — the root sentinel is level -1
-    # so any heading nests inside it, mirroring `ChunkService`'s doc tree.
-    stack: list[tuple[int, list[OutlineNode]]] = [(-1, roots)]
     emitted = 0
     depth_limited = False
     node_limited = False
     child_counts = _count_children(index, headings)
 
-    for ref in headings:
-        item = index.by_ref[ref]
-        level = get_heading_level(item)
-        while len(stack) > 1 and stack[-1][0] >= level:
-            stack.pop()
+    def is_within_depth(open_levels: tuple[int, ...]) -> bool:
         # A document `title` wraps everything without being a level a reader
         # thinks about, so it does not consume depth budget: `depth=2` means
         # chapters and their subsections, title or no title.
-        nesting = sum(1 for open_level, _ in stack[1:] if open_level > 0)
-        if nesting >= depth:
+        return sum(1 for open_level in open_levels if open_level > 0) < depth
+
+    nodes: dict[int, OutlineNode] = {}
+    nesting = nest_by_heading(
+        [index.by_ref[ref] for ref in headings],
+        level_of=get_heading_level,
+        may_open=is_within_depth,
+    )
+    for step in nesting.steps:
+        if not step.opened:
             # Deeper than requested: its tokens still count towards the
             # nearest emitted ancestor, so nothing is hidden from the budget.
             depth_limited = True
@@ -105,20 +107,21 @@ def _build_section_nodes(
         if emitted >= max_nodes:
             node_limited = True
             break
-        children: list[OutlineNode] = []
+        ref = headings[step.position]
         node = OutlineNode(
             ref=ref,
             uri="",  # stamped by the service, which owns the version token
-            title=get_title(item, index.inline_meta),
+            title=get_title(index.by_ref[ref], index.inline_meta),
             kind="section",
-            level=level,
+            level=step.level,
             page=index.page_of.get(ref),
             est_tokens=estimate_section_tokens(index, ref),
             child_count=child_counts.get(ref, 0),
-            children=children,
+            children=[],
         )
-        stack[-1][1].append(node)
-        stack.append((level, children))
+        siblings = roots if step.parent is None else nodes[step.parent].children
+        siblings.append(node)
+        nodes[step.position] = node
         emitted += 1
 
     return roots, depth_limited, node_limited
@@ -156,15 +159,11 @@ def _count_children(index: DocumentIndex, headings: list[str]) -> dict[str, int]
     outline nests them (pop while the open heading is not shallower), so the
     count agrees with `children` even when docling skips a level."""
     counts: dict[str, int] = {}
-    open_headings: list[tuple[int, str]] = []
-    for ref in headings:
-        level = get_heading_level(index.by_ref[ref])
-        while open_headings and open_headings[-1][0] >= level:
-            open_headings.pop()
-        if open_headings:
-            parent = open_headings[-1][1]
+    nesting = nest_by_heading([index.by_ref[ref] for ref in headings], level_of=get_heading_level)
+    for step in nesting.steps:
+        if step.parent is not None:
+            parent = headings[step.parent]
             counts[parent] = counts.get(parent, 0) + 1
-        open_headings.append((level, ref))
     return counts
 
 
