@@ -2,7 +2,7 @@
 
 Second composition entrypoint of the backend, beside `main.py`. Claude Code
 and Claude Desktop launch a stdio server as a subprocess, so this module
-builds only what the tools actually need — the three repositories and the
+builds only what the tools actually need — the repositories and the
 document services over them — instead of the full `AppStateBuilder` sequence. No
 Docling import, no Neo4j dial-out, no converter: startup stays instant, which
 matters when the client spawns the process on every session.
@@ -54,15 +54,23 @@ async def _serve() -> None:
     from persistence.analysis_repo import SqliteAnalysisRepository
     from persistence.app_settings_repo import SqliteAppSettingsRepository
     from persistence.database import init_db
+    from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
     from persistence.document_repo import SqliteDocumentRepository
+    from services.current_analysis import CurrentAnalysisResolver
     from services.mcp_config_service import load_effective_mcp_config
 
     # Applies pending migrations; idempotent against an up-to-date database.
     await init_db()
 
     config = await load_effective_mcp_config(SqliteAppSettingsRepository(), build_env_mcp_config())
+    analyses = SqliteAnalysisRepository()
+    # The same "current analysis" as Studio: the document's active selection.
+    current_analysis = CurrentAnalysisResolver(
+        state_repo=SqliteDocumentAnalysisRepository(),
+        analysis_repo=analyses,
+    )
     tools = build_document_tools(
-        build_parse_loader(SqliteDocumentRepository(), SqliteAnalysisRepository()),
+        build_parse_loader(SqliteDocumentRepository(), analyses, current_analysis),
         config,
     )
     server = build_mcp_server(

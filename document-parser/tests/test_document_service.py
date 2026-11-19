@@ -45,6 +45,7 @@ def _make_service(
         pdf_inspector=pdf_inspector or _counting(None),
         # The real store: these tests check what lands on, and leaves, the disk.
         file_store=LocalDocumentFileStore(upload_dir),
+        current_analysis=AsyncMock(),
     )
 
 
@@ -298,6 +299,7 @@ class TestFilesGoThroughTheStore:
             store_repo=AsyncMock(),
             pdf_inspector=_counting(pages),
             file_store=store,
+            current_analysis=AsyncMock(),
         )
         return service, store
 

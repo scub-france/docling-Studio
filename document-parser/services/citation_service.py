@@ -141,8 +141,8 @@ class CitationService:
                 valid=True,
                 status=CitationStatus.STALE_VERSION,
                 detail=(
-                    "The quote appears verbatim at this anchor, but the anchor pins an "
-                    f"earlier parse: {current} is now the current one. Re-read the "
+                    "The quote appears verbatim at this anchor, but the anchor pins a "
+                    f"parse that is no longer current: {current} is. Re-read the "
                     "document to cite the current parse."
                 ),
                 citation=matched,
@@ -194,11 +194,9 @@ class CitationService:
         return clip_to_tokens(text, self._config.max_read_tokens)
 
     async def _find_superseding_parse(self, document_id: str, version_id: str) -> str | None:
-        """The id of the current parse when the anchor pins an older one."""
-        latest = (await self._parses.analyses.find_latest_parsed_ids([document_id])).get(
-            document_id
-        )
-        return latest if latest is not None and latest != version_id else None
+        """The id of the current parse when the anchor pins another one."""
+        current = (await self._parses.find_current_parse_ids([document_id])).get(document_id)
+        return current if current is not None and current != version_id else None
 
     @staticmethod
     def _locate_quote(

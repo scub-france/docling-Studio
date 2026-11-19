@@ -32,6 +32,7 @@ from services.chunk_service import (
     ChunkValidationError,
     DocumentNotFoundError,
 )
+from services.current_analysis import CurrentAnalysisResolver
 from services.ingestion_service import IngestionResult
 
 # Stateless shim — safe to share across the entire test module.
@@ -68,12 +69,15 @@ async def doc():
 
 @pytest.fixture
 def repos():
+    analysis_state = SqliteDocumentAnalysisRepository()
+    analyses = SqliteAnalysisRepository()
     return {
         "chunks": SqliteChunkRepository(),
         "pushes": SqliteChunkPushRepository(),
         "documents": SqliteDocumentRepository(),
-        "analysis_state": SqliteDocumentAnalysisRepository(),
-        "analyses": SqliteAnalysisRepository(),
+        "analysis_state": analysis_state,
+        "analyses": analyses,
+        "current": CurrentAnalysisResolver(state_repo=analysis_state, analysis_repo=analyses),
     }
 
 
@@ -83,8 +87,9 @@ def service(repos):
         chunk_repo=repos["chunks"],
         chunk_push_repo=repos["pushes"],
         document_repo=repos["documents"],
-        chunk_source_repo=repos["analysis_state"],
+        analysis_state_repo=repos["analysis_state"],
         analysis_repo=repos["analyses"],
+        current_analysis=repos["current"],
         tree_reader=_TREE_READER,
         chunker=None,
         ingestion_service=None,
@@ -342,7 +347,8 @@ class TestRechunkDocument:
     async def test_rechunk_retires_old_chunks_in_one_statement(
         self, service, repos, doc, monkeypatch
     ):
-        """#398 — one bulk soft-delete for the whole old chunkset."""
+        """#398 — one bulk soft-delete for the whole old chunkset, inside the one
+        transaction that also records the chunk source (02-2.4.3)."""
         for text in ("old1", "old2", "old3"):
             await service.add_chunk(doc.id, text=text)
         job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
@@ -353,14 +359,16 @@ class TestRechunkDocument:
         chunker = MagicMock()
         chunker.chunk = AsyncMock(return_value=[ChunkResult(text="new", source_page=1)])
         service._chunker = chunker
-        bulk = _spy(monkeypatch, repos["chunks"], "soft_delete_for_document")
+        replace = _spy(monkeypatch, repos["chunks"], "replace_for_document")
         single = _spy(monkeypatch, repos["chunks"], "soft_delete")
 
         await service.rechunk_document(doc.id)
 
-        bulk.assert_awaited_once()
-        assert bulk.await_args.args == (doc.id,)
+        replace.assert_awaited_once()
+        assert replace.await_args.args[0] == doc.id
         single.assert_not_awaited()
+        source = (await repos["analysis_state"].find_state(doc.id)).chunk_source
+        assert source.analysis_id == job.id
         assert [c.text for c in await service.list_chunks(doc.id)] == ["new"]
         every = await repos["chunks"].find_for_document(doc.id, include_deleted=True)
         assert sorted(c.text for c in every if c.deleted_at is not None) == [
@@ -413,6 +421,48 @@ class TestRechunkDocument:
         # Persisted chunks carry doc_items too.
         chunks = await service.list_chunks(doc.id)
         assert [d.self_ref for d in chunks[0].doc_items] == ["#/texts/0", "#/texts/1"]
+
+    async def _complete_two_analyses(self, repos, doc) -> None:
+        """`older` then `newer` complete; `newer` becomes the active one."""
+        for analysis_id in ("older", "newer"):
+            job = AnalysisJob(id=analysis_id, document_id=doc.id)
+            await repos["analyses"].insert(job)
+            job.mark_running()
+            job.mark_completed(
+                markdown="", html="", pages_json="[]", document_json=json.dumps({"v": analysis_id})
+            )
+            await repos["analyses"].complete_and_select(job)
+
+    async def _change_state(self, repos, doc, change) -> None:
+        state = await repos["analysis_state"].find_state(doc.id)
+        change(state)
+        await repos["analysis_state"].save_state(state)
+
+    async def test_rechunk_reads_the_active_analysis_not_the_latest(self, service, repos, doc):
+        """02-2.3.1: two completed analyses, the user restored the older one."""
+        await self._complete_two_analyses(repos, doc)
+        await self._change_state(repos, doc, lambda state: state.select("older"))
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(return_value=[ChunkResult(text="t", source_page=1)])
+        service._chunker = chunker
+
+        await service.rechunk_document(doc.id)
+
+        assert json.loads(chunker.chunk.await_args.args[0]) == {"v": "older"}
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == "older"
+        assert state.chunk_source.analysis_id == "older"
+
+    async def test_rechunk_409_when_the_active_analysis_was_cleared(self, service, repos, doc):
+        """A cleared selection is a choice: no fallback to the latest analysis."""
+        await self._complete_two_analyses(repos, doc)
+        await self._change_state(repos, doc, lambda state: state.clear_selection())
+        service._chunker = MagicMock()
+
+        with pytest.raises(ChunkServiceError) as exc:
+            await service.rechunk_document(doc.id)
+
+        assert exc.value.http_status == 409
 
 
 # ---------------------------------------------------------------------------
@@ -525,8 +575,9 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
+            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
+            current_analysis=repos["current"],
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
@@ -576,8 +627,9 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
+            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
+            current_analysis=repos["current"],
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=None,
@@ -654,8 +706,9 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
+            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
+            current_analysis=repos["current"],
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=failing,
@@ -689,8 +742,9 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
+            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
+            current_analysis=repos["current"],
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
@@ -726,8 +780,9 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
+            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
+            current_analysis=repos["current"],
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
@@ -779,8 +834,9 @@ class TestListPushes:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
+            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
+            current_analysis=repos["current"],
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=None,

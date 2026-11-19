@@ -281,6 +281,22 @@ class TestVerifyCitation:
         assert check.status is CitationStatus.STALE_VERSION
         assert "an-2" in check.detail
 
+    async def test_the_current_parse_is_the_active_analysis_not_the_latest(self):
+        # 02-2.3.1: the user restored the older analysis in Studio. An anchor
+        # on it is current; one on the newer parse is the stale one.
+        jobs = [_job(), _job(job_id="an-2")]
+        tools = _tools(jobs=jobs, active={DOC_ID: JOB_ID})
+
+        on_active = await tools.citations.verify_citation(_uri(PREAVIS_REF), "trois mois")
+        on_newer = await tools.citations.verify_citation(
+            _uri(PREAVIS_REF, job_id="an-2"), "trois mois"
+        )
+
+        assert on_active.status is CitationStatus.VERIFIED
+        assert on_newer.valid is True
+        assert on_newer.status is CitationStatus.STALE_VERSION
+        assert JOB_ID in on_newer.detail
+
     async def test_a_section_anchor_verifies_a_quote_from_inside_it(self):
         # The advertised workflow reads a section by its uri, so the uri an
         # agent holds is usually the section's, not the paragraph's. That must
@@ -326,6 +342,37 @@ class TestVersionPinning:
         old = await service.read_element(DOC_ID, "#/texts/2", version_id="an-1", include="self")
         new = await service.read_element(DOC_ID, "#/texts/2", version_id="an-2", include="self")
         assert old.markdown != new.markdown
+
+    async def test_the_default_parse_is_the_active_analysis_not_the_latest(self):
+        # 02-2.3.1: after a restore of the older analysis in Studio, the tools
+        # read what Studio shows by default; a pinned version is unchanged.
+        service = _service(
+            jobs=[_job(SECTIONED, "an-1"), _job(FLAT, "an-2")], active={DOC_ID: "an-1"}
+        )
+        default = await service.get_outline(DOC_ID)
+        pinned = await service.get_outline(DOC_ID, version_id="an-2")
+        search = await service.find_documents()
+        assert (default.version_id, default.mode) == ("an-1", "sections")
+        assert (pinned.version_id, pinned.mode) == ("an-2", "pages")
+        assert search.documents[0].version_id == "an-1"
+
+    async def test_a_document_left_without_an_active_analysis_has_no_default_parse(self):
+        # A state row whose selection is NULL is a choice, not a gap: no
+        # fallback to the latest parse.
+        service = _service(jobs=[_job(SECTIONED, "an-1")], active={DOC_ID: None})
+        with pytest.raises(NoParseError):
+            await service.get_outline(DOC_ID)
+        assert (await service.find_documents()).documents[0].version_id is None
+        pinned = await service.get_outline(DOC_ID, version_id="an-1")
+        assert pinned.version_id == "an-1"
+
+    async def test_an_active_analysis_without_a_parse_has_no_default_parse(self):
+        unparsed = _job(SECTIONED, "an-2")
+        unparsed.document_json = None
+        service = _service(jobs=[_job(SECTIONED, "an-1"), unparsed], active={DOC_ID: "an-2"})
+        with pytest.raises(NoParseError):
+            await service.get_outline(DOC_ID)
+        assert (await service.find_documents()).documents[0].version_id is None
 
 
 class TestBudgetEdges:

@@ -82,16 +82,15 @@ async def _seed() -> VersionService:
         chunk_repo=chunks,
         document_repo=documents,
         analysis_repo=analyses,
-        selection_repo=state,
-        chunk_source_repo=state,
+        analysis_state_repo=state,
     )
 
 
 async def _live_state(document_id: str) -> tuple[list[str], str | None]:
     live = await SqliteChunkRepository().find_for_document(document_id)
-    selection = await SqliteDocumentAnalysisRepository().get_selection(document_id)
+    state = await SqliteDocumentAnalysisRepository().find_state(document_id)
     texts = [chunk.text for chunk in sorted(live, key=lambda chunk: chunk.sequence)]
-    return texts, selection.analysis_id if selection else None
+    return texts, state.active_analysis_id if state else None
 
 
 @pytest.fixture
@@ -153,6 +152,17 @@ def test_restore_replaces_live_chunks_and_selects_the_version_analysis(client):
         2,
     )
     assert asyncio.run(_live_state("doc-1")) == (["a", "b"], "analysis-1")
+
+
+def test_restore_records_where_the_restored_chunks_came_from(client):
+    client.post(f"{BASE}/versions/v-old/restore")
+
+    state = asyncio.run(SqliteDocumentAnalysisRepository().find_state("doc-1"))
+    assert state.chunk_source is not None
+    assert (state.chunk_source.analysis_id, state.chunk_source.result_hash) == (
+        "analysis-1",
+        "a" * 64,
+    )
 
 
 def test_restore_on_an_unknown_document_is_not_found(client):

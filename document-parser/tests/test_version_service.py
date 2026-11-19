@@ -13,8 +13,7 @@ from domain.models import (
     AnalysisStatus,
     Chunk,
     Document,
-    DocumentAnalysisSelection,
-    DocumentChunkSource,
+    DocumentAnalysisState,
     DocumentVersionKind,
 )
 from domain.value_objects import ChunkBbox, ChunkDocItem
@@ -57,8 +56,7 @@ def service(repos):
         chunk_repo=repos["chunks"],
         document_repo=repos["documents"],
         analysis_repo=repos["analyses"],
-        selection_repo=repos["analysis_state"],
-        chunk_source_repo=repos["analysis_state"],
+        analysis_state_repo=repos["analysis_state"],
     )
 
 
@@ -69,6 +67,13 @@ async def doc(repos):
     return d
 
 
+async def _change_state(repos, document_id: str, change) -> None:
+    states = repos["analysis_state"]
+    state = await states.find_state(document_id) or DocumentAnalysisState(document_id)
+    change(state)
+    await states.save_state(state)
+
+
 class TestRecordOnAnalysis:
     async def test_first_version_has_empty_chunks_snapshot(self, service, doc):
         version = await service.record_on_analysis(doc.id, "a1")
@@ -77,7 +82,7 @@ class TestRecordOnAnalysis:
         assert json.loads(version.chunks_snapshot or "[]") == []
 
     async def test_snapshot_carries_existing_chunks(self, service, repos, doc):
-        await repos["analysis_state"].set_chunk_source(DocumentChunkSource(doc.id, "old", "a" * 64))
+        await _change_state(repos, doc.id, lambda s: s.record_chunk_source("old", "a" * 64))
         await repos["analyses"].insert(
             AnalysisJob(id="a2", document_id=doc.id, status=AnalysisStatus.COMPLETED)
         )
@@ -104,8 +109,9 @@ class TestRecordOnAnalysis:
         assert version.chunks_source_analysis_id == "old"
         assert version.chunks_source_result_hash == "a" * 64
         await service.restore(doc.id, version.id)
-        assert (await repos["analysis_state"].get_selection(doc.id)).analysis_id == "a2"
-        assert (await repos["analysis_state"].get_chunk_source(doc.id)).analysis_id == "old"
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == "a2"
+        assert state.chunk_source.analysis_id == "old"
 
 
 class TestRecordOnRechunk:
@@ -140,26 +146,42 @@ class TestRestore:
         await service.restore(doc.id, v1.id)
         live = await repos["chunks"].find_for_document(doc.id)
         assert sorted(c.text for c in live) == ["v1-a", "v1-b"]
-        assert (await repos["analysis_state"].get_selection(doc.id)).analysis_id == "a1"
-        assert (await repos["analysis_state"].get_chunk_source(doc.id)).result_hash == "a" * 64
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == "a1"
+        assert state.chunk_source.result_hash == "a" * 64
 
     async def test_restores_analysis_selection_and_chunk_provenance(self, service, repos, doc):
         await repos["analyses"].insert(
             AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
         )
-        await repos["analysis_state"].select(DocumentAnalysisSelection(doc.id, "a1"))
+        await _change_state(repos, doc.id, lambda s: s.select("a1"))
         version = await service.record_on_rechunk(doc.id, "a1", "c" * 64)
         await service.restore(doc.id, version.id)
-        selection = await repos["analysis_state"].get_selection(doc.id)
-        source = await repos["analysis_state"].get_chunk_source(doc.id)
-        assert selection.analysis_id == "a1"
-        assert source.analysis_id == "a1"
-        assert source.result_hash == "c" * 64
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == "a1"
+        assert state.chunk_source.analysis_id == "a1"
+        assert state.chunk_source.result_hash == "c" * 64
 
-    async def test_restore_soft_deletes_live_chunks_in_one_statement(
+    async def test_restore_of_the_older_analysis_makes_it_current(self, service, repos, doc):
+        """02-2.3.1: two completed analyses, the user restores the older one."""
+        for analysis_id in ("a1", "a2"):
+            job = AnalysisJob(id=analysis_id, document_id=doc.id)
+            await repos["analyses"].insert(job)
+            job.mark_running()
+            job.mark_completed(markdown="", html="", pages_json="[]", document_json="{}")
+            await repos["analyses"].complete_and_select(job)
+        older = await service.record_on_rechunk(doc.id, "a1", "e" * 64)
+        assert (await repos["analysis_state"].find_state(doc.id)).active_analysis_id == "a2"
+
+        await service.restore(doc.id, older.id)
+
+        assert (await repos["analysis_state"].find_state(doc.id)).active_analysis_id == "a1"
+
+    async def test_restore_replaces_live_chunks_in_one_transaction(
         self, service, repos, doc, monkeypatch
     ):
-        """#398 — one bulk UPDATE, not one soft-delete per live chunk."""
+        """#398 — one bulk UPDATE, not one soft-delete per live chunk; 02-2.4.3 —
+        the chunks and the analysis state are written by one repository call."""
         await repos["analyses"].insert(
             AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
         )
@@ -168,20 +190,43 @@ class TestRestore:
         )
         version = await service.record_on_rechunk(doc.id, "a1", "d" * 64)
         chunk_repo = repos["chunks"]
-        bulk = AsyncMock(wraps=chunk_repo.soft_delete_for_document)
+        replace = AsyncMock(wraps=chunk_repo.replace_for_document)
         single = AsyncMock(wraps=chunk_repo.soft_delete)
-        monkeypatch.setattr(chunk_repo, "soft_delete_for_document", bulk)
+        monkeypatch.setattr(chunk_repo, "replace_for_document", replace)
         monkeypatch.setattr(chunk_repo, "soft_delete", single)
 
         await service.restore(doc.id, version.id)
 
-        bulk.assert_awaited_once()
-        assert bulk.await_args.args == (doc.id,)
+        replace.assert_awaited_once()
+        assert replace.await_args.args[0] == doc.id
         single.assert_not_awaited()
         live = await chunk_repo.find_for_document(doc.id)
         assert sorted(c.text for c in live) == ["live-0", "live-1", "live-2"]
         every = await chunk_repo.find_for_document(doc.id, include_deleted=True)
         assert sum(c.deleted_at is not None for c in every) == 3
+
+    async def test_a_failed_state_write_rolls_the_chunks_back(
+        self, service, repos, doc, monkeypatch
+    ):
+        """02-2.4.3: restored chunks never stand recorded against the old analysis."""
+        await repos["analyses"].insert(
+            AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        )
+        await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="before")])
+        version = await service.record_on_rechunk(doc.id, "a1", "f" * 64)
+        await repos["chunks"].soft_delete_for_document(doc.id, at=datetime.now(UTC))
+        await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="after")])
+
+        async def fail(db, state):
+            raise RuntimeError("state write failed")
+
+        monkeypatch.setattr("persistence.chunk_repo.write_document_analysis_state", fail)
+        with pytest.raises(RuntimeError, match="state write failed"):
+            await service.restore(doc.id, version.id)
+
+        live = await repos["chunks"].find_for_document(doc.id)
+        assert [c.text for c in live] == ["after"]
+        assert await repos["analysis_state"].find_state(doc.id) is None
 
     async def test_restore_unknown_version_raises(self, service, doc):
         with pytest.raises(VersionNotFoundError):

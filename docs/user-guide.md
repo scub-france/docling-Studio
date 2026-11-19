@@ -101,7 +101,7 @@ How it behaves:
 
 - One question at a time. The answer arrives in one piece.
 - Questions and answers live in your browser tab. They are not saved.
-- Ask always reads the latest completed analysis of the document, even when you opened an older one. It reads the original result, without the changes saved in **Edit analysis**.
+- Ask reads the document's active analysis: the newest one, until you restore another from **History**. Opening an older analysis from **Analyses** does not change it. It reads the original result, without the changes saved in **Edit analysis**.
 - To use another model, type its name in **model override**. It applies to your next questions until you clear the field.
 
 ## Download

@@ -27,7 +27,7 @@ from domain.models import (
     AnalysisStatus,
     Chunk,
     ChunkPush,
-    DocumentChunkSource,
+    DocumentAnalysisState,
     DocumentStoreLink,
     generate_id,
     get_utc_now,
@@ -46,7 +46,8 @@ if TYPE_CHECKING:
         AnalysisRepository,
         ChunkPushRepository,
         ChunkRepository,
-        ChunkSourceRepository,
+        CurrentAnalysisReader,
+        DocumentAnalysisStateRepository,
         DocumentChunker,
         DocumentRepository,
         DocumentStoreLinkRepository,
@@ -135,8 +136,9 @@ class ChunkService:
         chunk_repo: ChunkRepository,
         chunk_push_repo: ChunkPushRepository,
         document_repo: DocumentRepository,
-        chunk_source_repo: ChunkSourceRepository,
+        analysis_state_repo: DocumentAnalysisStateRepository,
         analysis_repo: AnalysisRepository,
+        current_analysis: CurrentAnalysisReader,
         tree_reader: DocumentTreeReader,
         chunker: DocumentChunker | None = None,
         ingestion_service: IngestionService | None = None,
@@ -148,8 +150,9 @@ class ChunkService:
         self._chunks = chunk_repo
         self._pushes = chunk_push_repo
         self._documents = document_repo
-        self._chunk_sources = chunk_source_repo
+        self._states = analysis_state_repo
         self._analyses = analysis_repo
+        self._current = current_analysis
         # `DocumentTreeReader` port (#audit-01) — replaces the local
         # `from infra.docling_tree import ...` smell hiding inside two
         # tree-walking helpers. Required so the tree views stay rendable.
@@ -322,7 +325,17 @@ class ChunkService:
         return merged
 
     async def rechunk_document(self, document_id: str, options: dict | None = None) -> list[Chunk]:
-        """Re-run the chunker on the active analysis JSON and replace the chunkset."""
+        """Re-run the chunker on the current analysis result and replace the chunkset.
+
+        The current analysis is read with its saved edits when the editor's
+        reader is wired, as stored otherwise. The new chunks and the record of
+        their source are written in one transaction (02-2.4.3); only the
+        source is written, so an analysis that becomes active while the
+        chunker runs stays active and the new chunks report stale against it,
+        which they are. The History version that follows is a separate,
+        best-effort write: when it fails the chunks stand without a matching
+        History entry, as before.
+        """
         await self._require_doc(document_id)
         if not self._chunker:
             raise ChunkServiceError("Chunker not configured", http_status=503)
@@ -336,7 +349,7 @@ class ChunkService:
         job = (
             active.job
             if active is not None
-            else await self._analyses.find_latest_completed_by_document(document_id)
+            else await self._current.load_current_analysis(document_id)
         )
         if not job or not job.document_json:
             raise ChunkServiceError(
@@ -346,8 +359,6 @@ class ChunkService:
 
         chunk_opts = ChunkingOptions(**options) if options else ChunkingOptions()
         new_results = await self._chunker.chunk(job.document_json, chunk_opts)
-
-        old_count = await self._chunks.soft_delete_for_document(document_id, at=get_utc_now())
 
         new_chunks = [
             Chunk(
@@ -362,21 +373,21 @@ class ChunkService:
             )
             for seq, r in enumerate(new_results)
         ]
-        if new_chunks:
-            await self._chunks.insert_many(new_chunks)
-        logger.info(
-            "chunk.rechunk docId=%s oldCount=%d newCount=%d",
-            document_id,
-            old_count,
-            len(new_chunks),
-        )
 
         source_analysis_id = job.id
         if active is not None:
             source_analysis_id = active.base_analysis_id
         source_result_hash = hash_result(job.document_json)
-        await self._chunk_sources.set_chunk_source(
-            DocumentChunkSource(document_id, source_analysis_id, source_result_hash)
+        state = await self._states.find_state(document_id) or DocumentAnalysisState(document_id)
+        state.record_chunk_source(source_analysis_id, source_result_hash)
+        old_count = await self._chunks.replace_for_document(
+            document_id, new_chunks, at=get_utc_now(), state=state
+        )
+        logger.info(
+            "chunk.rechunk docId=%s oldCount=%d newCount=%d",
+            document_id,
+            old_count,
+            len(new_chunks),
         )
 
         # Record a frozen (analysis, chunks_snapshot) pair in the
@@ -667,7 +678,7 @@ class ChunkService:
                 except AnalysisEditUnavailableError:
                     return []
             else:
-                job = await self._analyses.find_latest_completed_by_document(document_id)
+                job = await self._current.load_current_analysis(document_id)
         if not job or not job.document_json:
             return []
         try:

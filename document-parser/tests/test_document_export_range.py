@@ -22,7 +22,9 @@ from domain.models import Document
 from infra.document_file_store import LocalDocumentFileStore
 from persistence import database
 from persistence.analysis_repo import SqliteAnalysisRepository
+from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
+from services.current_analysis import CurrentAnalysisResolver
 from services.export_service import ExportService
 
 URL = "/api/documents/doc-1/export?format=pdf"
@@ -51,9 +53,13 @@ async def _seed(storage_path: str, upload_dir: str) -> ExportService:
     await database.init_db()
     documents = SqliteDocumentRepository()
     await documents.insert(Document(id="doc-1", filename="source.pdf", storage_path=storage_path))
+    analyses = SqliteAnalysisRepository()
     return ExportService(
         document_repo=documents,
-        analysis_repo=SqliteAnalysisRepository(),
+        analysis_repo=analyses,
+        current_analysis=CurrentAnalysisResolver(
+            state_repo=SqliteDocumentAnalysisRepository(), analysis_repo=analyses
+        ),
         file_store=LocalDocumentFileStore(upload_dir),
     )
 

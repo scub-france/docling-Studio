@@ -46,6 +46,9 @@ export interface Document {
   /** Per-store state detail (#224). Present when backend returns storeLinks. */
   storeLinks?: DocStoreLink[]
   chunksStale?: boolean
+  /** The analysis every document feature reads by default: its active selection.
+   * Only on `GET /api/documents/{id}`; null when the document has none. */
+  currentAnalysisId?: string | null
 }
 
 export interface PipelineOptions {

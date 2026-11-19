@@ -1,7 +1,7 @@
 """Reasoning API — HTTP layer over `ReasoningService`.
 
 `POST /api/documents/:id/reasoning` runs the wired-up reasoning service
-against the document's latest completed analysis and returns a camelCase
+against the document's current analysis and returns a camelCase
 `ReasoningTraceResponse` (the Parse-view trace timeline contract, #303).
 
 This module has zero coupling to docling-agent / mellea / docling-core. The

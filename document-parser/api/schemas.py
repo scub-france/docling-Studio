@@ -116,6 +116,10 @@ class DocumentResponse(_CamelModel):
     # `GET /api/documents/{id}`; the list endpoint omits it to keep
     # the listing payload light (callers that need it can drill in).
     store_links: list[DocStoreLinkResponse] | None = None
+    # 0.7.4 (02-2.3.1) — the analysis the document workspace, the editor,
+    # chunking, exports, Ask and the MCP tools read by default (its active
+    # selection). Only on `GET /api/documents/{id}`; None when it has none.
+    current_analysis_id: str | None = None
 
 
 class PageSizeResponse(_CamelModel):

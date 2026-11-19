@@ -26,7 +26,7 @@ class CitationStatus(StrEnum):
     - UNKNOWN_REF    the ref does not exist in that parse
     - UNKNOWN_VERSION the version token names no parse of that document
     - STALE_VERSION  the quote checks out, but the anchor pins a parse that
-                     has since been superseded by a newer analysis
+                     is no longer the document's current analysis
     """
 
     VERIFIED = "verified"

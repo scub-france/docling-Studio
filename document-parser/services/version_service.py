@@ -7,7 +7,8 @@ between snapshots are NOT recorded as versions; they mutate the live
 chunkset and only land in History when the next explicit trigger fires.
 
 `restore(document_id, version_id)` writes the version's chunks_snapshot
-back into the live `chunks` table and updates the active analysis selection.
+back into the live `chunks` table and updates the document's analysis state
+(active analysis and chunk source), in one transaction.
 """
 
 from __future__ import annotations
@@ -19,8 +20,7 @@ from typing import TYPE_CHECKING
 from domain.models import (
     AnalysisStatus,
     Chunk,
-    DocumentAnalysisSelection,
-    DocumentChunkSource,
+    DocumentAnalysisState,
     DocumentVersion,
     DocumentVersionKind,
     generate_compact_id,
@@ -31,9 +31,8 @@ from services.errors import ServiceError
 if TYPE_CHECKING:
     from domain.ports import (
         AnalysisRepository,
-        AnalysisSelectionRepository,
         ChunkRepository,
-        ChunkSourceRepository,
+        DocumentAnalysisStateRepository,
         DocumentRepository,
         DocumentVersionRepository,
     )
@@ -82,15 +81,13 @@ class VersionService:
         chunk_repo: ChunkRepository,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
-        selection_repo: AnalysisSelectionRepository,
-        chunk_source_repo: ChunkSourceRepository,
+        analysis_state_repo: DocumentAnalysisStateRepository,
     ):
         self._versions = version_repo
         self._chunks = chunk_repo
         self._documents = document_repo
         self._analyses = analysis_repo
-        self._selection = selection_repo
-        self._chunk_sources = chunk_source_repo
+        self._states = analysis_state_repo
 
     async def list_for_document(self, document_id: str) -> list[DocumentVersion]:
         await self._require_doc(document_id)
@@ -110,7 +107,8 @@ class VersionService:
         JSON array.
         """
         chunks = await self._chunks.find_for_document(document_id)
-        source = await self._chunk_sources.get_chunk_source(document_id)
+        state = await self._states.find_state(document_id)
+        source = state.chunk_source if state else None
         version = DocumentVersion(
             id=generate_compact_id(),
             document_id=document_id,
@@ -150,7 +148,14 @@ class VersionService:
         return version
 
     async def restore(self, document_id: str, version_id: str) -> DocumentVersion:
-        """Replace the live chunkset and select its source analysis."""
+        """Replace the live chunkset and select its source analysis.
+
+        The chunk replacement and the analysis state (active analysis, chunk
+        source) are one transaction (02-2.4.3): a failure leaves both as they
+        were, never restored chunks recorded against the previous analysis.
+        The checks before it read separately, so an analysis deleted between
+        the check and the write fails the state trigger and rolls back.
+        """
         await self._require_doc(document_id)
         version = await self._versions.find_by_id(version_id)
         if not version or version.document_id != document_id:
@@ -166,36 +171,19 @@ class VersionService:
                     "Version analysis is no longer available", http_status=409
                 )
 
-        # Wipe live chunks (soft-delete), then re-insert the
-        # snapshot's chunks under fresh ids.
-        await self._chunks.soft_delete_for_document(document_id, at=get_utc_now())
-
+        # The snapshot's chunks come back under fresh ids.
         raw_chunks = json.loads(version.chunks_snapshot or "[]")
         new_chunks: list[Chunk] = []
         for raw in raw_chunks:
             new_chunks.append(_chunk_from_snapshot(document_id, raw))
 
-        if new_chunks:
-            await self._chunks.insert_many(new_chunks)
-
         # History restore is an aggregate operation: the backend, rather
         # than the frontend, owns which immutable analysis is active.
-        if version.analysis_id is None:
-            await self._selection.clear_selection(document_id)
-        else:
-            await self._selection.select(
-                DocumentAnalysisSelection(document_id, version.analysis_id)
-            )
-        if version.chunks_source_analysis_id is None:
-            await self._chunk_sources.clear_chunk_source(document_id)
-        else:
-            await self._chunk_sources.set_chunk_source(
-                DocumentChunkSource(
-                    document_id,
-                    version.chunks_source_analysis_id,
-                    version.chunks_source_result_hash,
-                )
-            )
+        state = await self._states.find_state(document_id) or DocumentAnalysisState(document_id)
+        state.restore(version)
+        await self._chunks.replace_for_document(
+            document_id, new_chunks, at=get_utc_now(), state=state
+        )
 
         logger.info(
             "Restored doc %s to version %s (%d chunks)",

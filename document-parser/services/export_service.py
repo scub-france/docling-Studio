@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from domain.ports import (
         ActiveAnalysisResultReader,
         AnalysisRepository,
+        CurrentAnalysisReader,
         DocumentFileStore,
         DocumentRepository,
     )
@@ -47,10 +48,12 @@ class ExportService:
         analysis_repo: AnalysisRepository,
         active_result_service: ActiveAnalysisResultReader | None = None,
         *,
+        current_analysis: CurrentAnalysisReader,
         file_store: DocumentFileStore,
     ) -> None:
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
+        self._current = current_analysis
         self._file_store = file_store
         self._active_result_service = active_result_service
 
@@ -63,10 +66,11 @@ class ExportService:
         """Export the source PDF, or the Markdown / JSON of an analysis.
 
         `analysis_id` selects an immutable analysis; omission selects the
-        active document result. The PDF is always the source file.
+        document's current analysis, with its saved edits when the editor's
+        reader is wired. The PDF is always the source file.
         """
         return await self._export(
-            doc_id, format, lambda: self._resolve_original_analysis(doc_id, format, analysis_id)
+            doc_id, format, lambda: self._resolve_original_analysis(doc_id, analysis_id)
         )
 
     async def export_edited(
@@ -120,15 +124,13 @@ class ExportService:
         )
 
     async def _resolve_original_analysis(
-        self, doc_id: str, format: ExportFormat, analysis_id: str | None
+        self, doc_id: str, analysis_id: str | None
     ) -> AnalysisJob | None:
         if analysis_id:
             return await self._load_requested_analysis(doc_id, analysis_id)
         if self._active_result_service is not None:
             return await self._load_active_analysis(doc_id)
-        if format is ExportFormat.MD:
-            return await self._analysis_repo.find_latest_completed(doc_id)
-        return await self._analysis_repo.find_latest_completed_by_document(doc_id)
+        return await self._current.load_current_analysis(doc_id)
 
     async def _load_requested_analysis(self, doc_id: str, analysis_id: str) -> AnalysisJob:
         """The analysis the caller asked for: it must be a completed one of `doc_id`."""

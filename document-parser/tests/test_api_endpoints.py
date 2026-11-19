@@ -46,6 +46,7 @@ def mock_document_service(client, tmp_path):
     mock_svc = MagicMock()
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
+    mock_svc.find_current_analysis_id = AsyncMock(return_value=None)
     with state_override(
         app,
         document_service=mock_svc,
@@ -186,6 +187,28 @@ class TestDocumentEndpoints:
         assert data["fileSize"] == 2048
         assert data["pageCount"] == 3
         assert data["storeLinks"] == []
+        assert data["currentAnalysisId"] is None
+
+    def test_get_document_names_its_current_analysis(self, client, mock_document_service):
+        mock_document_service.find_with_store_links = AsyncMock(
+            return_value=(Document(id="d1", filename="test.pdf", storage_path="/tmp/test"), [])
+        )
+        mock_document_service.find_current_analysis_id = AsyncMock(return_value="a-older")
+
+        resp = client.get("/api/documents/d1")
+
+        assert resp.json()["currentAnalysisId"] == "a-older"
+        mock_document_service.find_current_analysis_id.assert_awaited_once_with("d1")
+
+    def test_document_list_leaves_the_current_analysis_out(self, client, mock_document_service):
+        mock_document_service.find_all = AsyncMock(
+            return_value=[Document(id="d1", filename="test.pdf", storage_path="/tmp/test")]
+        )
+
+        resp = client.get("/api/documents")
+
+        assert resp.json()[0]["currentAnalysisId"] is None
+        mock_document_service.find_current_analysis_id.assert_not_awaited()
 
     def test_get_document_maps_its_store_links(self, client, mock_document_service):
         from datetime import datetime
@@ -266,6 +289,7 @@ class TestDocumentEndpoints:
             store_repo=AsyncMock(),
             pdf_inspector=PdfiumInspector(),
             file_store=LocalDocumentFileStore(str(tmp_path)),
+            current_analysis=AsyncMock(),
         )
         two = pdf_with_pages((612, 792), (612, 792))
         three = pdf_with_pages((612, 792), (612, 792), (612, 792))

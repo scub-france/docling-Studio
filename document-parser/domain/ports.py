@@ -26,8 +26,7 @@ if TYPE_CHECKING:
         Chunk,
         ChunkPush,
         Document,
-        DocumentAnalysisSelection,
-        DocumentChunkSource,
+        DocumentAnalysisState,
         DocumentStoreLink,
         DocumentVersion,
         Store,
@@ -196,20 +195,40 @@ class PreviewImageCache(Protocol):
     def put(self, key: PreviewImageKey, image: bytes) -> None: ...
 
 
-class AnalysisSelectionRepository(Protocol):
-    async def get_selection(self, document_id: str) -> DocumentAnalysisSelection | None: ...
+class DocumentAnalysisStateRepository(Protocol):
+    """Loads and saves the `DocumentAnalysisState` aggregate (02-2.4.3)."""
 
-    async def select(self, selection: DocumentAnalysisSelection) -> None: ...
+    async def find_state(self, document_id: str) -> DocumentAnalysisState | None:
+        """The document's state, or None when it has no state row at all."""
+        ...
 
-    async def clear_selection(self, document_id: str) -> None: ...
+    async def find_states(self, document_ids: list[str]) -> dict[str, DocumentAnalysisState]:
+        """The states of the documents that have a row, in one query."""
+        ...
+
+    async def save_state(self, state: DocumentAnalysisState) -> None:
+        """Write the parts of `state` changed since it was loaded, atomically."""
+        ...
 
 
-class ChunkSourceRepository(Protocol):
-    async def get_chunk_source(self, document_id: str) -> DocumentChunkSource | None: ...
+class CurrentAnalysisReader(Protocol):
+    """Which analysis is a document's current one (02-2.3.1).
 
-    async def set_chunk_source(self, source: DocumentChunkSource) -> None: ...
+    One rule, `domain.models.resolve_current_analysis_id`, for every reader
+    that picks an analysis without being told which. Implemented by
+    `services.current_analysis.CurrentAnalysisResolver`.
+    """
 
-    async def clear_chunk_source(self, document_id: str) -> None: ...
+    async def find_current_analysis_id(self, document_id: str) -> str | None: ...
+
+    async def find_current_parse_ids(self, document_ids: list[str]) -> dict[str, str]:
+        """Each document's current analysis when it has a parse, in a fixed
+        number of queries whatever the count."""
+        ...
+
+    async def load_current_analysis(self, document_id: str) -> AnalysisJob | None:
+        """The current analysis as stored: the original result, without edits."""
+        ...
 
 
 class StoreRepository(Protocol):
@@ -271,6 +290,18 @@ class ChunkRepository(Protocol):
     async def soft_delete_many(self, chunk_ids: list[str], *, at: datetime) -> int: ...
 
     async def soft_delete_for_document(self, document_id: str, *, at: datetime) -> int: ...
+
+    async def replace_for_document(
+        self,
+        document_id: str,
+        chunks: list[Chunk],
+        *,
+        at: datetime,
+        state: DocumentAnalysisState,
+    ) -> int:
+        """Soft-delete the live chunks, insert `chunks` and save `state`, in one
+        transaction. Returns how many chunks were soft-deleted."""
+        ...
 
     async def shift_sequences(
         self,
@@ -342,15 +373,16 @@ class AnalysisRepository(Protocol):
         self, document_id: str, *, limit: int = 200, offset: int = 0
     ) -> list[AnalysisJob]: ...
 
-    async def find_latest_completed(self, document_id: str) -> AnalysisJob | None: ...
-
-    async def find_latest_completed_by_document(self, document_id: str) -> AnalysisJob | None: ...
-
     # The parse lookups below read ids and one column, never whole rows: a
     # row carries the docling JSON, the HTML and the markdown.
-    async def find_latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]: ...
+    async def find_latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]:
+        """Only the fallback of `resolve_current_analysis_id`: read it through
+        `CurrentAnalysisReader`, never to pick a document's analysis."""
+        ...
 
     async def find_parsed_document_id(self, job_id: str) -> str | None: ...
+
+    async def find_parsed_ids(self, job_ids: list[str]) -> set[str]: ...
 
     async def parse_json(self, job_id: str) -> str | None: ...
 

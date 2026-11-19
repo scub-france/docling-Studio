@@ -132,9 +132,9 @@ async def test_upgrade_selects_the_latest_completed_analysis_with_a_docling_docu
         # The newer batched run kept no Docling document; 0.7.3 chunked the older one.
         "doc-batched": "batched-with-json",
     }
-    selection = await SqliteDocumentAnalysisRepository().get_selection("doc-json")
-    assert selection is not None
-    assert selection.analysis_id == "json-new"
+    state = await SqliteDocumentAnalysisRepository().find_state("doc-json")
+    assert state is not None
+    assert state.active_analysis_id == "json-new"
 
 
 @pytest.mark.asyncio
@@ -150,8 +150,10 @@ async def test_upgrade_falls_back_to_a_completed_analysis_without_docling_docume
 @pytest.mark.asyncio
 async def test_upgrade_is_idempotent_and_keeps_user_choices(db_path):
     await database.init_db()
-    state = SqliteDocumentAnalysisRepository()
-    await state.clear_selection("doc-json")
+    states = SqliteDocumentAnalysisRepository()
+    state = await states.find_state("doc-json")
+    state.clear_selection()
+    await states.save_state(state)
 
     await database.init_db()
 

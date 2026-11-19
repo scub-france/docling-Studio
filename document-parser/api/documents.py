@@ -29,7 +29,12 @@ def _to_store_link_response(link: DocumentStoreLinkView) -> DocStoreLinkResponse
     )
 
 
-def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) -> DocumentResponse:
+def _to_response(
+    doc,
+    *,
+    store_links: list[DocStoreLinkResponse] | None = None,
+    current_analysis_id: str | None = None,
+) -> DocumentResponse:
     return DocumentResponse(
         id=doc.id,
         filename=doc.filename,
@@ -40,6 +45,7 @@ def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) 
         lifecycle_state=doc.lifecycle_state.value,
         lifecycle_state_at=(str(doc.lifecycle_state_at) if doc.lifecycle_state_at else None),
         store_links=store_links,
+        current_analysis_id=current_analysis_id,
     )
 
 
@@ -86,12 +92,17 @@ async def list_documents(service: deps.DocumentServiceDep) -> list[DocumentRespo
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
 async def get_document(doc_id: str, service: deps.DocumentServiceDep) -> DocumentResponse:
-    """Get a single document, joined with its per-store ingestion links."""
+    """Get a single document, joined with its per-store ingestion links and
+    the id of its current analysis."""
     found = await service.find_with_store_links(doc_id)
     if found is None:
         raise HTTPException(status_code=404, detail="Document not found")
     doc, links = found
-    return _to_response(doc, store_links=[_to_store_link_response(link) for link in links])
+    return _to_response(
+        doc,
+        store_links=[_to_store_link_response(link) for link in links],
+        current_analysis_id=await service.find_current_analysis_id(doc_id),
+    )
 
 
 @router.delete("/{doc_id}", status_code=204, response_model=None)

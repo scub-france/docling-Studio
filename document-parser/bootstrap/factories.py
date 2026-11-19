@@ -225,7 +225,7 @@ def build_document_file_store():
 
 
 def build_document_service(
-    document_repo, analysis_repo, link_repo, store_repo, *, file_store
+    document_repo, analysis_repo, link_repo, store_repo, *, file_store, current_analysis
 ) -> DocumentService:
     return DocumentService(
         document_repo=document_repo,
@@ -238,6 +238,7 @@ def build_document_service(
         store_repo=store_repo,
         pdf_inspector=_build_pdf_inspector(),
         file_store=file_store,
+        current_analysis=current_analysis,
     )
 
 
@@ -264,7 +265,7 @@ def build_env_mcp_config() -> McpRuntimeConfig:
     )
 
 
-def build_parse_loader(document_repo, analysis_repo) -> ParseLoader:
+def build_parse_loader(document_repo, analysis_repo, current_analysis) -> ParseLoader:
     """The parse index shared by the document-agent services.
 
     Built once and kept across runtime config changes (#364): it only reads
@@ -274,6 +275,7 @@ def build_parse_loader(document_repo, analysis_repo) -> ParseLoader:
     return ParseLoader(
         document_repo=document_repo,
         analysis_repo=analysis_repo,
+        current_analysis=current_analysis,
         tree_reader=_build_tree_reader(),
         config=NavigationConfig(),
     )

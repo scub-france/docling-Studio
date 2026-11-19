@@ -24,16 +24,16 @@ from domain.analysis_editing import (
     hash_result,
     resolve_active_edit_commands,
 )
-from domain.models import AnalysisJob, AnalysisStatus
+from domain.models import AnalysisJob, AnalysisStatus, DocumentAnalysisState
 
 if TYPE_CHECKING:
     from domain.ports import (
         AnalysisDocumentEngine,
         AnalysisEditRepository,
         AnalysisRepository,
-        AnalysisSelectionRepository,
         ChunkRepository,
-        ChunkSourceRepository,
+        CurrentAnalysisReader,
+        DocumentAnalysisStateRepository,
         DocumentRepository,
         GraphWriter,
     )
@@ -51,8 +51,8 @@ class AnalysisEditService:
         *,
         analysis_repo: AnalysisRepository,
         document_repo: DocumentRepository,
-        selection_repo: AnalysisSelectionRepository,
-        chunk_source_repo: ChunkSourceRepository,
+        analysis_state_repo: DocumentAnalysisStateRepository,
+        current_analysis: CurrentAnalysisReader,
         edit_repo: AnalysisEditRepository,
         engine: AnalysisDocumentEngine,
         graph_writer: GraphWriter | None = None,
@@ -60,8 +60,8 @@ class AnalysisEditService:
     ) -> None:
         self._analyses = analysis_repo
         self._documents = document_repo
-        self._selection = selection_repo
-        self._chunk_sources = chunk_source_repo
+        self._states = analysis_state_repo
+        self._current = current_analysis
         self._edits = edit_repo
         self._engine = engine
         self._graph_writer = graph_writer
@@ -98,12 +98,12 @@ class AnalysisEditService:
         return await self._build_snapshot(document, base, projection, sequence)
 
     async def load_active_result(self, document_id: str) -> EditorSnapshot:
-        """Resolve the result used by document-scoped downstream features."""
+        """The current analysis with its saved edits, as document features read it."""
         await self._require_document(document_id)
-        selection = await self._selection.get_selection(document_id)
-        if selection is None:
+        analysis_id = await self._current.find_current_analysis_id(document_id)
+        if analysis_id is None:
             raise AnalysisEditNotFoundError("This document has no active analysis")
-        return await self.load_editor(document_id, selection.analysis_id)
+        return await self.load_editor(document_id, analysis_id)
 
     async def list_history(self, document_id: str, analysis_id: str | None = None) -> list:
         """Return the durable command stream for one base analysis."""
@@ -185,8 +185,7 @@ class AnalysisEditService:
             result_hash=projection_hash,
             updated_at=datetime.now(UTC),
         )
-        selection = await self._selection.get_selection(document_id)
-        activate = selection is not None and selection.analysis_id == base.id
+        activate = await self._current.find_current_analysis_id(document_id) == base.id
         await self._edits.save_commands_and_cache(
             stream=stream,
             commands=pending_commands,
@@ -276,10 +275,9 @@ class AnalysisEditService:
             if base is None or base.document_id != document.id:
                 raise AnalysisEditNotFoundError(f"Analysis not found: {analysis_id}")
         else:
-            selection = await self._selection.get_selection(document.id)
-            if selection is None:
+            analysis_id = await self._current.find_current_analysis_id(document.id)
+            if analysis_id is None:
                 raise AnalysisEditNotFoundError("This document has no active analysis")
-            analysis_id = selection.analysis_id
             base = await self._analyses.find_by_id(analysis_id)
         if base is None:
             raise AnalysisEditNotFoundError(f"Analysis not found: {analysis_id}")
@@ -362,15 +360,13 @@ class AnalysisEditService:
         return EditorSnapshot(job, projection, sequence, stale, base.id)
 
     async def _has_stale_chunks(self, document_id: str, base_id: str, document_json: str) -> bool:
-        """Whether the live chunks may not match this analysis result.
-
-        Chunks with no recorded source (made before 0.7.4, #393) have an
-        unknown provenance: they count as stale so the user is invited to
-        regenerate them. No chunks means nothing can be stale.
-        """
-        source = await self._chunk_sources.get_chunk_source(document_id)
-        if source is None:
-            return (
-                self._chunks is not None and await self._chunks.count_for_document(document_id) > 0
-            )
-        return source.analysis_id != base_id or source.result_hash != hash_result(document_json)
+        """Whether the live chunks may not match this analysis result (the rule
+        is `DocumentAnalysisState.are_chunks_stale`)."""
+        state = await self._states.find_state(document_id) or DocumentAnalysisState(document_id)
+        # Counting only matters when the chunks have no recorded source.
+        has_chunks = (
+            state.chunk_source is None
+            and self._chunks is not None
+            and await self._chunks.count_for_document(document_id) > 0
+        )
+        return state.are_chunks_stale(base_id, hash_result(document_json), has_chunks=has_chunks)

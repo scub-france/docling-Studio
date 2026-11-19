@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from api.analysis_edits import router
 from api.state import AppState, get_app_state
-from domain.models import AnalysisJob, AnalysisStatus, Document, DocumentAnalysisSelection
+from domain.models import AnalysisJob, AnalysisStatus, Document, DocumentAnalysisState
 from infra.docling_analysis_engine import DoclingAnalysisEngine
 from persistence import database
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
@@ -19,6 +19,7 @@ from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from services.analysis_edit_service import AnalysisEditService
+from services.current_analysis import CurrentAnalysisResolver
 
 BASE = "/api/documents/doc-1"
 
@@ -51,12 +52,14 @@ async def _seed_service() -> AnalysisEditService:
     )
     await analyses.insert(job)
     await analyses.update_status(job)
-    await state.select(DocumentAnalysisSelection("doc-1", "analysis-1"))
+    selection = DocumentAnalysisState("doc-1")
+    selection.select("analysis-1")
+    await state.save_state(selection)
     return AnalysisEditService(
         analysis_repo=analyses,
         document_repo=documents,
-        selection_repo=state,
-        chunk_source_repo=state,
+        analysis_state_repo=state,
+        current_analysis=CurrentAnalysisResolver(state_repo=state, analysis_repo=analyses),
         edit_repo=SqliteAnalysisEditRepository(),
         engine=DoclingAnalysisEngine(),
     )

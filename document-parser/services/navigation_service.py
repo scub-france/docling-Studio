@@ -75,8 +75,9 @@ class NavigationService:
     ) -> DocumentSearch:
         """List documents, newest first, optionally filtered by a filename substring.
 
-        Two queries whatever the count: the documents, then the latest parse
-        id of each — never a whole analysis row.
+        A fixed number of queries whatever the count: the documents, then the
+        current parse id of each (`ParseLoader.find_current_parse_ids`) —
+        never a whole analysis row.
         """
         limit = max(1, min(limit, self._config.max_documents))
         docs = await self._parses.documents.find_all(
@@ -84,14 +85,14 @@ class NavigationService:
         )
         truncated = len(docs) > limit
         docs = docs[:limit]
-        latest = await self._parses.analyses.find_latest_parsed_ids([doc.id for doc in docs])
+        current = await self._parses.find_current_parse_ids([doc.id for doc in docs])
         summaries = [
             DocumentSummary(
                 document_id=doc.id,
                 filename=doc.filename,
                 lifecycle_state=str(doc.lifecycle_state),
                 page_count=doc.page_count,
-                version_id=latest.get(doc.id),
+                version_id=current.get(doc.id),
                 created_at=doc.created_at.isoformat() if doc.created_at else None,
             )
             for doc in docs

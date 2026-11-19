@@ -8,6 +8,21 @@ import { pushChunksToStore } from '@/features/chunks'
 import { useFeatureFlagStore } from '@/features/feature-flags'
 import * as api from './api'
 
+/**
+ * The version the workspace opens on: the newest version of the document's
+ * current analysis (the backend's active selection), else the newest version
+ * when the document has no current analysis or no version records it.
+ */
+export function pickWorkspaceVersion(
+  versions: DocumentVersion[],
+  currentAnalysisId: string | null | undefined,
+): DocumentVersion | null {
+  const current = currentAnalysisId
+    ? versions.find((v) => v.analysisId === currentAnalysisId)
+    : undefined
+  return current ?? versions[0] ?? null
+}
+
 export const useDocumentStore = defineStore('document', () => {
   const documents = ref<Document[]>([])
   const selectedId = ref<string | null>(null)
@@ -127,8 +142,11 @@ export const useDocumentStore = defineStore('document', () => {
 
   /**
    * Workspace orchestration (#267). Loads the doc + the versions
-   * timeline, auto-pins the most recent version, and resolves its
-   * analysis row so Parse / Chunk render the right OCR side.
+   * timeline, pins the version of the document's current analysis
+   * (02-2.3.1: the backend's active selection, the one Ask, exports and
+   * the MCP tools read), and resolves that analysis so Parse / Chunk
+   * render the right OCR side. Without a current analysis the newest
+   * version is pinned, as before.
    *
    * Idempotent across view switches: if the workspace is already loaded
    * for `docId`, returns immediately. This preserves a user-pinned
@@ -149,10 +167,11 @@ export const useDocumentStore = defineStore('document', () => {
       ])
       workspaceDoc.value = doc
       workspaceVersions.value = versions
-      const latest = versions[0] ?? null
-      workspaceCurrentVersionId.value = latest?.id ?? null
-      if (latest?.analysisId) {
-        workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, latest.analysisId)
+      const version = pickWorkspaceVersion(versions, doc.currentAnalysisId)
+      workspaceCurrentVersionId.value = version?.id ?? null
+      const analysisId = doc.currentAnalysisId ?? version?.analysisId
+      if (analysisId) {
+        workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, analysisId)
       }
     } catch (e) {
       workspaceError.value = (e as Error).message || 'Failed to load workspace'
@@ -170,18 +189,23 @@ export const useDocumentStore = defineStore('document', () => {
   /**
    * Refresh the versions list without resetting the doc (#266 / #267).
    * Called after a `+ New analysis` or `+ Generate chunks` completes —
-   * the backend appended a fresh version, we pin it as active.
+   * the backend appended a fresh version and moved its active selection;
+   * we pin the version of the current analysis, as `loadWorkspace` does.
    */
   async function reloadWorkspaceVersions(docId: string): Promise<void> {
     if (workspaceDoc.value?.id !== docId) return
     try {
-      const versions = await api.fetchDocumentVersions(docId)
+      const [doc, versions] = await Promise.all([
+        api.fetchDocument(docId),
+        api.fetchDocumentVersions(docId),
+      ])
       workspaceVersions.value = versions
-      const latest = versions[0] ?? null
-      if (latest) {
-        workspaceCurrentVersionId.value = latest.id
-        if (latest.analysisId) {
-          workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, latest.analysisId)
+      const version = pickWorkspaceVersion(versions, doc.currentAnalysisId)
+      if (version) {
+        workspaceCurrentVersionId.value = version.id
+        const analysisId = doc.currentAnalysisId ?? version.analysisId
+        if (analysisId) {
+          workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, analysisId)
         }
       }
     } catch (e) {

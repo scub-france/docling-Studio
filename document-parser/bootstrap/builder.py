@@ -59,6 +59,7 @@ from persistence.document_version_repo import SqliteDocumentVersionRepository
 from persistence.store_repo import SqliteStoreRepository
 from services.analysis_edit_service import AnalysisEditService
 from services.app_config_service import AppConfigService
+from services.current_analysis import CurrentAnalysisResolver
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.mcp_config_service import McpConfigService
@@ -119,6 +120,12 @@ class AppStateBuilder:
         graph_writer, graph_reader = await self._build_graph_adapters()
         ingestion_service = build_ingestion_service(graph_writer)
         backend_resolver = build_backend_resolver(store_repo)
+        # One rule for "the document's current analysis", shared by every
+        # reader below (02-2.3.1).
+        current_analysis = CurrentAnalysisResolver(
+            state_repo=document_analysis_repo,
+            analysis_repo=analysis_repo,
+        )
 
         analysis_service = build_analysis_service(
             document_repo,
@@ -128,8 +135,8 @@ class AppStateBuilder:
         analysis_edit_service = AnalysisEditService(
             analysis_repo=analysis_repo,
             document_repo=document_repo,
-            selection_repo=document_analysis_repo,
-            chunk_source_repo=document_analysis_repo,
+            analysis_state_repo=document_analysis_repo,
+            current_analysis=current_analysis,
             edit_repo=SqliteAnalysisEditRepository(),
             engine=DoclingAnalysisEngine(),
             graph_writer=graph_writer,
@@ -137,8 +144,9 @@ class AppStateBuilder:
         )
         chunk_service = build_chunk_service(
             document_repo=document_repo,
-            chunk_source_repo=document_analysis_repo,
+            analysis_state_repo=document_analysis_repo,
             analysis_repo=analysis_repo,
+            current_analysis=current_analysis,
             chunk_repo=chunk_repo,
             chunk_push_repo=chunk_push_repo,
             store_repo=store_repo,
@@ -152,8 +160,7 @@ class AppStateBuilder:
             chunk_repo=chunk_repo,
             document_repo=document_repo,
             analysis_repo=analysis_repo,
-            selection_repo=document_analysis_repo,
-            chunk_source_repo=document_analysis_repo,
+            analysis_state_repo=document_analysis_repo,
         )
 
         # The analysis service still carries the chunk promoter wiring for
@@ -169,7 +176,12 @@ class AppStateBuilder:
         # One file store for every service that touches an uploaded file.
         file_store = build_document_file_store()
         document_service = build_document_service(
-            document_repo, analysis_repo, link_repo, store_repo, file_store=file_store
+            document_repo,
+            analysis_repo,
+            link_repo,
+            store_repo,
+            file_store=file_store,
+            current_analysis=current_analysis,
         )
         self._update(
             analysis_repo=analysis_repo,
@@ -189,6 +201,7 @@ class AppStateBuilder:
                 document_repo=document_repo,
                 analysis_repo=analysis_repo,
                 active_result_service=analysis_edit_service,
+                current_analysis=current_analysis,
                 file_store=file_store,
             ),
             store_service=StoreService(
@@ -205,8 +218,8 @@ class AppStateBuilder:
             ingestion_service=ingestion_service,
         )
 
-        await self._wire_reasoning(analysis_repo)
-        await self._wire_mcp(document_repo, analysis_repo)
+        await self._wire_reasoning(current_analysis)
+        await self._wire_mcp(document_repo, analysis_repo, current_analysis)
         logger.info("Docling Studio backend ready (engine=%s)", settings.conversion_engine)
         return self._state
 
@@ -226,7 +239,7 @@ class AppStateBuilder:
         logger.info("Neo4j ready (uri=%s)", settings.neo4j_uri)
         return Neo4jGraphWriter(driver), Neo4jGraphReader(driver)
 
-    async def _wire_reasoning(self, analysis_repo) -> None:
+    async def _wire_reasoning(self, current_analysis) -> None:
         """Reasoning runtime config (#317) + reasoning service (#303).
 
         Env vars are bootstrap defaults; `app_settings` rows override them and
@@ -241,7 +254,7 @@ class AppStateBuilder:
                 reasoning_runner=runner,
                 reasoning_service=ReasoningService(
                     runner=runner,
-                    analysis_repo=analysis_repo,
+                    current_analysis=current_analysis,
                     default_model_id=config.model_id,
                 ),
             )
@@ -269,7 +282,7 @@ class AppStateBuilder:
         # actually builds the runner and the ReasoningService.
         await self._state.app_config_service.apply_effective()
 
-    async def _wire_mcp(self, document_repo, analysis_repo) -> None:
+    async def _wire_mcp(self, document_repo, analysis_repo, current_analysis) -> None:
         """MCP runtime config (#364) + the document-agent services it budgets.
 
         Same shape as `_wire_reasoning`: env vars are bootstrap defaults,
@@ -278,7 +291,7 @@ class AppStateBuilder:
         next call runs on the new budgets. The parse index is built once, here,
         and survives every rebuild.
         """
-        parses = build_parse_loader(document_repo, analysis_repo)
+        parses = build_parse_loader(document_repo, analysis_repo, current_analysis)
         mounted = self._mcp_server
 
         def apply_config(config: McpRuntimeConfig) -> None:

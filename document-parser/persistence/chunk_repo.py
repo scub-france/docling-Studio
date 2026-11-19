@@ -5,11 +5,16 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from domain.models import Chunk
 from domain.value_objects import ChunkBbox, ChunkDocItem
 from persistence.database import get_connection
+from persistence.document_analysis_repo import write_document_analysis_state
 from persistence.iso_datetime import parse_iso
+
+if TYPE_CHECKING:
+    from domain.models import DocumentAnalysisState
 
 
 def _row_to_chunk(row) -> Chunk:
@@ -53,6 +58,9 @@ _INSERT_SQL = """INSERT INTO chunks
     (id, document_id, sequence, text, headings, source_page,
      bboxes, doc_items, token_count, created_at, updated_at, deleted_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+
+_SOFT_DELETE_FOR_DOCUMENT_SQL = """UPDATE chunks SET deleted_at = ?, updated_at = ?
+    WHERE document_id = ? AND deleted_at IS NULL"""
 
 
 class SqliteChunkRepository:
@@ -122,12 +130,41 @@ class SqliteChunkRepository:
         """
         async with get_connection() as db:
             cursor = await db.execute(
-                """UPDATE chunks SET deleted_at = ?, updated_at = ?
-                   WHERE document_id = ? AND deleted_at IS NULL""",
+                _SOFT_DELETE_FOR_DOCUMENT_SQL,
                 (str(at), str(at), document_id),
             )
             await db.commit()
             return cursor.rowcount
+
+    async def replace_for_document(
+        self,
+        document_id: str,
+        chunks: list[Chunk],
+        *,
+        at: datetime,
+        state: DocumentAnalysisState,
+    ) -> int:
+        """Replace a document's live chunks and save its analysis state, atomically.
+
+        Soft-deletes every live chunk, inserts `chunks` and writes the changed
+        parts of `state` in one transaction (02-2.4.3): the live chunks and
+        the record of where they came from never disagree after a failure.
+        Returns how many chunks were soft-deleted.
+        """
+        if state.document_id != document_id:
+            raise ValueError("The analysis state must belong to the document")
+        async with get_connection() as db:
+            cursor = await db.execute(
+                _SOFT_DELETE_FOR_DOCUMENT_SQL,
+                (str(at), str(at), document_id),
+            )
+            deleted = cursor.rowcount
+            if chunks:
+                await db.executemany(_INSERT_SQL, [_chunk_to_params(c) for c in chunks])
+            await write_document_analysis_state(db, state)
+            await db.commit()
+        state.mark_saved()
+        return deleted
 
     async def shift_sequences(
         self,

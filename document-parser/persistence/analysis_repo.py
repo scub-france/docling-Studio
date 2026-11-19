@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from domain.models import AnalysisJob, AnalysisStatus
+from domain.models import AnalysisJob, AnalysisStatus, DocumentAnalysisState
 from persistence.database import get_connection
+from persistence.document_analysis_repo import write_document_analysis_state
 from persistence.iso_datetime import parse_iso
 
 
@@ -99,37 +100,12 @@ class SqliteAnalysisRepository:
             row = await cursor.fetchone()
             return _row_to_job(row) if row else None
 
-    async def find_latest_completed(self, document_id: str) -> AnalysisJob | None:
-        """Latest COMPLETED analysis for a doc, regardless of which fields are populated."""
-        async with get_connection() as db:
-            cursor = await db.execute(
-                f"{_SELECT_WITH_DOC} WHERE aj.document_id = ? "
-                "AND aj.status = 'COMPLETED' "
-                "ORDER BY aj.completed_at DESC LIMIT 1",
-                (document_id,),
-            )
-            row = await cursor.fetchone()
-            return _row_to_job(row) if row else None
-
-    async def find_latest_completed_by_document(self, document_id: str) -> AnalysisJob | None:
-        """Latest COMPLETED analysis with a non-null `document_json` for a doc.
-
-        Used by the reasoning-trace tunnel to prime Neo4j from an existing
-        analysis when the graph doesn't yet exist (e.g. analysis ran before
-        Neo4j was wired in).
-        """
-        async with get_connection() as db:
-            cursor = await db.execute(
-                f"{_SELECT_WITH_DOC} WHERE aj.document_id = ? "
-                "AND aj.status = 'COMPLETED' AND aj.document_json IS NOT NULL "
-                "ORDER BY aj.completed_at DESC LIMIT 1",
-                (document_id,),
-            )
-            row = await cursor.fetchone()
-            return _row_to_job(row) if row else None
-
     async def find_latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]:
-        """For each document, the id of its latest completed analysis with a parse."""
+        """For each document, the id of its latest completed analysis with a parse.
+
+        The fallback of `resolve_current_analysis_id` for documents with no
+        state row; `CurrentAnalysisResolver` is its only caller.
+        """
         if not document_ids:
             return {}
         placeholders = ",".join("?" for _ in document_ids)
@@ -157,6 +133,19 @@ class SqliteAnalysisRepository:
             row = await cursor.fetchone()
             return row["document_id"] if row else None
 
+    async def find_parsed_ids(self, job_ids: list[str]) -> set[str]:
+        """The ids among `job_ids` of analyses that kept a parse."""
+        if not job_ids:
+            return set()
+        placeholders = ",".join("?" for _ in job_ids)
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"SELECT id FROM analysis_jobs WHERE id IN ({placeholders}) "
+                "AND document_json IS NOT NULL",
+                tuple(job_ids),
+            )
+            return {row["id"] for row in await cursor.fetchall()}
+
     async def parse_json(self, job_id: str) -> str | None:
         """The stored docling JSON of an analysis — the one heavy column, alone."""
         async with get_connection() as db:
@@ -180,16 +169,15 @@ class SqliteAnalysisRepository:
         """
         if job.status != AnalysisStatus.COMPLETED:
             raise ValueError("Only a completed analysis can become active")
+        state = DocumentAnalysisState(job.document_id)
+        state.select(job.id)
         async with get_connection() as db:
             await _write_job_state(db, job)
-            await db.execute(
-                """INSERT INTO document_analysis_state
-                   (document_id, active_analysis_id) VALUES (?, ?)
-                   ON CONFLICT(document_id) DO UPDATE SET
-                     active_analysis_id = excluded.active_analysis_id""",
-                (job.document_id, job.id),
-            )
+            # The state SQL lives in the state repository; it joins this
+            # transaction through the shared connection.
+            await write_document_analysis_state(db, state)
             await db.commit()
+        state.mark_saved()
 
     async def update_progress(self, job_id: str, current: int, total: int) -> None:
         """Update only the progress columns for a running analysis."""

@@ -100,6 +100,116 @@ class DocumentChunkSource:
 
 
 @dataclass
+class DocumentAnalysisState:
+    """A document's analysis state: its active analysis and the source of its chunks.
+
+    Aggregate root of the document-level state (02-2.4.3). The active analysis
+    is the document's current analysis (see `resolve_current_analysis_id`);
+    the chunk source is the analysis and result hash the live chunks were
+    generated from. Every change goes through the methods below, and a
+    repository writes only the parts changed since the state was loaded, so
+    saving a new chunk source never rewrites a selection another writer just
+    made, and the reverse.
+    """
+
+    document_id: str
+    active_analysis_id: str | None = None
+    chunks_source_analysis_id: str | None = None
+    chunks_source_result_hash: str | None = None
+    selection_changed: bool = field(default=False, init=False, compare=False, repr=False)
+    chunk_source_changed: bool = field(default=False, init=False, compare=False, repr=False)
+
+    @property
+    def selection(self) -> DocumentAnalysisSelection | None:
+        if self.active_analysis_id is None:
+            return None
+        return DocumentAnalysisSelection(self.document_id, self.active_analysis_id)
+
+    @property
+    def chunk_source(self) -> DocumentChunkSource | None:
+        if self.chunks_source_analysis_id is None or self.chunks_source_result_hash is None:
+            return None
+        return DocumentChunkSource(
+            self.document_id, self.chunks_source_analysis_id, self.chunks_source_result_hash
+        )
+
+    def select(self, analysis_id: str) -> None:
+        """Make `analysis_id` the document's active analysis."""
+        self.active_analysis_id = analysis_id
+        self.selection_changed = True
+
+    def clear_selection(self) -> None:
+        """Leave the document without an active analysis, by choice."""
+        self.active_analysis_id = None
+        self.selection_changed = True
+
+    def record_chunk_source(self, analysis_id: str, result_hash: str) -> None:
+        """Record which analysis result the live chunks were generated from."""
+        self.chunks_source_analysis_id = analysis_id
+        self.chunks_source_result_hash = result_hash
+        self.chunk_source_changed = True
+
+    def clear_chunk_source(self) -> None:
+        """Forget where the live chunks came from: they count as stale."""
+        self.chunks_source_analysis_id = None
+        self.chunks_source_result_hash = None
+        self.chunk_source_changed = True
+
+    def restore(self, version: DocumentVersion) -> None:
+        """Take the selection and chunk source a document version froze."""
+        if version.analysis_id is None:
+            self.clear_selection()
+        else:
+            self.select(version.analysis_id)
+        if version.chunks_source_analysis_id is None:
+            self.clear_chunk_source()
+        else:
+            # The version table keeps both columns set or both NULL.
+            self.record_chunk_source(
+                version.chunks_source_analysis_id,
+                version.chunks_source_result_hash,
+            )
+
+    def are_chunks_stale(self, analysis_id: str, result_hash: str, *, has_chunks: bool) -> bool:
+        """Whether the live chunks may not match the result `result_hash` of `analysis_id`.
+
+        Chunks with no recorded source (made before 0.7.4, #393) have an
+        unknown provenance: they count as stale so the user is invited to
+        regenerate them. No chunks means nothing can be stale.
+        """
+        if self.chunks_source_analysis_id is None:
+            return has_chunks
+        return (
+            self.chunks_source_analysis_id != analysis_id
+            or self.chunks_source_result_hash != result_hash
+        )
+
+    def mark_saved(self) -> None:
+        """Called by the repository once the changes are committed."""
+        self.selection_changed = False
+        self.chunk_source_changed = False
+
+
+def resolve_current_analysis_id(
+    state: DocumentAnalysisState | None,
+    latest_parsed_analysis_id: str | None,
+) -> str | None:
+    """The document's current analysis: the one its state selects (02-2.3.1).
+
+    Every feature that reads "the document's analysis" without being told
+    which one reads this one. `state` is None only for a document with no
+    state row at all: one never analysed, whose fallback is None too, or a
+    row-less database the 0.7.3 upgrade did not reach. Only then does the
+    latest completed analysis with a Docling document stand in. A row whose
+    active analysis is NULL is a choice (a restored version without an
+    analysis, a deleted active analysis): the document has no current one.
+    """
+    if state is not None:
+        return state.active_analysis_id
+    return latest_parsed_analysis_id
+
+
+@dataclass
 class AnalysisJob:
     id: str = field(default_factory=generate_id)
     document_id: str = ""
