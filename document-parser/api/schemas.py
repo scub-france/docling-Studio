@@ -6,11 +6,22 @@ All responses use camelCase serialization to match the existing frontend contrac
 
 from __future__ import annotations
 
+import operator
 from dataclasses import asdict
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, Literal
+from functools import reduce
+from types import UnionType
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    create_model,
+    field_validator,
+)
 
 from domain.analysis_editing import CommandType
 from domain.app_config import (
@@ -303,72 +314,48 @@ class AnalysisEditHistoryActionRequest(_CamelModel):
     expected_applied_through_sequence: int
 
 
-# A stored command's payload, one model per command type. Payloads are written
-# by `api/analysis_edits.py::_to_edit_commands` and by the history toggle,
-# always with every key (null where unset), and have not changed shape since
-# the editor shipped. With unknown keys forbidden, each stored payload matches
-# exactly one model; no bounds here, a stored row must always read back.
+# A stored command's payload: the fields of its request model, without `type`
+# and without the bounds, so a row written before the bounds still reads back.
+# Payloads are written with every key (`_to_edit_commands`, the history
+# toggle); with unknown keys forbidden, each one matches exactly one model.
 
 
-class ReplaceTextPayloadResponse(_CamelModel):
+def _strip_bounds(annotation: Any) -> Any:
+    """`annotation` without the `Annotated` constraints nested anywhere in it."""
+    if get_origin(annotation) is Annotated:
+        return _strip_bounds(get_args(annotation)[0])
+    args = get_args(annotation)
+    if not args or get_origin(annotation) is Literal:
+        return annotation
+    if get_origin(annotation) in (Union, UnionType):
+        return reduce(operator.or_, map(_strip_bounds, args))
+    return get_origin(annotation)[tuple(map(_strip_bounds, args))]
+
+
+class _StoredPayload(_CamelModel):
     model_config = ConfigDict(extra="forbid")
 
-    element_id: str
-    text: str
+
+def _stored_payload_model(request: type[BaseModel]) -> type[BaseModel]:
+    fields: Any = {
+        name: (_strip_bounds(info.annotation), ...)
+        for name, info in request.model_fields.items()
+        if name != "type"
+    }
+    name = request.__name__.replace("EditRequest", "PayloadResponse")
+    return create_model(name, __base__=_StoredPayload, __module__=__name__, **fields)
 
 
-class MergeTextPayloadResponse(_CamelModel):
-    model_config = ConfigDict(extra="forbid")
-
-    element_ids: list[str]
-    separator: str
-
-
-class SetHeadingLevelPayloadResponse(_CamelModel):
-    model_config = ConfigDict(extra="forbid")
-
-    element_id: str
-    level: int
-
-
-class MoveElementPayloadResponse(_CamelModel):
-    model_config = ConfigDict(extra="forbid")
-
-    element_id: str
-    before_element_id: str | None
-    target_element_id: str | None
-    placement: Literal["before", "after", "inside"] | None
-
-
-class DeleteElementPayloadResponse(_CamelModel):
-    model_config = ConfigDict(extra="forbid")
-
-    element_id: str
-
-
-class DeleteElementsPayloadResponse(_CamelModel):
-    model_config = ConfigDict(extra="forbid")
-
-    element_ids: list[str]
-
-
-class SetCommandActivePayloadResponse(_CamelModel):
+class SetCommandActivePayloadResponse(_StoredPayload):
     """A revert (`active: false`) or reapply of the saved edit `targetSequence`."""
-
-    model_config = ConfigDict(extra="forbid")
 
     target_sequence: int
     active: bool
 
 
-EditCommandPayloadResponse = (
-    ReplaceTextPayloadResponse
-    | MergeTextPayloadResponse
-    | SetHeadingLevelPayloadResponse
-    | MoveElementPayloadResponse
-    | DeleteElementPayloadResponse
-    | DeleteElementsPayloadResponse
-    | SetCommandActivePayloadResponse
+_EDIT_REQUESTS = get_args(get_args(AnalysisEditCommandRequest)[0])
+EditCommandPayloadResponse = reduce(
+    operator.or_, [*map(_stored_payload_model, _EDIT_REQUESTS), SetCommandActivePayloadResponse]
 )
 
 

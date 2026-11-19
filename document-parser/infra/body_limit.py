@@ -21,7 +21,7 @@ class BodySizeLimitMiddleware:
     """Answer 413 when the body of a request to `path` is over `max_bytes`.
 
     A declared `Content-Length` over the limit is refused before anything is
-    read; otherwise the body is counted as it arrives (chunked uploads have
+    read, and a malformed one gets a 400; otherwise the body is counted as it arrives (chunked uploads have
     no length) and replayed to the app once it is known to fit. Other paths
     pass through untouched.
     """
@@ -37,9 +37,15 @@ class BodySizeLimitMiddleware:
             await self._app(scope, receive, send)
             return
         declared = Headers(scope=scope).get("content-length")
-        if declared is not None and declared.isdigit() and int(declared) > self._max_bytes:
-            await self._reject(scope, receive, send)
-            return
+        if declared is not None:
+            # ASCII digits only: `"²".isdigit()` is true but `int("²")` raises.
+            # Twenty digits is past any real length and below `int`'s digit limit.
+            if not (declared.isascii() and declared.isdigit()) or len(declared) > 20:
+                await _answer(scope, receive, send, 400, "Invalid Content-Length header")
+                return
+            if int(declared) > self._max_bytes:
+                await _answer(scope, receive, send, 413, self._detail)
+                return
 
         messages: deque[Message] = deque()
         received = 0
@@ -50,7 +56,7 @@ class BodySizeLimitMiddleware:
                 break
             received += len(message.get("body", b""))
             if received > self._max_bytes:
-                await self._reject(scope, receive, send)
+                await _answer(scope, receive, send, 413, self._detail)
                 return
             if not message.get("more_body", False):
                 break
@@ -62,6 +68,6 @@ class BodySizeLimitMiddleware:
 
         await self._app(scope, replay, send)
 
-    async def _reject(self, scope: Scope, receive: Receive, send: Send) -> None:
-        response = JSONResponse({"detail": self._detail}, status_code=413)
-        await response(scope, receive, send)
+
+async def _answer(scope: Scope, receive: Receive, send: Send, status: int, detail: str) -> None:
+    await JSONResponse({"detail": detail}, status_code=status)(scope, receive, send)

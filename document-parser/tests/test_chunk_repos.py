@@ -103,41 +103,6 @@ class TestChunkRepo:
         assert await chunk_repo.soft_delete_many([], at=datetime.now(UTC)) == 0
         assert len(await chunk_repo.find_for_document(doc.id)) == 1
 
-    async def test_soft_delete_for_document_hits_live_chunks_of_that_document_only(
-        self, doc, chunk_repo
-    ):
-        other = Document(id="doc-2", filename="o.pdf", storage_path="/tmp/o.pdf")
-        await SqliteDocumentRepository().insert(other)
-        await chunk_repo.insert_many(
-            [
-                Chunk(id="c-0", document_id=doc.id, sequence=0, text="a"),
-                Chunk(id="c-1", document_id=doc.id, sequence=1, text="b"),
-                Chunk(id="c-old", document_id=doc.id, sequence=2, text="c"),
-                Chunk(id="o-0", document_id=other.id, sequence=0, text="z"),
-            ]
-        )
-        earlier = datetime(2026, 4, 1, 12, tzinfo=UTC)
-        await chunk_repo.soft_delete("c-old", at=earlier)
-        at = datetime(2026, 4, 29, 12, tzinfo=UTC)
-
-        hit = await chunk_repo.soft_delete_for_document(doc.id, at=at)
-
-        assert hit == 2
-        assert await chunk_repo.find_for_document(doc.id) == []
-        live = await chunk_repo.find_by_id("c-0")
-        assert live is not None
-        assert live.deleted_at == at
-        assert live.updated_at == at
-        # An already-deleted chunk keeps its original deletion stamp.
-        old = await chunk_repo.find_by_id("c-old")
-        assert old is not None
-        assert old.deleted_at == earlier
-        # Another document's chunks are untouched.
-        assert [c.id for c in await chunk_repo.find_for_document(other.id)] == ["o-0"]
-
-    async def test_soft_delete_for_document_without_chunks_returns_zero(self, doc, chunk_repo):
-        assert await chunk_repo.soft_delete_for_document(doc.id, at=datetime.now(UTC)) == 0
-
     async def test_shift_sequences_moves_live_chunks_from_the_given_sequence(self, doc, chunk_repo):
         other = Document(id="doc-2", filename="o.pdf", storage_path="/tmp/o.pdf")
         await SqliteDocumentRepository().insert(other)

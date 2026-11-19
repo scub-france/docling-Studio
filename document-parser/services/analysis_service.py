@@ -108,25 +108,10 @@ class AnalysisService:
         self._graph_writer = graph_writer
         self._docling_importer = docling_importer
         self._pdf_inspector = pdf_inspector
-        # Duck-typed callable injected at startup. Wired in main.py to
-        # `ChunkService.promote_from_analysis_if_empty` so the canonical
-        # chunkset (#205) is populated on the first successful analysis,
-        # making the Doc workspace tab functional immediately (#256).
-        # Optional: when None, analysis behaviour is unchanged.
-        self._chunk_promoter = None
         # Duck-typed recorder for document versions (#267). Wired in
         # main.py to `VersionService.record_on_analysis` so each
         # successful analysis appends a frozen pair to History.
         self._version_recorder = None
-
-    def set_chunk_promoter(self, chunk_service) -> None:
-        """Inject the canonical-chunk promoter (post-construction wiring).
-
-        Kept loosely typed to avoid an import cycle between
-        `analysis_service` and `chunk_service`. The contract is a
-        coroutine `(document_id: str, chunks_json: str) -> int`.
-        """
-        self._chunk_promoter = chunk_service
 
     def set_version_recorder(self, version_service) -> None:
         """Inject the document-version recorder (#267, post-construction

@@ -46,24 +46,19 @@ def mock_document_service(client, tmp_path):
     mock_svc = MagicMock()
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
-    mock_svc.find_current_analysis_id = AsyncMock(return_value=None)
     with state_override(
         app,
         document_service=mock_svc,
         preview_service=_preview_service(mock_svc, tmp_path),
+        current_analysis=MagicMock(find_current_analysis_id=AsyncMock(return_value=None)),
     ):
         yield mock_svc
 
 
-@pytest.fixture(autouse=True)
-def mock_document_related_repos(client):
-    """Provide the repos expected by document routes using shared deps."""
-    link_repo = MagicMock()
-    link_repo.find_for_document = AsyncMock(return_value=[])
-    store_repo = MagicMock()
-    store_repo.find_all = AsyncMock(return_value=[])
-    with state_override(app, document_store_link_repo=link_repo, store_repo=store_repo):
-        yield
+@pytest.fixture
+def mock_current_analysis(mock_document_service):
+    """The current-analysis rule the document route reads, from the same state."""
+    return app.state.container.current_analysis
 
 
 @pytest.fixture
@@ -189,18 +184,22 @@ class TestDocumentEndpoints:
         assert data["storeLinks"] == []
         assert data["currentAnalysisId"] is None
 
-    def test_get_document_names_its_current_analysis(self, client, mock_document_service):
+    def test_get_document_names_its_current_analysis(
+        self, client, mock_document_service, mock_current_analysis
+    ):
         mock_document_service.find_with_store_links = AsyncMock(
             return_value=(Document(id="d1", filename="test.pdf", storage_path="/tmp/test"), [])
         )
-        mock_document_service.find_current_analysis_id = AsyncMock(return_value="a-older")
+        mock_current_analysis.find_current_analysis_id = AsyncMock(return_value="a-older")
 
         resp = client.get("/api/documents/d1")
 
         assert resp.json()["currentAnalysisId"] == "a-older"
-        mock_document_service.find_current_analysis_id.assert_awaited_once_with("d1")
+        mock_current_analysis.find_current_analysis_id.assert_awaited_once_with("d1")
 
-    def test_document_list_leaves_the_current_analysis_out(self, client, mock_document_service):
+    def test_document_list_leaves_the_current_analysis_out(
+        self, client, mock_document_service, mock_current_analysis
+    ):
         mock_document_service.find_all = AsyncMock(
             return_value=[Document(id="d1", filename="test.pdf", storage_path="/tmp/test")]
         )
@@ -208,7 +207,7 @@ class TestDocumentEndpoints:
         resp = client.get("/api/documents")
 
         assert resp.json()[0]["currentAnalysisId"] is None
-        mock_document_service.find_current_analysis_id.assert_not_awaited()
+        mock_current_analysis.find_current_analysis_id.assert_not_awaited()
 
     def test_get_document_maps_its_store_links(self, client, mock_document_service):
         from datetime import datetime
@@ -289,7 +288,6 @@ class TestDocumentEndpoints:
             store_repo=AsyncMock(),
             pdf_inspector=PdfiumInspector(),
             file_store=LocalDocumentFileStore(str(tmp_path)),
-            current_analysis=AsyncMock(),
         )
         two = pdf_with_pages((612, 792), (612, 792))
         three = pdf_with_pages((612, 792), (612, 792), (612, 792))

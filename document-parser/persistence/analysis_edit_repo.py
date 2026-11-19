@@ -160,28 +160,24 @@ class SqliteAnalysisEditRepository:
                 )
                 previous_hash = last["command_hash"] if last else ""
                 saved: list[StoredEditCommand] = []
+                rows: list[tuple] = []
                 for offset, command in enumerate(commands, start=1):
                     sequence = actual_sequence + offset
-                    payload = serialize_command_payload(command.payload)
                     command_hash = hash_command(previous_hash, sequence, command)
                     record_id = uuid.uuid4().hex
                     created = datetime.now(UTC)
-                    await db.execute(
-                        """INSERT INTO analysis_edit_commands
-                           (id, analysis_id, sequence, command_version, command_type,
-                            payload_json, previous_hash, command_hash, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rows.append(
                         (
                             record_id,
                             stream.analysis_id,
                             sequence,
                             command.command_version,
                             command.command_type,
-                            payload,
+                            serialize_command_payload(command.payload),
                             previous_hash or None,
                             command_hash,
                             str(created),
-                        ),
+                        )
                     )
                     saved.append(
                         StoredEditCommand(
@@ -189,7 +185,14 @@ class SqliteAnalysisEditRepository:
                         )
                     )
                     previous_hash = command_hash
-
+                # One statement for the whole batch, still inside BEGIN IMMEDIATE.
+                await db.executemany(
+                    """INSERT INTO analysis_edit_commands
+                       (id, analysis_id, sequence, command_version, command_type,
+                        payload_json, previous_hash, command_hash, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rows,
+                )
                 await db.execute(_CACHE_UPSERT, _to_cache_params(cache))
                 await db.commit()
                 return saved

@@ -5,21 +5,15 @@ of the canonical chunkset:
 
 - ordering by `sequence` (dense ascending, gaps allowed after split)
 - soft-delete (removed chunks remain available for history inspection)
-- promotion from the first completed analysis (idempotent)
 
 Re-uses `DocumentChunker` for rechunk (same port that
 `AnalysisService.rechunk` uses), so chunking strategy logic is not
-duplicated.
-
-The chunk routes also push the chunkset to stores and read the document
-tree: `ChunkService` hands those to `ChunkPushService` and
-`DocumentTreeService`, built from the same repositories, so the routes and
-the composition root keep one service to call.
+duplicated. Pushes to stores and the document tree have their own services
+(`ChunkPushService`, `DocumentTreeService`).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -27,11 +21,7 @@ from domain import chunk_editing
 from domain.analysis_editing import AnalysisEditUnavailableError, hash_result
 from domain.chunk_editing import ChunkEditingError, ChunkMergeGapError
 from domain.models import Chunk, DocumentChunkSource, get_utc_now
-from domain.value_objects import (
-    ChunkBbox,
-    ChunkDocItem,
-    ChunkingOptions,
-)
+from domain.value_objects import ChunkingOptions
 from services.chunk_errors import (
     ChunkConflictError,
     ChunkNotFoundError,
@@ -39,59 +29,16 @@ from services.chunk_errors import (
     ChunkValidationError,
     require_document,
 )
-from services.chunk_push_service import ChunkPushService
-from services.document_tree_service import DocumentTreeService
 
 if TYPE_CHECKING:
     from domain.ports import (
         ActiveAnalysisResultReader,
-        AnalysisRepository,
-        ChunkPushRepository,
         ChunkRepository,
         DocumentChunker,
         DocumentRepository,
-        DocumentStoreLinkRepository,
-        DocumentTreeReader,
-        StoreRepository,
     )
-    from services.ingestion_service import IngestionService
-    from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Helpers — chunk ↔ dict conversions for analysis chunks_json.
-# ---------------------------------------------------------------------------
-
-
-def _bbox_from_dict(d: dict) -> ChunkBbox:
-    return ChunkBbox(page=d["page"], bbox=list(d["bbox"]))
-
-
-def _doc_item_from_dict(d: dict) -> ChunkDocItem:
-    return ChunkDocItem(
-        self_ref=d.get("selfRef") or d.get("self_ref", ""), label=d.get("label", "")
-    )
-
-
-def _analysis_chunk_to_canonical(
-    document_id: str,
-    sequence: int,
-    raw: dict,
-) -> Chunk:
-    """Convert an entry from `AnalysisJob.chunks_json` (camelCase) into a
-    canonical `Chunk`. Used by `promote_from_analysis_if_empty`."""
-    return Chunk(
-        document_id=document_id,
-        sequence=sequence,
-        text=raw.get("text", ""),
-        headings=list(raw.get("headings", [])),
-        source_page=raw.get("sourcePage"),
-        bboxes=[_bbox_from_dict(b) for b in raw.get("bboxes", [])],
-        doc_items=[_doc_item_from_dict(d) for d in raw.get("docItems", [])],
-        token_count=raw.get("tokenCount"),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -105,77 +52,22 @@ class ChunkService:
     def __init__(
         self,
         chunk_repo: ChunkRepository,
-        chunk_push_repo: ChunkPushRepository,
         document_repo: DocumentRepository,
-        analysis_repo: AnalysisRepository,
-        tree_reader: DocumentTreeReader,
         active_result_service: ActiveAnalysisResultReader,
         chunker: DocumentChunker | None = None,
-        ingestion_service: IngestionService | None = None,
-        store_repo: StoreRepository | None = None,
-        link_repo: DocumentStoreLinkRepository | None = None,
-        backend_resolver: StoreBackendResolver | None = None,
     ) -> None:
         self._chunks = chunk_repo
         self._documents = document_repo
         self._chunker = chunker
         self._active_result_service = active_result_service
-        # Duck-typed recorder for document versions (#267). Wired in
-        # main.py to `VersionService.record_on_rechunk` so each
-        # `+ Generate chunks` call appends a frozen pair to History.
+        # Document-version recorder (#267), wired at boot to `VersionService`
+        # so each `+ Generate chunks` call appends a frozen pair to History.
         self._version_recorder = None
-        self._push = ChunkPushService(
-            chunk_repo=chunk_repo,
-            chunk_push_repo=chunk_push_repo,
-            document_repo=document_repo,
-            ingestion_service=ingestion_service,
-            store_repo=store_repo,
-            link_repo=link_repo,
-            backend_resolver=backend_resolver,
-        )
-        self._tree = DocumentTreeService(
-            document_repo=document_repo,
-            analysis_repo=analysis_repo,
-            tree_reader=tree_reader,
-            active_result_service=active_result_service,
-        )
 
     def set_version_recorder(self, version_service) -> None:
-        """Inject the document-version recorder (#267). Contract: a
-        coroutine `(document_id: str, analysis_id: str | None) -> DocumentVersion`."""
+        """Inject the document-version recorder (#267): an object with a coroutine
+        `record_on_rechunk(document_id, analysis_id, result_hash)`."""
         self._version_recorder = version_service
-
-    # -- promotion (called by AnalysisService after first successful analysis)
-
-    async def promote_from_analysis_if_empty(self, document_id: str, chunks_json: str) -> int:
-        """Populate the canonical chunkset from an analysis result, ONLY if
-        the document has no canonical chunks yet. Idempotent.
-
-        Returns the number of chunks promoted (0 if skipped).
-        """
-        if await self._chunks.count_for_document(document_id) > 0:
-            return 0
-        try:
-            raw_chunks = json.loads(chunks_json)
-        except json.JSONDecodeError:
-            logger.exception("Invalid chunks_json for doc %s — skipping promotion", document_id)
-            return 0
-        if not isinstance(raw_chunks, list) or not raw_chunks:
-            return 0
-
-        canonical = [
-            _analysis_chunk_to_canonical(document_id, seq, raw)
-            for seq, raw in enumerate(raw_chunks)
-            if not raw.get("deleted")
-        ]
-        if not canonical:
-            return 0
-
-        await self._chunks.insert_many(canonical)
-        logger.info(
-            "chunk.promote docId=%s count=%d (initial-analysis)", document_id, len(canonical)
-        )
-        return len(canonical)
 
     # -- read
 
@@ -360,30 +252,6 @@ class ChunkService:
                 )
 
         return new_chunks
-
-    # -- stores and tree, handed to their own services
-
-    async def diff_against_store(self, document_id: str, store_id: str) -> list[dict]:
-        """See `ChunkPushService.diff_against_store`."""
-        return await self._push.diff_against_store(document_id, store_id)
-
-    async def push_to_store(self, document_id: str, store_id: str) -> dict:
-        """See `ChunkPushService.push_to_store`."""
-        return await self._push.push_to_store(document_id, store_id)
-
-    async def list_pushes(
-        self,
-        document_id: str,
-        *,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> dict:
-        """See `ChunkPushService.list_pushes`."""
-        return await self._push.list_pushes(document_id, limit=limit, offset=offset)
-
-    async def get_tree(self, document_id: str, analysis_id: str | None = None) -> list[dict]:
-        """See `DocumentTreeService.get_tree`."""
-        return await self._tree.get_tree(document_id, analysis_id)
 
     # -- guards
 

@@ -7,7 +7,7 @@ layer deals only in versioned commands and projected results.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -155,19 +155,21 @@ class DoclingDocumentEditor:
     ) -> None:
         raw_ids = payload.get("elementIds")
         check_delete_request(raw_ids)
+        # Identity sets keep a delete of every element of a long document linear.
         items: list[Any] = []
+        selected: set[int] = set()
         for item_id in raw_ids:
             item = self._get(logical_objects, str(item_id))
-            if not any(existing is item for existing in items):
+            if id(item) not in selected:
+                selected.add(id(item))
                 items.append(item)
         if any(item is document.body or item.parent is None for item in items):
             raise AnalysisEditError("The document root cannot be deleted")
+        # A selected item under a selected ancestor goes with that ancestor.
         roots = [
             item
             for item in items
-            if not any(
-                other is not item and self._is_descendant(item, other, document) for other in items
-            )
+            if not any(id(ancestor) in selected for ancestor in _ancestors(item, document))
         ]
         document.delete_items(node_items=roots)
 
@@ -240,17 +242,26 @@ class DoclingDocumentEditor:
         if target.parent is None:
             raise AnalysisEditError("The document root cannot be merged")
         parent = target.parent.resolve(doc=document)
-        insertion_index = list(parent.children).index(target.get_ref()) + 1
+        # Positions are read once: the moves only touch the run, which grows
+        # right after the target, and the siblings after it. An item of the
+        # parent sits before the run's end when it is already in the run (a
+        # repeated id) or was before the target, and then its removal shifts
+        # the insertion point.
+        position = {ref.cref: index for index, ref in enumerate(parent.children)}
+        target_index = position[target.self_ref]
+        insertion_index = target_index + 1
+        in_run = {id(target)}
         for item in items[1:]:
             if item.parent is None:
                 raise AnalysisEditError("The document root cannot be merged")
             item_parent = item.parent.resolve(doc=document)
-            if item_parent is parent:
-                old_index = list(parent.children).index(item.get_ref())
-                if old_index < insertion_index:
-                    insertion_index -= 1
+            if item_parent is parent and (
+                id(item) in in_run or position[item.self_ref] < target_index
+            ):
+                insertion_index -= 1
             self._move_subtree(document, item, parent, insertion_index)
             insertion_index += 1
+            in_run.add(id(item))
 
     def _move_element(
         self,
@@ -347,12 +358,14 @@ class DoclingDocumentEditor:
 
     @staticmethod
     def _is_descendant(candidate: Any, ancestor: Any, document: DoclingDocument) -> bool:
-        current = candidate
-        while current.parent is not None:
-            current = current.parent.resolve(doc=document)
-            if current is ancestor:
-                return True
-        return False
+        return any(node is ancestor for node in _ancestors(candidate, document))
+
+
+def _ancestors(item: Any, document: DoclingDocument) -> Iterator[Any]:
+    """`item`'s parent, its parent's parent, and so on up to the body."""
+    while item.parent is not None:
+        item = item.parent.resolve(doc=document)
+        yield item
 
 
 def _join_merged_text(items: list[Any], separator: str) -> tuple[str, str]:

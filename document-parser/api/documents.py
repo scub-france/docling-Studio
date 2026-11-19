@@ -91,7 +91,9 @@ async def list_documents(service: deps.DocumentServiceDep) -> list[DocumentRespo
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
-async def get_document(doc_id: str, service: deps.DocumentServiceDep) -> DocumentResponse:
+async def get_document(
+    doc_id: str, service: deps.DocumentServiceDep, current: deps.CurrentAnalysisDep
+) -> DocumentResponse:
     """Get a single document, joined with its per-store ingestion links and
     the id of its current analysis."""
     found = await service.find_with_store_links(doc_id)
@@ -101,7 +103,7 @@ async def get_document(doc_id: str, service: deps.DocumentServiceDep) -> Documen
     return _to_response(
         doc,
         store_links=[_to_store_link_response(link) for link in links],
-        current_analysis_id=await service.find_current_analysis_id(doc_id),
+        current_analysis_id=await current.find_current_analysis_id(doc_id),
     )
 
 

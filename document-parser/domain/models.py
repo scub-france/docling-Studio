@@ -39,8 +39,7 @@ def generate_compact_id() -> str:
     """A new id in the 32-hex-character UUID4 form.
 
     Kept apart from `generate_id`: document versions and the chunks a
-    version restore writes have always used this form, and so has
-    `chunk_editing.insert`.
+    version restore writes have always used this form.
     """
     return uuid.uuid4().hex
 

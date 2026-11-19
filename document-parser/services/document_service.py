@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 
     from domain.ports import (
         AnalysisRepository,
-        CurrentAnalysisReader,
         DocumentFileStore,
         DocumentRepository,
         DocumentStoreLinkRepository,
@@ -58,11 +57,9 @@ class DocumentService:
         store_repo: StoreRepository,
         pdf_inspector: PdfInspector,
         file_store: DocumentFileStore,
-        current_analysis: CurrentAnalysisReader,
     ):
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
-        self._current = current_analysis
         self._link_repo = link_repo
         self._store_repo = store_repo
         self._pdf_inspector = pdf_inspector
@@ -158,10 +155,6 @@ class DocumentService:
             )
             for link in links
         ]
-
-    async def find_current_analysis_id(self, doc_id: str) -> str | None:
-        """The id of the document's current analysis (its active selection), or None."""
-        return await self._current.find_current_analysis_id(doc_id)
 
     async def delete(self, doc_id: str) -> bool:
         """Delete document file, associated analyses, and database record."""

@@ -257,6 +257,55 @@ def test_delete_elements_prunes_selected_descendants():
     result.document.validate_tree(result.document.body, raise_on_error=True)
 
 
+def test_delete_elements_of_a_long_document_stays_linear():
+    """Deleting every element of 3,000 named once, repeated or nested: identity
+    sets, not pairwise checks (about 4 s here pairwise, a fraction of that now)."""
+    document = DoclingDocument(name="mass-delete")
+    refs = []
+    for index in range(300):
+        section = document.add_heading(text=f"[section {index}]", level=1)
+        refs.append(section.self_ref)
+        refs += [
+            document.add_text(
+                label=DocItemLabel.TEXT, text=f"[{index}.{n}]", parent=section
+            ).self_ref
+            for n in range(9)
+        ]
+    element_ids = [f"base:{ref}" for ref in refs + refs[:50]]
+
+    result = DoclingDocumentEditor().apply(
+        document.model_dump_json(),
+        base_analysis_id="base",
+        commands=[EditCommand("deleteElements", {"elementIds": element_ids})],
+    )
+
+    assert len(refs) == 3_000
+    assert not list(result.document.iterate_items())
+
+
+def test_merge_of_hundreds_of_texts_across_parents_keeps_reading_order():
+    document = DoclingDocument(name="mass-merge")
+    texts = []
+    for index in range(100):
+        texts.append(document.add_text(label=DocItemLabel.TEXT, text=f"a{index}"))
+        section = document.add_heading(text=f"[section {index}]", level=1)
+        texts.append(document.add_text(label=DocItemLabel.TEXT, text=f"b{index}", parent=section))
+    element_ids = [f"base:{text.self_ref}" for text in reversed(texts)]
+
+    result = DoclingDocumentEditor().apply(
+        document.model_dump_json(),
+        base_analysis_id="base",
+        commands=[EditCommand("mergeText", {"elementIds": element_ids, "separator": " "})],
+    )
+
+    merged = result.document.texts[0]
+    assert merged.text == " ".join(text.text for text in texts)
+    assert [item.text for item, _ in result.document.iterate_items()][:2] == [
+        merged.text,
+        "[section 0]",
+    ]
+
+
 def test_realistic_structure_reorders_without_moving_provenance():
     raw = _realistic_document()
     document = DoclingDocument.model_validate_json(raw)

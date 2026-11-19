@@ -182,11 +182,12 @@ def _document_app(repos) -> TestClient:
         store_repo=MagicMock(),
         pdf_inspector=MagicMock(),
         file_store=MagicMock(),
-        current_analysis=repos["current"],
     )
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_app_state] = lambda: AppState(document_service=service)
+    app.dependency_overrides[get_app_state] = lambda: AppState(
+        document_service=service, current_analysis=repos["current"]
+    )
     return TestClient(app)
 
 

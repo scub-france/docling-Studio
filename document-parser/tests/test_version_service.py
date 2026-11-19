@@ -32,6 +32,12 @@ from services.version_service import (
 from tests.analysis_state_helpers import set_chunk_source, set_selection
 
 
+async def _retire_chunks(chunks, document_id: str) -> None:
+    """Soft-delete every live chunk of the document, as a rechunk does."""
+    live = await chunks.find_for_document(document_id)
+    await chunks.soft_delete_many([c.id for c in live], at=datetime.now(UTC))
+
+
 @pytest.fixture(autouse=True)
 async def setup_db(monkeypatch, tmp_path):
     db_path = str(tmp_path / "test.db")
@@ -136,7 +142,7 @@ class TestRestore:
         v1 = await service.record_on_rechunk(doc.id, "a1", "a" * 64)
 
         # Move to V2 state — soft-delete V1's chunks, insert a single new
-        await repos["chunks"].soft_delete_for_document(doc.id, at=datetime.now(UTC))
+        await _retire_chunks(repos["chunks"], doc.id)
         await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="v2-only")])
         await service.record_on_rechunk(doc.id, "a1", "b" * 64)
 
@@ -212,7 +218,7 @@ class TestRestore:
         )
         await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="before")])
         version = await service.record_on_rechunk(doc.id, "a1", "f" * 64)
-        await repos["chunks"].soft_delete_for_document(doc.id, at=datetime.now(UTC))
+        await _retire_chunks(repos["chunks"], doc.id)
         await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="after")])
 
         async def fail(db, document_id, source):

@@ -5,8 +5,7 @@ touch the database or raise infrastructure errors.
 
 `split` and `merge` are the rules `ChunkService` applies: they build the
 new chunks and the service persists them (shifting later sequences,
-soft-deleting the sources). `insert`, `update` and `delete` work on an
-in-memory chunkset.
+soft-deleting the sources).
 
 Sequences are 0-based and only required to be strictly increasing
 within a document; gaps are explicitly allowed so we never rewrite
@@ -17,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from domain.models import Chunk, generate_compact_id, get_utc_now
+from domain.models import Chunk
 
 if TYPE_CHECKING:
     from domain.value_objects import ChunkBbox, ChunkDocItem
@@ -36,83 +35,6 @@ class ChunkMergeGapError(ChunkEditingError):
     The request is well formed but conflicts with the current chunkset,
     so the service answers it apart from the other editing errors.
     """
-
-
-def _find_index(chunks: list[Chunk], chunk_id: str) -> int:
-    for idx, c in enumerate(chunks):
-        if c.id == chunk_id:
-            return idx
-    raise ChunkEditingError(f"chunk not found: {chunk_id}")
-
-
-def insert(
-    chunks: list[Chunk],
-    *,
-    at_position: int,
-    text: str,
-    document_id: str,
-    headings: list[str] | None = None,
-    source_page: int | None = None,
-) -> tuple[list[Chunk], Chunk]:
-    """Insert a fresh chunk at position `at_position`.
-
-    Returns the updated chunkset and the new chunk. Subsequent chunks'
-    sequences are shifted by +1.
-    """
-    if at_position < 0 or at_position > len(chunks):
-        raise ChunkEditingError(f"insert position out of range: {at_position}")
-    now = get_utc_now()
-    new_chunk = Chunk(
-        id=generate_compact_id(),
-        document_id=document_id,
-        sequence=at_position,
-        text=text,
-        headings=list(headings or []),
-        source_page=source_page,
-        created_at=now,
-        updated_at=now,
-    )
-    out = list(chunks)
-    for c in out[at_position:]:
-        c.sequence += 1
-    out.insert(at_position, new_chunk)
-    return out, new_chunk
-
-
-def update(
-    chunks: list[Chunk],
-    chunk_id: str,
-    *,
-    text: str | None = None,
-    headings: list[str] | None = None,
-) -> tuple[list[Chunk], Chunk]:
-    """Update text and/or headings of a chunk in-place.
-
-    Returns the updated chunkset and the modified chunk. The chunk's
-    id and sequence are preserved.
-    """
-    idx = _find_index(chunks, chunk_id)
-    target = chunks[idx]
-    if target.deleted_at is not None:
-        raise ChunkEditingError(f"chunk is deleted: {chunk_id}")
-    if text is not None:
-        target.text = text
-    if headings is not None:
-        target.headings = list(headings)
-    target.updated_at = get_utc_now()
-    return list(chunks), target
-
-
-def delete(chunks: list[Chunk], chunk_id: str) -> tuple[list[Chunk], Chunk]:
-    """Soft-delete a chunk. Returns the updated chunkset and the
-    deleted chunk (still present in the list, with `deleted_at` set)."""
-    idx = _find_index(chunks, chunk_id)
-    target = chunks[idx]
-    if target.deleted_at is not None:
-        return list(chunks), target  # idempotent
-    target.deleted_at = get_utc_now()
-    target.updated_at = target.deleted_at
-    return list(chunks), target
 
 
 def check_merge_count(chunk_ids: list[str]) -> None:

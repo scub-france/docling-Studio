@@ -6,6 +6,8 @@ assertions are about the guard and not about the backend booting.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -13,9 +15,8 @@ from fastapi.testclient import TestClient
 from infra.host_guard import (
     ApiHostGuardMiddleware,
     describe_host_check,
-    is_allowed_host,
     is_host_check_on,
-    split_host,
+    parse_host_name,
 )
 from infra.settings import Settings
 
@@ -44,25 +45,35 @@ def _get(allowed_hosts: list[str], base_url: str, path: str = "/api/documents"):
         return client.get(path)
 
 
+def _status_for_host(allowed_hosts: list[str], host: str) -> int:
+    # The test client builds `Host` from its base URL; send odd values by hand.
+    with TestClient(_app(allowed_hosts)) as client:
+        return client.get("/api/documents", headers={"host": host}).status_code
+
+
 class TestMiddleware:
     def test_serves_a_listed_host(self):
         response = _get(["studio.example.com"], "http://studio.example.com")
         assert response.status_code == 200
 
-    def test_rejects_a_foreign_host_with_421(self):
+    def test_rejects_a_foreign_host_with_421_and_a_json_detail(self):
         response = _get(["studio.example.com"], "http://evil.example.com")
         assert response.status_code == 421
-        assert response.text == "Invalid Host header"
+        assert response.json() == {"detail": "Invalid Host header"}
+
+    def test_a_rejection_is_logged_at_debug_only(self, caplog):
+        with caplog.at_level(logging.DEBUG, logger="infra.host_guard"):
+            _get(["studio.example.com"], "http://evil.example.com")
+        levels = [r.levelno for r in caplog.records if r.name == "infra.host_guard"]
+        assert levels == [logging.DEBUG]
 
     def test_loopback_is_always_allowed(self):
         for base in ("http://localhost:8000", "http://127.0.0.1"):
             assert _get(["studio.example.com"], base).status_code == 200, base
 
     def test_ipv6_loopback_is_allowed(self):
-        # The test client cannot build an IPv6 base URL: send the Host header itself.
-        with TestClient(_app(["studio.example.com"])) as client:
-            response = client.get("/api/documents", headers={"host": "[::1]:8000"})
-        assert response.status_code == 200
+        assert _status_for_host(["studio.example.com"], "[::1]:8000") == 200
+        assert _status_for_host(["studio.example.com"], "[::1]") == 200
 
     def test_health_answers_a_container_health_check(self):
         response = _get(["studio.example.com"], "http://127.0.0.1:8000", "/api/health")
@@ -76,39 +87,56 @@ class TestMiddleware:
         response = _get(["studio.example.com"], "http://evil.example.com", "/outside")
         assert response.status_code == 200
 
-    def test_a_port_wildcard_accepts_the_name_behind_nginx(self):
+    @pytest.mark.parametrize("entry", ["studio.lan", "studio.lan:*", "studio.lan:3000"])
+    def test_the_port_of_an_entry_is_ignored(self, entry):
         # nginx forwards `/api` with `Host $host`, which drops the port.
-        assert _get(["studio.lan:*"], "http://studio.lan").status_code == 200
-        assert _get(["studio.lan:*"], "http://studio.lan:3000").status_code == 200
+        assert _get([entry], "http://studio.lan").status_code == 200
+        assert _get([entry], "http://studio.lan:3000").status_code == 200
+        assert _get([entry], "http://studio.lan:8080").status_code == 200
 
-    def test_an_exact_pattern_wants_the_same_port(self):
-        assert _get(["studio.lan:3000"], "http://studio.lan:3000").status_code == 200
-        assert _get(["studio.lan:3000"], "http://studio.lan:8080").status_code == 421
-
-
-class TestIsAllowedHost:
     @pytest.mark.parametrize(
-        ("host", "expected"),
+        "host",
         [
-            ("studio.lan", True),
-            ("STUDIO.LAN:3000", True),
-            ("evil.example.com", False),
-            ("studio.lan.evil.com", False),
-            ("localhost", True),
-            ("[::1]:3000", True),
-            ("", False),
-            (None, False),
+            "localhost:80@evil.com",
+            "[::1]evil",
+            "[::1",
+            "localhost:abc",
+            "localhost:*",
+            "localhost:",
+            "localhost:123456",
+            "local host",
+            "localhost/x",
+            "evil.com@localhost",
+            "localhost.evil.com",
+            "localhost.",
+            "",
         ],
     )
-    def test_matches_like_the_mcp_allow_list(self, host, expected):
-        assert is_allowed_host(host, ["studio.lan:*"]) is expected
+    def test_a_malformed_or_foreign_host_is_refused(self, host):
+        assert _status_for_host(["studio.lan"], host) == 421
 
-    def test_wildcard_allows_everything(self):
-        assert is_allowed_host("evil.example.com", ["*"]) is True
 
-    def test_split_host_keeps_ipv6_brackets(self):
-        assert split_host("[::1]:8000") == ("[::1]", "8000")
-        assert split_host("Example.com") == ("example.com", None)
+class TestParseHostName:
+    @pytest.mark.parametrize(
+        ("host", "name"),
+        [
+            ("Studio.LAN:3000", "studio.lan"),
+            ("studio.lan", "studio.lan"),
+            ("[::1]:8000", "[::1]"),
+            ("127.0.0.1", "127.0.0.1"),
+            ("localhost:80@evil.com", None),
+            ("[::1]evil", None),
+            ("caf\xe9.lan", None),
+            ("", None),
+            (None, None),
+        ],
+    )
+    def test_reads_the_name_or_refuses(self, host, name):
+        assert parse_host_name(host) == name
+
+    def test_a_port_wildcard_is_for_allow_list_entries_only(self):
+        assert parse_host_name("studio.lan:*") is None
+        assert parse_host_name("studio.lan:*", port_wildcard=True) == "studio.lan"
 
 
 class TestStartupLine:

@@ -107,7 +107,8 @@ class Settings:
     # Host allow-list for `/api/*` (DNS-rebinding protection, see
     # `infra/host_guard.py`). Empty, the default, checks nothing: a check on
     # by default would cut deployments reached by a LAN name or a proxy.
-    # Same patterns as `mcp_allowed_hosts`; loopback is always allowed.
+    # Host names; a `:port` or `:*` suffix is accepted and ignored, `*` turns
+    # the check off; loopback is always allowed.
     api_allowed_hosts: list[str] = field(default_factory=list)
     # Hard server-side ceiling on a single read. A client argument may lower
     # it, never raise it. Like the round cap and the deep-link base below, a

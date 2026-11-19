@@ -129,19 +129,6 @@ class SqliteChunkRepository:
             await db.commit()
             return cursor.rowcount
 
-    async def soft_delete_for_document(self, document_id: str, *, at: datetime) -> int:
-        """Soft-delete every live chunk of a document in one statement.
-
-        Chunks already soft-deleted keep their original `deleted_at`.
-        """
-        async with get_connection() as db:
-            cursor = await db.execute(
-                _SOFT_DELETE_FOR_DOCUMENT_SQL,
-                (str(at), str(at), document_id),
-            )
-            await db.commit()
-            return cursor.rowcount
-
     async def replace_for_document(
         self,
         document_id: str,

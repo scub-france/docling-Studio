@@ -25,7 +25,7 @@ from api.state import AppState
 from bootstrap.factories import (
     build_analysis_service,
     build_backend_resolver,
-    build_chunk_service,
+    build_chunker,
     build_document_file_store,
     build_document_service,
     build_document_tools,
@@ -41,6 +41,7 @@ from bootstrap.mcp_mount import describe_mcp_server
 from domain.app_config import ReasoningConfig, ReasoningDiagnostics
 from infra.docling_agent_reasoning import describe_deps_provenance, has_usable_deps
 from infra.docling_analysis_engine import DoclingAnalysisEngine
+from infra.docling_tree import DoclingTreeReader
 from infra.llm.ollama_probe import OllamaProbe
 from infra.page_raster import PdfPageRasterizer
 from infra.pdf_inspector import PdfiumInspector
@@ -59,7 +60,10 @@ from persistence.document_version_repo import SqliteDocumentVersionRepository
 from persistence.store_repo import SqliteStoreRepository
 from services.analysis_edit_service import AnalysisEditService
 from services.app_config_service import AppConfigService
+from services.chunk_push_service import ChunkPushService
+from services.chunk_service import ChunkService
 from services.current_analysis import CurrentAnalysisResolver
+from services.document_tree_service import DocumentTreeService
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.mcp_config_service import McpConfigService
@@ -115,7 +119,6 @@ class AppStateBuilder:
         store_repo = SqliteStoreRepository()
         link_repo = SqliteDocumentStoreLinkRepository()
         chunk_repo = SqliteChunkRepository()
-        chunk_push_repo = SqliteChunkPushRepository()
 
         graph_writer, graph_reader = await self._build_graph_adapters()
         ingestion_service = build_ingestion_service(graph_writer)
@@ -142,16 +145,12 @@ class AppStateBuilder:
             graph_writer=graph_writer,
             chunk_repo=chunk_repo,
         )
-        chunk_service = build_chunk_service(
-            document_repo=document_repo,
-            analysis_repo=analysis_repo,
+        # Doc-centric chunks (#256), their pushes to stores, and the tree.
+        chunk_service = ChunkService(
             chunk_repo=chunk_repo,
-            chunk_push_repo=chunk_push_repo,
-            store_repo=store_repo,
-            link_repo=link_repo,
-            ingestion_service=ingestion_service,
-            backend_resolver=backend_resolver,
+            document_repo=document_repo,
             active_result_service=analysis_edit_service,
+            chunker=build_chunker(),
         )
         version_service = VersionService(
             version_repo=SqliteDocumentVersionRepository(),
@@ -162,11 +161,6 @@ class AppStateBuilder:
             current_analysis=current_analysis,
         )
 
-        # The analysis service still carries the chunk promoter wiring for
-        # legacy callers / tests, but the analysis flow no longer invokes it
-        # (decoupling from #266). Chunks are explicit — produced via the
-        # `+ Generate chunks` action on the Chunk view.
-        analysis_service.set_chunk_promoter(chunk_service)
         # 0.6.1 — Document versions (#267): frozen (analysis, chunks)
         # snapshots written on each version-creating trigger.
         analysis_service.set_version_recorder(version_service)
@@ -180,12 +174,9 @@ class AppStateBuilder:
             link_repo,
             store_repo,
             file_store=file_store,
-            current_analysis=current_analysis,
         )
         self._update(
-            analysis_repo=analysis_repo,
-            store_repo=store_repo,
-            document_store_link_repo=link_repo,
+            current_analysis=current_analysis,
             document_service=document_service,
             preview_service=PreviewService(
                 documents=document_repo,
@@ -209,6 +200,21 @@ class AppStateBuilder:
                 backend_resolver=backend_resolver,
             ),
             chunk_service=chunk_service,
+            chunk_push_service=ChunkPushService(
+                chunk_repo=chunk_repo,
+                chunk_push_repo=SqliteChunkPushRepository(),
+                document_repo=document_repo,
+                ingestion_service=ingestion_service,
+                store_repo=store_repo,
+                link_repo=link_repo,
+                backend_resolver=backend_resolver,
+            ),
+            document_tree_service=DocumentTreeService(
+                document_repo=document_repo,
+                analysis_repo=analysis_repo,
+                tree_reader=DoclingTreeReader(),
+                active_result_service=analysis_edit_service,
+            ),
             # 0.6.1 (#audit-01) — GraphService serves /graph so api/graph.py
             # stops reaching into infra. Reader is None without Neo4j (503).
             graph_service=GraphService(graph_reader=graph_reader),

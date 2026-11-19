@@ -20,8 +20,8 @@ from domain.app_config import LLMHostProbeResult
 
 logger = logging.getLogger(__name__)
 
-# Same endpoint the sync `OllamaProvider.health_check` uses — returns 200 with
-# the installed model list even on a fresh install.
+# Ollama's tags endpoint returns 200 with the installed model list even on a
+# fresh install, and loads no model.
 _TAGS_PATH = "/api/tags"
 _PROBE_TIMEOUT_SECONDS = 3.0
 

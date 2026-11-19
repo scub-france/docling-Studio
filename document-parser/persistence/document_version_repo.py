@@ -68,14 +68,3 @@ class SqliteDocumentVersionRepository:
             )
             rows = await cur.fetchall()
             return [_row_to_version(r) for r in rows]
-
-    async def find_latest_for_document(self, document_id: str) -> DocumentVersion | None:
-        """Most recent version for the document, or None."""
-        async with get_connection() as conn:
-            cur = await conn.execute(
-                "SELECT * FROM document_versions WHERE document_id = ? "
-                "ORDER BY created_at DESC LIMIT 1",
-                (document_id,),
-            )
-            row = await cur.fetchone()
-            return _row_to_version(row) if row else None

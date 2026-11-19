@@ -12,11 +12,14 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 
 from api.state import AppState, get_app_state, require
+from domain.ports import CurrentAnalysisReader
 from services.analysis_edit_service import AnalysisEditService
 from services.analysis_service import AnalysisService
 from services.app_config_service import AppConfigService
+from services.chunk_push_service import ChunkPushService
 from services.chunk_service import ChunkService
 from services.document_service import DocumentService
+from services.document_tree_service import DocumentTreeService
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.ingestion_service import IngestionService
@@ -34,6 +37,13 @@ def get_document_service(state: AppStateDep) -> DocumentService:
 
 
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
+
+
+def get_current_analysis(state: AppStateDep) -> CurrentAnalysisReader:
+    return require(state.current_analysis, detail="Document service not available")
+
+
+CurrentAnalysisDep = Annotated[CurrentAnalysisReader, Depends(get_current_analysis)]
 
 
 def get_preview_service(state: AppStateDep) -> PreviewService:
@@ -76,6 +86,20 @@ def get_chunk_service(state: AppStateDep) -> ChunkService:
 
 
 ChunkServiceDep = Annotated[ChunkService, Depends(get_chunk_service)]
+
+
+def get_chunk_push_service(state: AppStateDep) -> ChunkPushService:
+    return require(state.chunk_push_service, detail="Chunk service not available")
+
+
+ChunkPushServiceDep = Annotated[ChunkPushService, Depends(get_chunk_push_service)]
+
+
+def get_document_tree_service(state: AppStateDep) -> DocumentTreeService:
+    return require(state.document_tree_service, detail="Chunk service not available")
+
+
+DocumentTreeServiceDep = Annotated[DocumentTreeService, Depends(get_document_tree_service)]
 
 
 def get_version_service(state: AppStateDep) -> VersionService:

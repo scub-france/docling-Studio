@@ -21,7 +21,6 @@ from infra.llm.ollama_provider import OllamaProvider
 from infra.settings import settings
 from persistence.database import get_connection
 from services.analysis_service import AnalysisConfig, AnalysisService
-from services.chunk_service import ChunkService
 from services.citation_image_service import CitationImageService
 from services.citation_service import CitationService
 from services.document_service import DocumentConfig, DocumentService
@@ -225,7 +224,7 @@ def build_document_file_store():
 
 
 def build_document_service(
-    document_repo, analysis_repo, link_repo, store_repo, *, file_store, current_analysis
+    document_repo, analysis_repo, link_repo, store_repo, *, file_store
 ) -> DocumentService:
     return DocumentService(
         document_repo=document_repo,
@@ -238,16 +237,6 @@ def build_document_service(
         store_repo=store_repo,
         pdf_inspector=_build_pdf_inspector(),
         file_store=file_store,
-        current_analysis=current_analysis,
-    )
-
-
-def build_chunk_service(**repos) -> ChunkService:
-    """Doc-centric chunks (#256) on top of the chunk and push repositories."""
-    return ChunkService(
-        tree_reader=_build_tree_reader(),
-        chunker=build_chunker(),
-        **repos,
     )
 
 

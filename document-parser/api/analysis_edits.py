@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Query
@@ -55,7 +56,13 @@ def _to_tree_node_response(node: EditorTreeNode) -> EditorTreeNodeResponse:
     )
 
 
-def _to_editor_response(snapshot) -> AnalysisEditorResponse:
+async def _to_editor_response(snapshot) -> AnalysisEditorResponse:
+    """Built in a worker thread: one Pydantic object per element and tree node
+    is tens of thousands on a long document, too much for the event loop."""
+    return await asyncio.to_thread(_build_editor_response, snapshot)
+
+
+def _build_editor_response(snapshot) -> AnalysisEditorResponse:
     return AnalysisEditorResponse(
         # The projector writes this JSON on every projection, cached or not,
         # so it always has the shape the model declares.
@@ -85,27 +92,15 @@ def _to_history_entry(entry) -> AnalysisEditHistoryEntryResponse:
 
 
 def _to_edit_commands(body: AnalysisEditRequest) -> list[EditCommand]:
-    commands: list[EditCommand] = []
-    for command in body.commands:
-        if command.type == "replaceText":
-            payload = {"elementId": command.element_id, "text": command.text}
-        elif command.type == "mergeText":
-            payload = {"elementIds": command.element_ids, "separator": command.separator}
-        elif command.type == "setHeadingLevel":
-            payload = {"elementId": command.element_id, "level": command.level}
-        elif command.type == "deleteElement":
-            payload = {"elementId": command.element_id}
-        elif command.type == "deleteElements":
-            payload = {"elementIds": command.element_ids}
-        else:
-            payload = {
-                "elementId": command.element_id,
-                "beforeElementId": command.before_element_id,
-                "targetElementId": command.target_element_id,
-                "placement": command.placement,
-            }
-        commands.append(EditCommand(command_type=command.type, payload=payload))
-    return commands
+    """Each command's payload is its request fields, every key present (null
+    where unset); the model of each type is the only definition of its fields."""
+    return [
+        EditCommand(
+            command_type=command.type,
+            payload=command.model_dump(by_alias=True, exclude={"type"}),
+        )
+        for command in body.commands
+    ]
 
 
 @router.get("/{doc_id}/analysis-editor", response_model=AnalysisEditorResponse)
@@ -115,7 +110,7 @@ async def load_editor(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _to_editor_response(await service.load_editor(doc_id, analysis_id))
+        return await _to_editor_response(await service.load_editor(doc_id, analysis_id))
     except AnalysisEditError as exc:
         raise to_http_error(exc) from exc
 
@@ -128,7 +123,7 @@ async def preview_edits(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _to_editor_response(
+        return await _to_editor_response(
             await service.preview(doc_id, _to_edit_commands(body), analysis_id)
         )
     except AnalysisEditError as exc:
@@ -160,7 +155,7 @@ async def set_edit_active(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _to_editor_response(
+        return await _to_editor_response(
             await service.set_command_active(
                 doc_id,
                 sequence,
@@ -204,6 +199,6 @@ async def rebuild_edits(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _to_editor_response(await service.rebuild(doc_id, analysis_id))
+        return await _to_editor_response(await service.rebuild(doc_id, analysis_id))
     except AnalysisEditError as exc:
         raise to_http_error(exc) from exc

@@ -24,10 +24,28 @@ def client():
 
 
 @pytest.fixture
-def mock_service(client):
-    svc = MagicMock()
-    with state_override(app, chunk_service=svc):
-        yield svc
+def mocks(client):
+    """One mock per chunk-side service, so a route wired to the wrong one fails."""
+    chunks, pushes, tree = MagicMock(), MagicMock(), MagicMock()
+    with state_override(
+        app, chunk_service=chunks, chunk_push_service=pushes, document_tree_service=tree
+    ):
+        yield chunks, pushes, tree
+
+
+@pytest.fixture
+def mock_service(mocks):
+    return mocks[0]
+
+
+@pytest.fixture
+def mock_push_service(mocks):
+    return mocks[1]
+
+
+@pytest.fixture
+def mock_tree_service(mocks):
+    return mocks[2]
 
 
 def _chunk(*, id="c-1", doc_id="d-1", sequence=0, text="hi") -> Chunk:
@@ -174,14 +192,14 @@ class TestRechunk:
 
 
 class TestTree:
-    def test_200_empty(self, client, mock_service):
-        mock_service.get_tree = AsyncMock(return_value=[])
+    def test_200_empty(self, client, mock_tree_service):
+        mock_tree_service.get_tree = AsyncMock(return_value=[])
         resp = client.get("/api/documents/d-1/tree")
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_200_groups(self, client, mock_service):
-        mock_service.get_tree = AsyncMock(
+    def test_200_groups(self, client, mock_tree_service):
+        mock_tree_service.get_tree = AsyncMock(
             return_value=[
                 {"ref": "#group/title", "type": "group", "label": "Titles", "children": []}
             ]
@@ -191,16 +209,16 @@ class TestTree:
         data = resp.json()
         assert data[0]["label"] == "Titles"
 
-    def test_200_passes_analysis_id(self, client, mock_service):
-        mock_service.get_tree = AsyncMock(return_value=[])
+    def test_200_passes_analysis_id(self, client, mock_tree_service):
+        mock_tree_service.get_tree = AsyncMock(return_value=[])
         resp = client.get("/api/documents/d-1/tree?analysisId=a-1")
         assert resp.status_code == 200
-        mock_service.get_tree.assert_awaited_once_with("d-1", "a-1")
+        mock_tree_service.get_tree.assert_awaited_once_with("d-1", "a-1")
 
 
 class TestDiff:
-    def test_200(self, client, mock_service):
-        mock_service.diff_against_store = AsyncMock(
+    def test_200(self, client, mock_push_service):
+        mock_push_service.diff_against_store = AsyncMock(
             return_value=[
                 {"chunkId": "c1", "status": "added", "textDiff": None},
             ]
@@ -209,15 +227,15 @@ class TestDiff:
         assert resp.status_code == 200
         assert resp.json()[0]["chunkId"] == "c1"
 
-    def test_400_when_store_missing(self, client, mock_service):
+    def test_400_when_store_missing(self, client, mock_push_service):
         resp = client.get("/api/documents/d-1/diff")
         # FastAPI auto-422 on missing required query
         assert resp.status_code in (400, 422)
 
 
 class TestPush:
-    def test_200(self, client, mock_service):
-        mock_service.push_to_store = AsyncMock(
+    def test_200(self, client, mock_push_service):
+        mock_push_service.push_to_store = AsyncMock(
             return_value={"pushId": "p1", "summary": {"embeds": 3, "tokens": 30}}
         )
         resp = client.post(
@@ -233,8 +251,8 @@ class TestPush:
 class TestListPushes:
     """`GET /api/documents/{id}/chunks/pushes` — push history feed (#283)."""
 
-    def test_200_returns_paginated_envelope(self, client, mock_service):
-        mock_service.list_pushes = AsyncMock(
+    def test_200_returns_paginated_envelope(self, client, mock_push_service):
+        mock_push_service.list_pushes = AsyncMock(
             return_value={
                 "items": [
                     {
@@ -266,30 +284,30 @@ class TestListPushes:
         assert entry["storeKind"] == "opensearch"
         assert entry["chunkCount"] == 11
         # Service got the default limit/offset.
-        mock_service.list_pushes.assert_awaited_once_with("d-1", limit=50, offset=0)
+        mock_push_service.list_pushes.assert_awaited_once_with("d-1", limit=50, offset=0)
 
-    def test_forwards_limit_and_offset_query_params(self, client, mock_service):
-        mock_service.list_pushes = AsyncMock(
+    def test_forwards_limit_and_offset_query_params(self, client, mock_push_service):
+        mock_push_service.list_pushes = AsyncMock(
             return_value={"items": [], "total": 0, "limit": 10, "offset": 20}
         )
         resp = client.get("/api/documents/d-1/chunks/pushes?limit=10&offset=20")
         assert resp.status_code == 200
-        mock_service.list_pushes.assert_awaited_once_with("d-1", limit=10, offset=20)
+        mock_push_service.list_pushes.assert_awaited_once_with("d-1", limit=10, offset=20)
 
-    def test_404_when_document_unknown(self, client, mock_service):
-        mock_service.list_pushes = AsyncMock(side_effect=DocumentNotFoundError("not found"))
+    def test_404_when_document_unknown(self, client, mock_push_service):
+        mock_push_service.list_pushes = AsyncMock(side_effect=DocumentNotFoundError("not found"))
         resp = client.get("/api/documents/ghost/chunks/pushes")
         assert resp.status_code == 404
 
-    def test_422_when_limit_out_of_range(self, client, mock_service):
-        mock_service.list_pushes = AsyncMock(return_value={"items": [], "total": 0})
+    def test_422_when_limit_out_of_range(self, client, mock_push_service):
+        mock_push_service.list_pushes = AsyncMock(return_value={"items": [], "total": 0})
         resp = client.get("/api/documents/d-1/chunks/pushes?limit=500")
         # 500 > 200 (the cap).
         assert resp.status_code == 422
-        mock_service.list_pushes.assert_not_awaited()
+        mock_push_service.list_pushes.assert_not_awaited()
 
-    def test_422_when_offset_negative(self, client, mock_service):
-        mock_service.list_pushes = AsyncMock(return_value={"items": [], "total": 0})
+    def test_422_when_offset_negative(self, client, mock_push_service):
+        mock_push_service.list_pushes = AsyncMock(return_value={"items": [], "total": 0})
         resp = client.get("/api/documents/d-1/chunks/pushes?offset=-1")
         assert resp.status_code == 422
-        mock_service.list_pushes.assert_not_awaited()
+        mock_push_service.list_pushes.assert_not_awaited()

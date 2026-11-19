@@ -249,8 +249,6 @@ class StoreRepository(Protocol):
 
     async def find_by_name(self, name: str) -> Store | None: ...
 
-    async def get_default(self) -> Store | None: ...
-
     async def update(self, store: Store) -> None: ...
 
     async def clear_default_except(self, store_id: str) -> None: ...
@@ -293,8 +291,6 @@ class ChunkRepository(Protocol):
     async def soft_delete(self, chunk_id: str, *, at: datetime) -> bool: ...
 
     async def soft_delete_many(self, chunk_ids: list[str], *, at: datetime) -> int: ...
-
-    async def soft_delete_for_document(self, document_id: str, *, at: datetime) -> int: ...
 
     async def replace_for_document(
         self,
@@ -373,8 +369,6 @@ class DocumentVersionRepository(Protocol):
     async def find_by_id(self, version_id: str) -> DocumentVersion | None: ...
 
     async def find_for_document(self, document_id: str) -> list[DocumentVersion]: ...
-
-    async def find_latest_for_document(self, document_id: str) -> DocumentVersion | None: ...
 
 
 class AnalysisRepository(Protocol):
@@ -659,12 +653,6 @@ class LLMProvider(Protocol):
 
     @property
     def default_model_id(self) -> str: ...
-
-    def health_check(self) -> bool:
-        """Lightweight reachability probe. Returns True if the provider looks
-        usable. Implementations should be cheap (no model load, no inference).
-        """
-        ...
 
 
 @runtime_checkable

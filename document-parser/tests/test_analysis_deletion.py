@@ -167,8 +167,8 @@ def client(tmp_path, monkeypatch):
             store_repo=SqliteStoreRepository(),
             pdf_inspector=MagicMock(),
             file_store=MagicMock(),
-            current_analysis=current,
         ),
+        current_analysis=current,
     )
     app.dependency_overrides[get_app_state] = lambda: state
     with TestClient(app) as test_client:

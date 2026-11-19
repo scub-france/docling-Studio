@@ -113,15 +113,6 @@ class SqliteStoreRepository:
             row = await cursor.fetchone()
             return _row_to_store(row) if row else None
 
-    async def get_default(self) -> Store | None:
-        """Return the seeded `default` store, if any."""
-        async with get_connection() as db:
-            cursor = await db.execute(
-                "SELECT * FROM stores WHERE is_default = 1 ORDER BY created_at ASC LIMIT 1"
-            )
-            row = await cursor.fetchone()
-            return _row_to_store(row) if row else None
-
     async def update(self, store: Store) -> None:
         """Replace mutable, non-secret fields of an existing store.
 

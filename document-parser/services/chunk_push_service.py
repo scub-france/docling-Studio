@@ -105,7 +105,7 @@ class ChunkPushService:
             diffs.append({"chunkId": cid, "status": "removed", "textDiff": None})
         return diffs
 
-    # -- push (delegates to IngestionService; per-store dispatch is a follow-up)
+    # -- push (through IngestionService, to the store's own backends)
 
     async def push_to_store(self, document_id: str, store_id: str) -> dict:
         """Push the canonical chunkset to a store and record a `ChunkPush`.
@@ -116,11 +116,8 @@ class ChunkPushService:
         resolve the slug to the real id when a `store_repo` is wired;
         otherwise we assume the caller already passed an id.
 
-        Today the ingestion itself still delegates to the globally-
-        configured `IngestionService` (one bucket). Per-store dispatch
-        by `store.kind` is a follow-up issue — recording the right
-        store id on the `ChunkPush` row is the prerequisite, and lands
-        here.
+        The chunks go to the store's own backends when the backend resolver
+        is wired (`_resolve_targets`), else to the `IngestionService` defaults.
         """
         await require_document(self._documents, document_id)
         ingestion = self._require_ingestion()

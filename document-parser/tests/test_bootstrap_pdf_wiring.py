@@ -37,7 +37,6 @@ def test_document_service_is_built_with_the_pdf_inspector():
         AsyncMock(),
         AsyncMock(),
         file_store=MagicMock(),
-        current_analysis=AsyncMock(),
     )
 
     assert isinstance(service._pdf_inspector, PdfiumInspector)
@@ -70,7 +69,6 @@ def test_document_service_is_built_with_the_given_file_store():
         AsyncMock(),
         AsyncMock(),
         file_store=store,
-        current_analysis=AsyncMock(),
     )
 
     assert service._file_store is store

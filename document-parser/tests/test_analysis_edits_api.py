@@ -10,7 +10,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.analysis_edits import router
-from api.schemas import MAX_ELEMENT_ID_LENGTH, MAX_ELEMENT_TEXT_LENGTH
+from api.schemas import (
+    MAX_ELEMENT_ID_LENGTH,
+    MAX_ELEMENT_TEXT_LENGTH,
+    AnalysisEditHistoryEntryResponse,
+)
 from api.state import AppState, get_app_state
 from domain.models import AnalysisJob, AnalysisStatus, Document
 from infra.docling_analysis_engine import DoclingAnalysisEngine
@@ -217,6 +221,22 @@ def test_move_payload_keeps_its_null_keys_in_the_history(client):
         "targetElementId": None,
         "placement": None,
     }
+
+
+def test_a_stored_payload_over_the_request_bounds_still_reads_back():
+    # Rows written before the bounds existed: only requests are bounded.
+    long_id = "x" * (MAX_ELEMENT_ID_LENGTH + 1)
+    entry = AnalysisEditHistoryEntryResponse(
+        id="e",
+        sequence=1,
+        command_version=1,
+        command_type="replaceText",
+        payload={"elementId": long_id, "text": "t" * (MAX_ELEMENT_TEXT_LENGTH + 1)},
+        command_hash="h",
+        created_at="2026-01-01",
+    )
+
+    assert entry.model_dump(by_alias=True)["payload"]["elementId"] == long_id
 
 
 def test_preview_projects_pending_commands_without_saving(client):
