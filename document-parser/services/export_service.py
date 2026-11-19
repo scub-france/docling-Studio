@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
+from pathlib import PurePath
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
@@ -16,7 +16,12 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from domain.models import AnalysisJob
-    from domain.ports import ActiveAnalysisResultReader, AnalysisRepository, DocumentRepository
+    from domain.ports import (
+        ActiveAnalysisResultReader,
+        AnalysisRepository,
+        DocumentFileStore,
+        DocumentRepository,
+    )
 
 
 class ExportFormat(StrEnum):
@@ -41,9 +46,12 @@ class ExportService:
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
         active_result_service: ActiveAnalysisResultReader | None = None,
+        *,
+        file_store: DocumentFileStore,
     ) -> None:
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
+        self._file_store = file_store
         self._active_result_service = active_result_service
 
     async def export(
@@ -83,7 +91,7 @@ class ExportService:
             raise ExportNotFoundError("Document not found")
 
         if format is ExportFormat.PDF:
-            if not Path(doc.storage_path).is_file():
+            if not self._file_store.has_file(doc.storage_path):
                 raise ExportNotFoundError("PDF file not found")
             return ExportResult(
                 file_path=doc.storage_path,
@@ -164,5 +172,5 @@ def build_content_disposition(filename: str) -> str:
 
 
 def _build_export_filename(source_filename: str, doc_id: str, format: ExportFormat) -> str:
-    stem = Path(source_filename).stem if source_filename else doc_id
+    stem = PurePath(source_filename).stem if source_filename else doc_id
     return f"{stem}.{format.value}"

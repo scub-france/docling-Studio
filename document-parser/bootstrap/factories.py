@@ -217,18 +217,27 @@ def build_analysis_service(document_repo, analysis_repo, graph_writer) -> Analys
     )
 
 
-def build_document_service(document_repo, analysis_repo, link_repo, store_repo) -> DocumentService:
+def build_document_file_store():
+    """The store of uploaded document files, rooted at the configured upload dir."""
+    from infra.document_file_store import LocalDocumentFileStore
+
+    return LocalDocumentFileStore(upload_dir=settings.upload_dir)
+
+
+def build_document_service(
+    document_repo, analysis_repo, link_repo, store_repo, *, file_store
+) -> DocumentService:
     return DocumentService(
         document_repo=document_repo,
         analysis_repo=analysis_repo,
         config=DocumentConfig(
-            upload_dir=settings.upload_dir,
             max_file_size_mb=settings.max_file_size_mb,
             max_page_count=settings.max_page_count,
         ),
         link_repo=link_repo,
         store_repo=store_repo,
         pdf_inspector=_build_pdf_inspector(),
+        file_store=file_store,
     )
 
 

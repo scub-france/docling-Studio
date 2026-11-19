@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
@@ -17,7 +16,6 @@ from services.export_service import ExportFormat, build_content_disposition
 if TYPE_CHECKING:
     from services.document_service import DocumentStoreLinkView
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 _READ_CHUNK_SIZE = 64 * 1024  # 64 KB
@@ -118,8 +116,11 @@ async def export_document(
     edited: bool = Query(False, description="Export the saved analysis editor result"),
 ) -> Response:
     """Export the document in the specified format."""
-    # Gated in the body, not by a dependency: a dependency would answer 404
-    # before FastAPI rejects an invalid `format` with its 422.
+    # Hiding the editor is HTTP exposure, not export work: the flag is the
+    # `AppState` one every editor route reads through `deps`, so it stays
+    # here rather than becoming a flag argument of `ExportService`. Gated in
+    # the body, not by a dependency: a dependency would answer 404 before
+    # FastAPI rejects an invalid `format` with its 422.
     if edited:
         deps.ensure_analysis_editor_enabled(state)
     try:
@@ -156,23 +157,13 @@ async def preview(
     """Generate a PNG or WebP preview of a specific PDF page."""
     try:
         image_bytes = await service.get_preview(doc_id, page=page, dpi=dpi, image_format=format)
-        return Response(
-            content=image_bytes,
-            media_type=f"image/{format}",
-            headers={"Cache-Control": "private, max-age=86400, immutable"},
-        )
     except ServiceError as exc:
         raise to_http_error(exc) from exc
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
-    except OSError as exc:
-        logger.exception("I/O error generating preview for %s", doc_id)
-        raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
-    except Exception as exc:
-        logger.exception("Unexpected error generating preview for %s", doc_id)
-        raise HTTPException(status_code=422, detail="Failed to generate preview") from exc
+    return Response(
+        content=image_bytes,
+        media_type=f"image/{format}",
+        headers={"Cache-Control": "private, max-age=86400, immutable"},
+    )
 
 
 @router.get("/{doc_id}/pages", response_model=list[PageSizeResponse])
@@ -183,11 +174,6 @@ async def page_sizes(doc_id: str, service: deps.PreviewServiceDep) -> list[PageS
         pages = await service.read_page_sizes(doc_id)
     except ServiceError as exc:
         raise to_http_error(exc) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
-    except Exception as exc:
-        logger.exception("Could not read the page sizes of %s", doc_id)
-        raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
     return [
         PageSizeResponse(page_number=p.page_number, width=p.width, height=p.height) for p in pages
     ]

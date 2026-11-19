@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from domain.analysis_editing import AnalysisEditUnavailableError
 from domain.models import AnalysisJob, AnalysisStatus, Document
+from infra.document_file_store import LocalDocumentFileStore
 from services.export_service import ExportFormat, ExportNotFoundError, ExportService
 
 
@@ -25,7 +26,7 @@ def _analysis(
     )
 
 
-def _make_service(requested: AnalysisJob | None = None) -> ExportService:
+def _make_service(requested: AnalysisJob | None = None, file_store=None) -> ExportService:
     """A service over one doc whose latest completed analysis is `latest`."""
     document_repo = AsyncMock()
     document_repo.find_by_id.return_value = Document(id="d1", filename="report.pdf")
@@ -33,7 +34,13 @@ def _make_service(requested: AnalysisJob | None = None) -> ExportService:
     analysis_repo.find_latest_completed.return_value = _analysis("latest")
     analysis_repo.find_latest_completed_by_document.return_value = _analysis("latest")
     analysis_repo.find_by_id.return_value = requested
-    return ExportService(document_repo=document_repo, analysis_repo=analysis_repo)
+    return ExportService(
+        document_repo=document_repo,
+        analysis_repo=analysis_repo,
+        # The real store: `has_file` checks the path it is given, whatever its
+        # upload directory.
+        file_store=file_store or LocalDocumentFileStore("uploads"),
+    )
 
 
 class TestExportAnalysisSelection:
@@ -104,3 +111,17 @@ class TestExportAnalysisSelection:
 
         assert result.file_path == str(pdf)
         service._analysis_repo.find_by_id.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pdf_export_asks_the_file_store_for_the_stored_file(self):
+        file_store = MagicMock()
+        file_store.has_file.return_value = False
+        service = _make_service(file_store=file_store)
+        service._document_repo.find_by_id.return_value = Document(
+            id="d1", filename="report.pdf", storage_path="/srv/uploads/gone.pdf"
+        )
+
+        with pytest.raises(ExportNotFoundError, match="^PDF file not found$"):
+            await service.export("d1", ExportFormat.PDF)
+
+        file_store.has_file.assert_called_once_with("/srv/uploads/gone.pdf")

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,35 +10,50 @@ from PIL import Image
 
 from api.errors import to_http_error
 from domain.models import Document
-from domain.ports import PageRasterizer, PdfInspector
+from domain.ports import DocumentFileStore, PageRasterizer, PdfInspector
 from domain.value_objects import PageDetail
+from infra.document_file_store import LocalDocumentFileStore
 from infra.page_raster import PdfPageRasterizer
 from infra.pdf_inspector import PdfiumInspector
 from infra.preview_cache import PreviewCache
 from services.errors import ServiceError
 from services.preview_service import (
     PreviewDocumentNotFoundError,
+    PreviewFileNotFoundError,
+    PreviewFileUnreadableError,
     PreviewPageNotFoundError,
     PreviewPageOutOfRangeError,
     PreviewService,
 )
 
 
-def _service(document: Document | None, *, rasterizer=None, inspector=None) -> PreviewService:
+def _files() -> MagicMock:
+    """A `DocumentFileStore` double: a path resolves to itself, and every file
+    has the same fingerprint."""
+    files = MagicMock()
+    files.resolve.side_effect = lambda storage_path: storage_path
+    files.read_fingerprint.return_value = (9, 1)
+    return files
+
+
+def _service(
+    document: Document | None, *, rasterizer=None, inspector=None, files=None, cache=None
+) -> PreviewService:
     documents = MagicMock()
     documents.find_by_id = AsyncMock(return_value=document)
-    documents.resolve_storage_path.side_effect = Path
     return PreviewService(
         documents=documents,
+        files=files or _files(),
         rasterizer=rasterizer or MagicMock(),
         inspector=inspector or MagicMock(),
-        cache=PreviewCache(),
+        cache=cache or PreviewCache(),
     )
 
 
-def test_adapters_satisfy_their_ports():
+def test_adapters_satisfy_their_ports(tmp_path):
     assert isinstance(PdfPageRasterizer(), PageRasterizer)
     assert isinstance(PdfiumInspector(), PdfInspector)
+    assert isinstance(LocalDocumentFileStore(str(tmp_path)), DocumentFileStore)
 
 
 class TestGetPreview:
@@ -108,6 +122,8 @@ def test_preview_errors_share_the_service_base():
         PreviewDocumentNotFoundError,
         PreviewPageOutOfRangeError,
         PreviewPageNotFoundError,
+        PreviewFileNotFoundError,
+        PreviewFileUnreadableError,
     ):
         assert issubclass(family, ServiceError)
 
@@ -138,3 +154,102 @@ class TestRasterizerFormats:
         with Image.open(io.BytesIO(result)) as decoded:
             assert decoded.size == (32, 48)
             assert decoded.convert("RGB").tobytes() == image.tobytes()
+
+
+def _http(error: ServiceError) -> tuple[int, str]:
+    http = to_http_error(error)
+    return http.status_code, http.detail
+
+
+class TestPdfReadErrors:
+    """What the adapters raise while reading the PDF becomes a preview error;
+    anything else stays unexpected, so the API answers 500."""
+
+    _DOC = Document(id="d1", storage_path="/srv/uploads/doc.pdf")
+
+    async def test_missing_file_at_the_fingerprint_is_a_404(self):
+        files = _files()
+        files.read_fingerprint.side_effect = FileNotFoundError("/srv/uploads/doc.pdf")
+
+        with pytest.raises(PreviewFileNotFoundError) as caught:
+            await _service(self._DOC, files=files).get_preview(
+                "d1", page=1, dpi=96, image_format="png"
+            )
+
+        assert _http(caught.value) == (404, "PDF file not found on disk")
+
+    async def test_missing_file_at_the_render_is_a_404(self):
+        rasterizer = MagicMock()
+        rasterizer.render_page.side_effect = FileNotFoundError("/srv/uploads/doc.pdf")
+
+        with pytest.raises(PreviewFileNotFoundError):
+            await _service(self._DOC, rasterizer=rasterizer).get_preview(
+                "d1", page=1, dpi=96, image_format="png"
+            )
+
+    async def test_io_error_at_the_render_is_a_422(self):
+        rasterizer = MagicMock()
+        rasterizer.render_page.side_effect = OSError("disk")
+
+        with pytest.raises(PreviewFileUnreadableError) as caught:
+            await _service(self._DOC, rasterizer=rasterizer).get_preview(
+                "d1", page=1, dpi=96, image_format="png"
+            )
+
+        assert _http(caught.value) == (422, "Failed to read PDF file")
+
+    async def test_render_failure_is_a_422(self):
+        rasterizer = MagicMock()
+        rasterizer.render_page.side_effect = RuntimeError("poppler")
+
+        with pytest.raises(PreviewFileUnreadableError) as caught:
+            await _service(self._DOC, rasterizer=rasterizer).get_preview(
+                "d1", page=1, dpi=96, image_format="png"
+            )
+
+        assert _http(caught.value) == (422, "Failed to generate preview")
+
+    async def test_cache_failure_is_not_a_pdf_read_error(self):
+        cache = MagicMock()
+        cache.get.side_effect = RuntimeError("cache")
+
+        with pytest.raises(RuntimeError):
+            await _service(self._DOC, cache=cache).get_preview(
+                "d1", page=1, dpi=96, image_format="png"
+            )
+
+    async def test_lookup_failure_is_not_a_pdf_read_error(self):
+        service = _service(self._DOC)
+        service._documents.find_by_id.side_effect = RuntimeError("database")
+
+        with pytest.raises(RuntimeError):
+            await service.get_preview("d1", page=1, dpi=96, image_format="png")
+        with pytest.raises(RuntimeError):
+            await service.read_page_sizes("d1")
+
+    async def test_missing_file_for_the_page_sizes_is_a_404(self):
+        inspector = MagicMock()
+        inspector.read_page_sizes.side_effect = FileNotFoundError("/srv/uploads/doc.pdf")
+
+        with pytest.raises(PreviewFileNotFoundError):
+            await _service(self._DOC, inspector=inspector).read_page_sizes("d1")
+
+    @pytest.mark.parametrize("error", [OSError("disk"), RuntimeError("pdfium")])
+    async def test_unreadable_pdf_for_the_page_sizes_is_a_422(self, error):
+        inspector = MagicMock()
+        inspector.read_page_sizes.side_effect = error
+
+        with pytest.raises(PreviewFileUnreadableError) as caught:
+            await _service(self._DOC, inspector=inspector).read_page_sizes("d1")
+
+        assert _http(caught.value) == (422, "Failed to read PDF file")
+
+    async def test_the_cache_key_carries_the_resolved_path_and_fingerprint(self):
+        cache = MagicMock()
+        cache.get.return_value = b"cached"
+
+        await _service(self._DOC, cache=cache).get_preview(
+            "d1", page=2, dpi=96, image_format="webp"
+        )
+
+        cache.get.assert_called_once_with(("/srv/uploads/doc.pdf", 9, 1, 2, 96, "webp"))

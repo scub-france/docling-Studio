@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from api.documents import router
 from api.state import AppState, get_app_state
 from domain.models import Document
+from infra.document_file_store import LocalDocumentFileStore
 from persistence import database
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
@@ -46,17 +47,21 @@ def pdf_bytes(tmp_path) -> bytes:
     return data
 
 
-async def _seed(storage_path: str) -> ExportService:
+async def _seed(storage_path: str, upload_dir: str) -> ExportService:
     await database.init_db()
     documents = SqliteDocumentRepository()
     await documents.insert(Document(id="doc-1", filename="source.pdf", storage_path=storage_path))
-    return ExportService(document_repo=documents, analysis_repo=SqliteAnalysisRepository())
+    return ExportService(
+        document_repo=documents,
+        analysis_repo=SqliteAnalysisRepository(),
+        file_store=LocalDocumentFileStore(upload_dir),
+    )
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch, pdf_bytes):
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "export-range.db"))
-    service = asyncio.run(_seed(str(tmp_path / "source.pdf")))
+    service = asyncio.run(_seed(str(tmp_path / "source.pdf"), str(tmp_path)))
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_app_state] = lambda: AppState(export_service=service)

@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from datetime import datetime
-    from pathlib import Path
 
     from domain.analysis_editing import (
         EditCommand,
@@ -145,12 +144,44 @@ class DocumentRepository(Protocol):
     async def delete(self, doc_id: str) -> bool: ...
 
 
-class DocumentFileLocator(Protocol):
-    """Find a document and resolve the file it is stored in."""
+@runtime_checkable
+class DocumentFileStore(Protocol):
+    """Port for the files uploaded documents are stored in.
 
-    async def find_by_id(self, doc_id: str) -> Document | None: ...
+    A `storage_path` is the string a `Document` persists. Every method blocks
+    on the filesystem: callers decide which calls leave the event loop.
+    """
 
-    def resolve_storage_path(self, storage_path: str) -> Path: ...
+    def save(self, file_name: str, content: bytes) -> str:
+        """Write `content` as `file_name` in the upload directory, creating the
+        directory if needed, and return the absolute path it was stored at."""
+        ...
+
+    def discard(self, storage_path: str) -> None:
+        """Remove a file `save` just returned, while the upload that wrote it
+        is still running. Raises `OSError` when it cannot."""
+        ...
+
+    def delete(self, storage_path: str) -> None:
+        """Remove a stored document's file, but only when it lies inside the
+        upload directory. Logs every refusal or failure; never raises."""
+        ...
+
+    def has_file(self, storage_path: str) -> bool:
+        """Whether `storage_path` is an existing regular file."""
+        ...
+
+    def resolve(self, storage_path: str) -> str:
+        """The path to read a stored document from: `storage_path` when the
+        file exists, else the file of the same name in the upload directory
+        when that one exists (a Docker path read on the host), else
+        `storage_path` unchanged."""
+        ...
+
+    def read_fingerprint(self, storage_path: str) -> tuple[int, int]:
+        """The file's size in bytes and modification time in nanoseconds.
+        Raises `FileNotFoundError` when the file is missing."""
+        ...
 
 
 # Source path, byte size, modification time, page, DPI, and image format.
@@ -635,7 +666,8 @@ class PageRasterizer(Protocol):
 
     def render_page(self, storage_path: str, *, page: int, dpi: int, fmt: str = "PNG") -> bytes:
         """Return `page` of the document at `storage_path` as `fmt` bytes:
-        `"PNG"`, or `"WEBP"` encoded losslessly."""
+        `"PNG"`, or `"WEBP"` encoded losslessly. Raises `FileNotFoundError`
+        when the file is missing, `ValueError` when the page does not exist."""
         ...
 
     def crop(

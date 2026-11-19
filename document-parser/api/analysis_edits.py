@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Query
 
 from api import deps  # noqa: TC001
@@ -51,9 +49,8 @@ def _serialize_tree(node) -> dict:
 
 
 def _to_editor_response(snapshot) -> AnalysisEditorResponse:
-    model = json.loads(snapshot.projection.editor_model_json)
     return AnalysisEditorResponse(
-        model=model,
+        model=snapshot.projection.read_editor_model(),
         tree=[_serialize_tree(node) for node in snapshot.projection.tree],
         reading_order=[element.id for element in snapshot.projection.elements],
         result=_to_analysis_response(snapshot.job),

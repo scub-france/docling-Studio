@@ -29,6 +29,7 @@ from domain.analysis_editing import (
     AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
     EditCommand,
+    ProjectedAnalysis,
     resolve_active_edit_commands,
 )
 from domain.models import (
@@ -762,7 +763,9 @@ async def test_active_result_always_uses_saved_edits_for_selected_analysis(edit_
 @pytest.mark.asyncio
 async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     service, edits, analyses = edit_service
-    exports = ExportService(SqliteDocumentRepository(), analyses, active_result_service=service)
+    exports = ExportService(
+        SqliteDocumentRepository(), analyses, active_result_service=service, file_store=Mock()
+    )
     initial = await service.load_editor("doc-1")
     ids = {element.text: element.id for element in initial.projection.elements if element.text}
     saved = await service.save(
@@ -1133,3 +1136,17 @@ async def test_missing_document_or_analysis_is_not_found(edit_service):
 )
 def test_api_maps_edit_errors_to_http_status(error, status):
     assert to_http_error(error).status_code == status
+
+
+def test_projection_reads_its_editor_model():
+    projection = ProjectedAnalysis(
+        document_json="{}",
+        content_markdown="",
+        content_html="",
+        pages_json="[]",
+        editor_model_json='{"elements": [{"id": "e1"}]}',
+        tree=(),
+        elements=(),
+    )
+
+    assert projection.read_editor_model() == {"elements": [{"id": "e1"}]}

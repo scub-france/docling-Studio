@@ -7,6 +7,7 @@ materialized projection and may be rebuilt at any time.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -101,6 +102,10 @@ class ProjectedAnalysis:
     elements: tuple[EditorElement, ...]
     reference_changes: dict[str, str] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
+
+    def read_editor_model(self) -> dict[str, Any]:
+        """The editor model, decoded from the JSON the projection stores."""
+        return json.loads(self.editor_model_json)
 
 
 @dataclass(frozen=True)

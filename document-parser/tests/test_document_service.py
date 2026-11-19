@@ -1,4 +1,4 @@
-"""Tests for DocumentService — upload, path resolution, page counting, and deletion."""
+"""Tests for DocumentService — upload, page counting, and deletion."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import pytest
 
 from domain.models import Document, DocumentStoreLink, Store
 from domain.value_objects import DocumentStoreLinkState
+from infra.document_file_store import LocalDocumentFileStore
 from infra.pdf_inspector import PdfiumInspector
 from services.document_service import DocumentConfig, DocumentService, DocumentStoreLinkView
 
@@ -30,9 +31,8 @@ def _make_service(
     max_page_count: int = 0,
     pdf_inspector=None,
 ) -> DocumentService:
-    """Create a DocumentService with mock repos for testing."""
+    """Create a DocumentService with mock repos and a file store rooted at `upload_dir`."""
     config = DocumentConfig(
-        upload_dir=upload_dir,
         max_file_size_mb=max_file_size_mb,
         max_page_count=max_page_count,
     )
@@ -43,6 +43,8 @@ def _make_service(
         link_repo=AsyncMock(),
         store_repo=AsyncMock(),
         pdf_inspector=pdf_inspector or _counting(None),
+        # The real store: these tests check what lands on, and leaves, the disk.
+        file_store=LocalDocumentFileStore(upload_dir),
     )
 
 
@@ -228,15 +230,6 @@ class TestFindWithStoreLinks:
         )
 
 
-class TestResolveStoragePath:
-    def test_resolves_docker_upload_path_from_local_worktree(self, tmp_path):
-        service = _make_service(upload_dir=str(tmp_path))
-        local_file = tmp_path / "stored.pdf"
-        local_file.write_bytes(b"%PDF-1.4")
-
-        assert service.resolve_storage_path("/app/uploads/stored.pdf") == local_file
-
-
 class TestDelete:
     @pytest.mark.asyncio
     async def test_delete_removes_file_and_records(self, tmp_path):
@@ -289,3 +282,62 @@ class TestDelete:
 
         result = await service.delete("missing")
         assert result is False
+
+
+class TestFilesGoThroughTheStore:
+    """The service hands every file operation to its `DocumentFileStore`."""
+
+    def _service(self, *, pages: int | None, max_page_count: int = 0):
+        store = MagicMock()
+        store.save.return_value = "/srv/uploads/stored.pdf"
+        service = DocumentService(
+            document_repo=AsyncMock(),
+            analysis_repo=AsyncMock(),
+            config=DocumentConfig(max_page_count=max_page_count),
+            link_repo=AsyncMock(),
+            store_repo=AsyncMock(),
+            pdf_inspector=_counting(pages),
+            file_store=store,
+        )
+        return service, store
+
+    async def test_upload_saves_under_a_fresh_pdf_name_and_keeps_the_stored_path(self):
+        service, store = self._service(pages=3)
+        content = b"%PDF-1.4 fake pdf content"
+
+        doc = await service.upload("report.pdf", "application/pdf", content)
+
+        file_name, saved = store.save.call_args.args
+        assert file_name.endswith(".pdf")
+        assert file_name != "report.pdf"
+        assert saved == content
+        assert doc.storage_path == "/srv/uploads/stored.pdf"
+        store.discard.assert_not_called()
+
+    async def test_page_limit_discards_the_saved_file_before_the_insert(self):
+        service, store = self._service(pages=5, max_page_count=2)
+
+        with pytest.raises(ValueError, match="Too many pages"):
+            await service.upload("big.pdf", "application/pdf", b"%PDF-1.4 fake pdf content")
+
+        store.discard.assert_called_once_with("/srv/uploads/stored.pdf")
+        service._document_repo.insert.assert_not_called()
+
+    async def test_rejected_content_never_reaches_the_store(self):
+        service, store = self._service(pages=1)
+
+        with pytest.raises(ValueError, match="not a PDF"):
+            await service.upload("fake.pdf", "application/pdf", b"NOT-A-PDF-FILE")
+
+        store.save.assert_not_called()
+
+    async def test_delete_removes_the_analyses_and_asks_the_store(self):
+        service, store = self._service(pages=None)
+        doc = Document(id="doc-1", filename="x.pdf", storage_path="/srv/uploads/x.pdf")
+        service._document_repo.find_by_id = AsyncMock(return_value=doc)
+        service._document_repo.delete = AsyncMock(return_value=True)
+
+        assert await service.delete("doc-1") is True
+
+        service._analysis_repo.delete_by_document.assert_awaited_once_with("doc-1")
+        store.delete.assert_called_once_with("/srv/uploads/x.pdf")

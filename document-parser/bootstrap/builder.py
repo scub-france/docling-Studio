@@ -26,6 +26,7 @@ from bootstrap.factories import (
     build_analysis_service,
     build_backend_resolver,
     build_chunk_service,
+    build_document_file_store,
     build_document_service,
     build_document_tools,
     build_env_mcp_config,
@@ -165,8 +166,10 @@ class AppStateBuilder:
         analysis_service.set_version_recorder(version_service)
         chunk_service.set_version_recorder(version_service)
 
+        # One file store for every service that touches an uploaded file.
+        file_store = build_document_file_store()
         document_service = build_document_service(
-            document_repo, analysis_repo, link_repo, store_repo
+            document_repo, analysis_repo, link_repo, store_repo, file_store=file_store
         )
         self._update(
             analysis_repo=analysis_repo,
@@ -174,7 +177,8 @@ class AppStateBuilder:
             document_store_link_repo=link_repo,
             document_service=document_service,
             preview_service=PreviewService(
-                documents=document_service,
+                documents=document_repo,
+                files=file_store,
                 rasterizer=PdfPageRasterizer(),
                 inspector=PdfiumInspector(),
                 cache=PreviewCache(),
@@ -185,6 +189,7 @@ class AppStateBuilder:
                 document_repo=document_repo,
                 analysis_repo=analysis_repo,
                 active_result_service=analysis_edit_service,
+                file_store=file_store,
             ),
             store_service=StoreService(
                 store_repo=store_repo,

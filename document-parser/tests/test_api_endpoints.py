@@ -2,13 +2,13 @@
 
 import shutil
 from dataclasses import replace
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from domain.models import AnalysisJob, Document
+from infra.document_file_store import LocalDocumentFileStore
 from infra.page_raster import PdfPageRasterizer
 from infra.pdf_inspector import PdfiumInspector
 from infra.preview_cache import PreviewCache
@@ -17,9 +17,10 @@ from services.preview_service import PreviewService
 from tests.app_state import state_override
 
 
-def _preview_service(documents, *, rasterizer=None, cache=None) -> PreviewService:
+def _preview_service(documents, tmp_path, *, rasterizer=None, cache=None) -> PreviewService:
     return PreviewService(
         documents=documents,
+        files=LocalDocumentFileStore(str(tmp_path / "uploads")),
         rasterizer=rasterizer or PdfPageRasterizer(),
         inspector=PdfiumInspector(),
         cache=cache or PreviewCache(),
@@ -40,16 +41,15 @@ def mock_analysis_service(client):
 
 
 @pytest.fixture
-def mock_document_service(client):
+def mock_document_service(client, tmp_path):
     """Inject a mock DocumentService into app.state for the duration of the test."""
     mock_svc = MagicMock()
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
-    mock_svc.resolve_storage_path.side_effect = lambda storage_path: Path(storage_path)
     with state_override(
         app,
         document_service=mock_svc,
-        preview_service=_preview_service(mock_svc),
+        preview_service=_preview_service(mock_svc, tmp_path),
     ):
         yield mock_svc
 
@@ -261,10 +261,11 @@ class TestDocumentEndpoints:
         service = DocumentService(
             document_repo=AsyncMock(),
             analysis_repo=AsyncMock(),
-            config=DocumentConfig(upload_dir=str(tmp_path), max_page_count=2),
+            config=DocumentConfig(max_page_count=2),
             link_repo=AsyncMock(),
             store_repo=AsyncMock(),
             pdf_inspector=PdfiumInspector(),
+            file_store=LocalDocumentFileStore(str(tmp_path)),
         )
         two = pdf_with_pages((612, 792), (612, 792))
         three = pdf_with_pages((612, 792), (612, 792), (612, 792))
@@ -365,7 +366,10 @@ class TestDocumentEndpoints:
         rasterizer.render_page.return_value = b"rendered-png"
         render = rasterizer.render_page
         with state_override(
-            app, preview_service=_preview_service(mock_document_service, rasterizer=rasterizer)
+            app,
+            preview_service=_preview_service(
+                mock_document_service, tmp_path, rasterizer=rasterizer
+            ),
         ):
             first = client.get("/api/documents/d1/preview?page=1")
             second = client.get("/api/documents/d1/preview?page=1")
@@ -401,7 +405,7 @@ class TestDocumentEndpoints:
         with state_override(
             app,
             preview_service=_preview_service(
-                mock_document_service, rasterizer=rasterizer, cache=cache
+                mock_document_service, tmp_path, rasterizer=rasterizer, cache=cache
             ),
         ):
             response = client.get("/api/documents/d1/preview?page=1")
@@ -457,6 +461,28 @@ class TestDocumentEndpoints:
         )
 
         assert client.get("/api/documents/d1/pages").status_code == 422
+
+    def test_preview_unrenderable_pdf(self, client, mock_document_service, tmp_path):
+        pdf = tmp_path / "broken.pdf"
+        pdf.write_bytes(b"%PDF-broken")
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="broken.pdf", storage_path=str(pdf))
+        )
+
+        with patch("infra.page_raster.convert_from_path", side_effect=RuntimeError("poppler")):
+            resp = client.get("/api/documents/d1/preview?page=1")
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "Failed to generate preview"
+
+    @pytest.mark.parametrize("route", ["preview", "pages"])
+    def test_a_failed_document_lookup_is_a_server_error(
+        self, client, mock_document_service, route
+    ):
+        """Only reading the PDF answers 422: a database error is a 500."""
+        mock_document_service.find_by_id = AsyncMock(side_effect=RuntimeError("database"))
+
+        assert client.get(f"/api/documents/d1/{route}").status_code == 500
 
     def test_delete_document(self, client, mock_document_service):
         mock_document_service.delete = AsyncMock(return_value=True)
