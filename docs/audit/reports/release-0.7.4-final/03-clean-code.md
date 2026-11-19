@@ -1,12 +1,12 @@
 # Rapport d'audit : Clean Code
 
 **Release** : 0.7.4
-**Date** : 2026-11-19
+**Date** : 2026-11-20
 **Auditeur** : claude-code
-**Arbre audité** : branche `fix/0.7.4-editor-followups`, commit `a744f48`
-**Nature** : Contrôle final après le troisième cycle ; base : validation du 2026-11-19 sur `efc0bc5` (score 72)
+**Arbre audité** : branche `fix/0.7.4-editor-followups`, commit `707a486`, arbre de travail propre (seuls `docs/audit/reports/release-0.7.4-final/` et `experiments/mcp-bench/` non suivis, hors périmètre)
+**Nature** : Contrôle final après le troisième cycle ; base : validation du 2026-11-19 sur `efc0bc5` (72). Un premier passage de ce contrôle sur `a744f48` donnait 61 (voir « Contrôle à a744f48 »).
 
-Suites lancées par le mainteneur sur `a744f48` (non relancées ici) : ruff propre, pytest 1773 passés / 15 ignorés ; eslint, prettier, vue-tsc propres, vitest 604 tests dans 71 fichiers, build OK.
+Suites lancées par le mainteneur sur `707a486` (non relancées ici) : ruff propre, pytest 1789 passés / 15 ignorés ; frontend inchangé depuis le dernier passage vert (eslint, prettier, vue-tsc propres, vitest 604 tests dans 71 fichiers, build OK).
 
 ---
 
@@ -14,75 +14,71 @@ Suites lancées par le mainteneur sur `a744f48` (non relancées ici) : ruff prop
 
 | Metrique | Valeur |
 |----------|--------|
-| Items conformes | 9 / 14 |
-| Score | 61 / 100 |
+| Items conformes | 10 / 14 |
+| Score | 72 / 100 |
 | Ecarts CRITICAL | 0 |
 | Ecarts MAJOR | 1 |
-| Ecarts MINOR | 5 |
-| Ecarts INFO | 8 |
+| Ecarts MINOR | 3 |
+| Ecarts INFO | 7 |
 
-**Calcul** : poids conformes = 11 (3.1.2=1, 3.1.3=2, 3.1.4=1, 3.2.5=2, 3.3.2=2, 3.3.3=1, 3.4.1=1, 3.4.2=1) sur 18 → `11 / 18 × 100 = 61,1` → **61**. Validation : 72.
-
-Les deux items perdus (3.1.1 et 3.2.4) le sont pour des écarts introduits par ce cycle, de petite taille, et qui se corrigent en moins d'une heure (voir Remédiation). Les mesures de taille, elles, ne bougent presque pas.
+**Calcul** : poids conformes = 13 (3.1.1=1, 3.1.2=1, 3.1.3=2, 3.1.4=1, 3.2.4=1, 3.2.5=2, 3.3.2=2, 3.3.3=1, 3.4.1=1, 3.4.2=1) sur 18 → `13 / 18 × 100 = 72,2` → **72**. Validation : 72. Passage à `a744f48` : 61.
 
 ### Méthode
 
 - Analyse statique. Aucun outil du projet lancé.
-- **L'arbre de travail a bougé pendant l'audit** : le commit `ef37b6f` est arrivé sur la branche et une vingtaine de fichiers ont été modifiés sans commit (dont `api/schemas.py`, `domain/models.py`, `services/chunk_service.py`, `services/version_service.py`). Pour mesurer ce qui est demandé, j'ai extrait `a744f48` par `git archive` dans un dossier temporaire et j'ai tout mesuré et relu sur cet extrait. Les premières mesures, prises sur l'arbre de travail avant qu'il bouge, donnent exactement les mêmes chiffres. Ce qui est arrivé après `a744f48` n'est pas audité (une ligne en INFO).
-- Scripts de la validation (`validation03/scripts/` : `pyfuncs.py`, `tsfuncs.cjs`, `pynames_all.py`, `tsnames_all.cjs`, `unused_imports.py`, `ts_unused.cjs`) relancés **sans modification et avec les mêmes seuils**. Étalonnage : sur `efc0bc5` (extrait par `git archive`), ils redonnent les chiffres exacts de la validation (146 `.py` / 23 415 l., 171 `.vue`/`.ts` / 29 472 l., 18 + 31 fichiers > 300, 44 + 21 fonctions > 30 lignes, 41 + 1 fonctions > 4 paramètres, 20 booléens).
-- Nommage (3.1.1) : différence des couples (fichier, fonction) entre `efc0bc5` et `a744f48` : 28 nouveaux noms Python, 0 en TS, tous lus.
-- Code mort : un petit script de plus (`final03/scripts/pyunused.py`, les définitions Python qui n'apparaissent qu'une fois dans le code hors tests), les exports TS cherchés par `rg -w` fichier par fichier, les composants `.vue` sans importeur. Chaque cas relu à la main.
+- Scripts de la validation (`validation03/scripts/` : `pyfuncs.py`, `tsfuncs.cjs`, `pynames_all.py`, `tsnames_all.cjs`, `unused_imports.py`, `ts_unused.cjs`) relancés **sans modification et avec les mêmes seuils**, sur l'arbre de travail à `707a486`. Étalonnage : sur `efc0bc5` (extrait par `git archive`), ils redonnent exactement les chiffres de la validation (146 `.py` / 23 415 l., 171 `.vue`/`.ts` / 29 472 l., 18 + 31 fichiers > 300, 44 + 21 fonctions > 30 lignes, 41 + 1 fonctions > 4 paramètres, 20 booléens).
+- Nommage (3.1.1) : différence des couples (fichier, fonction) `efc0bc5` → `a744f48` (28 nouveaux noms Python, 0 TS), puis `a744f48` → `707a486` (16 nouveaux, 9 disparus), tous lus.
+- Code mort : `final03/scripts/pyunused.py` (définitions Python qui n'apparaissent qu'une fois hors tests), exports TS cherchés par `rg -w` fichier par fichier, composants `.vue` sans importeur ; chaque cas relu.
 
 ---
 
-## Métriques (validation → final)
+## Métriques (validation → a744f48 → 707a486)
 
-| Mesure | Validation `efc0bc5` | Final `a744f48` |
-|--------|----------------------|-----------------|
-| Fichiers `.py` source | 146 (23 415 l.) | 145 (23 137 l.) |
-| Fichiers `.vue`/`.ts` source | 171 (29 472 l.) | 164 (27 691 l.) |
-| `.py` > 300 lignes | 18 | 18 |
-| `.vue`/`.ts` > 300 lignes | 31 | **29** |
-| Fonctions Python > 30 lignes | 44 | 45 |
-| Fonctions TS/Vue > 30 lignes | 21 | **20** |
-| Fonctions Python > 4 paramètres | 41 | **40** |
-| Fonctions TS > 4 paramètres | 1 | 1 |
-| Paramètres booléens Python | 20 | 23 (**2 vrais flags ajoutés**) |
-| Fonctions faisant plusieurs choses (3.2.1) | 2 | 2 |
-| Fichiers fourre-tout (3.3.2) | 0 | 0 |
-| Fonctions nommées par leur résultat | 0 | **2** |
-| Code commenté | 0 | 0 |
+| Mesure | Validation `efc0bc5` | `a744f48` | Final `707a486` |
+|--------|----------------------|-----------|-----------------|
+| Fichiers `.py` source | 146 (23 415 l.) | 145 (23 137 l.) | 145 (23 319 l.) |
+| Fichiers `.vue`/`.ts` source | 171 (29 472 l.) | 164 (27 691 l.) | 164 (27 698 l.) |
+| `.py` > 300 lignes | 18 | 18 | 18 |
+| `.vue`/`.ts` > 300 lignes | 31 | 29 | 29 |
+| Fonctions Python > 30 lignes | 44 | 45 | 45 |
+| Fonctions TS/Vue > 30 lignes | 21 | 20 | 20 |
+| Fonctions Python > 4 paramètres | 41 | 40 | **44** |
+| Fonctions TS > 4 paramètres | 1 | 1 | 1 |
+| Paramètres booléens Python | 20 | 23 (2 vrais flags) | **20** (aucun flag ajouté) |
+| Fonctions faisant plusieurs choses (3.2.1) | 2 | 2 | 2 |
+| Fichiers fourre-tout (3.3.2) | 0 | 0 | 0 |
+| Fonctions nommées par leur résultat | 0 | 2 | **0** |
+| Code commenté | 0 | 0 | 0 |
 
-### Ce qui entre et sort de chaque liste
+### Ce qui entre et sort de chaque liste (validation → 707a486)
 
-- **Fichiers > 300, Python (18 → 18)** : sortent `services/chunk_service.py` (426 → 282, façade retirée) et `services/citation_service.py` (307 → 246) ; entrent `services/source_service.py` (300 → 320, `_find_current_parses`) et `infra/settings.py` (300 → 301). Variations des autres : `domain/navigation.py` 385 → 429 (`pick_within_budget` sorti du service), `domain/ports.py` 826 → 846, `infra/docling_editor.py` 382 → 393, `api/schemas.py` 1092 → 1079, `domain/models.py` 436 → 415, `bootstrap/factories.py` 374 → 363.
-- **Fichiers > 300, front (31 → 29)** : sortent `features/analysis/ui/StructureViewer.vue` (465) et `pages/IngestLaunchDialog.vue` (399), supprimés par `60234e4`. `shared/i18n.ts` 1642 → 1599.
-- **Fonctions > 30 lignes, Python (44 → 45)** : entre `infra/body_limit.py:35` `__call__` (34, contrôle du `Content-Length` ajouté). S'allongent `services/version_service.py:156` `restore` 36 → 40, `persistence/analysis_edit_repo.py:137` `save_commands_and_cache` 53 → 56, `services/citation_service.py:94` `verify_citation` 62 → 64, `services/export_service.py:83` `_export` 32 → 35, `services/source_service.py:91` `show` 40 → 41. Raccourcit `services/chunk_service.py:177` `rechunk_document` 71 → 66.
-- **Fonctions > 30 lignes, TS (21 → 20)** : sort `StructureViewer.vue` `drawOverlay` (80, fichier supprimé). `features/analysis-editor/previewScheduler.ts:23` `createPreviewScheduler` 35 → 38 (correctif `timer = null` proposé à la validation).
-- **Paramètres, Python (41 → 40)** : sortent `services/chunk_service.py` `__init__` (13 → 4), `domain/chunk_editing.py` `insert` (6, supprimé), `services/document_tree_service.py` `__init__` et `services/export_service.py` `__init__` (5 → 4). Entrent `domain/ports.py:295` et `persistence/chunk_repo.py:132` `replace_for_document` (6, avec `keep_selection`), `infra/body_limit.py:72` `_answer` (5). Varient : `services/document_service.py:50` `__init__` 8 → 7, `bootstrap/factories.py:226` `build_document_service` 6 → 5, `services/version_service.py:82` `__init__` 5 → 6.
-- **Paramètres, TS** : inchangé, `features/document/ui/PagePreviewWithOverlay.logic.ts:14` `isPageInRenderWindow` (6).
-- **Booléens (20 → 23)** : `infra/host_guard.py:37` `parse_host_name(..., *, port_wildcard)`, `domain/ports.py:303` et `persistence/chunk_repo.py:140` `replace_for_document(..., keep_selection)`. Les deux sont de vrais flags (voir 3.2.4).
+- **Fichiers > 300, Python (18 → 18)** : sortent `services/chunk_service.py` (426 → 292) et `services/citation_service.py` (307 → 246) ; entrent `services/source_service.py` (300 → 320) et `infra/settings.py` (300 → 301). Variations : `domain/models.py` 436 → 415 → 452 (trois règles de sélection ajoutées par `062bf70`), `domain/ports.py` 826 → 846 → 869, `api/schemas.py` 1092 → 1079 → 1090 (classes de payload réécrites à la main), `domain/navigation.py` 385 → 429 → 385 (`pick_within_budget` reparti dans `domain/element_reader.py`, 286 l.).
+- **Fichiers > 300, front (31 → 29)** : sortent `features/analysis/ui/StructureViewer.vue` (465) et `pages/IngestLaunchDialog.vue` (399), supprimés par `60234e4`.
+- **Fonctions > 30 lignes, Python (44 → 45)** : entre `infra/body_limit.py:35` `__call__` (34). S'allongent `services/chunk_service.py:181` `rechunk_document` 71 → 66 → **75** (lecture de l'état et traduction de l'erreur de sélection), `services/version_service.py:157` `restore` 36 → 40 → **43**, `bootstrap/builder.py` `build` 116 → 117, `persistence/analysis_edit_repo.py:137` `save_commands_and_cache` 53 → 56, `services/citation_service.py:94` `verify_citation` 62 → 64, `services/export_service.py:83` `_export` 32 → 35, `services/source_service.py:91` `show` 40 → 41.
+- **Fonctions > 30 lignes, TS (21 → 20)** : sort `StructureViewer.vue` `drawOverlay` (80, fichier supprimé) ; `previewScheduler.ts:23` `createPreviewScheduler` 35 → 38.
+- **Paramètres, Python (41 → 40 → 44)** : sortent `ChunkService.__init__` (13 → 5), `domain/chunk_editing.py` `insert` (6, supprimé), `DocumentTreeService.__init__` et `ExportService.__init__` (5 → 4). Entrent, à `a744f48`, `infra/body_limit.py:72` `_answer` (5) et `replace_for_document` (6, port et dépôt) ; à `707a486`, `replace_for_document` est remplacé par `replace_and_select` et `replace_keeping_selection` (5 chacun, dans `domain/ports.py` et `persistence/chunk_repo.py`) plus `persistence/chunk_repo.py` `_replace` (6), et `services/chunk_service.py` `__init__` repasse à 5 (`analysis_state_repo`). Le retrait du flag coûte donc +4 signatures à 3.2.3.
+- **Booléens (20 → 23 → 20)** : `keep_selection` (port et dépôt) et `port_wildcard` ont disparu ; la liste est revenue aux 20 booléens de la validation, tous des valeurs, de la configuration ou des faits passés par mot-clé, plus le flag HTTP `edited` déjà accepté.
 
 ---
 
 ## Checklist
 
-| # | Item | Poids | Conforme | Validation `efc0bc5` → final `a744f48` |
-|---|------|-------|----------|----------------------------------------|
-| 3.1.1 | Fonctions nommées avec des verbes | 1 | **non** | 0 → **2** fonctions nommées par leur résultat : `infra/docling_editor.py:364` `_ancestors`, `services/version_service.py:75` `_version_analysis_gone`. Les 26 autres nouveaux noms commencent par un verbe ou sont des prédicats (`can_be_current`, `can_be_current_of`, `has_docling_document`) |
-| 3.1.2 | Variables qui expriment l'intention | 1 | oui | pas de régression dans le code ajouté ; `workspaceLatestAnalysis` (alias trompeur, préexistant) en INFO |
-| 3.1.3 | Code en anglais, i18n | 2 | oui | résidu `infra/docling_projector.py:147` inchangé ; aucune chaîne d'interface ajoutée hors `t()` |
+| # | Item | Poids | Conforme | Validation → `a744f48` → `707a486` |
+|---|------|-------|----------|-------------------------------------|
+| 3.1.1 | Fonctions nommées avec des verbes | 1 | oui | 0 → 2 → **0**. `_ancestors` → `_iter_ancestors` (`infra/docling_editor.py:364`), `_version_analysis_gone` → `_build_version_analysis_gone_error` (`services/version_service.py:76`). Les 16 noms ajoutés par `062bf70` / `707a486` commencent tous par un verbe : `resolve_selection_after_deleting` / `_restore` / `_rechunk`, `replace_and_select`, `replace_keeping_selection`, `_replace`, `parse_allowed_host_name`, `_match_host`, `split_allowed_hosts`, `log_host_check`, `_load_exported_analysis`, `pick_within_budget` |
+| 3.1.2 | Variables qui expriment l'intention | 1 | oui | `_resolve_default_analysis`, `select_after_deleting` et les messages de `api/deps.py` corrigés ; reste `workspaceLatestAnalysis` (code mort, INFO) |
+| 3.1.3 | Code en anglais, i18n | 2 | oui | résidu `infra/docling_projector.py:147` inchangé |
 | 3.1.4 | Pas d'abréviations ambiguës | 1 | oui | aucun nouveau nom abrégé |
-| 3.2.1 | Une fonction = une chose | 2 | **non** | 2 → 2 (les deux fonctions Neo4j, non touchées). Aucune nouvelle fonction multi-responsabilités (cas par cas dans le Delta) |
-| 3.2.2 | Aucune fonction > 30 lignes | 1 | non | 65 → **65** (45 Py + 20 TS) |
-| 3.2.3 | Aucune fonction > 4 paramètres | 1 | non | 42 → **41** (40 Py + 1 TS) |
-| 3.2.4 | Pas de flag arguments | 1 | **non** | 20 → 23 booléens, dont **2 vrais flags ajoutés** : `keep_selection` (`domain/ports.py:303`, `persistence/chunk_repo.py:140`) et `port_wildcard` (`infra/host_guard.py:37`) |
-| 3.2.5 | `get_*` sans effet de bord | 2 | oui | nouveaux `get_current_analysis`, `get_chunk_push_service`, `get_document_tree_service` (`api/deps.py:42`, `:91`, `:98`) : simples lectures de l'état |
-| 3.3.1 | Aucun fichier > 300 lignes | 1 | non | 49 → **47** (18 Py + 29 front) |
-| 3.3.2 | Un concept par fichier | 2 | oui | 0 → 0 (cas par cas dans le Delta) |
-| 3.3.3 | Imports ordonnés | 1 | oui | ruff propre d'après le mainteneur ; aucun import inutilisé trouvé par script sur les fichiers changés (Python et TS) |
-| 3.4.1 | Commentaires = « pourquoi » | 1 | oui | trois commentaires périmés de la validation corrigés ou supprimés ; deux commentaires rendus faux par ce cycle, dans du code inatteignable (INFO), corrigés par `ef37b6f` après le commit audité |
-| 3.4.2 | Pas de code commenté | 1 | oui | 0 → 0 (lignes de commentaire ajoutées relues : de la prose) |
+| 3.2.1 | Une fonction = une chose | 2 | **non** | 2 → 2 → 2 (les deux fonctions Neo4j, non touchées). Aucune nouvelle fonction multi-responsabilités |
+| 3.2.2 | Aucune fonction > 30 lignes | 1 | non | 65 → 65 → **65** (45 Py + 20 TS) |
+| 3.2.3 | Aucune fonction > 4 paramètres | 1 | non | 42 → 41 → **45** (44 Py + 1 TS) |
+| 3.2.4 | Pas de flag arguments | 1 | oui | 20 → 23 → **20** booléens ; les deux flags remplacés par des méthodes nommées. `_replace(..., write_state_selection=…)` reçoit une fonction d'écriture, pas un booléen : c'est une stratégie, pas un flag |
+| 3.2.5 | `get_*` sans effet de bord | 2 | oui | nouveaux `get_*` de `api/deps.py` : simples lectures de l'état |
+| 3.3.1 | Aucun fichier > 300 lignes | 1 | non | 49 → 47 → **47** (18 Py + 29 front) |
+| 3.3.2 | Un concept par fichier | 2 | oui | 0 → 0 → 0 (cas par cas dans le Delta) |
+| 3.3.3 | Imports ordonnés | 1 | oui | ruff propre d'après le mainteneur ; aucun import inutilisé trouvé par script dans les fichiers changés |
+| 3.4.1 | Commentaires = « pourquoi » | 1 | oui | trois commentaires périmés de la validation levés ; les deux rendus faux par `da6603d` corrigés par `ef37b6f` |
+| 3.4.2 | Pas de code commenté | 1 | oui | 0 → 0 → 0 |
 
 ---
 
@@ -91,155 +87,145 @@ Les deux items perdus (3.1.1 et 3.2.4) le sont pour des écarts introduits par c
 ### [MAJ] Fonctions d'orchestration multi-responsabilités (2 fonctions Neo4j, inchangé)
 
 - **Localisation** : `document-parser/infra/neo4j/tree_writer.py:69` (`write_document`, 227 l., 7 paramètres), `document-parser/infra/neo4j/queries.py:137` (`fetch_graph`, 115 l.).
-- **Constat** : non touchées par ce cycle. Même lecture qu'à la validation : la dépréciation du module (CHANGELOG) ne les sort pas du périmètre tant qu'aucune décision écrite ne le dit.
+- **Constat** : non touchées. Même lecture qu'à la validation : la dépréciation du module (CHANGELOG) ne les sort pas du périmètre tant qu'aucune décision écrite ne le dit.
 - **Regle violee** : item 3.2.1 (poids 2).
-- **Remediation** : deux voies. (a) Une décision écrite qui sort `infra/neo4j/` du périmètre de l'audit, puisque le module part en 0.8.0 : l'item devient conforme (+11 points). (b) Découper : `write_document` en `_write_document_node` / `_write_pages` / `_write_items` / `_write_relations`, `fetch_graph` en une requête par type de nœud plus un assemblage. Sans serveur Neo4j pour les tests, (a) est la voie sûre.
-
-### [MIN] Deux fonctions nommées par leur résultat (nouveau, item perdu)
-
-- **Localisation** : `document-parser/infra/docling_editor.py:364` (`_ancestors`, générateur des ancêtres d'un élément, ajouté par `914246e`) ; `document-parser/services/version_service.py:75` (`_version_analysis_gone`, fabrique l'erreur 409, ajoutée par `73ceaf3`).
-- **Constat** : l'item était devenu conforme au contrôle précisément à « 0 fonction nommée par son résultat » (après 26 renommages). Les 26 autres noms ajoutés par ce cycle sont justes, et parlants : `locate_quote`, `pick_within_budget`, `write_selection`, `adopt_selection`, `write_chunk_source`, `read_document_analysis_state`, `select_after_deleting`, `load_current_original`, `load_current_edited`, `parse_host_name`, `_find_latest_parsed_ids`, `_find_current_parses`, `_build_editor_response`, `_answer`, `_trim_left`, `_locate_across`.
-- **Regle violee** : item 3.1.1 (poids 1). Même lecture qu'au contrôle, qui ne tolérait que `health_check`.
-- **Remediation** : `_ancestors` → `_iter_ancestors`, `_version_analysis_gone` → `_raise_version_analysis_gone` (ou `_build_version_gone_error`). Deux renommages privés, deux et trois appelants. +1 poids.
-
-### [MIN] Deux vrais flags ajoutés (nouveau, item perdu)
-
-- **Localisation** : `document-parser/domain/ports.py:303` et `document-parser/persistence/chunk_repo.py:140` (`replace_for_document(..., keep_selection: bool = False)`, seul appelant avec `True` : `document-parser/services/chunk_service.py:229`) ; `document-parser/infra/host_guard.py:37` (`parse_host_name(host, *, port_wildcard: bool = False)`, seul appelant avec `True` : `:75`).
-- **Constat** : `keep_selection` choisit entre deux écritures différentes (`adopt_selection` ou `write_selection`, `chunk_repo.py:160-163`), et la docstring du port doit expliquer les deux comportements (`ports.py:309-314`). `port_wildcard` change la grammaire acceptée (entrée de liste blanche ou en-tête de requête). C'est le schéma que le premier audit 0.7.4 avait compté comme flag (`select_analysis`, `additive`) et que le re-audit avait fait retirer ; la validation jugeait l'item conforme parce qu'« aucun flag » n'avait été ajouté.
-- **Regle violee** : item 3.2.4 (poids 1).
-- **Remediation** : passer la règle de sélection plutôt qu'un booléen (deux méthodes `replace_for_document` / `replace_for_rechunk`, ou un paramètre `selection: SelectionWrite` à deux valeurs nommées) ; scinder `parse_host_name` en `parse_request_host` et `parse_allowed_host`. +1 poids. Note : les modifications en cours dans l'arbre de travail (non auditées) introduisent `select_after_rechunk` / `select_after_restore` dans `domain/models.py`, ce qui pourrait servir à retirer `keep_selection`.
+- **Remediation** : deux voies. (a) Une décision écrite qui sort `infra/neo4j/` du périmètre de l'audit, puisque le module part en 0.8.0 : l'item devient conforme, score **83** (GO). (b) Découper : `write_document` en `_write_document_node` / `_write_pages` / `_write_items` / `_write_relations`, `fetch_graph` en une requête par type de nœud plus un assemblage. Sans serveur Neo4j pour les tests, (a) est la voie sûre.
 
 ### [MIN] Fonctions au-delà de 30 lignes (45 Python, 20 TS)
 
-- **Localisation** : pires, inchangés : `document-parser/infra/neo4j/tree_writer.py:69` (227), `frontend/src/features/analysis/ui/GraphView.vue:193` (`renderGraph`, 216), `document-parser/bootstrap/builder.py:112` (`build`, 116), `document-parser/infra/neo4j/queries.py:137` (115). Nouveau : `document-parser/infra/body_limit.py:35` (`__call__`, 34).
-- **Constat** : 65 → 65. Un départ (`drawOverlay`, fichier supprimé), une entrée, six fonctions qui s'allongent de 1 à 4 lignes.
+- **Localisation** : pires, inchangés : `document-parser/infra/neo4j/tree_writer.py:69` (227), `frontend/src/features/analysis/ui/GraphView.vue:193` (`renderGraph`, 216), `document-parser/bootstrap/builder.py` (`build`, 117), `document-parser/infra/neo4j/queries.py:137` (115). Nouveau depuis la validation : `document-parser/infra/body_limit.py:35` (`__call__`, 34). S'allongent : `document-parser/services/chunk_service.py:181` (`rechunk_document`, 75), `document-parser/services/version_service.py:157` (`restore`, 43).
+- **Constat** : 65 → 65 → 65.
 - **Regle violee** : item 3.2.2 (poids 1).
-- **Remediation** : hors d'atteinte pour 0.7.4. Sous le seuil sans effort : `body_limit.__call__` (sortir `_check_declared_length`), `version_service.restore` (sortir la conversion du snapshot et le choix de la sélection).
+- **Remediation** : hors d'atteinte pour 0.7.4. Sous le seuil sans effort : `body_limit.__call__` (sortir `_check_declared_length`), `restore` (sortir la conversion du snapshot, la boucle `:177-180`), `rechunk_document` (sortir la construction des `Chunk` et l'écriture de la version d'historique).
 
-### [MIN] Fonctions à plus de 4 paramètres (40 Python, 1 TS)
+### [MIN] Fonctions à plus de 4 paramètres (44 Python, 1 TS)
 
-- **Localisation** : en tête, `document-parser/services/store_service.py:231` (`update_store`, 10), `document-parser/services/analysis_service.py:83` (`__init__`, 10), `document-parser/services/store_service.py:180` (`create_store`, 9). Nouveaux : `document-parser/domain/ports.py:295` et `document-parser/persistence/chunk_repo.py:132` (`replace_for_document`, 6), `document-parser/infra/body_limit.py:72` (`_answer`, 5). TS : `frontend/src/features/document/ui/PagePreviewWithOverlay.logic.ts:14` (6).
-- **Constat** : 42 → 41. Le plus gros cas de la validation est réglé (`ChunkService.__init__` 13 → 4, façade retirée et services construits par le composition root).
+- **Localisation** : en tête, `document-parser/services/store_service.py:231` (`update_store`, 10), `document-parser/services/analysis_service.py:83` (`__init__`, 10), `document-parser/services/store_service.py:180` (`create_store`, 9). Nouveaux : `document-parser/persistence/chunk_repo.py` `_replace` (6), `replace_and_select` et `replace_keeping_selection` (5, dans `document-parser/domain/ports.py` et `document-parser/persistence/chunk_repo.py`), `document-parser/services/chunk_service.py` `__init__` (5), `document-parser/infra/body_limit.py:72` `_answer` (5). TS : `frontend/src/features/document/ui/PagePreviewWithOverlay.logic.ts:14` (6).
+- **Constat** : 42 → 41 → 45. Le retrait de `keep_selection` a dédoublé une signature à 6 paramètres en deux méthodes publiques à 5 plus une privée à 6, dans le port et dans le dépôt : +4. Bon échange pour la lisibilité (3.2.4 regagné), mais il se voit ici.
 - **Regle violee** : item 3.2.3 (poids 1).
-- **Remediation** : objet de paramètres pour `isPageInRenderWindow` ; `replace_for_document` retombe à 5 si le flag part. Le reste vient de l'injection de dépendances, hors d'atteinte pour 0.7.4.
+- **Remediation** : un objet valeur `ChunkReplacement(document_id, chunks, at, chunk_source, active_analysis_id)` ramènerait les cinq signatures à 1 ou 2 paramètres ; objet de paramètres pour `isPageInRenderWindow`. Le reste vient de l'injection de dépendances, hors d'atteinte pour 0.7.4.
 
 ### [MIN] Fichiers sources au-delà de 300 lignes (18 Python, 29 front)
 
-- **Localisation** : nouveaux : `document-parser/services/source_service.py` (320), `document-parser/infra/settings.py` (301). Plus gros : `frontend/src/shared/i18n.ts` (1599), `frontend/src/pages/StudioPage.vue` (1444), `frontend/src/features/mcp-config/ui/McpConfigSection.vue` (1110), `document-parser/api/schemas.py` (1079), `document-parser/domain/ports.py` (846).
-- **Constat** : 49 → 47. Les deux pages mortes de plus de 300 lignes sont parties ; `chunk_service.py` et `citation_service.py` passent sous le seuil.
+- **Localisation** : nouveaux depuis la validation : `document-parser/services/source_service.py` (320), `document-parser/infra/settings.py` (301). Plus gros : `frontend/src/shared/i18n.ts` (1599), `frontend/src/pages/StudioPage.vue` (1444), `frontend/src/features/mcp-config/ui/McpConfigSection.vue` (1110), `document-parser/api/schemas.py` (1090), `document-parser/domain/ports.py` (869).
+- **Constat** : 49 → 47 → 47.
 - **Regle violee** : item 3.3.1 (poids 1).
-- **Remediation** : `infra/settings.py` passe sous le seuil en retirant une ligne ; supprimer le code mort front ci-dessous ne touche pas de fichier > 300. Le reste est hors d'atteinte pour 0.7.4.
+- **Remediation** : `infra/settings.py` passe sous le seuil en retirant une ligne. Le reste est hors d'atteinte pour 0.7.4.
 
-### [INFO] Code mort front laissé par les suppressions
+### [INFO] Code mort front (inchangé depuis a744f48)
 
 - **Localisation** :
-  - `frontend/src/features/document/ui/HistoryDrawer.vue` (263 l.) : aucun importeur, absent de `features/document/index.ts`. Préexistant (déjà sans importeur à `efc0bc5`).
-  - Chemin « workspace » de `frontend/src/features/document/store.ts` : `loadWorkspace` (`:155`) n'est appelé que par les branches `else` de `frontend/src/pages/DocParseTab.vue:374-379` et `:417`, inatteignables puisque le seul montage de `DocParseTab` passe toujours `:analysis` (`frontend/src/pages/AnalysisDetailPage.vue:55-60`, sous `v-else` d'un `!analysis`) ; `refreshWorkspace` (`:185`), `reloadWorkspaceVersions` (`:196`), `setWorkspaceVersion` (`:221`) n'ont aucun appelant ; `workspaceCurrentVersion` (`:67`) et `workspaceLatestAnalysis` (`:73`) aucun lecteur ; `pickWorkspaceVersion` (`:18`) ne sert qu'à ce chemin. `da6603d` a pourtant modifié ce code et ses tests.
+  - `frontend/src/features/document/ui/HistoryDrawer.vue` (263 l.) : aucun importeur.
+  - Chemin « workspace » de `frontend/src/features/document/store.ts` : `loadWorkspace` (`:155`) n'est appelé que par les branches `else` inatteignables de `frontend/src/pages/DocParseTab.vue:374-379` et `:417` (le seul montage, `frontend/src/pages/AnalysisDetailPage.vue:55-60`, passe toujours `:analysis`) ; `refreshWorkspace` (`:185`), `reloadWorkspaceVersions` (`:196`), `setWorkspaceVersion` (`:221`) sans appelant ; `workspaceCurrentVersion` (`:67`) et `workspaceLatestAnalysis` (`:73`, alias de `workspaceActiveAnalysis` au nom trompeur) sans lecteur.
   - `frontend/src/features/analysis-editor/api.ts:71` `rebuildAnalysisEdits` : aucun appelant, pas même un test.
-  - `frontend/src/features/chunks/ui/StaleStoresStrip.vue` (143 l.) : aucun importeur. Préexistant, non relevé à la validation (seul un commentaire de `DocChunkTab.vue`, supprimé, le nommait).
-- **Analyse** : ce n'est pas du code commenté, donc pas 3.4.2 ; même classement qu'à la validation (INFO, renvoi audits 04 et 05). Aucun effet sur un score de cet audit : aucun de ces fichiers ne dépasse 300 lignes, aucune de ces fonctions ne dépasse 30 lignes ni 4 paramètres.
-- **Remediation** : trancher « code mort ou fonctionnalité perdue » (question déjà posée par l'audit 04). Si c'est du code mort : supprimer `HistoryDrawer.vue`, `StaleStoresStrip.vue`, le chemin workspace du store, les deux branches de `DocParseTab.vue`, `rebuildAnalysisEdits`, et leurs tests.
+  - `frontend/src/features/chunks/ui/StaleStoresStrip.vue` (143 l.) : aucun importeur. Préexistant, non relevé à la validation.
+- **Analyse** : pas du code commenté, donc pas 3.4.2 ; même classement qu'à la validation (INFO, renvoi audits 04 et 05). Aucun effet sur les mesures de cet audit.
+- **Remediation** : trancher « code mort ou fonctionnalité perdue » (question de l'audit 04). Si c'est du code mort : supprimer ces deux composants, le chemin workspace, les deux branches de `DocParseTab.vue`, `rebuildAnalysisEdits` et leurs tests.
 
 ### [INFO] Code mort back restant
 
-- `document-parser/infra/serve_converter.py:189` (`health_check`, appelé par les tests seulement ; il paraissait vivant parce que `OllamaProvider.health_check`, supprimé par `914246e`, portait le même nom), `document-parser/domain/models.py:314` (`mark_stale`, aucun appelant), `document-parser/domain/ports.py:102` (`DocumentMerger`) et `document-parser/infra/docling_merger.py:12` (tests seulement), `document-parser/domain/ports.py:553` / `document-parser/infra/opensearch_store.py:168` (`get_chunks`, tests seulement), `document-parser/mcp_adapter/server.py:90` (`INSTRUCTIONS`), `_neutralise_all` en double (`document-parser/mcp_adapter/wire.py:72`, `document-parser/mcp_adapter/wire_mapping.py:42`).
-- Levés depuis la validation : `_chunk_promoter` / `set_chunk_promoter`, `domain/hashing.py` (`hash_chunkset`, fichier supprimé, ce qui règle aussi la paire `hash_chunkset` / `_compute_chunkset_hash`), `domain/lifecycle_aggregation.py`, l'import `void`-é de `UNKNOWN_ELEMENT_COLOR` dans `BboxCanvas.vue`, la règle `.merge-button` d'`AnalysisEditor.vue`.
+- `document-parser/infra/serve_converter.py:189` (`health_check`, tests seulement), `document-parser/domain/models.py:351` (`mark_stale`, aucun appelant), `document-parser/domain/ports.py:102` (`DocumentMerger`) et `document-parser/infra/docling_merger.py:12` (tests seulement), `get_chunks` (`domain/ports.py`, `infra/opensearch_store.py`, tests seulement), `document-parser/mcp_adapter/server.py:90` (`INSTRUCTIONS`), `_neutralise_all` en double (`document-parser/mcp_adapter/wire.py:72`, `document-parser/mcp_adapter/wire_mapping.py:42`).
+- Levés pendant ce cycle : `_chunk_promoter` / `set_chunk_promoter`, `domain/hashing.py` (et la paire `hash_chunkset` / `_compute_chunkset_hash`), `domain/lifecycle_aggregation.py`, l'import `void`-é de `UNKNOWN_ELEMENT_COLOR` dans `BboxCanvas.vue`, la règle `.merge-button` d'`AnalysisEditor.vue`.
 
-### [INFO] Commentaires périmés
+### [INFO] Lignes de docstring trop longues
 
-- Rendus faux par ce cycle, dans le code inatteignable ci-dessus : `frontend/src/features/document/store.ts:148-149` (« Without a current analysis the newest version is pinned, as before » : depuis `da6603d`, `pickWorkspaceVersion` rend `null` sans analyse courante, `:22`) ; `frontend/src/pages/DocParseTab.vue:446` (« restores a different version from the History drawer » : le tiroir n'est plus monté). Les deux sont corrigés par `ef37b6f`, après le commit audité.
-- Levés depuis la validation : « Wired in main.py » (`chunk_service.py`, `analysis_service.py`), « per-store dispatch is a follow-up » (`chunk_push_service.py`).
-- Mineur : `document-parser/infra/body_limit.py:24`, ligne de docstring de 107 caractères (E501 est ignoré et le formateur ne coupe pas les docstrings).
-
-### [INFO] Noms trompeurs
-
-- `document-parser/services/export_service.py:125` `_resolve_default_analysis` : rend l'analyse demandée telle quelle **ou** l'analyse courante éditée ; « default » ne décrit que la seconde branche. Introduit par `73ceaf3` (renommage de `_resolve_original_analysis`). Proposition : `_resolve_analysis_to_export`.
-- `frontend/src/features/document/store.ts:73` `workspaceLatestAnalysis` : simple alias de `workspaceActiveAnalysis`, qui est l'analyse affichée, pas la dernière. Aucun lecteur : à supprimer avec le chemin workspace.
-- `document-parser/domain/models.py:129` `select_after_deleting` : nom d'action, mais la méthode ne sélectionne rien, elle rend l'id à sélectionner (la persistance écrit). Lisible avec sa docstring ; `choose_active_after_deleting` dirait mieux ce qu'elle fait.
-- `document-parser/api/deps.py:43` répond « Document service not available » pour le lecteur de l'analyse courante, `:92` et `:99` « Chunk service not available » pour `ChunkPushService` et `DocumentTreeService`. Message 503 seulement, sans effet fonctionnel, mais il oriente mal un diagnostic.
-- Ces noms ne relèvent pas de 3.1.1 (ils commencent par un verbe) ; ils relèvent de 3.1.2. Comme à la validation, quelques noms imprécis ne font pas perdre l'item.
-
-### [INFO] Lisibilité des modèles de payload générés
-
-- **Localisation** : `document-parser/api/schemas.py:317-359` (`_strip_bounds` `:323`, `_stored_payload_model` `:339`, `_EDIT_REQUESTS` `:356`, `EditCommandPayloadResponse` `:357`).
-- **Constat** : six classes explicites de 4 à 6 lignes (≈ 45 lignes) sont remplacées par ≈ 30 lignes d'introspection de types : retrait récursif des `Annotated`, reconstruction des unions par `reduce(operator.or_, ...)`, re-souscription `get_origin(annotation)[...]`, double `get_args` pour sortir les membres de l'union discriminée annotée, nom de classe fabriqué par `str.replace("EditRequest", "PayloadResponse")`. Le commentaire `:317-320` dit bien le pourquoi (pas de bornes, pour relire les anciennes lignes ; clés inconnues interdites), `_strip_bounds` a une docstring, `_stored_payload_model` n'en a pas.
-- **Analyse** : non, ce n'est pas compréhensible en une minute. Un mainteneur comprend vite **l'intention** grâce au commentaire, mais vérifier **le mécanisme** demande de connaître `typing.get_origin` / `get_args`, la forme `Annotated[Union[...], Field(discriminator=...)]` et `pydantic.create_model`. Effets concrets : `rg ReplaceTextPayloadResponse` ne trouve plus rien alors que le nom figure dans l'OpenAPI ; un type-checker ne voit pas les membres (d'où `fields: Any`) ; renommer une classe de requête renomme en silence un schéma de réponse. Le gain DRY est réel (une seule définition des champs) mais ne justifie pas ce coût de lecture pour six modèles stables. Pas d'item perdu : ni nommage, ni taille, ni commentaire faux. Renvoi audit 04 (même constat).
-- **Remediation** : revenir à des classes explicites et garder l'unicité par un test qui compare les champs de chaque payload à ceux de sa requête. Les modifications en cours dans l'arbre de travail (non auditées) semblent aller dans ce sens.
+- `document-parser/services/parse_loader.py:6` (125 caractères), `document-parser/infra/docling_editor.py:355` (107), `document-parser/infra/body_limit.py:24` (107). E501 est ignoré et le formateur ne coupe pas les docstrings.
 
 ### [INFO] Fonctions plus lourdes sans être multi-responsabilités
 
-- `document-parser/services/version_service.py:156` `restore` (40 l.) : vérifications, conversion du snapshot (boucle inline), choix de la sélection avec repli (`:181-185`), écriture, traduction de l'erreur, journal. Toujours un seul cas d'usage, en étapes lisibles ; il a pris 4 lignes et une règle métier inline. Sortir `_restored_chunks` et la règle de sélection (ce que font les modifications en cours, non auditées).
-- `document-parser/persistence/analysis_repo.py:206` `delete` : SQL brut (`BEGIN IMMEDIATE`, `SELECT`, `DELETE`) mêlé à des appels de plus haut niveau (`read_document_analysis_state`, `_find_latest_parsed_ids`, `write_selection`, la règle `select_after_deleting` du domaine). C'est une seule transaction pour un seul invariant (garder une analyse courante), donc pas 3.2.1 ; un `_find_document_id(db, job_id)` alignerait les niveaux.
+- `document-parser/services/chunk_service.py:181` `rechunk_document` (75 l.) : garde, lecture de l'analyse courante, chunking, construction des `Chunk`, lecture de l'état, écriture, traduction de l'erreur, journal, version d'historique. Un cas d'usage, mais la plus longue fonction de service hors Neo4j et `builder.build`.
+- `document-parser/services/version_service.py` `restore` (43 l.) : la règle est désormais dans le domaine (`resolve_selection_after_restore`, `document-parser/domain/models.py:164`), ce qui est mieux ; la fonction a pris 3 lignes pour lire l'état et le repli.
+- `document-parser/persistence/analysis_repo.py:206` `delete` : SQL brut et appels de plus haut niveau dans la même fonction ; une transaction pour un seul invariant, donc pas 3.2.1.
 
 ### [INFO] Résidus reconduits
 
 - 3.1.3 : `document-parser/infra/docling_projector.py:147`.
-- 3.2.4 : flag HTTP `edited` (`document-parser/api/documents.py:119`, `export_document`), jugé à la frontière comme avant.
-- Paire incohérente `getNodeColor` / `getKindColor` (`frontend/src/features/analysis/ui/GraphView.vue`, `frontend/src/features/analysis/ui/NodeDetailsPanel.vue`, `frontend/src/features/reasoning/kindColors.ts`) : inchangée, renvoi audit 05.
+- 3.2.4 : flag HTTP `edited` (`document-parser/api/documents.py:119`), jugé à la frontière comme avant.
+- Paire incohérente `getNodeColor` / `getKindColor` (`frontend/src/features/analysis/ui/GraphView.vue`, `NodeDetailsPanel.vue`, `frontend/src/features/reasoning/kindColors.ts`) : renvoi audit 05.
 
-### [INFO] Arbre de travail modifié pendant l'audit
+### [INFO] Constructeurs qui s'élargissent
 
-- `ef37b6f` (deux commentaires et une phrase de doc) et une vingtaine de fichiers modifiés non commités sont arrivés pendant le contrôle. Tout ce rapport porte sur `a744f48`, extrait par `git archive`. Les modifications en cours touchent trois points de ce rapport (`keep_selection`, les modèles de payload, `restore`) : elles demandent un nouveau passage des scripts une fois commitées.
+- `ChunkService.__init__` est passé de 13 à 4 avec le retrait de la façade, puis à 5 avec `analysis_state_repo` (`062bf70`). Pas une régression de fond ; à suivre avec les autres constructeurs (3.2.3).
+
+---
+
+## Contrôle à a744f48
+
+Un premier passage de ce contrôle, sur `a744f48` (2026-11-19), donnait **61/100** (9/14), 0 CRIT, 1 MAJ, 5 MIN, 8 INFO, GO CONDITIONNEL. Mêmes mesures de taille qu'aujourd'hui à 4 signatures près (3.2.3 : 41). Deux items étaient perdus, tous deux par des écarts introduits pendant le cycle :
+
+- **3.1.1** : deux fonctions nommées par leur résultat, `infra/docling_editor.py:364` `_ancestors` et `services/version_service.py:75` `_version_analysis_gone`.
+- **3.2.4** : deux vrais flags, `keep_selection` (`domain/ports.py:303`, `persistence/chunk_repo.py:140`, qui choisissait entre `adopt_selection` et `write_selection`) et `port_wildcard` (`infra/host_guard.py:37`).
+
+Ce passage relevait aussi : deux commentaires rendus faux dans le chemin workspace (`store.ts:148-149`, `DocParseTab.vue:446`), des noms trompeurs (`_resolve_default_analysis`, `select_after_deleting`, messages 503 de `api/deps.py:43`, `:92`, `:99` qui nommaient un autre service), et des modèles de payload générés par introspection de types dans `api/schemas.py` (`_strip_bounds`, `_stored_payload_model`), illisibles en une minute. Pendant ce premier passage, l'arbre de travail a bougé ; les mesures avaient été faites sur un extrait `git archive` de `a744f48`.
+
+Ce qui s'est passé depuis :
+
+| Commit | Effet sur cet audit |
+|--------|---------------------|
+| `ef37b6f` | Les deux commentaires faux du front corrigés (`store.ts:148-149`, `DocParseTab.vue:446-447`) |
+| `062bf70` | Sept classes de payload écrites à la main (`api/schemas.py:320-370`) et un test qui compare leurs champs à ceux des requêtes ; règles de sélection après restauration et rechunk dans le domaine (`domain/models.py:164`, `:184`) ; `pick_within_budget` déplacé dans `domain/element_reader.py:59` |
+| `707a486` | `_iter_ancestors`, `_build_version_analysis_gone_error` (3.1.1 regagné) ; `replace_and_select` / `replace_keeping_selection` sur un `_replace` qui reçoit la fonction d'écriture, `parse_host_name` / `parse_allowed_host_name` (3.2.4 regagné) ; `resolve_selection_after_*`, `_load_exported_analysis` ; messages de `api/deps.py:43`, `:92`, `:99` qui nomment leur service |
+
+Les deux items sont regagnés, les noms trompeurs signalés sont corrigés (sauf `workspaceLatestAnalysis`, dans le code mort), et les modèles de payload redeviennent lisibles d'un coup d'œil, avec un test qui garde l'unicité des champs. Le prix : +4 signatures à plus de 4 paramètres (3.2.3, déjà non conforme).
 
 ---
 
 ## Delta vs validation efc0bc5
 
-**Score : 72 → 61 (−11).** Items conformes : 10/14 → 9/14. Items perdus : 3.1.1 (2 noms) et 3.2.4 (2 flags), tous deux du fait de ce cycle. Aucun item gagné. Verdict : GO CONDITIONNEL → **GO CONDITIONNEL**.
+**Score : 72 → 61 (a744f48) → 72 (707a486), soit ±0 sur le cycle.** Items conformes : 10/14 → 9/14 → 10/14. Aucun item gagné ni perdu au bilan. Verdict : GO CONDITIONNEL → **GO CONDITIONNEL**.
 
-| Écart de la validation | Statut final | Mesures validation → final |
-|------------------------|--------------|----------------------------|
-| [MAJ] 3.2.1 Orchestration multi-responsabilités | Inchangé (Neo4j, ouvert) | 2 → 2 |
-| [MIN] 3.2.2 Fonctions > 30 lignes | Stable | 65 → 65 (44 + 21 → 45 + 20) |
-| [MIN] 3.2.3 Fonctions > 4 paramètres | Réduit | 42 → 41 (41 + 1 → 40 + 1) |
-| [MIN] 3.3.1 Fichiers > 300 lignes | Réduit | 49 → 47 (18 + 31 → 18 + 29) |
-| [INFO] Code mort (pages mortes, restes back) | Largement levé (8 fichiers front, `_chunk_promoter`, `hash_chunkset`, `lifecycle_aggregation`, `health_check` d'Ollama) ; reste le chemin workspace, `HistoryDrawer.vue`, `rebuildAnalysisEdits`, et un nouveau relevé préexistant (`StaleStoresStrip.vue`) | |
-| [INFO] Commentaires périmés | Les trois de la validation levés ; deux rendus faux par ce cycle (corrigés après, par `ef37b6f`) | |
-| [INFO] Constructeurs qui s'élargissent | `ChunkService` levé (13 → 4, façade retirée) | |
-| — | **Nouveau [MIN] 3.1.1** : `_ancestors`, `_version_analysis_gone` | 0 → 2 |
-| — | **Nouveau [MIN] 3.2.4** : `keep_selection`, `port_wildcard` | 0 → 2 flags |
+| Écart de la validation | Statut final | Mesures validation → a744f48 → 707a486 |
+|------------------------|--------------|----------------------------------------|
+| [MAJ] 3.2.1 Orchestration multi-responsabilités | Inchangé (Neo4j, ouvert) | 2 → 2 → 2 |
+| [MIN] 3.2.2 Fonctions > 30 lignes | Stable | 65 → 65 → 65 |
+| [MIN] 3.2.3 Fonctions > 4 paramètres | Aggravé | 42 → 41 → 45 |
+| [MIN] 3.3.1 Fichiers > 300 lignes | Réduit | 49 → 47 → 47 |
+| [INFO] Code mort (pages mortes, restes back) | Largement levé (8 fichiers front, restes back) ; reste le chemin workspace, `HistoryDrawer.vue`, `rebuildAnalysisEdits`, `StaleStoresStrip.vue` (nouveau relevé, préexistant) | |
+| [INFO] Commentaires périmés | Levés (les trois de la validation, puis les deux du cycle) | |
+| [INFO] Constructeurs qui s'élargissent | `ChunkService` 13 → 5 | |
+| 3.1.1 (perdu à a744f48) | Regagné | 0 → 2 → 0 |
+| 3.2.4 (perdu à a744f48) | Regagné | 0 → 2 → 0 flags |
 
-### 3.2.1, cas par cas (ce cycle crée-t-il une fonction multi-responsabilités ?)
+### 3.2.1, cas par cas (le cycle crée-t-il une fonction multi-responsabilités ?)
 
 | Fonction | Lecture | Statut |
 |----------|---------|--------|
-| `persistence/analysis_repo.py:206` `delete` (supprimer et resélectionner) | Une transaction, un invariant : verrou, lecture de l'état, suppression, nouvelle sélection calculée par le domaine (`DocumentAnalysisState.select_after_deleting`, `domain/models.py:129`), écriture. Niveaux d'abstraction mêlés (INFO), pas deux responsabilités | Pas d'écart |
-| `services/version_service.py:156` `restore` (40 l.) | Le cas d'usage « restaurer une version », étapes dans l'ordre ; la règle de repli est inline (INFO). Compté en 3.2.2 | Pas d'écart |
-| Routes de `api/document_chunks.py` sur trois services | Chaque route dépend d'un seul service (`ChunkServiceDep`, `ChunkPushServiceDep` ou `DocumentTreeServiceDep`) ; c'est le module qui en voit trois, ce qui est la séparation voulue. `api/documents.py` `get_document` lit deux dépendances pour une seule réponse | Pas d'écart |
-| `api/schemas.py:339` `_stored_payload_model` | Fait une chose (fabriquer un modèle sans `type` ni bornes) ; le problème est la lisibilité (INFO), pas la responsabilité | Pas d'écart |
-| `persistence/chunk_repo.py:132` `replace_for_document` | Deux comportements derrière `keep_selection` : compté en 3.2.4, pas en 3.2.1 | Voir 3.2.4 |
+| `persistence/analysis_repo.py:206` `delete` (supprimer et resélectionner) | Une transaction, un invariant ; la règle vient du domaine (`DocumentAnalysisState.resolve_selection_after_deleting`, `domain/models.py:129`). Niveaux mêlés (INFO) | Pas d'écart |
+| `services/version_service.py` `restore` (43 l.) | Le cas d'usage « restaurer une version » ; la règle est désormais dans le domaine | Pas d'écart (3.2.2) |
+| `services/chunk_service.py:181` `rechunk_document` (75 l.) | Un cas d'usage, long (INFO) | Pas d'écart (3.2.2) |
+| `persistence/chunk_repo.py` `_replace` | Une écriture transactionnelle ; la sélection est une fonction passée par l'appelant, pas un aiguillage interne | Pas d'écart |
+| Routes de `api/document_chunks.py` sur trois services | Chaque route dépend d'un seul service | Pas d'écart |
 | `tree_writer.py:69` `write_document`, `queries.py:137` `fetch_graph` | Non touchées | Ouvert (MAJ) |
 
 ### 3.3.2, cas par cas (nouveau fichier fourre-tout ?)
 
-| Fichier | Lignes validation → final | Lecture | Statut |
-|---------|---------------------------|---------|--------|
-| `domain/models.py` | 436 → 415 | Les entités et objets valeur du domaine. Le cycle retire la mécanique de suivi des changements (`selection_changed`, `mark_saved`) et ajoute des prédicats sur `AnalysisJob` et `DocumentVersion.chunk_source` : du comportement au bon endroit, pas un nouveau concept | Pas d'écart |
-| `domain/ports.py` | 826 → 846 | Uniquement des protocoles ; `CurrentAnalysisReader` et `replace_for_document` élargi | Pas d'écart |
-| `api/schemas.py` | 1092 → 1079 | Les DTO HTTP ; une petite mécanique générique de types s'y ajoute (`_strip_bounds`), qui serait mieux ailleurs ou absente, mais ne fait pas un deuxième concept | Pas d'écart |
-| `services/chunk_push_service.py` | 365 → 362 | Diff, push et historique des push vers les stores : un concept | Pas d'écart |
-| `domain/quote_location.py` (nouveau) | — → 97 | Localiser une citation dans un index de parse ; fonctions pures, un seul appelant (vérification de citation) | Pas d'écart, bonne extraction |
-| `domain/navigation.py` | 385 → 429 | `pick_within_budget` sort de `NavigationService` : règle de budget de lecture, à sa place dans le domaine de navigation | Pas d'écart |
-| `persistence/document_analysis_repo.py` | — | Seul module SQL de `document_analysis_state`, écritures en deux parties nommées | Pas d'écart |
+| Fichier | Lignes validation → a744f48 → 707a486 | Lecture | Statut |
+|---------|----------------------------------------|---------|--------|
+| `domain/models.py` | 436 → 415 → 452 | Entités et règles du domaine ; les trois `resolve_selection_after_*` sont des règles de l'agrégat d'état, à leur place à côté de `resolve_current_analysis_id` | Pas d'écart |
+| `domain/ports.py` | 826 → 846 → 869 | Uniquement des protocoles | Pas d'écart |
+| `api/schemas.py` | 1092 → 1079 → 1090 | Les DTO HTTP ; la mécanique d'introspection de `a744f48` a disparu | Pas d'écart |
+| `services/chunk_push_service.py` | 365 → 362 → 362 | Diff, push et historique des push : un concept | Pas d'écart |
+| `domain/quote_location.py` (nouveau) | — → 97 → 97 | Localiser une citation ; fonctions pures | Pas d'écart |
+| `domain/element_reader.py` | → 286 | Lecture d'éléments d'un index ; reçoit `pick_within_budget`, ce qui supprime l'import local qui contournait un cycle | Pas d'écart |
+| `infra/host_guard.py` | 113 → 89 → 130 | Contrôle du `Host` et son journal de démarrage | Pas d'écart |
 
 ---
 
 ## Points positifs
 
-- **Beaucoup de code en moins, sans mesure qui se dégrade sérieusement** : −278 lignes Python, −1 781 lignes front, 8 composants morts supprimés avec preuve, la façade `ChunkService` retirée (constructeur 13 → 4) et deux fichiers backend passés sous 300 lignes.
-- **Les restes signalés à la validation sont presque tous traités** : commentaires périmés, `_chunk_promoter`, import `void`-é, règle CSS orpheline, minuterie de l'aperçu, `hash_chunkset` en double.
-- **Règles déplacées dans le domaine, avec des noms justes** : `can_be_current_of`, `has_docling_document`, `select_after_deleting`, `locate_quote`, `pick_within_budget` ; `write_selection` / `adopt_selection` / `write_chunk_source` disent exactement ce que chaque écriture touche.
-- **`_to_edit_commands`** passe de 20 lignes d'aiguillage par type à un `model_dump` : une seule définition des champs côté écriture.
+- **Les deux items perdus à `a744f48` sont regagnés en un commit**, par des noms justes et deux méthodes nommées, sans nouveau booléen : `_replace` reçoit l'écriture à faire, ce qui garde une seule transaction sans aiguillage.
+- **Les noms trompeurs signalés sont corrigés** (`_load_exported_analysis`, `resolve_selection_after_*`, messages 503 de `api/deps.py`), et les règles de sélection après suppression, restauration et rechunk sont toutes dans le domaine, côte à côte.
+- **Payloads lisibles à nouveau** : sept classes explicites, et un test qui garde l'unicité des champs que la génération voulait garantir.
+- **Beaucoup de code en moins sur le cycle** : −96 lignes Python et −1 774 lignes front depuis la validation, 8 composants morts supprimés, la façade `ChunkService` retirée, deux fichiers backend passés sous 300 lignes, tous les commentaires périmés relevés corrigés.
 - **Aucun import inutilisé, aucun code commenté** dans les fichiers changés.
 
 ---
 
 ## Verdict partiel : GO CONDITIONNEL
 
-Score **61/100** (60-79), **0 CRITICAL**, **1 MAJOR** (3.2.1 : 2 fonctions Neo4j, ≤ 3 donc non bloquant), 5 MINOR, 8 INFO.
+Score **72/100** (60-79), **0 CRITICAL**, **1 MAJOR** (3.2.1 : 2 fonctions Neo4j, ≤ 3 donc non bloquant), 3 MINOR, 7 INFO.
 
-Le score baisse de 11 points parce que ce cycle a ajouté deux noms et deux flags qui défont deux items gagnés aux cycles précédents ; les mesures de taille sont stables ou meilleures. Conditions et chemin le plus court :
+Conditions :
 
-1. Renommer `_ancestors` et `_version_analysis_gone` (3.1.1, +1 poids) et retirer les flags `keep_selection` et `port_wildcard` (3.2.4, +1 poids) : retour à **72**. Effort : moins d'une heure, tests compris.
-2. Acter par écrit que `infra/neo4j/` sort du périmètre (module retiré en 0.8.0) : 3.2.1 conforme, **83** (GO) avec le point 1, 72 sans.
-3. Faire repasser les scripts sur le commit qui portera les modifications en cours, qui touchent `keep_selection`, les modèles de payload et `restore`.
+1. Pour le MAJ, acter par écrit que `infra/neo4j/` sort du périmètre de l'audit (module retiré en 0.8.0) : 3.2.1 conforme, score **83** (GO).
+2. Non bloquant : supprimer le code mort front (chemin workspace, `HistoryDrawer.vue`, `StaleStoresStrip.vue`, `rebuildAnalysisEdits`) une fois tranchée la question « code mort ou fonctionnalité perdue ». Les trois MIN restants (3.2.2, 3.2.3, 3.3.1) sont hors d'atteinte pour 0.7.4.

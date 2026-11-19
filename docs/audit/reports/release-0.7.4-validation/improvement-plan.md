@@ -28,6 +28,11 @@
 | 09 MAJ, specs Karate UI | Les lancer, puis marquer `@critical` le scénario PDF.js | Jamais exécutées : en faire un critère bloquant du gate avant de les avoir vues passer bloquerait la release sur un test non éprouvé |
 | 12, WAL et `busy_timeout` pour SQLite | `PRAGMA journal_mode=WAL` | Change les fichiers de la base (`-wal`, `-shm`) et donc la consigne de sauvegarde documentée |
 | Ask et les éditions | Mention dans le panneau Ask quand l'analyse a des éditions enregistrées | Ajout d'interface à valider à l'écran |
+| Tiroir d'historique | `HistoryDrawer.vue`, le chemin « workspace » du store de documents et la spec `doc-history-drawer.feature` ne sont atteints par aucun écran depuis la 0.7.3 : les supprimer, ou remonter le tiroir | Code mort ou fonctionnalité perdue : seul le mainteneur le sait. Tant que rien ne le monte, restaurer une version passe par l'API |
+| Suppression de masse dans l'éditeur | Aperçu incrémental à partir du cache enregistré, ou contournement du `delete_items` quadratique de Docling | Effort moyen, à mesurer d'abord sur un vrai document ; le correctif propre est en amont, dans docling-core |
+| `VectorStore.get_chunks` et `OPENSEARCH_DEFAULT_LIMIT` | Les supprimer ensemble : le réglage ne borne que cette méthode, que rien n'appelle | Retire un réglage documenté |
+| Autre code sans appelant | `DocumentMerger` et `infra/docling_merger.py`, `DocumentStoreLink.mark_stale`, `StaleStoresStrip.vue`, `rebuildAnalysisEdits` côté frontend | Relevé au contrôle final, hors de la liste initiale ; à vérifier avant suppression |
+| Journal SQLite | `PRAGMA journal_mode=WAL`, `busy_timeout` explicite, index partiel pour la resélection après suppression | Voir la ligne WAL ci-dessus |
 
 ---
 
@@ -36,3 +41,23 @@
 Inchangé depuis le [plan du 18/11](../release-0.7.4-reaudit/remediation-plan.md) : lancer l'application et regarder les écrans, pousser la branche et obtenir une CI verte, trancher la PR #403, faire le commit de freeze, obtenir un Release Gate vert, protéger `release/**`, fermer ou redater #378 avant le 2026-12-31.
 
 Vérifications à la charge de protection de branche, d'après l'audit 10 : `Backend tests`, `Frontend tests & build`, `E2E API tests (Karate)` sur `release/**` ; les mêmes plus `Backend tests (docling)` sur `main`.
+
+---
+
+## 4. Résultat du cycle
+
+Les quatre lots sont faits, contrôlés et, pour trois audits, retouchés puis recontrôlés. Détail dans la [synthèse du contrôle final](../release-0.7.4-final/summary.md).
+
+| Audit | Validation | Final | Remarque |
+|-------|------------|-------|----------|
+| 01 Hexagonal Architecture | 91 | 97 | Plus de MAJ |
+| 02 DDD | 89 | 89 | Défauts D1 à D5 corrigés ; le MAJ de vocabulaire reste en lecture stricte |
+| 03 Clean Code | 72 | 72 | 61 au premier passage, deux items perdus par le cycle puis regagnés |
+| 04 KISS | 67 | 75 | 58 au premier passage, à cause de modèles générés par méta-programmation, réécrits à la main |
+| 08 Security | 97 | 97 | Garde `Host` réécrit, sans contournement trouvé |
+| 09 Tests | 81 | 93 | Suites vertes, aucun test perdu sur du code existant |
+| 11 Documentation | 67 | 72 | 100 après le freeze |
+| 12 Performance | 95 | 95 | Deux régressions de la validation résolues |
+| Global | ≈ 87 | ≈ 89 | ≈ 93 après CI verte et freeze |
+
+Vérifié sur `707a486`, machine calme : backend ruff propre et 1789 tests passés ; frontend eslint, prettier et `vue-tsc` propres, 604 tests passés, build réussi.

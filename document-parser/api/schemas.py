@@ -311,7 +311,8 @@ class AnalysisEditHistoryActionRequest(_CamelModel):
 
 
 # A stored command's payload: the fields of its request model, without `type`
-# and without the bounds, so a row written before the bounds still reads back.
+# and without the bounds: what was stored must read back whatever the request
+# limits become.
 # Payloads are written with every key (`_to_edit_commands`, the history
 # toggle); with unknown keys forbidden, each one matches exactly one model.
 # tests/test_schemas.py keeps each one in step with its request.
