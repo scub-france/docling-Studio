@@ -12,14 +12,12 @@ from typing import TYPE_CHECKING
 
 from domain.analysis_editing import AnalysisEditUnavailableError
 from domain.document_tree import build_tree_nodes
-from domain.models import AnalysisStatus
 from services.chunk_errors import ChunkNotFoundError, require_document
 
 if TYPE_CHECKING:
     from domain.ports import (
         ActiveAnalysisResultReader,
         AnalysisRepository,
-        CurrentAnalysisReader,
         DocumentRepository,
         DocumentTreeReader,
     )
@@ -35,13 +33,11 @@ class DocumentTreeService:
         *,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
-        current_analysis: CurrentAnalysisReader,
         tree_reader: DocumentTreeReader,
-        active_result_service: ActiveAnalysisResultReader | None = None,
+        active_result_service: ActiveAnalysisResultReader,
     ) -> None:
         self._documents = document_repo
         self._analyses = analysis_repo
-        self._current = current_analysis
         # `DocumentTreeReader` port (#audit-01) — replaces the local
         # `from infra.docling_tree import ...` smell hiding inside two
         # tree-walking helpers. Required so the tree views stay rendable.
@@ -49,7 +45,7 @@ class DocumentTreeService:
         self._active_result_service = active_result_service
 
     async def get_tree(self, document_id: str, analysis_id: str | None = None) -> list[dict]:
-        """Build a doc tree from the requested or active analysis.
+        """Build a doc tree from the requested analysis, or the current one with its edits.
 
         Returns a list of `DocTreeNode`-shaped dicts (camelCase). Empty
         list if no analysis is available yet — caller decides if that is
@@ -58,16 +54,13 @@ class DocumentTreeService:
         await require_document(self._documents, document_id)
         if analysis_id:
             job = await self._analyses.find_by_id(analysis_id)
-            if not job or job.document_id != document_id or job.status != AnalysisStatus.COMPLETED:
+            if not job or not job.can_be_current_of(document_id):
                 raise ChunkNotFoundError(f"Analysis not found: {analysis_id}")
         else:
-            if self._active_result_service is not None:
-                try:
-                    job = (await self._active_result_service.load_active_result(document_id)).job
-                except AnalysisEditUnavailableError:
-                    return []
-            else:
-                job = await self._current.load_current_analysis(document_id)
+            try:
+                job = (await self._active_result_service.load_current_edited(document_id)).job
+            except AnalysisEditUnavailableError:
+                return []
         if not job or not job.document_json:
             return []
         try:

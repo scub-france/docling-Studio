@@ -31,6 +31,8 @@ from persistence.document_store_link_repo import SqliteDocumentStoreLinkReposito
 from services.current_analysis import CurrentAnalysisResolver
 from services.document_service import DocumentConfig, DocumentService
 from services.export_service import ExportFormat, ExportService
+from tests.analysis_state_helpers import set_selection
+from tests.current_result_fakes import UneditedResultReader
 
 # --- The rule ---------------------------------------------------------------
 
@@ -86,18 +88,13 @@ async def _complete(repos, analysis_id: str, doc_id: str = "doc-1", *, parsed: b
 
 
 async def _restore(repos, analysis_id: str | None, doc_id: str = "doc-1") -> None:
-    state = await repos["states"].find_state(doc_id) or DocumentAnalysisState(doc_id)
-    if analysis_id is None:
-        state.clear_selection()
-    else:
-        state.select(analysis_id)
-    await repos["states"].save_state(state)
+    await set_selection(doc_id, analysis_id)
 
 
 async def test_one_analysis(repos):
     await _complete(repos, "a1")
     assert await repos["current"].find_current_analysis_id("doc-1") == "a1"
-    assert (await repos["current"].load_current_analysis("doc-1")).content_markdown == "# a1"
+    assert (await repos["current"].load_current_original("doc-1")).content_markdown == "# a1"
 
 
 async def test_two_analyses_with_the_older_one_restored(repos):
@@ -105,7 +102,7 @@ async def test_two_analyses_with_the_older_one_restored(repos):
     await _complete(repos, "newer")
     await _restore(repos, "older")
     assert await repos["current"].find_current_analysis_id("doc-1") == "older"
-    assert (await repos["current"].load_current_analysis("doc-1")).id == "older"
+    assert (await repos["current"].load_current_original("doc-1")).id == "older"
 
 
 async def test_a_newer_analysis_still_running(repos):
@@ -118,7 +115,7 @@ async def test_a_newer_analysis_still_running(repos):
 
 async def test_no_analysis(repos):
     assert await repos["current"].find_current_analysis_id("doc-1") is None
-    assert await repos["current"].load_current_analysis("doc-1") is None
+    assert await repos["current"].load_current_original("doc-1") is None
 
 
 async def test_a_cleared_selection_does_not_fall_back(repos):
@@ -167,7 +164,7 @@ async def test_export_reads_the_restored_analysis(repos):
     exports = ExportService(
         document_repo=repos["documents"],
         analysis_repo=repos["analyses"],
-        current_analysis=repos["current"],
+        active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
         file_store=MagicMock(),
     )
 

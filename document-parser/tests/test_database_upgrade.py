@@ -10,6 +10,7 @@ from domain.models import DocumentVersion, DocumentVersionKind
 from persistence import database
 from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
+from tests.analysis_state_helpers import set_selection
 
 # The three 0.7.3 tables the upgrade reads or changes, copied from the 0.7.3
 # schema. `init_db()` creates every other table, as it would on that install.
@@ -150,10 +151,7 @@ async def test_upgrade_falls_back_to_a_completed_analysis_without_docling_docume
 @pytest.mark.asyncio
 async def test_upgrade_is_idempotent_and_keeps_user_choices(db_path):
     await database.init_db()
-    states = SqliteDocumentAnalysisRepository()
-    state = await states.find_state("doc-json")
-    state.clear_selection()
-    await states.save_state(state)
+    await set_selection("doc-json", None)
 
     await database.init_db()
 

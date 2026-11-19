@@ -21,6 +21,7 @@ from services.reasoning_service import (
     ReasoningService,
     ReasoningUnavailableError,
 )
+from tests.analysis_state_helpers import set_selection
 
 
 class _FakeRunner:
@@ -47,7 +48,7 @@ class _FakeCurrentAnalysis:
     def __init__(self, *, latest=None):
         self._latest = latest
 
-    async def load_current_analysis(self, document_id: str):
+    async def load_current_original(self, document_id: str):
         return self._latest
 
 
@@ -208,10 +209,8 @@ async def _seed_two_analyses(tmp_path, monkeypatch):
 
 async def test_reads_the_active_analysis_not_the_latest(tmp_path, monkeypatch):
     """02-2.3.1: after a restore of the older analysis, Ask reads it, as stored."""
-    states, current = await _seed_two_analyses(tmp_path, monkeypatch)
-    state = await states.find_state("doc-1")
-    state.select("older")
-    await states.save_state(state)
+    _, current = await _seed_two_analyses(tmp_path, monkeypatch)
+    await set_selection("doc-1", "older")
     runner = _FakeRunner(result=_result())
     svc = ReasoningService(runner=runner, current_analysis=current, default_model_id="m")
 
@@ -222,10 +221,8 @@ async def test_reads_the_active_analysis_not_the_latest(tmp_path, monkeypatch):
 
 async def test_404_when_the_document_was_left_without_an_active_analysis(tmp_path, monkeypatch):
     """A cleared selection is a choice: Ask does not fall back to the latest analysis."""
-    states, current = await _seed_two_analyses(tmp_path, monkeypatch)
-    state = await states.find_state("doc-1")
-    state.clear_selection()
-    await states.save_state(state)
+    _, current = await _seed_two_analyses(tmp_path, monkeypatch)
+    await set_selection("doc-1", None)
     svc = ReasoningService(
         runner=_FakeRunner(result=_result()), current_analysis=current, default_model_id="m"
     )

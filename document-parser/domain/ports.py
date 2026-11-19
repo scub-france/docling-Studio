@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         ChunkPush,
         Document,
         DocumentAnalysisState,
+        DocumentChunkSource,
         DocumentStoreLink,
         DocumentVersion,
         Store,
@@ -195,7 +196,13 @@ class PreviewImageCache(Protocol):
 
 
 class DocumentAnalysisStateRepository(Protocol):
-    """Loads and saves the `DocumentAnalysisState` aggregate (02-2.4.3)."""
+    """Reads the `DocumentAnalysisState` aggregate (02-2.4.3).
+
+    Its two parts are written by the writers that change them, in their own
+    transaction: `AnalysisRepository.complete_and_select` and
+    `AnalysisRepository.delete` (selection), `ChunkRepository.replace_for_document`
+    (chunk source, and selection on restore).
+    """
 
     async def find_state(self, document_id: str) -> DocumentAnalysisState | None:
         """The document's state, or None when it has no state row at all."""
@@ -203,10 +210,6 @@ class DocumentAnalysisStateRepository(Protocol):
 
     async def find_states(self, document_ids: list[str]) -> dict[str, DocumentAnalysisState]:
         """The states of the documents that have a row, in one query."""
-        ...
-
-    async def save_state(self, state: DocumentAnalysisState) -> None:
-        """Write the parts of `state` changed since it was loaded, atomically."""
         ...
 
 
@@ -225,8 +228,11 @@ class CurrentAnalysisReader(Protocol):
         number of queries whatever the count."""
         ...
 
-    async def load_current_analysis(self, document_id: str) -> AnalysisJob | None:
-        """The current analysis as stored: the original result, without edits."""
+    async def load_current_original(self, document_id: str) -> AnalysisJob | None:
+        """The current analysis as stored: the original result, without edits.
+
+        `ActiveAnalysisResultReader.load_current_edited` reads the same
+        analysis with its saved edits."""
         ...
 
 
@@ -296,10 +302,26 @@ class ChunkRepository(Protocol):
         chunks: list[Chunk],
         *,
         at: datetime,
-        state: DocumentAnalysisState,
+        chunk_source: DocumentChunkSource | None,
+        active_analysis_id: str | None,
+        keep_selection: bool = False,
     ) -> int:
-        """Soft-delete the live chunks, insert `chunks` and save `state`, in one
-        transaction. Returns how many chunks were soft-deleted."""
+        """Soft-delete the live chunks, insert `chunks` and write the document's
+        analysis state, in one transaction. Returns how many chunks were
+        soft-deleted.
+
+        `chunk_source` is recorded as given (None forgets it). Without
+        `keep_selection`, `active_analysis_id` becomes the active analysis
+        (None clears an existing selection). With it, an existing selection
+        is kept and `active_analysis_id` only goes into a state row this
+        write creates: pass the document's current analysis, so creating the
+        row does not change it.
+
+        Raises:
+            ValueError: `chunk_source` belongs to another document.
+            AnalysisNotSelectableError: the analysis to select is gone or
+                belongs to another document; nothing is written.
+        """
         ...
 
     async def shift_sequences(
@@ -391,13 +413,18 @@ class AnalysisRepository(Protocol):
 
     async def update_status(self, job: AnalysisJob) -> None: ...
 
-    async def complete_and_select(self, job: AnalysisJob) -> None: ...
+    async def complete_and_select(self, job: AnalysisJob) -> None:
+        """Persist a completed analysis and make it the active one, atomically."""
+        ...
 
     async def update_progress(self, job_id: str, current: int, total: int) -> None: ...
 
     async def update_chunks(self, job_id: str, chunks_json: str) -> bool: ...
 
-    async def delete(self, job_id: str) -> bool: ...
+    async def delete(self, job_id: str) -> bool:
+        """Delete an analysis; when it was the active one, select the latest
+        remaining completed analysis with a Docling document, atomically."""
+        ...
 
     async def delete_by_document(self, document_id: str) -> int: ...
 
@@ -430,7 +457,12 @@ class ActiveAnalysisResultReader(Protocol):
     this read side only.
     """
 
-    async def load_active_result(self, document_id: str) -> EditorSnapshot: ...
+    async def load_current_edited(self, document_id: str) -> EditorSnapshot:
+        """The document's current analysis with its saved edits.
+
+        `CurrentAnalysisReader.load_current_original` reads the same analysis
+        without them."""
+        ...
 
     async def load_editor(
         self, document_id: str, analysis_id: str | None = None

@@ -174,3 +174,25 @@ class TestAnalysisStatus:
     def test_from_string(self):
         assert AnalysisStatus("PENDING") == AnalysisStatus.PENDING
         assert AnalysisStatus("COMPLETED") == AnalysisStatus.COMPLETED
+
+
+class TestCurrentAnalysisRules:
+    """One predicate per rule on which analysis can be a document's current one."""
+
+    @pytest.mark.parametrize("status", list(AnalysisStatus))
+    def test_only_a_completed_analysis_can_be_current(self, status):
+        job = AnalysisJob(document_id="d1", status=status)
+        assert job.can_be_current() is (status is AnalysisStatus.COMPLETED)
+
+    def test_it_must_also_belong_to_the_document(self):
+        job = AnalysisJob(document_id="d1", status=AnalysisStatus.COMPLETED)
+        assert job.can_be_current_of("d1")
+        assert not job.can_be_current_of("d2")
+
+    def test_a_docling_document_is_a_separate_rule(self):
+        completed = AnalysisJob(status=AnalysisStatus.COMPLETED)
+        assert not completed.has_docling_document()
+        completed.document_json = "{}"
+        assert completed.has_docling_document()
+        running = AnalysisJob(status=AnalysisStatus.RUNNING, document_json="{}")
+        assert not running.has_docling_document()

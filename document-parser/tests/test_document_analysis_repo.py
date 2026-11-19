@@ -6,24 +6,22 @@ import sqlite3
 
 import pytest
 
+from domain.exceptions import AnalysisNotSelectableError
 from domain.models import (
     AnalysisJob,
     AnalysisStatus,
+    Chunk,
     Document,
     DocumentAnalysisState,
     DocumentChunkSource,
+    get_utc_now,
 )
 from persistence import database
 from persistence.analysis_repo import SqliteAnalysisRepository
+from persistence.chunk_repo import SqliteChunkRepository
 from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
-
-
-async def _change(states, document_id: str, change) -> None:
-    """Load, change and save a document's state, as the services do."""
-    state = await states.find_state(document_id) or DocumentAnalysisState(document_id)
-    change(state)
-    await states.save_state(state)
+from tests.analysis_state_helpers import set_chunk_source, set_selection
 
 
 @pytest.mark.asyncio
@@ -42,14 +40,14 @@ async def test_selection_requires_analysis_owned_by_document_and_chunk_source_su
     )
 
     with pytest.raises(sqlite3.IntegrityError):
-        await _change(state, "doc-b", lambda s: s.select("analysis-a"))
-    await _change(state, "doc-a", lambda s: s.select("analysis-a"))
-    await _change(state, "doc-a", lambda s: s.record_chunk_source("analysis-a", "a" * 64))
-    assert (await state.find_state("doc-a")).selection.analysis_id == "analysis-a"
+        await set_selection("doc-b", "analysis-a")
+    await set_selection("doc-a", "analysis-a")
+    await set_chunk_source("doc-a", "analysis-a", "a" * 64)
+    assert (await state.find_state("doc-a")).active_analysis_id == "analysis-a"
     assert (await state.find_state("doc-a")).chunk_source.result_hash == "a" * 64
 
     await analyses.delete("analysis-a")
-    assert (await state.find_state("doc-a")).selection is None
+    assert (await state.find_state("doc-a")).active_analysis_id is None
     assert (await state.find_state("doc-a")).chunk_source.result_hash == "a" * 64
 
 
@@ -86,7 +84,7 @@ async def test_completion_keeps_the_chunk_source(tmp_path, monkeypatch):
     analyses = SqliteAnalysisRepository()
     states = SqliteDocumentAnalysisRepository()
     await analyses.insert(AnalysisJob(id="analysis-a", document_id="doc-a"))
-    await _change(states, "doc-a", lambda s: s.record_chunk_source("older", "a" * 64))
+    await set_chunk_source("doc-a", "older", "a" * 64)
 
     job = AnalysisJob(id="analysis-a", document_id="doc-a", status=AnalysisStatus.COMPLETED)
     await analyses.complete_and_select(job)
@@ -107,21 +105,22 @@ async def test_clearing_either_state_keeps_the_other(tmp_path, monkeypatch):
     state = SqliteDocumentAnalysisRepository()
     source = DocumentChunkSource("doc-a", "analysis-a", "a" * 64)
 
-    await _change(state, "doc-a", lambda s: s.record_chunk_source("analysis-a", "a" * 64))
-    await _change(state, "doc-a", lambda s: s.select("analysis-a"))
-    await _change(state, "doc-a", lambda s: s.clear_selection())
-    assert (await state.find_state("doc-a")).selection is None
+    await set_chunk_source("doc-a", "analysis-a", "a" * 64)
+    await set_selection("doc-a", "analysis-a")
+    await set_selection("doc-a", None)
+    assert (await state.find_state("doc-a")).active_analysis_id is None
     assert (await state.find_state("doc-a")).chunk_source == source
 
-    await _change(state, "doc-a", lambda s: s.select("analysis-a"))
-    await _change(state, "doc-a", lambda s: s.clear_chunk_source())
-    assert (await state.find_state("doc-a")).selection.analysis_id == "analysis-a"
+    await set_selection("doc-a", "analysis-a")
+    await set_chunk_source("doc-a", None)
+    assert (await state.find_state("doc-a")).active_analysis_id == "analysis-a"
     assert (await state.find_state("doc-a")).chunk_source is None
 
 
 @pytest.mark.asyncio
-async def test_a_save_writes_only_what_changed(tmp_path, monkeypatch):
-    """Two writers holding the same loaded state: neither undoes the other."""
+async def test_a_rechunk_keeps_a_selection_made_meanwhile(tmp_path, monkeypatch):
+    """A rechunk writes the chunk source only: a selection made since it read
+    the state stands, and its chunks report stale against it."""
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "partial.db"))
     await database.init_db()
     await SqliteDocumentRepository().insert(Document(id="doc-a", storage_path="/tmp/a.pdf"))
@@ -131,18 +130,43 @@ async def test_a_save_writes_only_what_changed(tmp_path, monkeypatch):
             AnalysisJob(id=analysis_id, document_id="doc-a", status=AnalysisStatus.COMPLETED)
         )
     states = SqliteDocumentAnalysisRepository()
-    await _change(states, "doc-a", lambda s: s.select("analysis-a"))
+    await set_selection("doc-a", "analysis-a")
 
-    rechunk_view = await states.find_state("doc-a")
-    selection_view = await states.find_state("doc-a")
-    selection_view.select("analysis-b")
-    await states.save_state(selection_view)
-    rechunk_view.record_chunk_source("analysis-a", "a" * 64)
-    await states.save_state(rechunk_view)
+    # The rechunk read analysis-a as current; analysis-b is selected meanwhile.
+    await set_selection("doc-a", "analysis-b")
+    await SqliteChunkRepository().replace_for_document(
+        "doc-a",
+        [Chunk(document_id="doc-a", sequence=0, text="t")],
+        at=get_utc_now(),
+        chunk_source=DocumentChunkSource("doc-a", "analysis-a", "a" * 64),
+        active_analysis_id="analysis-a",
+        keep_selection=True,
+    )
 
     state = await states.find_state("doc-a")
     assert state.active_analysis_id == "analysis-b"
     assert state.chunk_source == DocumentChunkSource("doc-a", "analysis-a", "a" * 64)
+
+
+@pytest.mark.asyncio
+async def test_a_restore_selecting_a_deleted_analysis_writes_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "gone.db"))
+    await database.init_db()
+    await SqliteDocumentRepository().insert(Document(id="doc-a", storage_path="/tmp/a.pdf"))
+    chunks = SqliteChunkRepository()
+    await chunks.insert(Chunk(document_id="doc-a", sequence=0, text="live"))
+
+    with pytest.raises(AnalysisNotSelectableError):
+        await chunks.replace_for_document(
+            "doc-a",
+            [Chunk(document_id="doc-a", sequence=0, text="restored")],
+            at=get_utc_now(),
+            chunk_source=None,
+            active_analysis_id="deleted-analysis",
+        )
+
+    assert [c.text for c in await chunks.find_for_document("doc-a")] == ["live"]
+    assert await SqliteDocumentAnalysisRepository().find_state("doc-a") is None
 
 
 @pytest.mark.asyncio
@@ -153,8 +177,8 @@ async def test_clearing_never_creates_a_state_row(tmp_path, monkeypatch):
     await SqliteDocumentRepository().insert(Document(id="doc-a", storage_path="/tmp/a.pdf"))
     states = SqliteDocumentAnalysisRepository()
 
-    await _change(states, "doc-a", lambda s: s.clear_selection())
-    await _change(states, "doc-a", lambda s: s.clear_chunk_source())
+    await set_selection("doc-a", None)
+    await set_chunk_source("doc-a", None)
 
     assert await states.find_state("doc-a") is None
     assert await states.find_states(["doc-a", "missing"]) == {}
@@ -172,8 +196,8 @@ async def test_find_states_reads_many_documents_at_once(tmp_path, monkeypatch):
     await analyses.insert(
         AnalysisJob(id="analysis-a", document_id="doc-a", status=AnalysisStatus.COMPLETED)
     )
-    await _change(states, "doc-a", lambda s: s.select("analysis-a"))
-    await _change(states, "doc-b", lambda s: s.record_chunk_source("gone", "b" * 64))
+    await set_selection("doc-a", "analysis-a")
+    await set_chunk_source("doc-b", "gone", "b" * 64)
 
     found = await states.find_states(["doc-a", "doc-b", "doc-c"])
 
@@ -188,7 +212,9 @@ def test_chunks_are_stale_against_another_result_or_without_a_source():
     assert state.are_chunks_stale("analysis-a", "a" * 64, has_chunks=True)
     assert not state.are_chunks_stale("analysis-a", "a" * 64, has_chunks=False)
 
-    state.record_chunk_source("analysis-a", "a" * 64)
+    state = DocumentAnalysisState(
+        "doc-a", chunk_source=DocumentChunkSource("doc-a", "analysis-a", "a" * 64)
+    )
     assert not state.are_chunks_stale("analysis-a", "a" * 64, has_chunks=True)
     assert state.are_chunks_stale("analysis-a", "b" * 64, has_chunks=True)
     assert state.are_chunks_stale("analysis-b", "a" * 64, has_chunks=True)

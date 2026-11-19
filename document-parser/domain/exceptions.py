@@ -18,6 +18,14 @@ class DomainError(Exception):
     layers if you want a single hook for any invariant violation."""
 
 
+class AnalysisNotSelectableError(DomainError):
+    """The analysis to make active is gone or belongs to another document.
+
+    Raised by a repository write that selects an analysis the database
+    refuses, typically one deleted after the caller checked it.
+    """
+
+
 class InvalidLifecycleTransitionError(DomainError):
     """Raised when a Document.transition_to() call asks for a (source,
     target) pair that is not in the allowed transition table.

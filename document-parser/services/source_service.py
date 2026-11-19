@@ -99,7 +99,8 @@ class SourceService:
         self._check_bounds(question, reads, cited)
         unknown: list[str] = []
         read_anchors = [(a, w, f) for uri, w, f in reads if (a := _parse_anchor(uri, unknown))]
-        checked = [await self._check(uri, quote) for uri, quote in cited]
+        current_parses = await self._find_current_parses(cited)
+        checked = [await self._check(uri, quote, current_parses) for uri, quote in cited]
         cited_anchors = [(a, q, st) for uri, q, st in checked if (a := _parse_anchor(uri, unknown))]
         anchors = [a for a, *_ in read_anchors] + [a for a, *_ in cited_anchors]
         document_id, version_id = _require_single_pin(anchors)
@@ -169,7 +170,24 @@ class SourceService:
 
         return replace(sources, passages=await asyncio.to_thread(mark_all))
 
-    async def _check(self, uri: str, quote: str) -> tuple[str, str, str | None]:
+    async def _find_current_parses(self, cited: list[tuple[str, str]]) -> dict[str, str]:
+        """The current parse of every document a quoted citation names, resolved
+        once for the whole card instead of once per citation."""
+        document_ids = set()
+        for uri, quote in cited:
+            if not (quote or "").strip():
+                continue
+            try:
+                document_ids.add(DocumentAnchor.parse(uri).document_id)
+            except AnchorParseError:
+                continue
+        if not document_ids:
+            return {}
+        return await self._parses.find_current_parse_ids(sorted(document_ids))
+
+    async def _check(
+        self, uri: str, quote: str, current_parses: dict[str, str]
+    ) -> tuple[str, str, str | None]:
         """The anchor to show for one citation, and the server's word on its quote.
 
         A quote that checks out may sit in a narrower element than the anchor
@@ -182,7 +200,9 @@ class SourceService:
         if not quote:
             return uri, "", None
         try:
-            check = await self._citations.verify_citation(uri, quote)
+            check = await self._citations.verify_citation(
+                uri, quote, current_parse_ids=current_parses
+            )
         except (AnchorParseError, NavigationServiceError):
             return uri, quote, None
         narrowed = check.citation.uri if check.valid and check.citation else uri

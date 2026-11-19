@@ -87,88 +87,31 @@ class Document:
 
 
 @dataclass(frozen=True)
-class DocumentAnalysisSelection:
-    document_id: str
-    analysis_id: str
-
-
-@dataclass(frozen=True)
 class DocumentChunkSource:
+    """The analysis result a document's live chunks were generated from."""
+
     document_id: str
     analysis_id: str
     result_hash: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class DocumentAnalysisState:
     """A document's analysis state: its active analysis and the source of its chunks.
 
-    Aggregate root of the document-level state (02-2.4.3). The active analysis
-    is the document's current analysis (see `resolve_current_analysis_id`);
-    the chunk source is the analysis and result hash the live chunks were
-    generated from. Every change goes through the methods below, and a
-    repository writes only the parts changed since the state was loaded, so
-    saving a new chunk source never rewrites a selection another writer just
-    made, and the reverse.
+    Aggregate root of the document-level state (02-2.4.3), read as a whole
+    and written in two independent parts. The active analysis is the
+    document's current analysis (see `resolve_current_analysis_id`); the
+    chunk source is the analysis result the live chunks were generated from.
+    Each writer changes only the part it owns, with its own write: completing
+    an analysis or deleting the active one writes the selection, a rechunk
+    the chunk source, a restore both. So a rechunk never rewrites a selection
+    made meanwhile, and a completion never erases the chunk source.
     """
 
     document_id: str
     active_analysis_id: str | None = None
-    chunks_source_analysis_id: str | None = None
-    chunks_source_result_hash: str | None = None
-    selection_changed: bool = field(default=False, init=False, compare=False, repr=False)
-    chunk_source_changed: bool = field(default=False, init=False, compare=False, repr=False)
-
-    @property
-    def selection(self) -> DocumentAnalysisSelection | None:
-        if self.active_analysis_id is None:
-            return None
-        return DocumentAnalysisSelection(self.document_id, self.active_analysis_id)
-
-    @property
-    def chunk_source(self) -> DocumentChunkSource | None:
-        if self.chunks_source_analysis_id is None or self.chunks_source_result_hash is None:
-            return None
-        return DocumentChunkSource(
-            self.document_id, self.chunks_source_analysis_id, self.chunks_source_result_hash
-        )
-
-    def select(self, analysis_id: str) -> None:
-        """Make `analysis_id` the document's active analysis."""
-        self.active_analysis_id = analysis_id
-        self.selection_changed = True
-
-    def clear_selection(self) -> None:
-        """Leave the document without an active analysis, by choice."""
-        self.active_analysis_id = None
-        self.selection_changed = True
-
-    def record_chunk_source(self, analysis_id: str, result_hash: str) -> None:
-        """Record which analysis result the live chunks were generated from."""
-        self.chunks_source_analysis_id = analysis_id
-        self.chunks_source_result_hash = result_hash
-        self.chunk_source_changed = True
-
-    def clear_chunk_source(self) -> None:
-        """Forget where the live chunks came from: they count as stale."""
-        self.chunks_source_analysis_id = None
-        self.chunks_source_result_hash = None
-        self.chunk_source_changed = True
-
-    def restore(self, version: DocumentVersion) -> None:
-        """Take the selection and chunk source a document version froze."""
-        if version.analysis_id is None:
-            self.clear_selection()
-        else:
-            self.select(version.analysis_id)
-        if version.chunks_source_analysis_id is None:
-            self.clear_chunk_source()
-        else:
-            # The version table keeps both columns set or both NULL.
-            self.record_chunk_source(
-                version.chunks_source_analysis_id,
-                version.chunks_source_result_hash,
-            )
+    chunk_source: DocumentChunkSource | None = None
 
     def are_chunks_stale(self, analysis_id: str, result_hash: str, *, has_chunks: bool) -> bool:
         """Whether the live chunks may not match the result `result_hash` of `analysis_id`.
@@ -177,17 +120,26 @@ class DocumentAnalysisState:
         unknown provenance: they count as stale so the user is invited to
         regenerate them. No chunks means nothing can be stale.
         """
-        if self.chunks_source_analysis_id is None:
+        if self.chunk_source is None:
             return has_chunks
         return (
-            self.chunks_source_analysis_id != analysis_id
-            or self.chunks_source_result_hash != result_hash
+            self.chunk_source.analysis_id != analysis_id
+            or self.chunk_source.result_hash != result_hash
         )
 
-    def mark_saved(self) -> None:
-        """Called by the repository once the changes are committed."""
-        self.selection_changed = False
-        self.chunk_source_changed = False
+    def select_after_deleting(
+        self, analysis_id: str, latest_remaining_parsed_id: str | None
+    ) -> str | None:
+        """The active analysis once `analysis_id` is deleted.
+
+        Deleting another analysis keeps the selection. Deleting the active one
+        hands it to the latest remaining completed analysis with a Docling
+        document (the one the fallback rule would pick), or to none: Ask and
+        MCP must not lose their analysis while a usable one remains.
+        """
+        if self.active_analysis_id != analysis_id:
+            return self.active_analysis_id
+        return latest_remaining_parsed_id
 
 
 def resolve_current_analysis_id(
@@ -202,7 +154,8 @@ def resolve_current_analysis_id(
     row-less database the 0.7.3 upgrade did not reach. Only then does the
     latest completed analysis with a Docling document stand in. A row whose
     active analysis is NULL is a choice (a restored version without an
-    analysis, a deleted active analysis): the document has no current one.
+    analysis, or the active analysis deleted with no completed analysis with
+    a Docling document left to take over): the document has no current one.
     """
     if state is not None:
         return state.active_analysis_id
@@ -228,6 +181,19 @@ class AnalysisJob:
 
     # Joined from document (not persisted separately)
     document_filename: str | None = None
+
+    def can_be_current(self) -> bool:
+        """Only a completed analysis can be a document's current (active) one."""
+        return self.status == AnalysisStatus.COMPLETED
+
+    def can_be_current_of(self, document_id: str) -> bool:
+        """Whether this analysis can be the current one of `document_id`."""
+        return self.document_id == document_id and self.can_be_current()
+
+    def has_docling_document(self) -> bool:
+        """A completed analysis that kept its Docling document: the one the
+        editor, the tree, chunking and the fallback current analysis need."""
+        return self.can_be_current() and bool(self.document_json)
 
     def mark_running(self) -> None:
         """Transition to RUNNING and record the start timestamp."""
@@ -434,3 +400,17 @@ class DocumentVersion:
     chunks_snapshot: str | None = None  # JSON-serialized list of chunk dicts
     summary: str = ""
     created_at: datetime = field(default_factory=get_utc_now)
+
+    @property
+    def chunk_source(self) -> DocumentChunkSource | None:
+        """The chunk source this version froze, or None.
+
+        A half-filled pair counts as none: a database upgraded from 0.7.3 has
+        no CHECK keeping the two columns together, and restoring must not fail
+        on such a row.
+        """
+        if self.chunks_source_analysis_id is None or self.chunks_source_result_hash is None:
+            return None
+        return DocumentChunkSource(
+            self.document_id, self.chunks_source_analysis_id, self.chunks_source_result_hash
+        )

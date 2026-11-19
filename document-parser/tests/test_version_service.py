@@ -13,7 +13,7 @@ from domain.models import (
     AnalysisStatus,
     Chunk,
     Document,
-    DocumentAnalysisState,
+    DocumentVersion,
     DocumentVersionKind,
 )
 from domain.value_objects import ChunkBbox, ChunkDocItem
@@ -23,11 +23,13 @@ from persistence.database import init_db
 from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
+from services.current_analysis import CurrentAnalysisResolver
 from services.version_service import (
     VersionNotFoundError,
     VersionService,
     VersionServiceError,
 )
+from tests.analysis_state_helpers import set_chunk_source, set_selection
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +59,9 @@ def service(repos):
         document_repo=repos["documents"],
         analysis_repo=repos["analyses"],
         analysis_state_repo=repos["analysis_state"],
+        current_analysis=CurrentAnalysisResolver(
+            state_repo=repos["analysis_state"], analysis_repo=repos["analyses"]
+        ),
     )
 
 
@@ -67,13 +72,6 @@ async def doc(repos):
     return d
 
 
-async def _change_state(repos, document_id: str, change) -> None:
-    states = repos["analysis_state"]
-    state = await states.find_state(document_id) or DocumentAnalysisState(document_id)
-    change(state)
-    await states.save_state(state)
-
-
 class TestRecordOnAnalysis:
     async def test_first_version_has_empty_chunks_snapshot(self, service, doc):
         version = await service.record_on_analysis(doc.id, "a1")
@@ -82,7 +80,7 @@ class TestRecordOnAnalysis:
         assert json.loads(version.chunks_snapshot or "[]") == []
 
     async def test_snapshot_carries_existing_chunks(self, service, repos, doc):
-        await _change_state(repos, doc.id, lambda s: s.record_chunk_source("old", "a" * 64))
+        await set_chunk_source(doc.id, "old", "a" * 64)
         await repos["analyses"].insert(
             AnalysisJob(id="a2", document_id=doc.id, status=AnalysisStatus.COMPLETED)
         )
@@ -154,7 +152,7 @@ class TestRestore:
         await repos["analyses"].insert(
             AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
         )
-        await _change_state(repos, doc.id, lambda s: s.select("a1"))
+        await set_selection(doc.id, "a1")
         version = await service.record_on_rechunk(doc.id, "a1", "c" * 64)
         await service.restore(doc.id, version.id)
         state = await repos["analysis_state"].find_state(doc.id)
@@ -217,16 +215,95 @@ class TestRestore:
         await repos["chunks"].soft_delete_for_document(doc.id, at=datetime.now(UTC))
         await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="after")])
 
-        async def fail(db, state):
+        async def fail(db, document_id, source):
             raise RuntimeError("state write failed")
 
-        monkeypatch.setattr("persistence.chunk_repo.write_document_analysis_state", fail)
+        monkeypatch.setattr("persistence.chunk_repo.write_chunk_source", fail)
         with pytest.raises(RuntimeError, match="state write failed"):
             await service.restore(doc.id, version.id)
 
         live = await repos["chunks"].find_for_document(doc.id)
         assert [c.text for c in live] == ["after"]
         assert await repos["analysis_state"].find_state(doc.id) is None
+
+    async def test_restore_on_a_document_without_state_row_keeps_its_analysis(
+        self, service, repos, doc
+    ):
+        """A version without an analysis, restored on a document with no state
+        row: the row the chunk source creates keeps the fallback analysis."""
+        job = AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = "{}"
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        version = DocumentVersion(
+            id="v-no-analysis",
+            document_id=doc.id,
+            kind=DocumentVersionKind.CHUNKS,
+            chunks_source_analysis_id="a1",
+            chunks_source_result_hash="a" * 64,
+            chunks_snapshot="[]",
+        )
+        await repos["versions"].insert(version)
+        assert await repos["analysis_state"].find_state(doc.id) is None
+
+        await service.restore(doc.id, version.id)
+
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == "a1"
+        assert state.chunk_source.analysis_id == "a1"
+
+    async def test_an_analysis_deleted_after_the_check_answers_409(
+        self, service, repos, doc, monkeypatch
+    ):
+        """The state trigger refuses it; the caller gets the pre-check's 409, not a 500."""
+        await repos["analyses"].insert(
+            AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        )
+        await repos["chunks"].insert_many([Chunk(document_id=doc.id, sequence=0, text="live")])
+        version = await service.record_on_rechunk(doc.id, "a1", "a" * 64)
+        find_by_id = repos["analyses"].find_by_id
+
+        async def find_then_delete(job_id):
+            job = await find_by_id(job_id)
+            await repos["analyses"].delete(job_id)
+            return job
+
+        monkeypatch.setattr(repos["analyses"], "find_by_id", find_then_delete)
+
+        with pytest.raises(VersionServiceError) as exc:
+            await service.restore(doc.id, version.id)
+
+        assert exc.value.http_status == 409
+        assert "no longer available" in str(exc.value)
+        assert [c.text for c in await repos["chunks"].find_for_document(doc.id)] == ["live"]
+
+    async def test_a_half_filled_chunk_source_restores_as_none(
+        self, service, repos, doc, monkeypatch
+    ):
+        """A 0.7.3-upgraded version table has no CHECK: half a source must not fail restore."""
+        await repos["analyses"].insert(
+            AnalysisJob(id="a1", document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        )
+        await set_selection(doc.id, "a1")
+        await set_chunk_source(doc.id, "a1", "a" * 64)
+        version = DocumentVersion(
+            id="v-half",
+            document_id=doc.id,
+            kind=DocumentVersionKind.CHUNKS,
+            analysis_id="a1",
+            chunks_source_analysis_id="a1",
+            chunks_source_result_hash=None,
+            chunks_snapshot="[]",
+        )
+        # A fresh database's CHECK refuses such a row: serve it as an upgraded one would.
+        monkeypatch.setattr(repos["versions"], "find_by_id", AsyncMock(return_value=version))
+
+        await service.restore(doc.id, version.id)
+
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == "a1"
+        assert state.chunk_source is None
 
     async def test_restore_unknown_version_raises(self, service, doc):
         with pytest.raises(VersionNotFoundError):

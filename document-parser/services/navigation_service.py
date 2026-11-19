@@ -19,16 +19,13 @@ from typing import TYPE_CHECKING
 from domain.anchors import DocumentAnchor
 from domain.element_reader import list_section_refs, render_markdown, resolve
 from domain.navigation import (
-    ANCHOR_TOKENS,
     DocumentOutline,
     DocumentSearch,
     DocumentSummary,
     Excerpt,
     OutlineNode,
-    clip_point,
-    clip_to_tokens,
     is_heading,
-    read_cost,
+    pick_within_budget,
 )
 from domain.outline_builder import build_outline
 from domain.parse_index import parse_page_ref
@@ -147,8 +144,8 @@ class NavigationService:
             )
 
         refs, start = self._list_refs_to_read(parse, ref, include=include, cursor=cursor)
-        picked, spent, truncated, next_cursor = self._pick(
-            parse, refs, self._compute_budget(max_tokens), start
+        picked, spent, truncated, next_cursor = pick_within_budget(
+            parse.index, refs, self._compute_budget(max_tokens), start
         )
 
         pages = [element.page for element in picked if element.page is not None]
@@ -230,41 +227,6 @@ class NavigationService:
                 "`next_cursor` returned by the previous read, unchanged."
             )
         return refs[refs.index(resume) :], start
-
-    def _pick(
-        self,
-        parse: LoadedParse,
-        refs: list[str],
-        budget: int,
-        start: int = 0,
-    ) -> tuple[list[ResolvedElement], int, bool, str | None]:
-        """Take elements in reading order until the budget is spent — the
-        first from character `start`, where a previous read cut it."""
-        picked: list[ResolvedElement] = []
-        spent = 0
-
-        for position, candidate in enumerate(refs):
-            element = resolve(parse.index, candidate)
-            if element is None or not element.text.strip():
-                continue
-            offset = start if position == 0 else 0
-            if offset:
-                element = replace(element, text=element.text[offset:])
-            cost = read_cost(element.text)
-            if picked and spent + cost > budget:
-                return picked, spent, True, candidate
-            if not picked and cost > budget:
-                # Larger than the whole budget: cut at a word boundary, and
-                # the cursor resumes inside the element where the cut fell.
-                room = budget - ANCHOR_TOKENS
-                cut = clip_point(element.text, room)
-                if cut < len(element.text):
-                    clipped = replace(element, text=clip_to_tokens(element.text, room))
-                    return [clipped], read_cost(clipped.text), True, f"{candidate}@{offset + cut}"
-            picked.append(element)
-            spent += cost
-
-        return picked, spent, False, None
 
     def _compute_budget(self, max_tokens: int | None) -> int:
         requested = max_tokens or self._config.default_read_tokens

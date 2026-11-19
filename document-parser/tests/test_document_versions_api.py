@@ -26,6 +26,7 @@ from persistence.chunk_repo import SqliteChunkRepository
 from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_version_repo import SqliteDocumentVersionRepository
+from services.current_analysis import CurrentAnalysisResolver
 from services.version_service import VersionService
 
 BASE = "/api/documents/doc-1"
@@ -83,6 +84,7 @@ async def _seed() -> VersionService:
         document_repo=documents,
         analysis_repo=analyses,
         analysis_state_repo=state,
+        current_analysis=CurrentAnalysisResolver(state_repo=state, analysis_repo=analyses),
     )
 
 

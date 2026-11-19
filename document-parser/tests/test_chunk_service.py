@@ -34,6 +34,8 @@ from services.chunk_errors import (
 from services.chunk_service import ChunkService
 from services.current_analysis import CurrentAnalysisResolver
 from services.ingestion_service import IngestionResult
+from tests.analysis_state_helpers import set_selection
+from tests.current_result_fakes import UneditedResultReader
 
 # Stateless shim — safe to share across the entire test module.
 _TREE_READER = DoclingTreeReader()
@@ -87,9 +89,8 @@ def service(repos):
         chunk_repo=repos["chunks"],
         chunk_push_repo=repos["pushes"],
         document_repo=repos["documents"],
-        analysis_state_repo=repos["analysis_state"],
         analysis_repo=repos["analyses"],
-        current_analysis=repos["current"],
+        active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
         tree_reader=_TREE_READER,
         chunker=None,
         ingestion_service=None,
@@ -433,15 +434,10 @@ class TestRechunkDocument:
             )
             await repos["analyses"].complete_and_select(job)
 
-    async def _change_state(self, repos, doc, change) -> None:
-        state = await repos["analysis_state"].find_state(doc.id)
-        change(state)
-        await repos["analysis_state"].save_state(state)
-
     async def test_rechunk_reads_the_active_analysis_not_the_latest(self, service, repos, doc):
         """02-2.3.1: two completed analyses, the user restored the older one."""
         await self._complete_two_analyses(repos, doc)
-        await self._change_state(repos, doc, lambda state: state.select("older"))
+        await set_selection(doc.id, "older")
         chunker = MagicMock()
         chunker.chunk = AsyncMock(return_value=[ChunkResult(text="t", source_page=1)])
         service._chunker = chunker
@@ -456,13 +452,34 @@ class TestRechunkDocument:
     async def test_rechunk_409_when_the_active_analysis_was_cleared(self, service, repos, doc):
         """A cleared selection is a choice: no fallback to the latest analysis."""
         await self._complete_two_analyses(repos, doc)
-        await self._change_state(repos, doc, lambda state: state.clear_selection())
+        await set_selection(doc.id, None)
         service._chunker = MagicMock()
 
         with pytest.raises(ChunkServiceError) as exc:
             await service.rechunk_document(doc.id)
 
         assert exc.value.http_status == 409
+
+    async def test_first_rechunk_without_a_state_row_keeps_the_current_analysis(
+        self, service, repos, doc
+    ):
+        """The row a rechunk creates selects the analysis the fallback gave, not NULL."""
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = json.dumps({"texts": []})
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        assert await repos["analysis_state"].find_state(doc.id) is None
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(return_value=[ChunkResult(text="t", source_page=1)])
+        service._chunker = chunker
+
+        await service.rechunk_document(doc.id)
+
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == job.id
+        assert state.chunk_source.analysis_id == job.id
+        assert await repos["current"].find_current_analysis_id(doc.id) == job.id
 
 
 # ---------------------------------------------------------------------------
@@ -575,9 +592,8 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
-            current_analysis=repos["current"],
+            active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
@@ -627,9 +643,8 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
-            current_analysis=repos["current"],
+            active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=None,
@@ -706,9 +721,8 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
-            current_analysis=repos["current"],
+            active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=failing,
@@ -742,9 +756,8 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
-            current_analysis=repos["current"],
+            active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
@@ -780,9 +793,8 @@ class TestPushToStore:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
-            current_analysis=repos["current"],
+            active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=mock_ingestion,
@@ -834,9 +846,8 @@ class TestListPushes:
             chunk_repo=repos["chunks"],
             chunk_push_repo=repos["pushes"],
             document_repo=repos["documents"],
-            analysis_state_repo=repos["analysis_state"],
             analysis_repo=repos["analyses"],
-            current_analysis=repos["current"],
+            active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
             tree_reader=_TREE_READER,
             chunker=None,
             ingestion_service=None,

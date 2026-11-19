@@ -17,10 +17,9 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from domain.exceptions import AnalysisNotSelectableError
 from domain.models import (
-    AnalysisStatus,
     Chunk,
-    DocumentAnalysisState,
     DocumentVersion,
     DocumentVersionKind,
     generate_compact_id,
@@ -32,6 +31,7 @@ if TYPE_CHECKING:
     from domain.ports import (
         AnalysisRepository,
         ChunkRepository,
+        CurrentAnalysisReader,
         DocumentAnalysisStateRepository,
         DocumentRepository,
         DocumentVersionRepository,
@@ -72,6 +72,10 @@ class VersionNotFoundError(VersionServiceError):
     http_status = 404
 
 
+def _version_analysis_gone() -> VersionServiceError:
+    return VersionServiceError("Version analysis is no longer available", http_status=409)
+
+
 class VersionService:
     """Records and restores analysis selections with chunk snapshots."""
 
@@ -82,8 +86,10 @@ class VersionService:
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
         analysis_state_repo: DocumentAnalysisStateRepository,
+        current_analysis: CurrentAnalysisReader,
     ):
         self._versions = version_repo
+        self._current = current_analysis
         self._chunks = chunk_repo
         self._documents = document_repo
         self._analyses = analysis_repo
@@ -153,8 +159,9 @@ class VersionService:
         The chunk replacement and the analysis state (active analysis, chunk
         source) are one transaction (02-2.4.3): a failure leaves both as they
         were, never restored chunks recorded against the previous analysis.
-        The checks before it read separately, so an analysis deleted between
-        the check and the write fails the state trigger and rolls back.
+        The checks before it read separately: an analysis deleted between the
+        check and the write is refused by the state trigger, the transaction
+        rolls back and the caller gets the same 409 as the check gives.
         """
         await self._require_doc(document_id)
         version = await self._versions.find_by_id(version_id)
@@ -162,14 +169,8 @@ class VersionService:
             raise VersionNotFoundError(f"Version not found: {version_id}")
         if version.analysis_id is not None:
             analysis = await self._analyses.find_by_id(version.analysis_id)
-            if (
-                analysis is None
-                or analysis.document_id != document_id
-                or analysis.status != AnalysisStatus.COMPLETED
-            ):
-                raise VersionServiceError(
-                    "Version analysis is no longer available", http_status=409
-                )
+            if analysis is None or not analysis.can_be_current_of(document_id):
+                raise _version_analysis_gone()
 
         # The snapshot's chunks come back under fresh ids.
         raw_chunks = json.loads(version.chunks_snapshot or "[]")
@@ -179,11 +180,21 @@ class VersionService:
 
         # History restore is an aggregate operation: the backend, rather
         # than the frontend, owns which immutable analysis is active.
-        state = await self._states.find_state(document_id) or DocumentAnalysisState(document_id)
-        state.restore(version)
-        await self._chunks.replace_for_document(
-            document_id, new_chunks, at=get_utc_now(), state=state
-        )
+        active_analysis_id = version.analysis_id
+        if active_analysis_id is None and await self._states.find_state(document_id) is None:
+            # No row yet: the one this write may create keeps the analysis the
+            # fallback rule gives, rather than a NULL selection hiding it.
+            active_analysis_id = await self._current.find_current_analysis_id(document_id)
+        try:
+            await self._chunks.replace_for_document(
+                document_id,
+                new_chunks,
+                at=get_utc_now(),
+                chunk_source=version.chunk_source,
+                active_analysis_id=active_analysis_id,
+            )
+        except AnalysisNotSelectableError as exc:
+            raise _version_analysis_gone() from exc
 
         logger.info(
             "Restored doc %s to version %s (%d chunks)",

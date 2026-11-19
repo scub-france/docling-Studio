@@ -24,7 +24,7 @@ from domain.analysis_editing import (
     hash_result,
     resolve_active_edit_commands,
 )
-from domain.models import AnalysisJob, AnalysisStatus, DocumentAnalysisState
+from domain.models import AnalysisJob, AnalysisStatus
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -97,8 +97,11 @@ class AnalysisEditService:
             self._unedited_projection = (base.id, base_hash, projection)
         return await self._build_snapshot(document, base, projection, sequence)
 
-    async def load_active_result(self, document_id: str) -> EditorSnapshot:
-        """The current analysis with its saved edits, as document features read it."""
+    async def load_current_edited(self, document_id: str) -> EditorSnapshot:
+        """The current analysis with its saved edits, as document features read it.
+
+        `CurrentAnalysisReader.load_current_original` reads the same analysis
+        without its edits."""
         await self._require_document(document_id)
         analysis_id = await self._current.find_current_analysis_id(document_id)
         if analysis_id is None:
@@ -274,7 +277,7 @@ class AnalysisEditService:
             base = await self._analyses.find_by_id(analysis_id)
         if base is None:
             raise AnalysisEditNotFoundError(f"Analysis not found: {analysis_id}")
-        if base.status != AnalysisStatus.COMPLETED or not base.document_json:
+        if not base.has_docling_document():
             raise AnalysisEditUnavailableError(
                 "This analysis has no canonical Docling document. Re-run the analysis to enable "
                 "the editor and document tree."
@@ -355,14 +358,12 @@ class AnalysisEditService:
     async def _has_stale_chunks(self, document_id: str, base_id: str, document_json: str) -> bool:
         """Whether the live chunks may not match this analysis result (the rule
         is `DocumentAnalysisState.are_chunks_stale`)."""
-        state = await self._states.find_state(document_id) or DocumentAnalysisState(document_id)
-        # Counting only matters when the chunks have no recorded source.
-        has_chunks = (
-            state.chunk_source is None
-            and self._chunks is not None
-            and await self._chunks.count_for_document(document_id) > 0
-        )
-        return state.are_chunks_stale(base_id, hash_result(document_json), has_chunks=has_chunks)
+        state = await self._states.find_state(document_id)
+        if state is not None and state.chunk_source is not None:
+            # Hashing the whole result only pays when there is a hash to compare.
+            return state.are_chunks_stale(base_id, hash_result(document_json), has_chunks=True)
+        # No recorded source: only whether there are chunks at all matters.
+        return self._chunks is not None and await self._chunks.count_for_document(document_id) > 0
 
 
 def _build_cache(

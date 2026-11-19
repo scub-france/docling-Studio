@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from domain.exceptions import AnalysisNotSelectableError
 from domain.models import Chunk
 from domain.value_objects import ChunkBbox, ChunkDocItem
 from persistence.database import get_connection
-from persistence.document_analysis_repo import write_document_analysis_state
+from persistence.document_analysis_repo import (
+    adopt_selection,
+    write_chunk_source,
+    write_selection,
+)
 from persistence.iso_datetime import parse_iso
 
 if TYPE_CHECKING:
-    from domain.models import DocumentAnalysisState
+    from domain.models import DocumentChunkSource
 
 
 def _row_to_chunk(row) -> Chunk:
@@ -142,17 +148,19 @@ class SqliteChunkRepository:
         chunks: list[Chunk],
         *,
         at: datetime,
-        state: DocumentAnalysisState,
+        chunk_source: DocumentChunkSource | None,
+        active_analysis_id: str | None,
+        keep_selection: bool = False,
     ) -> int:
-        """Replace a document's live chunks and save its analysis state, atomically.
+        """Replace a document's live chunks and write its analysis state, atomically.
 
-        Soft-deletes every live chunk, inserts `chunks` and writes the changed
-        parts of `state` in one transaction (02-2.4.3): the live chunks and
-        the record of where they came from never disagree after a failure.
-        Returns how many chunks were soft-deleted.
+        Soft-deletes every live chunk, inserts `chunks`, writes the selection
+        and the chunk source in one transaction (02-2.4.3): the live chunks
+        and the record of where they came from never disagree after a
+        failure. Returns how many chunks were soft-deleted.
         """
-        if state.document_id != document_id:
-            raise ValueError("The analysis state must belong to the document")
+        if chunk_source is not None and chunk_source.document_id != document_id:
+            raise ValueError("The chunk source must belong to the document")
         async with get_connection() as db:
             cursor = await db.execute(
                 _SOFT_DELETE_FOR_DOCUMENT_SQL,
@@ -161,9 +169,17 @@ class SqliteChunkRepository:
             deleted = cursor.rowcount
             if chunks:
                 await db.executemany(_INSERT_SQL, [_chunk_to_params(c) for c in chunks])
-            await write_document_analysis_state(db, state)
+            try:
+                if keep_selection:
+                    await adopt_selection(db, document_id, active_analysis_id)
+                else:
+                    await write_selection(db, document_id, active_analysis_id)
+            except sqlite3.IntegrityError as exc:
+                raise AnalysisNotSelectableError(
+                    f"Analysis {active_analysis_id} is no longer available"
+                ) from exc
+            await write_chunk_source(db, document_id, chunk_source)
             await db.commit()
-        state.mark_saved()
         return deleted
 
     async def shift_sequences(

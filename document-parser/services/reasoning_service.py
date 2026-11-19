@@ -100,7 +100,7 @@ class ReasoningService:
         if not query.strip():
             raise ReasoningEmptyQueryError("Query must not be empty")
 
-        current = await self._current.load_current_analysis(doc_id)
+        current = await self._current.load_current_original(doc_id)
         if current is None or not current.document_json:
             raise ReasoningNoAnalysisError(f"No completed analysis with document_json for {doc_id}")
 

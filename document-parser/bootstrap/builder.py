@@ -144,9 +144,7 @@ class AppStateBuilder:
         )
         chunk_service = build_chunk_service(
             document_repo=document_repo,
-            analysis_state_repo=document_analysis_repo,
             analysis_repo=analysis_repo,
-            current_analysis=current_analysis,
             chunk_repo=chunk_repo,
             chunk_push_repo=chunk_push_repo,
             store_repo=store_repo,
@@ -161,6 +159,7 @@ class AppStateBuilder:
             document_repo=document_repo,
             analysis_repo=analysis_repo,
             analysis_state_repo=document_analysis_repo,
+            current_analysis=current_analysis,
         )
 
         # The analysis service still carries the chunk promoter wiring for
@@ -201,7 +200,6 @@ class AppStateBuilder:
                 document_repo=document_repo,
                 analysis_repo=analysis_repo,
                 active_result_service=analysis_edit_service,
-                current_analysis=current_analysis,
                 file_store=file_store,
             ),
             store_service=StoreService(

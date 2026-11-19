@@ -150,6 +150,26 @@ class TestQuotes:
         [passage] = report.sources.passages
         assert passage.status is None
 
+    async def test_the_current_parse_is_resolved_once_for_all_citations(self, monkeypatch):
+        tools = make_document_tools()
+        parses = tools.sources._parses
+        resolve = parses.find_current_parse_ids
+        calls = []
+
+        async def count(document_ids):
+            calls.append(list(document_ids))
+            return await resolve(document_ids)
+
+        monkeypatch.setattr(parses, "find_current_parse_ids", count)
+        report = await tools.sources.show(
+            "Quel est le préavis ?",
+            [(anchor_uri(PREAVIS_SECTION), "", "")],
+            [(anchor_uri(PREAVIS_REF), "trois mois à compter")] * 3,
+        )
+
+        assert calls == [[DOC_ID]]
+        assert {p.status for p in report.sources.passages} == {"verified"}
+
     async def test_the_report_carries_the_page_count(self):
         report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "", "")])
         assert report.page_count == 2

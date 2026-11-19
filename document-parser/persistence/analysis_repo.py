@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from domain.models import AnalysisJob, AnalysisStatus, DocumentAnalysisState
+from domain.models import AnalysisJob, AnalysisStatus
 from persistence.database import get_connection
-from persistence.document_analysis_repo import write_document_analysis_state
+from persistence.document_analysis_repo import read_document_analysis_state, write_selection
 from persistence.iso_datetime import parse_iso
+
+if TYPE_CHECKING:
+    import aiosqlite
 
 
 def _row_to_job(row) -> AnalysisJob:
@@ -123,20 +127,8 @@ class SqliteAnalysisRepository:
         """
         if not document_ids:
             return {}
-        placeholders = ",".join("?" for _ in document_ids)
         async with get_connection() as db:
-            cursor = await db.execute(
-                f"""SELECT document_id, id FROM (
-                        SELECT document_id, id, ROW_NUMBER() OVER (
-                            PARTITION BY document_id ORDER BY completed_at DESC
-                        ) AS rank
-                        FROM analysis_jobs
-                        WHERE document_id IN ({placeholders})
-                          AND status = 'COMPLETED' AND document_json IS NOT NULL
-                    ) WHERE rank = 1""",
-                tuple(document_ids),
-            )
-            return {row["document_id"]: row["id"] for row in await cursor.fetchall()}
+            return await _find_latest_parsed_ids(db, document_ids)
 
     async def find_parsed_document_id(self, job_id: str) -> str | None:
         """The document an analysis with a parse belongs to, or None."""
@@ -182,17 +174,15 @@ class SqliteAnalysisRepository:
         Both writes share one transaction: a completed job never exists
         without its selection, and a failed selection rolls the job back.
         """
-        if job.status != AnalysisStatus.COMPLETED:
+        if not job.can_be_current():
             raise ValueError("Only a completed analysis can become active")
-        state = DocumentAnalysisState(job.document_id)
-        state.select(job.id)
         async with get_connection() as db:
             await _write_job_state(db, job)
-            # The state SQL lives in the state repository; it joins this
-            # transaction through the shared connection.
-            await write_document_analysis_state(db, state)
+            # Only the selection: the chunk source stays as the last rechunk
+            # left it. The state SQL lives in the state repository; it joins
+            # this transaction through the shared connection.
+            await write_selection(db, job.document_id, job.id)
             await db.commit()
-        state.mark_saved()
 
     async def update_progress(self, job_id: str, current: int, total: int) -> None:
         """Update only the progress columns for a running analysis."""
@@ -214,11 +204,37 @@ class SqliteAnalysisRepository:
             return cursor.rowcount > 0
 
     async def delete(self, job_id: str) -> bool:
-        """Delete an analysis job by ID. Returns True if a row was removed."""
+        """Delete an analysis job by ID. Returns True if a row was removed.
+
+        Deleting the document's active analysis hands the selection to the
+        latest remaining completed analysis with a Docling document
+        (`DocumentAnalysisState.select_after_deleting`), in the same
+        transaction: the foreign key alone would leave the document without
+        a current analysis while a usable one remains.
+        """
         async with get_connection() as db:
-            cursor = await db.execute("DELETE FROM analysis_jobs WHERE id = ?", (job_id,))
+            # Take the write lock first: the state read below must still hold
+            # when the delete and the new selection are written.
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                "SELECT document_id FROM analysis_jobs WHERE id = ?", (job_id,)
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                await db.rollback()
+                return False
+            document_id = row["document_id"]
+            state = await read_document_analysis_state(db, document_id)
+            await db.execute("DELETE FROM analysis_jobs WHERE id = ?", (job_id,))
+            if state is not None and state.active_analysis_id == job_id:
+                latest = await _find_latest_parsed_ids(db, [document_id])
+                await write_selection(
+                    db,
+                    document_id,
+                    state.select_after_deleting(job_id, latest.get(document_id)),
+                )
             await db.commit()
-            return cursor.rowcount > 0
+            return True
 
     async def delete_by_document(self, document_id: str) -> int:
         """Delete all analysis jobs for a given document. Returns count deleted."""
@@ -228,6 +244,28 @@ class SqliteAnalysisRepository:
             )
             await db.commit()
             return cursor.rowcount
+
+
+async def _find_latest_parsed_ids(
+    db: aiosqlite.Connection, document_ids: list[str]
+) -> dict[str, str]:
+    """Each document's latest completed analysis with a Docling document, on `db`.
+
+    The SQL form of `AnalysisJob.has_docling_document`, ranked by completion.
+    """
+    placeholders = ",".join("?" for _ in document_ids)
+    cursor = await db.execute(
+        f"""SELECT document_id, id FROM (
+                SELECT document_id, id, ROW_NUMBER() OVER (
+                    PARTITION BY document_id ORDER BY completed_at DESC
+                ) AS rank
+                FROM analysis_jobs
+                WHERE document_id IN ({placeholders})
+                  AND status = 'COMPLETED' AND document_json IS NOT NULL
+            ) WHERE rank = 1""",
+        tuple(document_ids),
+    )
+    return {row["document_id"]: row["id"] for row in await cursor.fetchall()}
 
 
 async def _write_job_state(db, job: AnalysisJob) -> None:

@@ -26,6 +26,7 @@ from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from services.current_analysis import CurrentAnalysisResolver
 from services.export_service import ExportService
+from tests.current_result_fakes import UneditedResultReader
 
 URL = "/api/documents/doc-1/export?format=pdf"
 
@@ -57,8 +58,11 @@ async def _seed(storage_path: str, upload_dir: str) -> ExportService:
     return ExportService(
         document_repo=documents,
         analysis_repo=analyses,
-        current_analysis=CurrentAnalysisResolver(
-            state_repo=SqliteDocumentAnalysisRepository(), analysis_repo=analyses
+        active_result_service=UneditedResultReader(
+            CurrentAnalysisResolver(
+                state_repo=SqliteDocumentAnalysisRepository(), analysis_repo=analyses
+            ),
+            analyses,
         ),
         file_store=LocalDocumentFileStore(upload_dir),
     )

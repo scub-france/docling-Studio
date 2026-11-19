@@ -32,7 +32,7 @@ from domain.analysis_editing import (
     ProjectedAnalysis,
     resolve_active_edit_commands,
 )
-from domain.models import AnalysisJob, AnalysisStatus, Document, DocumentAnalysisState
+from domain.models import AnalysisJob, AnalysisStatus, Document
 from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.docling_editor import DoclingDocumentEditor
 from infra.docling_pages import extract_pages_detail
@@ -45,6 +45,7 @@ from persistence.document_repo import SqliteDocumentRepository
 from services.analysis_edit_service import AnalysisEditService
 from services.current_analysis import CurrentAnalysisResolver
 from services.export_service import ExportFormat, ExportService
+from tests.analysis_state_helpers import set_chunk_source, set_selection
 
 
 def _current_analysis() -> CurrentAnalysisResolver:
@@ -52,14 +53,6 @@ def _current_analysis() -> CurrentAnalysisResolver:
         state_repo=SqliteDocumentAnalysisRepository(),
         analysis_repo=SqliteAnalysisRepository(),
     )
-
-
-async def _change_state(document_id: str, change) -> None:
-    """Apply `change` to the document's analysis state and save it, as services do."""
-    states = SqliteDocumentAnalysisRepository()
-    state = await states.find_state(document_id) or DocumentAnalysisState(document_id)
-    change(state)
-    await states.save_state(state)
 
 
 def _document() -> tuple[str, str, str]:
@@ -581,7 +574,7 @@ async def edit_service(tmp_path: Path, monkeypatch):
     )
     await analyses.insert(job)
     await analyses.update_status(job)
-    await _change_state(document.id, lambda state: state.select(job.id))
+    await set_selection(document.id, job.id)
     service = AnalysisEditService(
         analysis_repo=analyses,
         document_repo=documents,
@@ -729,10 +722,30 @@ async def test_chunks_with_no_recorded_source_are_stale(edit_service):
     current_hash = hashlib.sha256(
         (await service.load_editor("doc-1")).job.document_json.encode("utf-8")
     ).hexdigest()
-    await _change_state(
-        "doc-1", lambda state: state.record_chunk_source("analysis-1", current_hash)
-    )
+    await set_chunk_source("doc-1", "analysis-1", current_hash)
     assert not (await service.load_editor("doc-1")).chunks_stale
+
+
+@pytest.mark.asyncio
+async def test_staleness_hashes_the_result_only_against_a_recorded_source(
+    edit_service, monkeypatch
+):
+    """Without a recorded chunk source there is no hash to compare: none is computed."""
+    hashed = []
+
+    def spy(document_json):
+        hashed.append(document_json)
+        return "0" * 64
+
+    monkeypatch.setattr("services.analysis_edit_service.hash_result", spy)
+    service = _service_with_chunks(3)
+
+    assert await service._has_stale_chunks("doc-1", "analysis-1", "{}")
+    assert hashed == []
+
+    await set_chunk_source("doc-1", "analysis-1", "0" * 64)
+    assert not await service._has_stale_chunks("doc-1", "analysis-1", "{}")
+    assert hashed == ["{}"]
 
 
 @pytest.mark.asyncio
@@ -752,7 +765,7 @@ async def test_empty_save_returns_the_requested_analysis(edit_service):
     )
     await analyses.insert(other)
     await analyses.update_status(other)
-    await _change_state("doc-1", lambda state: state.select("analysis-1"))
+    await set_selection("doc-1", "analysis-1")
 
     snapshot = await service.save("doc-1", [], 0, "analysis-2")
 
@@ -770,28 +783,28 @@ async def test_active_result_always_uses_saved_edits_for_selected_analysis(edit_
         "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
     )
     assert (await states.find_state("doc-1")).active_analysis_id == "analysis-1"
-    assert "Edited" in (await service.load_active_result("doc-1")).job.content_markdown
+    assert "Edited" in (await service.load_current_edited("doc-1")).job.content_markdown
 
-    await _change_state("doc-1", lambda state: state.select("analysis-1"))
-    assert "Edited" in (await service.load_active_result("doc-1")).job.content_markdown
+    await set_selection("doc-1", "analysis-1")
+    assert "Edited" in (await service.load_current_edited("doc-1")).job.content_markdown
     assert "Edited" in (await service.load_editor("doc-1")).job.content_markdown
 
-    await _change_state("doc-1", lambda state: state.record_chunk_source("analysis-1", "0" * 64))
-    assert (await service.load_active_result("doc-1")).chunks_stale
+    await set_chunk_source("doc-1", "analysis-1", "0" * 64)
+    assert (await service.load_current_edited("doc-1")).chunks_stale
     edited_hash = hashlib.sha256(
-        (await service.load_active_result("doc-1")).job.document_json.encode("utf-8")
+        (await service.load_current_edited("doc-1")).job.document_json.encode("utf-8")
     ).hexdigest()
-    await _change_state("doc-1", lambda state: state.record_chunk_source("analysis-1", edited_hash))
+    await set_chunk_source("doc-1", "analysis-1", edited_hash)
     assert not (await service.load_editor("doc-1")).chunks_stale
 
     await service.set_command_active("doc-1", 1, False, 1)
-    assert (await service.load_active_result("doc-1")).chunks_stale
+    assert (await service.load_current_edited("doc-1")).chunks_stale
     await service.set_command_active("doc-1", 1, True, 2)
-    assert not (await service.load_active_result("doc-1")).chunks_stale
+    assert not (await service.load_current_edited("doc-1")).chunks_stale
 
-    await _change_state("doc-1", lambda state: state.clear_selection())
+    await set_selection("doc-1", None)
     with pytest.raises(AnalysisEditUnavailableError, match="no active analysis"):
-        await service.load_active_result("doc-1")
+        await service.load_current_edited("doc-1")
 
 
 @pytest.mark.asyncio
@@ -801,7 +814,6 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
         SqliteDocumentRepository(),
         analyses,
         active_result_service=service,
-        current_analysis=_current_analysis(),
         file_store=Mock(),
     )
     initial = await service.load_editor("doc-1")
@@ -821,7 +833,7 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     assert "First edited" not in reverted.job.content_markdown
     assert "Second edited" in reverted.job.content_markdown
     assert (
-        await service.load_active_result("doc-1")
+        await service.load_current_edited("doc-1")
     ).job.content_markdown == reverted.job.content_markdown
     assert (await exports.export("doc-1", ExportFormat.MD)).content == reverted.job.content_markdown
     assert (await exports.export("doc-1", ExportFormat.JSON)).content == reverted.job.document_json

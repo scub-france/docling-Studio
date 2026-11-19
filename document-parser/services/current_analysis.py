@@ -4,16 +4,17 @@ The rule itself is `domain.models.resolve_current_analysis_id`: the active
 selection, or for a document with no state row the latest completed analysis
 with a Docling document. This module only feeds it. Every reader that picks
 an analysis without being told which one asks here: the editor and its
-active result, chunk generation, the tree, exports, Ask and the MCP tools.
-What each one reads from that analysis (the original result or the result
-with saved edits) stays its own decision.
+edited result, chunk generation, the tree, exports, Ask and the MCP tools.
+What each one reads from that analysis stays its own decision: the original
+result (`load_current_original`, here) or the result with saved edits
+(`load_current_edited`, on the editor service).
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from domain.models import AnalysisStatus, resolve_current_analysis_id
+from domain.models import resolve_current_analysis_id
 
 if TYPE_CHECKING:
     from domain.models import AnalysisJob
@@ -65,12 +66,12 @@ class CurrentAnalysisResolver:
         parsed = await self._analyses.find_parsed_ids(sorted(set(current.values())))
         return {doc_id: aid for doc_id, aid in current.items() if aid in parsed}
 
-    async def load_current_analysis(self, document_id: str) -> AnalysisJob | None:
+    async def load_current_original(self, document_id: str) -> AnalysisJob | None:
         """The current analysis as stored: its original result, saved edits excluded."""
         analysis_id = await self.find_current_analysis_id(document_id)
         if analysis_id is None:
             return None
         job = await self._analyses.find_by_id(analysis_id)
-        if job is None or job.document_id != document_id or job.status != AnalysisStatus.COMPLETED:
+        if job is None or not job.can_be_current_of(document_id):
             return None
         return job

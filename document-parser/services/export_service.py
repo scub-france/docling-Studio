@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from domain.analysis_editing import AnalysisEditUnavailableError
-from domain.models import AnalysisStatus
 from services.errors import ServiceError
 
 if TYPE_CHECKING:
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
     from domain.ports import (
         ActiveAnalysisResultReader,
         AnalysisRepository,
-        CurrentAnalysisReader,
         DocumentFileStore,
         DocumentRepository,
     )
@@ -46,14 +44,12 @@ class ExportService:
         self,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
-        active_result_service: ActiveAnalysisResultReader | None = None,
+        active_result_service: ActiveAnalysisResultReader,
         *,
-        current_analysis: CurrentAnalysisReader,
         file_store: DocumentFileStore,
     ) -> None:
         self._document_repo = document_repo
         self._analysis_repo = analysis_repo
-        self._current = current_analysis
         self._file_store = file_store
         self._active_result_service = active_result_service
 
@@ -65,12 +61,12 @@ class ExportService:
     ) -> ExportResult:
         """Export the source PDF, or the Markdown / JSON of an analysis.
 
-        `analysis_id` selects an immutable analysis; omission selects the
-        document's current analysis, with its saved edits when the editor's
-        reader is wired. The PDF is always the source file.
+        `analysis_id` selects an immutable analysis, as stored; omission
+        selects the document's current analysis with its saved edits. The PDF
+        is always the source file.
         """
         return await self._export(
-            doc_id, format, lambda: self._resolve_original_analysis(doc_id, analysis_id)
+            doc_id, format, lambda: self._resolve_default_analysis(doc_id, analysis_id)
         )
 
     async def export_edited(
@@ -95,10 +91,13 @@ class ExportService:
             raise ExportNotFoundError("Document not found")
 
         if format is ExportFormat.PDF:
-            if not self._file_store.has_file(doc.storage_path):
+            # Resolved as the preview does: a path stored by another runtime
+            # (Docker, read from the host) still finds the uploaded file.
+            path = self._file_store.resolve(doc.storage_path)
+            if not self._file_store.has_file(path):
                 raise ExportNotFoundError("PDF file not found")
             return ExportResult(
-                file_path=doc.storage_path,
+                file_path=path,
                 media_type="application/pdf",
                 filename=doc.filename,
             )
@@ -123,34 +122,27 @@ class ExportService:
             filename=_build_export_filename(doc.filename, doc_id, ExportFormat.JSON),
         )
 
-    async def _resolve_original_analysis(
-        self, doc_id: str, analysis_id: str | None
-    ) -> AnalysisJob | None:
+    async def _resolve_default_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:
+        """The requested analysis as stored, or else the current one with its edits."""
         if analysis_id:
             return await self._load_requested_analysis(doc_id, analysis_id)
-        if self._active_result_service is not None:
-            return await self._load_active_analysis(doc_id)
-        return await self._current.load_current_analysis(doc_id)
+        return await self._load_current_edited(doc_id)
 
     async def _load_requested_analysis(self, doc_id: str, analysis_id: str) -> AnalysisJob:
         """The analysis the caller asked for: it must be a completed one of `doc_id`."""
         analysis = await self._analysis_repo.find_by_id(analysis_id)
-        if (
-            not analysis
-            or analysis.document_id != doc_id
-            or analysis.status != AnalysisStatus.COMPLETED
-        ):
+        if not analysis or not analysis.can_be_current_of(doc_id):
             raise ExportNotFoundError(f"Analysis not found: {analysis_id}")
         return analysis
 
-    async def _load_active_analysis(self, doc_id: str) -> AnalysisJob:
+    async def _load_current_edited(self, doc_id: str) -> AnalysisJob:
         try:
-            return (await self._active_result_service.load_active_result(doc_id)).job
+            return (await self._active_result_service.load_current_edited(doc_id)).job
         except AnalysisEditUnavailableError as exc:
             raise ExportNotFoundError(str(exc)) from exc
 
     async def _load_edited_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:
-        if not analysis_id or self._active_result_service is None:
+        if not analysis_id:
             raise ExportNotFoundError("Edited analysis export is unavailable")
         await self._load_requested_analysis(doc_id, analysis_id)
         try:

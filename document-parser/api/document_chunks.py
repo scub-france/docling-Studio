@@ -160,7 +160,8 @@ async def rechunk_document(
     body: DocRechunkRequest | None,
     service: deps.ChunkServiceDep,
 ) -> list[DocChunkResponse]:
-    """Re-run the chunker on the latest analysis JSON; replace canonical."""
+    """Re-run the chunker on the document's current analysis, with its saved
+    edits, and replace the canonical chunks."""
     options = body.chunking_options.model_dump() if body and body.chunking_options else None
     try:
         chunks = await service.rechunk_document(doc_id, options)
@@ -175,9 +176,10 @@ async def get_tree(
     service: deps.ChunkServiceDep,
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> list[DocTreeNodeResponse]:
-    """Outline of the document built from a requested or latest analysis.
+    """Outline of the document built from the requested analysis, or else from
+    its current analysis with its saved edits.
 
-    Returns `[]` if no analysis is available yet.
+    Returns `[]` if the document has no current analysis with a Docling document.
     """
     try:
         tree = await service.get_tree(doc_id, analysis_id)

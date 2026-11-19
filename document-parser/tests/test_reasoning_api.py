@@ -77,7 +77,7 @@ class _FakeCurrentAnalysis:
     def __init__(self, *, latest=None):
         self._latest = latest
 
-    async def load_current_analysis(self, document_id: str):
+    async def load_current_original(self, document_id: str):
         return self._latest
 
 
