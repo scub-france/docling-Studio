@@ -26,13 +26,17 @@ describe('analysis editor API', () => {
   it('saves commands without using the legacy analysis endpoint', async () => {
     vi.mocked(apiFetch).mockResolvedValue({} as never)
     await saveAnalysisEdits('doc-1', {
-      commands: [{ type: 'moveElement', elementId: 'e1', targetElementId: 'e2', placement: 'before' }],
+      commands: [
+        { type: 'moveElement', elementId: 'e1', targetElementId: 'e2', placement: 'before' },
+      ],
       expectedAppliedThroughSequence: 0,
     })
     expect(apiFetch).toHaveBeenCalledWith('/api/documents/doc-1/analysis-edits', {
       method: 'POST',
       body: JSON.stringify({
-        commands: [{ type: 'moveElement', elementId: 'e1', targetElementId: 'e2', placement: 'before' }],
+        commands: [
+          { type: 'moveElement', elementId: 'e1', targetElementId: 'e2', placement: 'before' },
+        ],
         expectedAppliedThroughSequence: 0,
       }),
     })

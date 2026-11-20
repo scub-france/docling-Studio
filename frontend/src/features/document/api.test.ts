@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   fetchDocuments,
   fetchDocument,
-  fetchDocumentEditedAnalysisResult,
   uploadDocument,
   deleteDocument,
   getPreviewUrl,
@@ -41,16 +40,6 @@ describe('document API', () => {
 
     expect(apiFetch).toHaveBeenCalledWith('/api/documents/42')
     expect(result).toEqual(doc)
-  })
-
-  it('fetchDocumentEditedAnalysisResult reads the saved result for one analysis', async () => {
-    const result = { id: 'working:42', contentMarkdown: 'Edited' }
-    apiFetch.mockResolvedValue({ result })
-
-    expect(await fetchDocumentEditedAnalysisResult('42', 'analysis 1')).toEqual(result)
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/api/documents/42/analysis-editor?analysisId=analysis%201',
-    )
   })
 
   it('fetchDocumentPages maps the page sizes to pages without elements (#352)', async () => {

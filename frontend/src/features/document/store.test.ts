@@ -1,30 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { pickWorkspaceVersion, useDocumentStore } from './store'
+import { useDocumentStore } from './store'
 
 vi.mock('./api', () => ({
-  fetchDocument: vi.fn(),
-  fetchDocumentEditedAnalysisResult: vi.fn(),
   fetchDocuments: vi.fn(),
   uploadDocument: vi.fn(),
   deleteDocument: vi.fn(),
   rechunkDocument: vi.fn(),
-  fetchDocumentVersions: vi.fn(),
-  restoreDocumentVersion: vi.fn(),
 }))
 
 vi.mock('../chunks/api', () => ({
   pushChunksToStore: vi.fn(),
 }))
 
-vi.mock('../analysis/api', () => ({
-  fetchAnalysis: vi.fn(),
-}))
-
 import * as api from './api'
 import * as chunksApi from '../chunks/api'
-import * as analysisApi from '../analysis/api'
-import { useFeatureFlagStore } from '../feature-flags'
 
 describe('useDocumentStore', () => {
   beforeEach(() => {
@@ -187,309 +177,17 @@ describe('useDocumentStore', () => {
     expect(result).toBeNull()
   })
 
-  // ---------------------------------------------------------------------------
-  // loadWorkspace (#264 / #267) — versioned (analysis, chunks) timeline
-  // ---------------------------------------------------------------------------
-
-  const mkVersion = (overrides = {}) => ({
-    id: 'v1',
-    documentId: 'd1',
-    kind: 'analysis' as const,
-    analysisId: 'a1',
-    chunksSnapshotSize: 0,
-    summary: 'Analysis run',
-    createdAt: '2025-02-01T00:00:00Z',
-    ...overrides,
-  })
-
-  const mkAnalysis = (overrides = {}) => ({
-    id: 'a1',
-    documentId: 'd1',
-    documentFilename: 'a.pdf',
-    status: 'COMPLETED' as const,
-    contentMarkdown: null,
-    contentHtml: null,
-    pagesJson: '[]',
-    chunksJson: null,
-    hasDocumentJson: true,
-    errorMessage: null,
-    progressCurrent: null,
-    progressTotal: null,
-    startedAt: null,
-    completedAt: '2025-02-01T00:00:00Z',
-    createdAt: '2025-02-01T00:00:00Z',
-    ...overrides,
-  })
-
-  it('loadWorkspace() loads doc + pins the newest version of the current analysis', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
-    api.fetchDocumentVersions.mockResolvedValue([
-      mkVersion({ id: 'v-new', createdAt: '2025-02-01T00:00:00Z' }),
-      mkVersion({ id: 'v-old', createdAt: '2025-01-01T00:00:00Z' }),
-    ])
-    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis())
-
+  it('workspacePages parses the pages of the analysis the page set, empty without one', () => {
     const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-
-    expect(store.workspaceDoc?.id).toBe('d1')
-    expect(store.workspaceCurrentVersionId).toBe('v-new')
-    expect(store.workspaceVersions.map((v) => v.id)).toEqual(['v-new', 'v-old'])
-    expect(store.workspaceLatestAnalysis?.id).toBe('a1')
-    expect(store.workspaceLoading).toBe(false)
-    expect(store.workspaceError).toBeNull()
-  })
-
-  it('uses saved analysis edits for the workspace when the editor is enabled', async () => {
-    const flags = useFeatureFlagStore()
-    flags.loaded = true
-    flags.analysisEditorEnabled = true
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
-    api.fetchDocumentVersions.mockResolvedValue([mkVersion()])
-    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ contentMarkdown: 'Original' }))
-    api.fetchDocumentEditedAnalysisResult.mockResolvedValue(
-      mkAnalysis({ id: 'working:d1', contentMarkdown: 'Edited' }),
-    )
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-
-    expect(api.fetchDocumentEditedAnalysisResult).toHaveBeenCalledWith('d1', 'a1')
-    expect(store.workspaceActiveAnalysis?.id).toBe('a1')
-    expect(store.workspaceActiveAnalysis?.contentMarkdown).toBe('Edited')
-  })
-
-  it('loadWorkspace() pins the backend current analysis, not the newest version', async () => {
-    // 02-2.3.1 — the user restored the older analysis: the workspace shows
-    // what Ask, exports and the MCP tools read.
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a-old' })
-    api.fetchDocumentVersions.mockResolvedValue([
-      mkVersion({ id: 'v-new', analysisId: 'a-new' }),
-      mkVersion({ id: 'v-old', analysisId: 'a-old' }),
-    ])
-    analysisApi.fetchAnalysis.mockImplementation((id: string) =>
-      Promise.resolve(mkAnalysis({ id })),
-    )
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-
-    expect(store.workspaceCurrentVersionId).toBe('v-old')
-    expect(store.workspaceActiveAnalysis?.id).toBe('a-old')
-    expect(analysisApi.fetchAnalysis).toHaveBeenCalledWith('a-old')
-  })
-
-  it('loadWorkspace() loads the current analysis but marks no version when none records it', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a-x' })
-    api.fetchDocumentVersions.mockResolvedValue([mkVersion({ id: 'v1', analysisId: 'a1' })])
-    analysisApi.fetchAnalysis.mockImplementation((id: string) =>
-      Promise.resolve(mkAnalysis({ id })),
-    )
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-
-    expect(store.workspaceCurrentVersionId).toBeNull()
-    expect(store.workspaceActiveAnalysis?.id).toBe('a-x')
-  })
-
-  it('pickWorkspaceVersion() marks only a version of the current analysis', () => {
-    const versions = [mkVersion({ id: 'v2', analysisId: 'a2' }), mkVersion({ id: 'v1' })]
-    expect(pickWorkspaceVersion(versions, null)).toBeNull()
-    expect(pickWorkspaceVersion(versions, undefined)).toBeNull()
-    expect(pickWorkspaceVersion(versions, 'a1')?.id).toBe('v1')
-    expect(pickWorkspaceVersion(versions, 'unknown')).toBeNull()
-    expect(pickWorkspaceVersion([], 'a1')).toBeNull()
-  })
-
-  it('loadWorkspace() loads no analysis when the document has no current analysis', async () => {
-    // D4 — the active analysis was deleted: its version still points at it.
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: null })
-    api.fetchDocumentVersions.mockResolvedValue([
-      mkVersion({ id: 'v2', analysisId: 'a-deleted' }),
-      mkVersion({ id: 'v1', analysisId: 'a1' }),
-    ])
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-
-    expect(analysisApi.fetchAnalysis).not.toHaveBeenCalled()
-    expect(store.workspaceError).toBeNull()
-    expect(store.workspaceActiveAnalysis).toBeNull()
     expect(store.workspacePages).toEqual([])
-    expect(store.workspaceVersions.map((v) => v.id)).toEqual(['v2', 'v1'])
-    expect(store.workspaceCurrentVersionId).toBeNull()
-  })
 
-  it('loadWorkspace() exposes null active analysis when no versions exist', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf' })
-    api.fetchDocumentVersions.mockResolvedValue([])
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-    expect(store.workspaceCurrentVersionId).toBeNull()
-    expect(store.workspaceLatestAnalysis).toBeNull()
-    expect(store.workspacePages).toEqual([])
-  })
-
-  it('loadWorkspace() sets workspaceError on failure', async () => {
-    api.fetchDocument.mockRejectedValue(new Error('boom'))
-    api.fetchDocumentVersions.mockResolvedValue([])
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-    expect(store.workspaceError).toBe('boom')
-    expect(store.workspaceLoading).toBe(false)
-  })
-
-  it('workspacePages parses pages_json lazily, empty on parse error', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
-    api.fetchDocumentVersions.mockResolvedValue([mkVersion()])
-    analysisApi.fetchAnalysis.mockResolvedValue(
-      mkAnalysis({
-        pagesJson: '[{"page_number":1,"width":600,"height":800,"elements":[]}]',
-      }),
-    )
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
+    store.setWorkspaceAnalysis({
+      pagesJson: '[{"page_number":1,"width":600,"height":800,"elements":[]}]',
+    } as never)
     expect(store.workspacePages).toHaveLength(1)
     expect(store.workspacePages[0].page_number).toBe(1)
-  })
 
-  // ---------------------------------------------------------------------------
-  // setWorkspaceVersion — restore path
-  // ---------------------------------------------------------------------------
-
-  it('setWorkspaceVersion() POSTs restore + swaps the active version + analysis', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a-new' })
-    api.fetchDocumentVersions.mockResolvedValue([
-      mkVersion({ id: 'v-new', analysisId: 'a-new' }),
-      mkVersion({ id: 'v-old', analysisId: 'a-old' }),
-    ])
-    analysisApi.fetchAnalysis.mockImplementation((id: string) =>
-      Promise.resolve(mkAnalysis({ id })),
-    )
-    api.restoreDocumentVersion.mockResolvedValue(mkVersion({ id: 'v-old' }))
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-    expect(store.workspaceCurrentVersionId).toBe('v-new')
-
-    const ok = await store.setWorkspaceVersion('v-old')
-    expect(ok).toBe(true)
-    expect(api.restoreDocumentVersion).toHaveBeenCalledWith('d1', 'v-old')
-    expect(store.workspaceCurrentVersionId).toBe('v-old')
-    expect(store.workspaceActiveAnalysis?.id).toBe('a-old')
-  })
-
-  it('setWorkspaceVersion() returns false for unknown ids and leaves state intact', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
-    api.fetchDocumentVersions.mockResolvedValue([mkVersion({ id: 'v1' })])
-    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis())
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-    const ok = await store.setWorkspaceVersion('nope')
-    expect(ok).toBe(false)
-    expect(store.workspaceCurrentVersionId).toBe('v1')
-  })
-
-  it('loadWorkspace() is idempotent — pinned version survives a second call for the same doc', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a-new' })
-    api.fetchDocumentVersions.mockResolvedValue([
-      mkVersion({ id: 'v-new', analysisId: 'a-new' }),
-      mkVersion({ id: 'v-old', analysisId: 'a-old' }),
-    ])
-    analysisApi.fetchAnalysis.mockImplementation((id: string) =>
-      Promise.resolve(mkAnalysis({ id })),
-    )
-    api.restoreDocumentVersion.mockResolvedValue(mkVersion({ id: 'v-old' }))
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-    await store.setWorkspaceVersion('v-old')
-    // Mimics switching tabs — second loadWorkspace must be a no-op.
-    await store.loadWorkspace('d1')
-    expect(store.workspaceCurrentVersionId).toBe('v-old')
-    expect(api.fetchDocument).toHaveBeenCalledTimes(1)
-  })
-
-  // ---------------------------------------------------------------------------
-  // reloadWorkspaceVersions — post-completion refresh
-  // ---------------------------------------------------------------------------
-
-  it('reloadWorkspaceVersions() refreshes the list + pins the new current analysis', async () => {
-    api.fetchDocument.mockResolvedValueOnce({
-      id: 'd1',
-      filename: 'a.pdf',
-      currentAnalysisId: 'a1',
-    })
-    api.fetchDocumentVersions.mockResolvedValueOnce([mkVersion({ id: 'v1', analysisId: 'a1' })])
-    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ id: 'a1' }))
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-    expect(store.workspaceCurrentVersionId).toBe('v1')
-
-    api.fetchDocumentVersions.mockResolvedValueOnce([
-      mkVersion({ id: 'v2', analysisId: 'a2', createdAt: '2025-03-01T00:00:00Z' }),
-      mkVersion({ id: 'v1', analysisId: 'a1' }),
-    ])
-    api.fetchDocument.mockResolvedValueOnce({
-      id: 'd1',
-      filename: 'a.pdf',
-      currentAnalysisId: 'a2',
-    })
-    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ id: 'a2' }))
-
-    await store.reloadWorkspaceVersions('d1')
-    expect(store.workspaceCurrentVersionId).toBe('v2')
-    expect(store.workspaceActiveAnalysis?.id).toBe('a2')
-  })
-
-  it('reloadWorkspaceVersions() drops the analysis once the document has no current one', async () => {
-    api.fetchDocument.mockResolvedValueOnce({
-      id: 'd1',
-      filename: 'a.pdf',
-      currentAnalysisId: 'a1',
-    })
-    api.fetchDocumentVersions.mockResolvedValue([mkVersion({ id: 'v1', analysisId: 'a1' })])
-    analysisApi.fetchAnalysis.mockResolvedValue(mkAnalysis({ id: 'a1' }))
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-    expect(store.workspaceActiveAnalysis?.id).toBe('a1')
-
-    api.fetchDocument.mockResolvedValueOnce({
-      id: 'd1',
-      filename: 'a.pdf',
-      currentAnalysisId: null,
-    })
-    await store.reloadWorkspaceVersions('d1')
-
-    expect(store.workspaceActiveAnalysis).toBeNull()
-    expect(store.workspaceCurrentVersionId).toBeNull()
-    expect(store.workspaceVersions).toHaveLength(1)
-  })
-
-  it('reloadWorkspaceVersions() follows the backend current analysis', async () => {
-    api.fetchDocument.mockResolvedValue({ id: 'd1', filename: 'a.pdf', currentAnalysisId: 'a1' })
-    api.fetchDocumentVersions.mockResolvedValue([mkVersion({ id: 'v1', analysisId: 'a1' })])
-    analysisApi.fetchAnalysis.mockImplementation((id: string) =>
-      Promise.resolve(mkAnalysis({ id })),
-    )
-
-    const store = useDocumentStore()
-    await store.loadWorkspace('d1')
-
-    // A rechunk of the restored older analysis appends a version for it,
-    // while a newer analysis version sits at the top of the list.
-    api.fetchDocumentVersions.mockResolvedValue([
-      mkVersion({ id: 'v3', kind: 'chunks', analysisId: 'a1' }),
-      mkVersion({ id: 'v2', analysisId: 'a2' }),
-      mkVersion({ id: 'v1', analysisId: 'a1' }),
-    ])
-    await store.reloadWorkspaceVersions('d1')
-
-    expect(store.workspaceCurrentVersionId).toBe('v3')
-    expect(store.workspaceActiveAnalysis?.id).toBe('a1')
-    expect(api.fetchDocument).toHaveBeenCalledTimes(2)
+    store.setWorkspaceAnalysis({ pagesJson: 'not json' } as never)
+    expect(store.workspacePages).toEqual([])
   })
 })

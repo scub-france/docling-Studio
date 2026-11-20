@@ -88,9 +88,6 @@
             @hover-element="onHoverElement"
             @click-element="onClickElement"
           />
-          <div v-else-if="documentStore.workspaceLoading" class="parse-state">
-            <span class="spinner" />
-          </div>
           <div v-else class="parse-state parse-state--empty">
             <p>{{ t('parse.noAnalysis') }}</p>
           </div>
@@ -152,9 +149,6 @@
           :page-height="selectedElementPage?.height ?? 0"
           :page-number="selectedElementData?.pageNumber ?? currentPage"
           :linked-chunk="linkedChunk"
-          :saving="chunksStore.saving"
-          :editable="!analysis"
-          @save-chunk="onSaveChunk"
         />
       </aside>
     </div>
@@ -175,7 +169,6 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { Analysis, Chunk, DocChunk, DocTreeNode, PageElement } from '../shared/types'
-import { useChunksStore } from '../features/chunks/store'
 import { fetchDocumentTree } from '../features/document/api'
 import { useDocumentStore } from '../features/document/store'
 import { findChunkForElement } from '../features/document/linkedView'
@@ -192,8 +185,8 @@ import { useI18n } from '../shared/i18n'
 
 const props = defineProps<{
   docId: string
-  /** A saved analysis to show read-only, already loaded by the host page. */
-  analysis?: Analysis
+  /** The saved analysis to show read-only, already loaded by the host page. */
+  analysis: Analysis
   /** From a deep link: the element to focus, the page to open. */
   focusRef?: string
   page?: number
@@ -201,7 +194,6 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const documentStore = useDocumentStore()
-const chunksStore = useChunksStore()
 const reasoningStore = useReasoningStore()
 const featureFlags = useFeatureFlagStore()
 
@@ -300,9 +292,7 @@ const linkedChunk = computed<DocChunk | null>(() => {
   )
 })
 
-const activeChunks = computed<DocChunk[]>(() =>
-  props.analysis ? extractAnalysisChunks(props.analysis) : chunksStore.chunks,
-)
+const activeChunks = computed<DocChunk[]>(() => extractAnalysisChunks(props.analysis))
 
 const nodeCount = computed(() => countNodes(tree.value))
 
@@ -328,7 +318,7 @@ async function loadTree(): Promise<void> {
   treeLoading.value = true
   treeError.value = null
   try {
-    tree.value = await fetchDocumentTree(props.docId, props.analysis?.id)
+    tree.value = await fetchDocumentTree(props.docId, props.analysis.id)
   } catch (e) {
     treeError.value = (e as Error).message || 'Failed to load tree'
   } finally {
@@ -361,23 +351,10 @@ function onShowAll(): void {
   reasoningStore.selectStep(null)
 }
 
-async function onSaveChunk(chunkId: string, text: string): Promise<void> {
-  if (props.analysis) return
-  await chunksStore.updateText(props.docId, chunkId, text)
-}
-
 onMounted(async () => {
   reasoningStore.reset(props.docId)
-  if (props.analysis) {
-    documentStore.setWorkspaceAnalysis(props.analysis)
-    await loadTree()
-  } else {
-    await Promise.all([
-      documentStore.loadWorkspace(props.docId),
-      chunksStore.load(props.docId),
-      loadTree(),
-    ])
-  }
+  documentStore.setWorkspaceAnalysis(props.analysis)
+  await loadTree()
   const first = documentStore.workspacePages[0]?.page_number
   if (first) currentPage.value = first
   // After a tick, so the preview and the tree are mounted and their
@@ -399,9 +376,7 @@ watch(() => [props.focusRef, props.page], openDeepLink)
 // Docling elements. Keep the viewer mounted while its overlays arrive.
 watch(
   () => props.analysis,
-  (analysis) => {
-    if (analysis) documentStore.setWorkspaceAnalysis(analysis)
-  },
+  (analysis) => documentStore.setWorkspaceAnalysis(analysis),
 )
 
 watch(
@@ -411,12 +386,8 @@ watch(
     rightTab.value = 'props'
     reasoningStore.reset(id)
     documentStore.focusElement(null)
-    if (props.analysis) {
-      documentStore.setWorkspaceAnalysis(props.analysis)
-      await loadTree()
-    } else {
-      await Promise.all([documentStore.loadWorkspace(id), chunksStore.load(id), loadTree()])
-    }
+    documentStore.setWorkspaceAnalysis(props.analysis)
+    await loadTree()
     const first = documentStore.workspacePages[0]?.page_number
     if (first) currentPage.value = first
   },
@@ -437,24 +408,6 @@ watch(
     const pageOfRef = findPageOfRef(documentStore.workspacePages, ref)
     if (pageOfRef !== null && pageOfRef !== currentPage.value) {
       currentPage.value = pageOfRef
-    }
-  },
-)
-
-// Refetch the tree when the active analysis changes (#266 / #267).
-// Triggered after an in-place analysis completes or after the
-// workspace switches to another version — the tree
-// is built server-side from the active analysis's `document_json`,
-// so it has to be reloaded. A saved analysis passed as a prop is pinned:
-// mounting it sets the active analysis and loads its tree itself, so
-// reacting here would fetch the same tree a second time.
-watch(
-  () => documentStore.workspaceActiveAnalysis?.id,
-  (newId, oldId) => {
-    if (props.analysis) return
-    if (newId && newId !== oldId) {
-      documentStore.focusElement(null)
-      loadTree()
     }
   },
 )
@@ -786,20 +739,5 @@ function findPageOfRef(
 .parse-state--empty {
   flex-direction: column;
   gap: 12px;
-}
-
-.spinner {
-  width: 28px;
-  height: 28px;
-  border: 2px solid var(--border-light);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>
