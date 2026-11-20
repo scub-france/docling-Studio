@@ -9,7 +9,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from infra.body_limit import BodySizeLimitMiddleware
-from infra.settings import Settings
 
 IMPORT = "/api/analyses/import"
 
@@ -92,17 +91,3 @@ def test_other_routes_are_not_limited():
         response = client.post("/api/other", json={"document": "x" * 64})
 
     assert response.status_code == 200
-
-
-class TestSetting:
-    def test_defaults_to_200_mb(self, monkeypatch):
-        monkeypatch.delenv("MAX_IMPORT_SIZE_MB", raising=False)
-        assert Settings.from_env().max_import_size_mb == 200
-
-    def test_zero_means_unlimited_and_is_accepted(self, monkeypatch):
-        monkeypatch.setenv("MAX_IMPORT_SIZE_MB", "0")
-        assert Settings.from_env().max_import_size_mb == 0
-
-    def test_negative_is_rejected(self):
-        with pytest.raises(ValueError, match="max_import_size_mb"):
-            Settings(max_import_size_mb=-1)

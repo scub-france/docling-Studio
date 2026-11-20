@@ -15,9 +15,7 @@ from fastapi.testclient import TestClient
 from infra.host_guard import (
     ApiHostGuardMiddleware,
     describe_host_check,
-    is_host_check_on,
     log_host_check,
-    parse_allowed_host_name,
     parse_host_name,
 )
 from infra.settings import Settings
@@ -89,12 +87,16 @@ class TestMiddleware:
         response = _get(["studio.example.com"], "http://evil.example.com", "/outside")
         assert response.status_code == 200
 
-    @pytest.mark.parametrize("entry", ["studio.lan", "studio.lan:*", "studio.lan:3000"])
-    def test_the_port_of_an_entry_is_ignored(self, entry):
+    def test_the_port_of_a_request_is_ignored(self):
         # nginx forwards `/api` with `Host $host`, which drops the port.
-        assert _get([entry], "http://studio.lan").status_code == 200
-        assert _get([entry], "http://studio.lan:3000").status_code == 200
-        assert _get([entry], "http://studio.lan:8080").status_code == 200
+        assert _get(["studio.lan"], "http://studio.lan").status_code == 200
+        assert _get(["studio.lan"], "http://studio.lan:3000").status_code == 200
+        assert _get(["Studio.LAN"], "http://studio.lan:8080").status_code == 200
+
+    @pytest.mark.parametrize("entry", ["studio.lan:3000", "studio.lan:*", "*", "http://studio.lan"])
+    def test_an_entry_that_is_not_a_bare_name_allows_nothing(self, entry):
+        assert _get([entry], "http://studio.lan").status_code == 421
+        assert _get([entry], "http://localhost").status_code == 200
 
     @pytest.mark.parametrize(
         "host",
@@ -136,42 +138,35 @@ class TestParseHostName:
     def test_reads_the_name_or_refuses(self, host, name):
         assert parse_host_name(host) == name
 
-    def test_a_port_wildcard_is_for_allow_list_entries_only(self):
+    def test_a_port_wildcard_is_malformed(self):
         assert parse_host_name("studio.lan:*") is None
-        assert parse_allowed_host_name("studio.lan:*") == "studio.lan"
 
 
 class TestStartupLine:
     def test_off_by_default(self):
-        assert is_host_check_on([]) is False
         assert "off (API_ALLOWED_HOSTS unset)" in describe_host_check([])
 
-    def test_off_with_the_wildcard(self):
-        assert is_host_check_on(["*"]) is False
-        assert "API_ALLOWED_HOSTS=*" in describe_host_check(["*"])
-
     def test_on_names_the_hosts(self):
-        assert is_host_check_on(["studio.lan:*"]) is True
-        line = describe_host_check(["studio.lan:*"])
-        assert line == "API Host check on: /api accepts loopback, studio.lan"
+        line = describe_host_check(["studio.lan", "Studio.LAN", "10.0.0.5"])
+        assert line == "API Host check on: /api accepts loopback, studio.lan, 10.0.0.5"
 
     def test_names_only_the_hosts_kept(self):
-        line = describe_host_check(["http://studio.lan", "studio.lan:3000", "*.example.com"])
+        line = describe_host_check(["http://studio.lan", "studio.lan", "*.example.com"])
         assert line == "API Host check on: /api accepts loopback, studio.lan"
 
     def test_warns_once_naming_each_ignored_entry(self, caplog):
         with caplog.at_level(logging.INFO, logger="infra.host_guard"):
-            log_host_check(["http://studio.lan", "studio.lan", "*.example.com"])
+            log_host_check(["http://studio.lan", "studio.lan", "studio.lan:3000", "*"])
         warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
         assert warnings == [
-            "API_ALLOWED_HOSTS entries ignored, not a host name: http://studio.lan, *.example.com"
+            "API_ALLOWED_HOSTS entries ignored, not a host name: "
+            "http://studio.lan, studio.lan:3000, *"
         ]
         assert "API Host check on: /api accepts loopback, studio.lan" in caplog.messages
 
     def test_no_warning_when_every_entry_is_kept_or_the_check_is_off(self, caplog):
         with caplog.at_level(logging.INFO, logger="infra.host_guard"):
-            log_host_check(["studio.lan:*"])
-            log_host_check(["*"])
+            log_host_check(["studio.lan"])
             log_host_check([])
         assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
@@ -186,5 +181,5 @@ class TestSetting:
         assert Settings.from_env().api_allowed_hosts == []
 
     def test_comma_separated_like_mcp_allowed_hosts(self, monkeypatch):
-        monkeypatch.setenv("API_ALLOWED_HOSTS", " localhost:* , studio.lan:3000 ,")
-        assert Settings.from_env().api_allowed_hosts == ["localhost:*", "studio.lan:3000"]
+        monkeypatch.setenv("API_ALLOWED_HOSTS", " localhost , studio.lan ,")
+        assert Settings.from_env().api_allowed_hosts == ["localhost", "studio.lan"]

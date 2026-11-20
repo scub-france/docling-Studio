@@ -693,10 +693,6 @@ const messages: Messages = {
     'chunks.pushCancel': 'Annuler',
     'chunks.pushDispatched': 'Push enregistr\u00e9 : {pushId}',
     // Stale stores strip (#224)
-    'chunks.stale.pushedAt': 'ing\u00e9r\u00e9 le {date}',
-    'chunks.stale.reingest': 'R\u00e9-ing\u00e9rer',
-    'chunks.stale.reingestAll': 'R\u00e9-ing\u00e9rer tous les obsol\u00e8tes',
-    'chunks.stale.pushDispatched': 'Push enregistr\u00e9 : {pushId}',
 
     'chunks.selected': '{n} s\u00e9lectionn\u00e9(s)',
     'chunks.bulkDrop': 'Supprimer la s\u00e9lection',
@@ -1472,10 +1468,6 @@ const messages: Messages = {
     'chunks.pushCancel': 'Cancel',
     'chunks.pushDispatched': 'Push recorded: {pushId}',
     // Stale stores strip (#224)
-    'chunks.stale.pushedAt': 'ingested on {date}',
-    'chunks.stale.reingest': 'Re-ingest',
-    'chunks.stale.reingestAll': 'Re-ingest all stale',
-    'chunks.stale.pushDispatched': 'Push recorded: {pushId}',
 
     'chunks.selected': '{n} selected',
     'chunks.bulkDrop': 'Drop selected',

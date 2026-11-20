@@ -181,23 +181,6 @@ def resolve_selection_after_restore(
     return fallback_analysis_id
 
 
-def resolve_selection_after_rechunk(
-    state: DocumentAnalysisState | None, chunked_analysis_id: str
-) -> str | None:
-    """The active analysis once the chunks of `chunked_analysis_id` are written.
-
-    A rechunk never changes an existing selection: an analysis that became
-    active while the chunker ran stays active, and the new chunks report
-    stale against it. A document with no state row adopts the chunked
-    analysis, the one the fallback rule gave it. Persistence applies this
-    rule in the write itself, so a selection made after `state` was read
-    is kept too.
-    """
-    if state is not None:
-        return state.active_analysis_id
-    return chunked_analysis_id
-
-
 @dataclass
 class AnalysisJob:
     id: str = field(default_factory=generate_id)
@@ -346,11 +329,6 @@ class DocumentStoreLink:
         self.chunkset_hash = hash_
         self.last_push_at = at
         self.last_run_id = run_id
-        self.error_message = None
-
-    def mark_stale(self) -> None:
-        """Mark the link as stale (source chunkset drifted from pushed)."""
-        self.state = DocumentStoreLinkState.STALE
         self.error_message = None
 
     def mark_failed(self, *, error: str) -> None:

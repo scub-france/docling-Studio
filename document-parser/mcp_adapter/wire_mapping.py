@@ -39,10 +39,6 @@ if TYPE_CHECKING:
     )
 
 
-def _neutralise_all(values: list[str]) -> list[str]:
-    return [neutralise(value) for value in values]
-
-
 def to_document_row(summary: DocumentSummary) -> DocumentRow:
     return DocumentRow(
         document_id=summary.document_id,

@@ -26,9 +26,6 @@ class Settings:
     max_page_count: int = 0  # 0 = unlimited (upload validation)
     max_file_size: int = 0  # 0 = unlimited (Docling-level, bytes)
     max_file_size_mb: int = 50  # upload limit in MB (0 = unlimited)
-    # Body limit of `POST /api/analyses/import` (a Docling JSON), in MB
-    # (0 = unlimited). Page images embedded as base64 make these files large.
-    max_import_size_mb: int = 200
     rate_limit_rpm: int = 100  # requests per minute per IP (0 = disabled)
     batch_page_size: int = 0  # 0 = disabled, > 0 = pages per batch
     opensearch_url: str = ""  # empty = disabled
@@ -107,8 +104,7 @@ class Settings:
     # Host allow-list for `/api/*` (DNS-rebinding protection, see
     # `infra/host_guard.py`). Empty, the default, checks nothing: a check on
     # by default would cut deployments reached by a LAN name or a proxy.
-    # Host names; a `:port` or `:*` suffix is accepted and ignored, `*` turns
-    # the check off; loopback is always allowed.
+    # Bare host names, without a port; loopback is always allowed.
     api_allowed_hosts: list[str] = field(default_factory=list)
     # Hard server-side ceiling on a single read. A client argument may lower
     # it, never raise it. Like the round cap and the deep-link base below, a
@@ -152,8 +148,6 @@ class Settings:
             errors.append(f"max_file_size must be >= 0 (got {self.max_file_size})")
         if self.max_file_size_mb < 0:
             errors.append(f"max_file_size_mb must be >= 0 (got {self.max_file_size_mb})")
-        if self.max_import_size_mb < 0:
-            errors.append(f"max_import_size_mb must be >= 0 (got {self.max_import_size_mb})")
         if self.max_paste_image_size_mb < 0:
             errors.append(
                 f"max_paste_image_size_mb must be >= 0 (got {self.max_paste_image_size_mb})"
@@ -228,7 +222,6 @@ class Settings:
             max_page_count=int(os.environ.get("MAX_PAGE_COUNT", "0")),
             max_file_size=int(os.environ.get("MAX_FILE_SIZE", "0")),
             max_file_size_mb=int(os.environ.get("MAX_FILE_SIZE_MB", "50")),
-            max_import_size_mb=int(os.environ.get("MAX_IMPORT_SIZE_MB", "200")),
             rate_limit_rpm=int(os.environ.get("RATE_LIMIT_RPM", "100")),
             # 0 = batching disabled (matches dataclass default). Batching
             # preserves memory on very large docs and reports progress after

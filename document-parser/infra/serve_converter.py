@@ -186,19 +186,6 @@ class ServeConverter:
         assert last_response is not None
         return last_response
 
-    async def health_check(self) -> bool:
-        """Check if Docling Serve is reachable."""
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    f"{self._base_url}/version",
-                    headers=self._build_headers(),
-                )
-                return resp.status_code == 200
-        except httpx.HTTPError:
-            logger.warning("Docling Serve health check failed at %s", self._base_url, exc_info=True)
-            return False
-
 
 def _build_form_data(
     options: ConversionOptions,

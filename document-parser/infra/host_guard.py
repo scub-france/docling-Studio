@@ -5,11 +5,10 @@ instance on the user's machine as same-origin: CORS does not apply, only the
 `Host` header still names the hostile domain. Checking its name closes that
 door; the port plays no part, so it is ignored on both sides.
 
-The check is opt-in (`API_ALLOWED_HOSTS`): turned on by default it would cut
-every deployment reached by a LAN name or behind a proxy. An entry is a name,
-optionally with a port (`name:port`, `name:*`) that is ignored; `*` turns the
-check off. Loopback names are always accepted, so container health checks and
-local tools keep working. A malformed `Host` is refused.
+The check is opt-in (`API_ALLOWED_HOSTS`, a list of host names): turned on by
+default it would cut every deployment reached by a LAN name or behind a proxy.
+Loopback names are always accepted, so container health checks and local
+tools keep working. A malformed `Host` is refused.
 """
 
 from __future__ import annotations
@@ -30,55 +29,33 @@ logger = logging.getLogger(__name__)
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "[::1]"})
 # A host name or a bracketed IPv6 literal, then an optional numeric port.
-# A `*` port is only for the allow-list entries.
-_HOST = re.compile(r"(?P<name>[a-z0-9_.-]+|\[[0-9a-f:.]+\])(?::(?:[0-9]{1,5}|\*))?", re.ASCII)
+_HOST = re.compile(r"(?P<name>[a-z0-9_.-]+|\[[0-9a-f:.]+\])(?::[0-9]{1,5})?", re.ASCII)
 
 
 def parse_host_name(host: str | None) -> str | None:
-    """The lowercased name of a request's `Host` value, or None when it is
-    malformed (a `*` port included)."""
-    match = _match_host(host)
-    if match is None or match.group(0).endswith(":*"):
-        return None
-    return match["name"]
-
-
-def parse_allowed_host_name(host: str | None) -> str | None:
-    """The lowercased name of an allow-list entry, which may end in a `*`
-    port, or None when it is malformed."""
-    match = _match_host(host)
+    """The lowercased name of a `Host` value, or None when it is malformed."""
+    match = _HOST.fullmatch((host or "").strip().lower())
     return match["name"] if match is not None else None
-
-
-def _match_host(host: str | None) -> re.Match[str] | None:
-    return _HOST.fullmatch((host or "").strip().lower())
-
-
-def is_host_check_on(allowed_hosts: Iterable[str]) -> bool:
-    """On when hosts are listed, unless one of them is the `*` wildcard."""
-    hosts = [host.strip() for host in allowed_hosts]
-    return bool(hosts) and "*" not in hosts
 
 
 def split_allowed_hosts(allowed_hosts: Iterable[str]) -> tuple[list[str], list[str]]:
     """The names the check keeps, and the entries it ignores because they are
-    not a name (`http://studio.lan`, `*.example.com`), each in listed order."""
+    not a bare name (`studio.lan:3000`, `http://studio.lan`, `*`), each in
+    listed order."""
     names: list[str] = []
     ignored: list[str] = []
     for host in allowed_hosts:
-        name = parse_allowed_host_name(host)
-        if name is None:
+        entry = host.strip().lower()
+        if parse_host_name(entry) != entry:
             ignored.append(host.strip())
-        elif name not in names:
-            names.append(name)
+        elif entry not in names:
+            names.append(entry)
     return names, ignored
 
 
 def describe_host_check(allowed_hosts: Iterable[str]) -> str:
     """The start-up line saying whether `/api` checks `Host`, and for which names."""
-    hosts = [host.strip() for host in allowed_hosts]
-    if "*" in hosts:
-        return "API Host check off (API_ALLOWED_HOSTS=*): /api accepts any Host header"
+    hosts = list(allowed_hosts)
     if not hosts:
         return (
             "API Host check off (API_ALLOWED_HOSTS unset): /api accepts any Host header, "
@@ -92,13 +69,10 @@ def describe_host_check(allowed_hosts: Iterable[str]) -> str:
 def log_host_check(allowed_hosts: Iterable[str]) -> None:
     """Log the start-up line, and one warning naming the entries the check ignores."""
     hosts = list(allowed_hosts)
-    if is_host_check_on(hosts):
-        _, ignored = split_allowed_hosts(hosts)
-        if ignored:
-            # Silently dropped, an entry would refuse the host it meant to allow.
-            logger.warning(
-                "API_ALLOWED_HOSTS entries ignored, not a host name: %s", ", ".join(ignored)
-            )
+    _, ignored = split_allowed_hosts(hosts)
+    if ignored:
+        # Silently dropped, an entry would refuse the host it meant to allow.
+        logger.warning("API_ALLOWED_HOSTS entries ignored, not a host name: %s", ", ".join(ignored))
     logger.info(describe_host_check(hosts))
 
 

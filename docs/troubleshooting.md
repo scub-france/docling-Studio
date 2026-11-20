@@ -33,7 +33,7 @@ More than `RATE_LIMIT_RPM` requests in a minute (100 by default). Behind the bun
 
 ## The API answers 421 "Invalid Host header"
 
-`API_ALLOWED_HOSTS` is set and the name in the address bar is not in it. Add that name, without the port, or the name your proxy forwards in `Host`. An entry that is not a host name, such as a URL or a wildcard pattern, is ignored: the start-up log names it. See [Host check on the API](configuration.md#host-check-on-the-api).
+`API_ALLOWED_HOSTS` is set and the name in the address bar is not in it. Add that name, without the port, or the name your proxy forwards in `Host`. An entry that is not a bare host name, such as a name with a port, a URL or a wildcard pattern, is ignored: the start-up log names it. See [Host check on the API](configuration.md#host-check-on-the-api).
 
 ## Large PDFs take long to show behind a proxy
 

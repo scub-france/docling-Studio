@@ -22,7 +22,6 @@ from domain.models import (
     Document,
     DocumentAnalysisState,
     resolve_current_analysis_id,
-    resolve_selection_after_rechunk,
     resolve_selection_after_restore,
 )
 from persistence import database
@@ -67,17 +66,6 @@ def test_a_restored_version_without_an_analysis_clears_an_existing_row():
 def test_a_restored_version_without_an_analysis_keeps_the_fallback_without_a_row():
     assert resolve_selection_after_restore(None, None, "latest") == "latest"
     assert resolve_selection_after_restore(None, None, None) is None
-
-
-def test_a_rechunk_keeps_an_existing_selection():
-    assert (
-        resolve_selection_after_rechunk(DocumentAnalysisState("doc-1", "newer"), "older") == "newer"
-    )
-    assert resolve_selection_after_rechunk(DocumentAnalysisState("doc-1"), "older") is None
-
-
-def test_a_rechunk_without_a_row_adopts_the_chunked_analysis():
-    assert resolve_selection_after_rechunk(None, "older") == "older"
 
 
 # --- The resolver on SQLite -------------------------------------------------

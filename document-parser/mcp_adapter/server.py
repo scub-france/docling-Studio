@@ -87,8 +87,6 @@ def build_instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
     return _LOOP.format(max_rounds=max_rounds) + (_CARDS if apps else "") + _RULES
 
 
-INSTRUCTIONS = build_instructions(apps=False)
-
 _READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
 

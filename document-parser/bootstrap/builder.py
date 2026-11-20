@@ -150,7 +150,6 @@ class AppStateBuilder:
             chunk_repo=chunk_repo,
             document_repo=document_repo,
             active_result_service=analysis_edit_service,
-            analysis_state_repo=document_analysis_repo,
             chunker=build_chunker(),
         )
         version_service = VersionService(

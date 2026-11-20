@@ -99,12 +99,6 @@ class DoclingDocumentImporter(Protocol):
     def deserialize(self, document: dict[str, Any]) -> ConversionResult: ...
 
 
-class DocumentMerger(Protocol):
-    """Merge conversion results while preserving canonical structure."""
-
-    def merge(self, results: list[ConversionResult]) -> ConversionResult: ...
-
-
 class DocumentChunker(Protocol):
     """Port for document chunking.
 
@@ -330,11 +324,12 @@ class ChunkRepository(Protocol):
         `chunk_source`, in one transaction, keeping the document's selection.
         Returns how many chunks were soft-deleted. Used by a rechunk.
 
-        `chunk_source` is recorded as given (None forgets it). An existing
-        selection is kept and `active_analysis_id` only goes into a state row
-        this write creates: the write applies
-        `domain.models.resolve_selection_after_rechunk` atomically, so a
-        selection made after the caller read the state wins.
+        `chunk_source` is recorded as given (None forgets it). A rechunk never
+        changes an existing selection: an analysis that became active while
+        the chunker ran stays active, and the new chunks report stale against
+        it. `active_analysis_id`, the chunked analysis, only goes into a state
+        row this write creates, so a document without one keeps the analysis
+        the fallback rule gave it.
 
         Raises:
             ValueError: `chunk_source` belongs to another document.

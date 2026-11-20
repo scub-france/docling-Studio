@@ -21,7 +21,7 @@ from domain import chunk_editing
 from domain.analysis_editing import AnalysisEditUnavailableError, hash_result
 from domain.chunk_editing import ChunkEditingError, ChunkMergeGapError
 from domain.exceptions import AnalysisNotSelectableError
-from domain.models import Chunk, DocumentChunkSource, get_utc_now, resolve_selection_after_rechunk
+from domain.models import Chunk, DocumentChunkSource, get_utc_now
 from domain.value_objects import ChunkingOptions
 from services.chunk_errors import (
     ChunkConflictError,
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from domain.ports import (
         ActiveAnalysisResultReader,
         ChunkRepository,
-        DocumentAnalysisStateRepository,
         DocumentChunker,
         DocumentRepository,
     )
@@ -56,12 +55,10 @@ class ChunkService:
         chunk_repo: ChunkRepository,
         document_repo: DocumentRepository,
         active_result_service: ActiveAnalysisResultReader,
-        analysis_state_repo: DocumentAnalysisStateRepository,
         chunker: DocumentChunker | None = None,
     ) -> None:
         self._chunks = chunk_repo
         self._documents = document_repo
-        self._states = analysis_state_repo
         self._chunker = chunker
         self._active_result_service = active_result_service
         # Document-version recorder (#267), wired at boot to `VersionService`
@@ -183,7 +180,7 @@ class ChunkService:
 
         The current analysis is read with its saved edits. The new chunks and
         the record of their source are written in one transaction (02-2.4.3);
-        the selection follows `domain.models.resolve_selection_after_rechunk`. The History
+        an existing selection is kept (`ChunkRepository.replace_keeping_selection`). The History
         version that follows is a separate, best-effort write: when it fails
         the chunks stand without a matching History entry, as before.
         """
@@ -221,10 +218,7 @@ class ChunkService:
 
         source_analysis_id = current.base_analysis_id
         source_result_hash = hash_result(job.document_json)
-        state = await self._states.find_state(document_id)
         try:
-            # The write itself keeps a selection made after `state` was
-            # read, as the rule wants.
             old_count = await self._chunks.replace_keeping_selection(
                 document_id,
                 new_chunks,
@@ -232,7 +226,7 @@ class ChunkService:
                 chunk_source=DocumentChunkSource(
                     document_id, source_analysis_id, source_result_hash
                 ),
-                active_analysis_id=resolve_selection_after_rechunk(state, source_analysis_id),
+                active_analysis_id=source_analysis_id,
             )
         except AnalysisNotSelectableError as exc:
             raise ChunkConflictError(

@@ -37,7 +37,7 @@ from api.stores import router as stores_router
 from bootstrap import AppStateBuilder
 from bootstrap.mcp_mount import mount_mcp_server
 from infra.body_limit import BodySizeLimitMiddleware
-from infra.host_guard import ApiHostGuardMiddleware, is_host_check_on, log_host_check
+from infra.host_guard import ApiHostGuardMiddleware, log_host_check
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.database import get_connection
@@ -47,6 +47,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Body ceiling of `POST /api/analyses/import`. Page images embedded as base64
+# make a Docling JSON large; nginx bounds every `/api` body before this.
+MAX_IMPORT_SIZE_MB = 200
 
 
 @asynccontextmanager
@@ -92,13 +96,12 @@ app = FastAPI(
 # Middlewares run outermost-last-added: the Host check, then the rate limiter,
 # then CORS, then the import body limit (inside CORS, so its 413 carries the
 # CORS headers the browser needs to read it).
-if settings.max_import_size_mb > 0:
-    app.add_middleware(
-        BodySizeLimitMiddleware,
-        path="/api/analyses/import",  # `import_analysis` in api/analyses.py
-        max_bytes=settings.max_import_size_mb * 1024 * 1024,
-        detail=f"Docling JSON too large (max {settings.max_import_size_mb} MB)",
-    )
+app.add_middleware(
+    BodySizeLimitMiddleware,
+    path="/api/analyses/import",  # `import_analysis` in api/analyses.py
+    max_bytes=MAX_IMPORT_SIZE_MB * 1024 * 1024,
+    detail=f"Docling JSON too large (max {MAX_IMPORT_SIZE_MB} MB)",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -114,7 +117,7 @@ if settings.rate_limit_rpm > 0:
     )
 # Outermost: a request for a foreign Host is refused before it counts
 # against the rate limit or reaches a route.
-if is_host_check_on(settings.api_allowed_hosts):
+if settings.api_allowed_hosts:
     app.add_middleware(ApiHostGuardMiddleware, allowed_hosts=settings.api_allowed_hosts)
 log_host_check(settings.api_allowed_hosts)
 

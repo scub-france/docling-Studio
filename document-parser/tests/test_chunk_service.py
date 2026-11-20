@@ -92,7 +92,6 @@ def service(repos):
         chunk_repo=repos["chunks"],
         document_repo=repos["documents"],
         active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
-        analysis_state_repo=repos["analysis_state"],
         chunker=None,
     )
 
