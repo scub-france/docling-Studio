@@ -340,12 +340,7 @@ def build_ingestion_service(graph_writer) -> IngestionService | None:
 
     from infra.embedding_client import EmbeddingClient
 
-    vector_store = None
-    if has_opensearch:
-        from infra.opensearch_store import OpenSearchStore
-
-        vector_store = OpenSearchStore(settings.opensearch_url)
-
+    vector_store = _build_vector_store()
     logger.info(
         "Ingestion enabled (embedding=%s, opensearch=%s, neo4j=%s)",
         settings.embedding_url,
@@ -358,3 +353,12 @@ def build_ingestion_service(graph_writer) -> IngestionService | None:
         IngestionConfig(embedding_dimension=settings.embedding_dimension),
         graph_writer=graph_writer,
     )
+
+
+def _build_vector_store():
+    """The OpenSearch store when `OPENSEARCH_URL` is set, else `None`."""
+    if not settings.opensearch_url:
+        return None
+    from infra.opensearch_store import OpenSearchStore
+
+    return OpenSearchStore(settings.opensearch_url)

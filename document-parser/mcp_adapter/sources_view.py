@@ -39,7 +39,11 @@ _DESCRIPTION = (
 
 def register_sources_view(apps: Apps, tools: Callable[[], DocumentTools], uri: str) -> None:
     """Publish `show_sources` and the card's own page tool, bound to `uri`."""
+    _register_show_sources(apps, tools, uri)
+    _register_get_source_page(apps, tools, uri)
 
+
+def _register_show_sources(apps: Apps, tools: Callable[[], DocumentTools], uri: str) -> None:
     @apps.tool(
         resource_uri=uri,
         visibility=["model"],
@@ -65,6 +69,8 @@ def register_sources_view(apps: Apps, tools: Callable[[], DocumentTools], uri: s
             structured_content=_CARD.dump_python(card, mode="json"),
         )
 
+
+def _register_get_source_page(apps: Apps, tools: Callable[[], DocumentTools], uri: str) -> None:
     @apps.tool(
         resource_uri=uri,
         # App-only, like `get_citation_image`, and bound to this card's own

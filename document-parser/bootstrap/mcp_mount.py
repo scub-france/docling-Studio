@@ -90,7 +90,20 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
         logger.info("MCP document server not mounted (MCP_ENABLED=false)")
         return None
 
-    server = build_mcp_server(
+    server = _build_server(app)
+    _mount_gated_routes(app, server)
+
+    logger.warning(
+        "MCP document server mounted at %s — UNAUTHENTICATED: it reads every document. "
+        "Keep it on localhost or behind an authenticating proxy.",
+        MCP_PATH,
+    )
+    return MountedMcpServer(server=server, session=server.session_manager.run())
+
+
+def _build_server(app: FastAPI) -> MCPServer:
+    """The document server, over the tools `app` publishes once it is wired."""
+    return build_mcp_server(
         lambda: _resolve_tools(app),
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
@@ -100,6 +113,10 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
         # effective one on every call (#364).
         max_rounds=settings.mcp_max_rounds,
     )
+
+
+def _mount_gated_routes(app: FastAPI, server: MCPServer) -> None:
+    """Append the server's streamable-HTTP routes to `app`, each behind the serving gate."""
     mcp_app = server.streamable_http_app(
         streamable_http_path=MCP_PATH,
         # Stateless: every request stands alone, so the surface survives a
@@ -118,13 +135,6 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
     app.router.routes.extend(
         _gate_route(route, lambda: _is_serving(app)) for route in mcp_app.routes
     )
-
-    logger.warning(
-        "MCP document server mounted at %s — UNAUTHENTICATED: it reads every document. "
-        "Keep it on localhost or behind an authenticating proxy.",
-        MCP_PATH,
-    )
-    return MountedMcpServer(server=server, session=server.session_manager.run())
 
 
 async def describe_mcp_server(mounted: MountedMcpServer | None) -> McpServerStatus:

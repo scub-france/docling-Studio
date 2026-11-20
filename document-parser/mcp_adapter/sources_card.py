@@ -17,7 +17,8 @@ from mcp_adapter.wire import neutralise
 
 if TYPE_CHECKING:
     from domain.page_regions import PageRegion
-    from domain.source_map import SourceHop, SourceNode, SourcePassage
+    from domain.source_bar import SourceSegment
+    from domain.source_map import SourceHop, SourceNode, SourcePassage, SourceTotals
     from services.source_service import SourceReport
 
 
@@ -135,48 +136,16 @@ class SourcesCard:
 
 def build_sources_card(report: SourceReport) -> SourcesCard:
     sources, links = report.sources, report.deep_links
-    totals, cap = sources.totals, report.max_rounds
-    unit = "pages" if totals.mode == "pages" else "sections"
-    rounds = (
-        f"{totals.rounds} rounds, over the {cap}-round cap"
-        if totals.rounds > cap
-        else f"{totals.rounds} of {cap} rounds"
-    )
-    summary = (
-        f"{rounds} · read {totals.sections_read} of {totals.sections_total} {unit} — "
-        f"~{totals.tokens_read:,} of {totals.tokens_total:,} tokens ({totals.percent:g} %)."
-    )
     return SourcesCard(
         document_id=report.document_id,
         version_id=report.version_id,
         filename=neutralise(report.filename),
         question=neutralise(report.question),
-        summary=summary,
-        totals=SourceTotalsOut(
-            mode=totals.mode,
-            rounds=totals.rounds,
-            max_rounds=cap,
-            over_cap=totals.rounds > cap,
-            sections_read=totals.sections_read,
-            sections_total=totals.sections_total,
-            tokens_read=totals.tokens_read,
-            tokens_total=totals.tokens_total,
-            percent=totals.percent,
-        ),
+        summary=_build_summary(sources.totals, report.max_rounds),
+        totals=_to_totals_out(sources.totals, report.max_rounds),
         hops=[_to_hop_out(hop, links) for hop in sources.hops],
         map=[_to_node_out(node, links) for node in sources.nodes],
-        segments=[
-            SourceSegmentOut(
-                ref=s.ref,
-                title=neutralise(s.title),
-                level=s.level,
-                tokens=s.tokens,
-                status=s.status,
-                page=s.page,
-                hop_ids=list(s.hop_ids),
-            )
-            for s in sources.segments
-        ],
+        segments=[_to_segment_out(s) for s in sources.segments],
         passages=[_to_passage_out(p, links) for p in sources.passages],
         page_count=report.page_count,
         title=neutralise(report.title or report.filename),
@@ -185,6 +154,45 @@ def build_sources_card(report: SourceReport) -> SourcesCard:
             "If no card appeared, relay this tree and each `deep_link`, which opens the "
             "passage in Docling Studio."
         ),
+    )
+
+
+def _build_summary(totals: SourceTotals, cap: int) -> str:
+    unit = "pages" if totals.mode == "pages" else "sections"
+    rounds = (
+        f"{totals.rounds} rounds, over the {cap}-round cap"
+        if totals.rounds > cap
+        else f"{totals.rounds} of {cap} rounds"
+    )
+    return (
+        f"{rounds} · read {totals.sections_read} of {totals.sections_total} {unit} — "
+        f"~{totals.tokens_read:,} of {totals.tokens_total:,} tokens ({totals.percent:g} %)."
+    )
+
+
+def _to_totals_out(totals: SourceTotals, cap: int) -> SourceTotalsOut:
+    return SourceTotalsOut(
+        mode=totals.mode,
+        rounds=totals.rounds,
+        max_rounds=cap,
+        over_cap=totals.rounds > cap,
+        sections_read=totals.sections_read,
+        sections_total=totals.sections_total,
+        tokens_read=totals.tokens_read,
+        tokens_total=totals.tokens_total,
+        percent=totals.percent,
+    )
+
+
+def _to_segment_out(segment: SourceSegment) -> SourceSegmentOut:
+    return SourceSegmentOut(
+        ref=segment.ref,
+        title=neutralise(segment.title),
+        level=segment.level,
+        tokens=segment.tokens,
+        status=segment.status,
+        page=segment.page,
+        hop_ids=list(segment.hop_ids),
     )
 
 

@@ -33,6 +33,11 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from domain.mcp_config import McpRuntimeConfig
+    from services.document_tools import DocumentTools
 
 logger = logging.getLogger("mcp_stdio")
 
@@ -48,31 +53,18 @@ def resolve_db_path() -> Path:
 async def _serve() -> None:
     # Imported once DB_PATH is pinned: `persistence` and `settings` read it at
     # import time.
-    from bootstrap.factories import build_document_tools, build_env_mcp_config, build_parse_loader
+    from bootstrap.factories import build_env_mcp_config
     from infra.settings import settings
     from mcp_adapter import build_mcp_server
-    from persistence.analysis_repo import SqliteAnalysisRepository
     from persistence.app_settings_repo import SqliteAppSettingsRepository
     from persistence.database import init_db
-    from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
-    from persistence.document_repo import SqliteDocumentRepository
-    from services.current_analysis import CurrentAnalysisResolver
     from services.mcp_config_service import load_effective_mcp_config
 
     # Applies pending migrations; idempotent against an up-to-date database.
     await init_db()
 
     config = await load_effective_mcp_config(SqliteAppSettingsRepository(), build_env_mcp_config())
-    analyses = SqliteAnalysisRepository()
-    # The same "current analysis" as Studio: the document's active selection.
-    current_analysis = CurrentAnalysisResolver(
-        state_repo=SqliteDocumentAnalysisRepository(),
-        analysis_repo=analyses,
-    )
-    tools = build_document_tools(
-        build_parse_loader(SqliteDocumentRepository(), analyses, current_analysis),
-        config,
-    )
+    tools = _build_document_tools(config)
     server = build_mcp_server(
         lambda: tools,
         version=settings.app_version,
@@ -84,6 +76,26 @@ async def _serve() -> None:
     )
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()
+
+
+def _build_document_tools(config: McpRuntimeConfig) -> DocumentTools:
+    """The document services over Studio's repositories, at `config`'s budgets."""
+    from bootstrap.factories import build_document_tools, build_parse_loader
+    from persistence.analysis_repo import SqliteAnalysisRepository
+    from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
+    from persistence.document_repo import SqliteDocumentRepository
+    from services.current_analysis import CurrentAnalysisResolver
+
+    analyses = SqliteAnalysisRepository()
+    # The same "current analysis" as Studio: the document's active selection.
+    current_analysis = CurrentAnalysisResolver(
+        state_repo=SqliteDocumentAnalysisRepository(),
+        analysis_repo=analyses,
+    )
+    return build_document_tools(
+        build_parse_loader(SqliteDocumentRepository(), analyses, current_analysis),
+        config,
+    )
 
 
 def main() -> int:

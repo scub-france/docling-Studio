@@ -150,18 +150,11 @@ _mcp = mount_mcp_server(app)
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     """Health check endpoint — verifies database connectivity."""
-    db_status = "ok"
-    try:
-        async with get_connection() as db:
-            await db.execute("SELECT 1")
-    except Exception:
-        db_status = "error"
-        logger.warning("Health check: database unreachable", exc_info=True)
+    db_status = await _probe_database()
 
     # Tolerates a missing container: the app is importable (and this endpoint
     # answerable) before lifespan has run, which is how the API tests mount it.
     state: AppState = getattr(app.state, "container", None) or AppState()
-    runner = state.reasoning_runner
     return HealthResponse(
         status="ok" if db_status == "ok" else "degraded",
         version=settings.app_version,
@@ -175,10 +168,7 @@ async def health() -> HealthResponse:
         ),
         paste_allowed_image_types=settings.paste_allowed_image_types,
         ingestion_available=state.ingestion_service is not None,
-        # True when the runner is wired and reports itself available. Actual
-        # Ollama reachability is checked lazily at call time so health checks
-        # never block on the LLM host. Follows #317 runtime rebuilds.
-        reasoning_available=runner is not None and runner.is_available,
+        reasoning_available=_is_reasoning_available(state),
         ask_mode=settings.ask_mode,
         # 0.6.1 — Surface flags (#257).
         studio_mode_enabled=settings.studio_mode_enabled,
@@ -188,3 +178,23 @@ async def health() -> HealthResponse:
         linked_mode_enabled=settings.linked_mode_enabled,
         analysis_editor_enabled=settings.analysis_editor_enabled,
     )
+
+
+async def _probe_database() -> str:
+    """`"ok"` when the database answers a trivial query, else `"error"`."""
+    db_status = "ok"
+    try:
+        async with get_connection() as db:
+            await db.execute("SELECT 1")
+    except Exception:
+        db_status = "error"
+        logger.warning("Health check: database unreachable", exc_info=True)
+    return db_status
+
+
+def _is_reasoning_available(state: AppState) -> bool:
+    # True when the runner is wired and reports itself available. Actual
+    # Ollama reachability is checked lazily at call time so health checks
+    # never block on the LLM host. Follows #317 runtime rebuilds.
+    runner = state.reasoning_runner
+    return runner is not None and runner.is_available

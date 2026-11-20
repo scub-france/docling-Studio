@@ -121,6 +121,14 @@ def build_mcp_server(
     # inflicted on every call (see mcp_adapter/prompts.py).
     register_prompts(server, apps=apps, rounds=_bind_effective_rounds(tools, max_rounds))
 
+    _register_find_documents(server, tools)
+    _register_get_outline(server, tools)
+    _register_read_element(server, tools)
+    _register_verify_citation(server, tools)
+    return server
+
+
+def _register_find_documents(server: MCPServer, tools: Callable[[], DocumentTools]) -> None:
     @server.tool(
         annotations=_READ_ONLY,
         description=(
@@ -136,6 +144,8 @@ def build_mcp_server(
             search = await tools().navigation.find_documents(query=query, limit=limit)
         return to_compact_result(to_search_result(search))
 
+
+def _register_get_outline(server: MCPServer, tools: Callable[[], DocumentTools]) -> None:
     @server.tool(
         annotations=_READ_ONLY,
         description=(
@@ -155,6 +165,8 @@ def build_mcp_server(
             )
         return to_compact_result(to_outline_result(outline))
 
+
+def _register_read_element(server: MCPServer, tools: Callable[[], DocumentTools]) -> None:
     @server.tool(
         annotations=_READ_ONLY,
         description=(
@@ -182,6 +194,8 @@ def build_mcp_server(
             )
         return to_compact_result(to_excerpt_result(excerpt))
 
+
+def _register_verify_citation(server: MCPServer, tools: Callable[[], DocumentTools]) -> None:
     @server.tool(
         annotations=_READ_ONLY,
         description=(
@@ -196,8 +210,6 @@ def build_mcp_server(
         async with ToolErrors():
             check = await tools().citations.verify_citation(uri, quote)
         return to_compact_result(to_verification_result(check))
-
-    return server
 
 
 def _bind_effective_rounds(tools: Callable[[], DocumentTools], fallback: int) -> Callable[[], int]:
