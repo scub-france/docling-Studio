@@ -46,20 +46,11 @@ def _read_step(it: ReasoningIteration) -> ReasoningStep:
     if len(title) > 96:
         title = title[:93].rstrip() + "…"
 
-    if it.can_answer:
-        summary = it.response.strip()
-    else:
-        summary = (
-            f"Insufficient — {it.section_text_length} chars read, agent moved on."
-            if it.section_text_length
-            else "Insufficient — agent moved on."
-        )
-
     return ReasoningStep(
         id=f"s{it.iteration}",
         kind=ReasoningStepKind.READ,
         title=title,
-        summary=summary,
+        summary=_summarise_read(it),
         duration_ms=it.duration_ms,
         citations=[it.section_ref] if it.section_ref else [],
         payload=ReasoningStepPayload(
@@ -71,6 +62,16 @@ def _read_step(it: ReasoningIteration) -> ReasoningStep:
             response=it.response,
             duration_ms=it.duration_ms,
         ),
+    )
+
+
+def _summarise_read(it: ReasoningIteration) -> str:
+    if it.can_answer:
+        return it.response.strip()
+    return (
+        f"Insufficient — {it.section_text_length} chars read, agent moved on."
+        if it.section_text_length
+        else "Insufficient — agent moved on."
     )
 
 

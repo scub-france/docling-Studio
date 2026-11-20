@@ -24,6 +24,7 @@ from domain.parse_index import (
 from domain.spans import build_span_ref
 
 if TYPE_CHECKING:
+    from domain.heading_tree import HeadingNesting
     from domain.parse_index import DocumentIndex
 
 
@@ -85,20 +86,8 @@ def _build_section_nodes(
     depth_limited = False
     node_limited = False
     child_counts = _count_children(index, headings)
-
-    def is_within_depth(open_levels: tuple[int, ...]) -> bool:
-        # A document `title` wraps everything without being a level a reader
-        # thinks about, so it does not consume depth budget: `depth=2` means
-        # chapters and their subsections, title or no title.
-        return sum(1 for open_level in open_levels if open_level > 0) < depth
-
     nodes: dict[int, OutlineNode] = {}
-    nesting = nest_by_heading(
-        [index.by_ref[ref] for ref in headings],
-        level_of=get_heading_level,
-        may_open=is_within_depth,
-    )
-    for step in nesting.steps:
+    for step in _nest_headings(index, headings, depth).steps:
         if not step.opened:
             # Deeper than requested: its tokens still count towards the
             # nearest emitted ancestor, so nothing is hidden from the budget.
@@ -108,23 +97,45 @@ def _build_section_nodes(
             node_limited = True
             break
         ref = headings[step.position]
-        node = OutlineNode(
-            ref=ref,
-            uri="",  # stamped by the service, which owns the version token
-            title=get_title(index.by_ref[ref], index.inline_meta),
-            kind="section",
-            level=step.level,
-            page=index.page_of.get(ref),
-            est_tokens=estimate_section_tokens(index, ref),
-            child_count=child_counts.get(ref, 0),
-            children=[],
-        )
+        node = _build_section_node(index, ref, step.level, child_counts)
         siblings = roots if step.parent is None else nodes[step.parent].children
         siblings.append(node)
         nodes[step.position] = node
         emitted += 1
 
     return roots, depth_limited, node_limited
+
+
+def _nest_headings(index: DocumentIndex, headings: list[str], depth: int) -> HeadingNesting:
+    """Nest the headings, opening no section deeper than `depth`."""
+
+    def is_within_depth(open_levels: tuple[int, ...]) -> bool:
+        # A document `title` wraps everything without being a level a reader
+        # thinks about, so it does not consume depth budget: `depth=2` means
+        # chapters and their subsections, title or no title.
+        return sum(1 for open_level in open_levels if open_level > 0) < depth
+
+    return nest_by_heading(
+        [index.by_ref[ref] for ref in headings],
+        level_of=get_heading_level,
+        may_open=is_within_depth,
+    )
+
+
+def _build_section_node(
+    index: DocumentIndex, ref: str, level: int | None, child_counts: dict[str, int]
+) -> OutlineNode:
+    return OutlineNode(
+        ref=ref,
+        uri="",  # stamped by the service, which owns the version token
+        title=get_title(index.by_ref[ref], index.inline_meta),
+        kind="section",
+        level=level,
+        page=index.page_of.get(ref),
+        est_tokens=estimate_section_tokens(index, ref),
+        child_count=child_counts.get(ref, 0),
+        children=[],
+    )
 
 
 def _build_page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNode], bool]:

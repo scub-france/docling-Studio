@@ -184,14 +184,7 @@ def build_source_map(
     """Project the reads and the cited anchors onto `outline`."""
     flat = flatten(outline.nodes)
     published = {node.ref: node for node, _ in flat}
-    ranges = list_heading_ranges(index) if outline.mode == "sections" else []
-
-    def locate(ref: str) -> str | None:
-        for candidate in find_containing_chain(ref, index, ranges, mode=outline.mode):
-            if candidate in published:
-                return candidate
-        return None
-
+    locate = _build_locator(outline, index, published)
     hops, covered = _build_hops(reads, index, published, locate)
     trail = _Trail()
     for hop in hops:
@@ -216,6 +209,21 @@ def build_source_map(
         segments=build_segments(flat, trail.status, trail.reached),
         passages=list(passages.values()),
     )
+
+
+def _build_locator(
+    outline: DocumentOutline, index: DocumentIndex, published: dict[str, OutlineNode]
+) -> Callable[[str], str | None]:
+    """The function giving the deepest published node that holds a ref."""
+    ranges = list_heading_ranges(index) if outline.mode == "sections" else []
+
+    def locate(ref: str) -> str | None:
+        for candidate in find_containing_chain(ref, index, ranges, mode=outline.mode):
+            if candidate in published:
+                return candidate
+        return None
+
+    return locate
 
 
 def _build_passage(
@@ -311,28 +319,34 @@ def _build_hops(
                 hops[at] = replace(hops[at], found=read.found)
             continue
         seen[read.ref] = len(hops)
-        hop_id = f"h{len(hops) + 1}"
-        ordered = list_section_refs(index, read.ref) or [read.ref]
-        refs = set(ordered)
-        covered[hop_id] = refs
         node_ref = locate(read.ref)
         node = published.get(node_ref) if node_ref else None
-        hops.append(
-            SourceHop(
-                hop_id=hop_id,
-                ordinal=len(hops) + 1,
-                ref=read.ref,
-                uri=read.uri,
-                title=node.title if node else read.ref,
-                why=read.why,
-                found=read.found,
-                est_tokens=_compute_cost(index, refs),
-                node_ref=node_ref,
-                page=index.page_of.get(get_span_start(read.ref)) or (node.page if node else None),
-                regions=collect_regions(index, ordered),
-            )
-        )
+        hop, refs = _build_hop(read, len(hops) + 1, index, node)
+        covered[hop.hop_id] = refs
+        hops.append(hop)
     return hops, covered
+
+
+def _build_hop(
+    read: SourceRead, ordinal: int, index: DocumentIndex, node: OutlineNode | None
+) -> tuple[SourceHop, set[str]]:
+    """The hop for one read, landing on `node`, with the refs its read covered."""
+    ordered = list_section_refs(index, read.ref) or [read.ref]
+    refs = set(ordered)
+    hop = SourceHop(
+        hop_id=f"h{ordinal}",
+        ordinal=ordinal,
+        ref=read.ref,
+        uri=read.uri,
+        title=node.title if node else read.ref,
+        why=read.why,
+        found=read.found,
+        est_tokens=_compute_cost(index, refs),
+        node_ref=node.ref if node else None,
+        page=index.page_of.get(get_span_start(read.ref)) or (node.page if node else None),
+        regions=collect_regions(index, ordered),
+    )
+    return hop, refs
 
 
 def _find_covering_hop(

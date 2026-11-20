@@ -81,6 +81,13 @@ def _validate_slug(slug: str) -> None:
         )
 
 
+def _validate_required_fields(name: str, embedder: str) -> None:
+    if not name:
+        raise StoreValidationError("name is required")
+    if not embedder:
+        raise StoreValidationError("embedder is required")
+
+
 _NEO4J_URI_SCHEMES = (
     "bolt://",
     "bolt+s://",
@@ -132,6 +139,23 @@ def _validate_config_for_kind(kind: StoreKind, config: dict) -> None:
         index_name = config.get("index_name") or config.get("indexName")
         if not isinstance(index_name, str) or not index_name.strip():
             raise StoreValidationError("Neo4j config requires a non-empty 'index_name'")
+
+
+def _apply_embedder(store: Store, embedder: str | None) -> None:
+    if embedder is None:
+        return
+    embedder = embedder.strip()
+    if not embedder:
+        raise StoreValidationError("embedder cannot be empty")
+    store.embedder = embedder
+
+
+def _apply_connection(store: Store, uri: str | None, username: str | None) -> None:
+    """Set the connection fields the caller sent; the URI is checked against the store kind."""
+    if uri is not None:
+        store.connection_uri = _normalise_uri_for_kind(store.kind, uri)
+    if username is not None:
+        store.connection_username = _normalise_optional(username)
 
 
 class StoreService:
@@ -194,19 +218,12 @@ class StoreService:
         slug = (slug or "").strip().lower()
         embedder = (embedder or "").strip()
 
-        if not name:
-            raise StoreValidationError("name is required")
-        if not embedder:
-            raise StoreValidationError("embedder is required")
+        _validate_required_fields(name, embedder)
         _validate_slug(slug)
         _validate_config_for_kind(kind, config)
         connection_uri = _normalise_uri_for_kind(kind, connection_uri)
         connection_username = _normalise_optional(connection_username)
-
-        if await self._stores.find_by_slug(slug) is not None:
-            raise StoreConflictError(f"slug '{slug}' is already in use")
-        if await self._stores.find_by_name(name) is not None:
-            raise StoreConflictError(f"name '{name}' is already in use")
+        await self._check_identity_free(name, slug)
 
         store = Store(
             id=str(uuid.uuid4()),
@@ -219,14 +236,23 @@ class StoreService:
             connection_username=connection_username,
             is_default=is_default,
         )
+        await self._insert_store(store, connection_password)
+        # Re-read so `has_connection_password` reflects what landed.
+        return await self._stores.find_by_id(store.id) or store
+
+    async def _check_identity_free(self, name: str, slug: str) -> None:
+        if await self._stores.find_by_slug(slug) is not None:
+            raise StoreConflictError(f"slug '{slug}' is already in use")
+        if await self._stores.find_by_name(name) is not None:
+            raise StoreConflictError(f"name '{name}' is already in use")
+
+    async def _insert_store(self, store: Store, connection_password: str | None) -> None:
         # Empty-string password → no seal at create-time (the column
         # stays NULL). Only a non-empty value triggers Fernet.
         seal_password = connection_password if connection_password else None
         await self._stores.insert(store, password=seal_password)
-        if is_default:
+        if store.is_default:
             await self._stores.clear_default_except(store.id)
-        # Re-read so `has_connection_password` reflects what landed.
-        return await self._stores.find_by_id(store.id) or store
 
     async def update_store(
         self,
@@ -243,63 +269,56 @@ class StoreService:
         connection_password: str | None = None,
     ) -> Store:
         store = await self.get_by_slug(slug)
-
-        if name is not None:
-            name = name.strip()
-            if not name:
-                raise StoreValidationError("name cannot be empty")
-            other = await self._stores.find_by_name(name)
-            if other is not None and other.id != store.id:
-                raise StoreConflictError(f"name '{name}' is already in use")
-            store.name = name
-
-        if new_slug is not None:
-            new_slug = new_slug.strip().lower()
-            _validate_slug(new_slug)
-            if new_slug != store.slug:
-                other = await self._stores.find_by_slug(new_slug)
-                if other is not None and other.id != store.id:
-                    raise StoreConflictError(f"slug '{new_slug}' is already in use")
-                store.slug = new_slug
-
+        await self._apply_name(store, name)
+        await self._apply_slug(store, new_slug)
         if kind is not None:
             store.kind = kind
-
-        if embedder is not None:
-            embedder = embedder.strip()
-            if not embedder:
-                raise StoreValidationError("embedder cannot be empty")
-            store.embedder = embedder
-
+        _apply_embedder(store, embedder)
         if config is not None:
             store.config = config
 
         # Validate the (kind, config) pair as a whole — even when only one of
         # the two changed, the combination must still satisfy the schema.
         _validate_config_for_kind(store.kind, store.config)
-
-        if connection_uri is not None:
-            store.connection_uri = _normalise_uri_for_kind(store.kind, connection_uri)
-        if connection_username is not None:
-            store.connection_username = _normalise_optional(connection_username)
-
-        promote_default = False
+        _apply_connection(store, connection_uri, connection_username)
         if is_default is not None:
             store.is_default = is_default
-            promote_default = is_default
 
         await self._stores.update(store)
-
-        # Password write is separate (#279). Three behaviours per the
-        # DTO contract: None=untouched, ""=clear, other=replace.
-        if connection_password is not None:
-            cleared_or_replaced = connection_password if connection_password else None
-            await self._stores.set_connection_password(store.id, cleared_or_replaced)
-
-        if promote_default:
+        await self._write_connection_password(store.id, connection_password)
+        if is_default:
             await self._stores.clear_default_except(store.id)
         # Re-read so the response reflects the new sealed-flag state.
         return await self._stores.find_by_id(store.id) or store
+
+    async def _apply_name(self, store: Store, name: str | None) -> None:
+        if name is None:
+            return
+        name = name.strip()
+        if not name:
+            raise StoreValidationError("name cannot be empty")
+        other = await self._stores.find_by_name(name)
+        if other is not None and other.id != store.id:
+            raise StoreConflictError(f"name '{name}' is already in use")
+        store.name = name
+
+    async def _apply_slug(self, store: Store, new_slug: str | None) -> None:
+        if new_slug is None:
+            return
+        new_slug = new_slug.strip().lower()
+        _validate_slug(new_slug)
+        if new_slug != store.slug:
+            other = await self._stores.find_by_slug(new_slug)
+            if other is not None and other.id != store.id:
+                raise StoreConflictError(f"slug '{new_slug}' is already in use")
+            store.slug = new_slug
+
+    async def _write_connection_password(self, store_id: str, password: str | None) -> None:
+        # Password write is separate (#279). Three behaviours per the
+        # DTO contract: None=untouched, ""=clear, other=replace.
+        if password is not None:
+            cleared_or_replaced = password if password else None
+            await self._stores.set_connection_password(store_id, cleared_or_replaced)
 
     async def test_connection(self, slug: str) -> tuple[bool, str | None]:
         """Open a probe connection to the store's backend.

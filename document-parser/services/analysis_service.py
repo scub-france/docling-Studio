@@ -290,6 +290,38 @@ class AnalysisService:
         Returns None if the job was deleted mid-batch (caller should abort).
         Raises on batch failure (fail-fast: entire job fails).
         """
+        page_ranges = await self._plan_batches(job_id, total_pages, batch_size)
+        num_batches = len(page_ranges)
+        results: list[ConversionResult] = []
+        for number, page_range in enumerate(page_ranges, start=1):
+            if not await self._analysis_repo.find_by_id(job_id):
+                logger.info(
+                    "Job %s deleted during batch %d/%d, aborting",
+                    job_id,
+                    number,
+                    num_batches,
+                )
+                return None
+
+            batch_label = f"{number}/{num_batches}"
+            results.append(await self._convert_batch(file_path, options, page_range, batch_label))
+            start, end = page_range
+            await self._analysis_repo.update_progress(job_id, end, total_pages)
+            logger.info(
+                "Batch %d/%d done (pages %d-%d) for job %s",
+                number,
+                num_batches,
+                start,
+                end,
+                job_id,
+            )
+
+        return await self._converter.merge_batches(results)
+
+    async def _plan_batches(
+        self, job_id: str, total_pages: int, batch_size: int
+    ) -> list[tuple[int, int]]:
+        """Split the document into 1-based page ranges and reset the job's progress."""
         num_batches = math.ceil(total_pages / batch_size)
         await self._analysis_repo.update_progress(job_id, 0, total_pages)
         logger.info(
@@ -299,43 +331,25 @@ class AnalysisService:
             batch_size,
             job_id,
         )
+        starts = [batch_idx * batch_size + 1 for batch_idx in range(num_batches)]
+        return [(start, min(start + batch_size - 1, total_pages)) for start in starts]
 
-        results: list[ConversionResult] = []
-        for batch_idx in range(num_batches):
-            start = batch_idx * batch_size + 1
-            end = min(start + batch_size - 1, total_pages)
-
-            if not await self._analysis_repo.find_by_id(job_id):
-                logger.info(
-                    "Job %s deleted during batch %d/%d, aborting",
-                    job_id,
-                    batch_idx + 1,
-                    num_batches,
-                )
-                return None
-
-            try:
-                batch_result = await asyncio.wait_for(
-                    self._converter.convert(file_path, options, page_range=(start, end)),
-                    timeout=self._conversion_timeout,
-                )
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Batch {batch_idx + 1}/{num_batches} (pages {start}-{end}) failed: {exc}"
-                ) from exc
-
-            results.append(batch_result)
-            await self._analysis_repo.update_progress(job_id, end, total_pages)
-            logger.info(
-                "Batch %d/%d done (pages %d-%d) for job %s",
-                batch_idx + 1,
-                num_batches,
-                start,
-                end,
-                job_id,
+    async def _convert_batch(
+        self,
+        file_path: str,
+        options: ConversionOptions,
+        page_range: tuple[int, int],
+        batch_label: str,
+    ) -> ConversionResult:
+        """Convert one page range; a failure fails the whole job (fail-fast)."""
+        start, end = page_range
+        try:
+            return await asyncio.wait_for(
+                self._converter.convert(file_path, options, page_range=(start, end)),
+                timeout=self._conversion_timeout,
             )
-
-        return await self._converter.merge_batches(results)
+        except Exception as exc:
+            raise RuntimeError(f"Batch {batch_label} (pages {start}-{end}) failed: {exc}") from exc
 
     def _on_task_done(self, task: asyncio.Task, *, job_id: str) -> None:
         """Cleanup running tasks and handle failures."""
@@ -497,7 +511,14 @@ class AnalysisService:
         await self._record_analysis_version(job.document_id, job_id)
 
         await self._analysis_repo.complete_and_select(job)
+        await self._update_document_after_analysis(job, result, chunks_json)
+        logger.info("Analysis completed: %s (%d pages)", job_id, result.page_count)
 
+    async def _update_document_after_analysis(
+        self, job: AnalysisJob, result: ConversionResult, chunks_json: str | None
+    ) -> None:
+        """Bring the document in line with its completed analysis: page count,
+        lifecycle state and graph tree."""
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)
 
@@ -520,8 +541,6 @@ class AnalysisService:
         await self._transition_document(job.document_id, target_state)
 
         await self._write_tree_to_graph(job, result.document_json)
-
-        logger.info("Analysis completed: %s (%d pages)", job_id, result.page_count)
 
     async def _chunk_result(
         self,

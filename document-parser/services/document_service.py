@@ -87,11 +87,7 @@ class DocumentService:
         thread so the FastAPI event loop stays free for other requests during
         large uploads.
         """
-        if self._max_file_size > 0 and len(file_content) > self._max_file_size:
-            raise ValueError(f"File too large (max {self._config.max_file_size_mb} MB)")
-
-        if not file_content[:4].startswith(_PDF_MAGIC):
-            raise ValueError("Invalid file: not a PDF document")
+        self._check_upload(file_content)
 
         ext = ".pdf"  # Content already validated as PDF
         safe_name = f"{uuid.uuid4()}{ext}"
@@ -102,15 +98,7 @@ class DocumentService:
             self._save_and_count, safe_name, file_content
         )
 
-        if (
-            self._max_page_count > 0
-            and page_count is not None
-            and page_count > self._max_page_count
-        ):
-            await asyncio.to_thread(self._file_store.discard, storage_path)
-            raise ValueError(
-                f"Too many pages ({page_count}). Maximum allowed: {self._max_page_count}"
-            )
+        await self._check_page_count(storage_path, page_count)
 
         doc = Document(
             filename=filename,
@@ -121,6 +109,26 @@ class DocumentService:
         )
         await self._document_repo.insert(doc)
         return doc
+
+    def _check_upload(self, file_content: bytes) -> None:
+        """Refuse a file over the size limit or one that is not a PDF."""
+        if self._max_file_size > 0 and len(file_content) > self._max_file_size:
+            raise ValueError(f"File too large (max {self._config.max_file_size_mb} MB)")
+
+        if not file_content[:4].startswith(_PDF_MAGIC):
+            raise ValueError("Invalid file: not a PDF document")
+
+    async def _check_page_count(self, storage_path: str, page_count: int | None) -> None:
+        """Refuse a PDF over the page limit, discarding the file already written."""
+        if (
+            self._max_page_count > 0
+            and page_count is not None
+            and page_count > self._max_page_count
+        ):
+            await asyncio.to_thread(self._file_store.discard, storage_path)
+            raise ValueError(
+                f"Too many pages ({page_count}). Maximum allowed: {self._max_page_count}"
+            )
 
     async def find_all(self) -> list[Document]:
         """Return all documents, newest first."""

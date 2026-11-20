@@ -14,7 +14,7 @@ from services.errors import ServiceError
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from domain.models import AnalysisJob
+    from domain.models import AnalysisJob, Document
     from domain.ports import (
         ActiveAnalysisResultReader,
         AnalysisRepository,
@@ -91,16 +91,7 @@ class ExportService:
             raise ExportNotFoundError("Document not found")
 
         if format is ExportFormat.PDF:
-            # Resolved as the preview does: a path stored by another runtime
-            # (Docker, read from the host) still finds the uploaded file.
-            path = self._file_store.resolve(doc.storage_path)
-            if not self._file_store.has_file(path):
-                raise ExportNotFoundError("PDF file not found")
-            return ExportResult(
-                file_path=path,
-                media_type="application/pdf",
-                filename=doc.filename,
-            )
+            return self._export_source_pdf(doc)
 
         analysis = await resolve_analysis()
         if format is ExportFormat.MD:
@@ -120,6 +111,18 @@ class ExportService:
             content=analysis.document_json,
             media_type="application/json",
             filename=_build_export_filename(doc.filename, doc_id, ExportFormat.JSON),
+        )
+
+    def _export_source_pdf(self, doc: Document) -> ExportResult:
+        # Resolved as the preview does: a path stored by another runtime
+        # (Docker, read from the host) still finds the uploaded file.
+        path = self._file_store.resolve(doc.storage_path)
+        if not self._file_store.has_file(path):
+            raise ExportNotFoundError("PDF file not found")
+        return ExportResult(
+            file_path=path,
+            media_type="application/pdf",
+            filename=doc.filename,
         )
 
     async def _load_exported_analysis(self, doc_id: str, analysis_id: str | None) -> AnalysisJob:

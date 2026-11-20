@@ -140,13 +140,7 @@ class NavigationService:
             raise InvalidArgumentError(f"include must be one of {READ_MODES}, got {include!r}")
 
         parse = await self._parses.load(document_id, version_id)
-        target = resolve(parse.index, ref)
-        if target is None:
-            raise RefNotFoundError(
-                f"Ref {ref!r} does not exist in version {parse.version_id} of document "
-                f"{document_id}. Call get_outline to obtain valid refs."
-            )
-
+        target = _require_target(parse, document_id, ref)
         refs, start = self._list_refs_to_read(parse, ref, include=include, cursor=cursor)
         picked, spent, truncated, next_cursor = pick_within_budget(
             parse.index, refs, self._compute_budget(max_tokens), start
@@ -253,3 +247,13 @@ class NavigationService:
         if target.headings:
             return target.headings[-1]
         return doc.filename or target.ref
+
+
+def _require_target(parse: LoadedParse, document_id: str, ref: str) -> ResolvedElement:
+    target = resolve(parse.index, ref)
+    if target is None:
+        raise RefNotFoundError(
+            f"Ref {ref!r} does not exist in version {parse.version_id} of document "
+            f"{document_id}. Call get_outline to obtain valid refs."
+        )
+    return target

@@ -110,20 +110,8 @@ class SourceService:
             document_id, version_id=version_id, depth=_MAP_DEPTH
         )
         known = _find_resolvable(parse, anchors, unknown)
-        sources = build_source_map(
-            outline,
-            parse.index,
-            [
-                SourceRead(a.ref, a.uri, why.strip(), found.strip())
-                for a, why, found in read_anchors
-                if a.uri in known
-            ],
-            [
-                SourceCited(a.ref, a.uri, quote, status)
-                for a, quote, status in cited_anchors
-                if a.uri in known
-            ],
-        )
+        source_reads, source_cited = _build_known_rounds(read_anchors, cited_anchors, known)
+        sources = build_source_map(outline, parse.index, source_reads, source_cited)
         sources = await self._add_quote_marks(parse, sources)
         return SourceReport(
             document_id=document_id,
@@ -318,3 +306,22 @@ def _find_resolvable(
         else:
             known.add(anchor.uri)
     return known
+
+
+def _build_known_rounds(
+    read_anchors: list[tuple[DocumentAnchor, str, str]],
+    cited_anchors: list[tuple[DocumentAnchor, str, str | None]],
+    known: set[str],
+) -> tuple[list[SourceRead], list[SourceCited]]:
+    """The reads and citations whose anchor this parse holds, as the source map takes them."""
+    reads = [
+        SourceRead(a.ref, a.uri, why.strip(), found.strip())
+        for a, why, found in read_anchors
+        if a.uri in known
+    ]
+    cited = [
+        SourceCited(a.ref, a.uri, quote, status)
+        for a, quote, status in cited_anchors
+        if a.uri in known
+    ]
+    return reads, cited

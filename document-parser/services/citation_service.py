@@ -42,7 +42,7 @@ MIN_QUOTE_CHARS = 10
 if TYPE_CHECKING:
     from domain.navigation import ResolvedElement
     from services.navigation_config import NavigationConfig
-    from services.parse_loader import ParseLoader
+    from services.parse_loader import LoadedParse, ParseLoader
 
 
 class CitationService:
@@ -121,30 +121,39 @@ class CitationService:
                 detail=f"Ref {anchor.ref!r} does not exist in version {parse.version_id}.",
             )
 
-        citation = self.build(parse.document.id, parse.version_id, element)
         claimed = normalise_quote(quote)
         if not claimed:
-            return CitationCheck(
-                valid=False,
-                status=CitationStatus.QUOTE_DRIFT,
-                detail="No quote supplied to verify.",
-                citation=citation,
-                actual_quote=self._clip(element.text),
-            )
-
+            return self._build_drift_check(parse, element, "No quote supplied to verify.")
         match = locate_quote(parse.index, anchor.ref, element, claimed)
         if match is None:
-            return CitationCheck(
-                valid=False,
-                status=CitationStatus.QUOTE_DRIFT,
-                detail=(
-                    "The quote does not appear at this anchor. Use `actual_quote` as the "
-                    "verbatim, or re-read the element."
-                ),
-                citation=citation,
-                actual_quote=self._clip(element.text),
+            return self._build_drift_check(
+                parse,
+                element,
+                "The quote does not appear at this anchor. Use `actual_quote` as the "
+                "verbatim, or re-read the element.",
             )
+        return await self._build_match_check(anchor, parse, match, current_parse_ids)
 
+    def _build_drift_check(
+        self, parse: LoadedParse, element: ResolvedElement, detail: str
+    ) -> CitationCheck:
+        """The failed check, with the anchor's own citation and its verbatim text."""
+        return CitationCheck(
+            valid=False,
+            status=CitationStatus.QUOTE_DRIFT,
+            detail=detail,
+            citation=self.build(parse.document.id, parse.version_id, element),
+            actual_quote=self._clip(element.text),
+        )
+
+    async def _build_match_check(
+        self,
+        anchor: DocumentAnchor,
+        parse: LoadedParse,
+        match: ResolvedElement,
+        current_parse_ids: dict[str, str] | None,
+    ) -> CitationCheck:
+        """The passed check, flagged stale when the anchor pins a superseded parse."""
         matched = self.build(parse.document.id, parse.version_id, match)
         current = await self._find_superseding_parse(
             parse.document.id, parse.version_id, current_parse_ids

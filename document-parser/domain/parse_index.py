@@ -99,13 +99,7 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
     page_sizes = _read_page_sizes(doc_data, tree_reader)
     located = _locate_items(by_ref, inline_meta, page_sizes, tree_reader)
 
-    # Union, not `or`: a parse whose `pages` map is partial (a page with no
-    # `size`) would otherwise drop that page from the map entirely — and the
-    # page fallback exists precisely for scans, where that metadata is the
-    # first thing to be missing. A page an element sits on is a page.
-    page_numbers = sorted(
-        set(page_sizes) | {number for pages in located.pages_of.values() for number in pages}
-    )
+    page_numbers = _list_page_numbers(page_sizes, located)
 
     return DocumentIndex(
         by_ref=by_ref,
@@ -159,6 +153,18 @@ def _map_sections(
     for still_open in reversed(nesting.still_open):
         section_end[order[still_open]] = len(order)
     return heading_path, section_end
+
+
+def _list_page_numbers(
+    page_sizes: dict[int, tuple[float, float]], located: _Provenance
+) -> list[int]:
+    # Union, not `or`: a parse whose `pages` map is partial (a page with no
+    # `size`) would otherwise drop that page from the map entirely — and the
+    # page fallback exists precisely for scans, where that metadata is the
+    # first thing to be missing. A page an element sits on is a page.
+    return sorted(
+        set(page_sizes) | {number for pages in located.pages_of.values() for number in pages}
+    )
 
 
 def _read_page_sizes(

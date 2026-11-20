@@ -132,46 +132,61 @@ def build_index_mapping(embedding_dimension: int = DEFAULT_EMBEDDING_DIMENSION) 
             },
         },
         "mappings": {
+            "properties": _build_chunk_properties(embedding_dimension),
+        },
+    }
+
+
+def _build_chunk_properties(embedding_dimension: int) -> dict:
+    """The field mappings of one indexed chunk."""
+    return {
+        "doc_id": {"type": "keyword"},
+        "filename": {"type": "keyword"},
+        "content": {"type": "text", "analyzer": "standard"},
+        "embedding": _build_embedding_field(embedding_dimension),
+        "chunk_index": {"type": "integer"},
+        "chunk_type": {"type": "keyword"},
+        "page_number": {"type": "integer"},
+        "bboxes": _build_bboxes_field(),
+        "headings": {"type": "text"},
+        "doc_items": {
+            "type": "nested",
             "properties": {
-                "doc_id": {"type": "keyword"},
-                "filename": {"type": "keyword"},
-                "content": {"type": "text", "analyzer": "standard"},
-                "embedding": {
-                    "type": "knn_vector",
-                    "dimension": embedding_dimension,
-                    "method": {
-                        "engine": "faiss",
-                        "name": "hnsw",
-                    },
-                },
-                "chunk_index": {"type": "integer"},
-                "chunk_type": {"type": "keyword"},
-                "page_number": {"type": "integer"},
-                "bboxes": {
-                    "type": "nested",
-                    "properties": {
-                        "page": {"type": "integer"},
-                        "x": {"type": "float"},
-                        "y": {"type": "float"},
-                        "w": {"type": "float"},
-                        "h": {"type": "float"},
-                    },
-                },
-                "headings": {"type": "text"},
-                "doc_items": {
-                    "type": "nested",
-                    "properties": {
-                        "self_ref": {"type": "keyword"},
-                        "label": {"type": "keyword"},
-                    },
-                },
-                "origin": {
-                    "type": "object",
-                    "properties": {
-                        "binary_hash": {"type": "keyword"},
-                        "filename": {"type": "keyword"},
-                    },
-                },
+                "self_ref": {"type": "keyword"},
+                "label": {"type": "keyword"},
             },
+        },
+        "origin": {
+            "type": "object",
+            "properties": {
+                "binary_hash": {"type": "keyword"},
+                "filename": {"type": "keyword"},
+            },
+        },
+    }
+
+
+def _build_embedding_field(embedding_dimension: int) -> dict:
+    """The k-NN vector field: HNSW graph on the faiss engine."""
+    return {
+        "type": "knn_vector",
+        "dimension": embedding_dimension,
+        "method": {
+            "engine": "faiss",
+            "name": "hnsw",
+        },
+    }
+
+
+def _build_bboxes_field() -> dict:
+    """The chunk's bounding boxes, one nested object per page region."""
+    return {
+        "type": "nested",
+        "properties": {
+            "page": {"type": "integer"},
+            "x": {"type": "float"},
+            "y": {"type": "float"},
+            "w": {"type": "float"},
+            "h": {"type": "float"},
         },
     }

@@ -165,13 +165,7 @@ class VersionService:
         rolls back and the caller gets the same 409 as the check gives.
         """
         await self._require_doc(document_id)
-        version = await self._versions.find_by_id(version_id)
-        if not version or version.document_id != document_id:
-            raise VersionNotFoundError(f"Version not found: {version_id}")
-        if version.analysis_id is not None:
-            analysis = await self._analyses.find_by_id(version.analysis_id)
-            if analysis is None or not analysis.can_be_current_of(document_id):
-                raise _build_version_analysis_gone_error()
+        version = await self._load_restorable_version(document_id, version_id)
 
         # The snapshot's chunks come back under fresh ids.
         raw_chunks = json.loads(version.chunks_snapshot or "[]")
@@ -179,16 +173,7 @@ class VersionService:
         for raw in raw_chunks:
             new_chunks.append(_chunk_from_snapshot(document_id, raw))
 
-        # History restore is an aggregate operation: the backend, rather
-        # than the frontend, owns which immutable analysis is active.
-        state = await self._states.find_state(document_id)
-        # The fallback is only read when the rule can pick it.
-        fallback_id = None
-        if version.analysis_id is None and state is None:
-            fallback_id = await self._current.find_current_analysis_id(document_id)
-        active_analysis_id = resolve_selection_after_restore(
-            state, version.analysis_id, fallback_id
-        )
+        active_analysis_id = await self._resolve_restored_selection(document_id, version)
         try:
             await self._chunks.replace_and_select(
                 document_id,
@@ -207,6 +192,29 @@ class VersionService:
             len(new_chunks),
         )
         return version
+
+    async def _load_restorable_version(self, document_id: str, version_id: str) -> DocumentVersion:
+        """The document's version, refused when its analysis can no longer be selected."""
+        version = await self._versions.find_by_id(version_id)
+        if not version or version.document_id != document_id:
+            raise VersionNotFoundError(f"Version not found: {version_id}")
+        if version.analysis_id is not None:
+            analysis = await self._analyses.find_by_id(version.analysis_id)
+            if analysis is None or not analysis.can_be_current_of(document_id):
+                raise _build_version_analysis_gone_error()
+        return version
+
+    async def _resolve_restored_selection(
+        self, document_id: str, version: DocumentVersion
+    ) -> str | None:
+        # History restore is an aggregate operation: the backend, rather
+        # than the frontend, owns which immutable analysis is active.
+        state = await self._states.find_state(document_id)
+        # The fallback is only read when the rule can pick it.
+        fallback_id = None
+        if version.analysis_id is None and state is None:
+            fallback_id = await self._current.find_current_analysis_id(document_id)
+        return resolve_selection_after_restore(state, version.analysis_id, fallback_id)
 
     async def _require_doc(self, document_id: str) -> None:
         doc = await self._documents.find_by_id(document_id)

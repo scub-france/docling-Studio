@@ -18,11 +18,11 @@ import logging
 from typing import TYPE_CHECKING
 
 from domain import chunk_editing
-from domain.analysis_editing import AnalysisEditUnavailableError, hash_result
+from domain.analysis_editing import AnalysisEditUnavailableError, EditorSnapshot, hash_result
 from domain.chunk_editing import ChunkEditingError, ChunkMergeGapError
 from domain.exceptions import AnalysisNotSelectableError
 from domain.models import Chunk, DocumentChunkSource, get_utc_now
-from domain.value_objects import ChunkingOptions
+from domain.value_objects import ChunkingOptions, ChunkResult
 from services.chunk_errors import (
     ChunkConflictError,
     ChunkNotFoundError,
@@ -188,74 +188,70 @@ class ChunkService:
         if not self._chunker:
             raise ChunkServiceError("Chunker not configured", http_status=503)
 
-        try:
-            current = await self._active_result_service.load_current_edited(document_id)
-        except AnalysisEditUnavailableError as exc:
-            raise ChunkServiceError(str(exc), http_status=409) from exc
+        current = await self._load_chunkable_result(document_id)
         job = current.job
-        if not job.document_json:
-            raise ChunkServiceError(
-                "No completed analysis with document_json available for rechunk",
-                http_status=409,
-            )
-
         chunk_opts = ChunkingOptions(**options) if options else ChunkingOptions()
         new_results = await self._chunker.chunk(job.document_json, chunk_opts)
+        new_chunks = _build_chunks(document_id, new_results)
 
-        new_chunks = [
-            Chunk(
-                document_id=document_id,
-                sequence=seq,
-                text=r.text,
-                headings=list(r.headings),
-                source_page=r.source_page,
-                bboxes=list(r.bboxes),
-                doc_items=list(r.doc_items),
-                token_count=r.token_count or None,
-            )
-            for seq, r in enumerate(new_results)
-        ]
-
-        source_analysis_id = current.base_analysis_id
-        source_result_hash = hash_result(job.document_json)
-        try:
-            old_count = await self._chunks.replace_keeping_selection(
-                document_id,
-                new_chunks,
-                at=get_utc_now(),
-                chunk_source=DocumentChunkSource(
-                    document_id, source_analysis_id, source_result_hash
-                ),
-                active_analysis_id=source_analysis_id,
-            )
-        except AnalysisNotSelectableError as exc:
-            raise ChunkConflictError(
-                "The analysis being chunked is no longer available; reload and try again"
-            ) from exc
+        chunk_source = DocumentChunkSource(
+            document_id, current.base_analysis_id, hash_result(job.document_json)
+        )
+        old_count = await self._replace_chunks(new_chunks, chunk_source)
         logger.info(
             "chunk.rechunk docId=%s oldCount=%d newCount=%d",
             document_id,
             old_count,
             len(new_chunks),
         )
+        await self._record_rechunk_version(chunk_source)
+        return new_chunks
 
+    async def _load_chunkable_result(self, document_id: str) -> EditorSnapshot:
+        """The current edited analysis result, refused (409) when it has no document."""
+        try:
+            current = await self._active_result_service.load_current_edited(document_id)
+        except AnalysisEditUnavailableError as exc:
+            raise ChunkServiceError(str(exc), http_status=409) from exc
+        if not current.job.document_json:
+            raise ChunkServiceError(
+                "No completed analysis with document_json available for rechunk",
+                http_status=409,
+            )
+        return current
+
+    async def _replace_chunks(self, chunks: list[Chunk], chunk_source: DocumentChunkSource) -> int:
+        """Swap the live chunkset and record its source in one write; returns the old count."""
+        try:
+            return await self._chunks.replace_keeping_selection(
+                chunk_source.document_id,
+                chunks,
+                at=get_utc_now(),
+                chunk_source=chunk_source,
+                active_analysis_id=chunk_source.analysis_id,
+            )
+        except AnalysisNotSelectableError as exc:
+            raise ChunkConflictError(
+                "The analysis being chunked is no longer available; reload and try again"
+            ) from exc
+
+    async def _record_rechunk_version(self, chunk_source: DocumentChunkSource) -> None:
         # Record a frozen (analysis, chunks_snapshot) pair in the
         # workspace History timeline (#267). Snapshots the chunks we
         # just wrote, paired with the analysis they came from.
-        if self._version_recorder is not None:
-            try:
-                await self._version_recorder.record_on_rechunk(
-                    document_id, source_analysis_id, source_result_hash
-                )
-            except Exception:
-                # Best-effort hook — never fail the rechunk if the
-                # version snapshot write hits a snag.
-                logger.exception(
-                    "Version snapshot failed for doc %s after rechunk",
-                    document_id,
-                )
-
-        return new_chunks
+        if self._version_recorder is None:
+            return
+        try:
+            await self._version_recorder.record_on_rechunk(
+                chunk_source.document_id, chunk_source.analysis_id, chunk_source.result_hash
+            )
+        except Exception:
+            # Best-effort hook — never fail the rechunk if the
+            # version snapshot write hits a snag.
+            logger.exception(
+                "Version snapshot failed for doc %s after rechunk",
+                chunk_source.document_id,
+            )
 
     # -- guards
 
@@ -284,3 +280,20 @@ class ChunkService:
         await self._chunks.shift_sequences(
             document_id, from_sequence=from_sequence, at=get_utc_now()
         )
+
+
+def _build_chunks(document_id: str, results: list[ChunkResult]) -> list[Chunk]:
+    """Number the chunker's results into fresh chunks for the document."""
+    return [
+        Chunk(
+            document_id=document_id,
+            sequence=seq,
+            text=r.text,
+            headings=list(r.headings),
+            source_page=r.source_page,
+            bboxes=list(r.bboxes),
+            doc_items=list(r.doc_items),
+            token_count=r.token_count or None,
+        )
+        for seq, r in enumerate(results)
+    ]
