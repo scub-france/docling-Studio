@@ -81,40 +81,6 @@
             >{{ linkedChunk.tokenCount }}t</span
           >
         </p>
-
-        <!-- Edit mode -->
-        <div v-if="editable && editing" class="props-edit" data-e2e="properties-edit">
-          <textarea
-            ref="textareaRef"
-            v-model="draftText"
-            class="props-edit-textarea"
-            rows="6"
-            :disabled="saving"
-            @keydown.escape.prevent="cancel"
-          />
-          <div class="props-edit-actions">
-            <button class="props-btn props-btn--cancel" :disabled="saving" @click="cancel">
-              {{ t('properties.cancel') }}
-            </button>
-            <button
-              class="props-btn props-btn--primary"
-              :disabled="saving || draftText === linkedChunk.text"
-              data-e2e="properties-save-btn"
-              @click="save"
-            >
-              {{ saving ? t('properties.saving') : t('properties.save') }}
-            </button>
-          </div>
-        </div>
-        <button
-          v-else-if="editable"
-          type="button"
-          class="props-edit-btn"
-          data-e2e="properties-edit-btn"
-          @click="startEdit"
-        >
-          ✎ {{ t('properties.editChunk') }}
-        </button>
       </section>
     </div>
 
@@ -133,16 +99,13 @@
  *
  * Driven by the currently selected element on the canvas / tree. When
  * the element has a linked chunk (computed by the parent via
- * `findChunkForElement`), an inline-edit affordance is shown — pressing it
- * swaps the chunk metadata block for a textarea bound to the chunk's
- * text. Save calls back through `@save-chunk` so the parent owns the
- * actual `chunksStore.updateText` invocation.
+ * `findChunkForElement`), its sequence and token count are shown.
  *
  * OCR confidence / lang / model are intentionally omitted in this first
  * cut: the domain `PageElement` does not carry them today. A follow-up
  * issue can extend the domain + DTO when the data becomes available.
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { DocChunk, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToPercent } from '../bboxPercent'
@@ -156,19 +119,10 @@ const props = defineProps<{
   pageHeight: number
   pageNumber: number
   linkedChunk: DocChunk | null
-  saving?: boolean
-  editable?: boolean
-}>()
-
-const emit = defineEmits<{
-  saveChunk: [chunkId: string, text: string]
 }>()
 
 const { t } = useI18n()
 
-const editing = ref(false)
-const draftText = ref('')
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const tableModalOpen = ref(false)
 
 const isTable = computed(() => props.element?.type === 'table')
@@ -184,45 +138,9 @@ const bboxPct = computed(() => {
   return bboxToPercent(props.element.bbox, props.pageWidth, props.pageHeight)
 })
 
-function startEdit(): void {
-  if (!props.linkedChunk) return
-  draftText.value = props.linkedChunk.text
-  editing.value = true
-  nextTick(() => textareaRef.value?.focus())
-}
-
-function cancel(): void {
-  editing.value = false
-  draftText.value = ''
-}
-
-function save(): void {
-  if (!props.linkedChunk) return
-  if (draftText.value === props.linkedChunk.text) {
-    cancel()
-    return
-  }
-  emit('saveChunk', props.linkedChunk.id, draftText.value)
-}
-
-// Exit edit mode when the parent reports the save is done (saving goes
-// back to false after being true) and the chunk text matches the draft.
-watch(
-  () => props.saving,
-  (now, prev) => {
-    if (prev && !now && props.linkedChunk?.text === draftText.value) {
-      editing.value = false
-    }
-  },
-)
-
-// Switching to a different element discards the in-progress edit. The
-// design call (#265 acceptance §11): drop the draft silently to keep
-// the interaction snappy; users can re-open Edit chunk if needed.
 watch(
   () => props.element?.self_ref,
   () => {
-    if (editing.value) cancel()
     tableModalOpen.value = false
   },
 )
@@ -377,80 +295,5 @@ watch(
   color: var(--text-muted);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
-}
-
-.props-edit {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.props-edit-textarea {
-  width: 100%;
-  padding: 8px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.5;
-  resize: vertical;
-  font-family: inherit;
-}
-
-.props-edit-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.props-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  transition: all var(--transition);
-}
-
-.props-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.props-btn--cancel:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.props-btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
-
-.props-btn--primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
-.props-edit-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.props-edit-btn:hover {
-  background: var(--bg-hover);
-  color: var(--accent);
-  border-color: var(--accent);
 }
 </style>

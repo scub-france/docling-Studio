@@ -6,15 +6,9 @@ vi.mock('./api', () => ({
   fetchDocuments: vi.fn(),
   uploadDocument: vi.fn(),
   deleteDocument: vi.fn(),
-  rechunkDocument: vi.fn(),
-}))
-
-vi.mock('../chunks/api', () => ({
-  pushChunksToStore: vi.fn(),
 }))
 
 import * as api from './api'
-import * as chunksApi from '../chunks/api'
 
 describe('useDocumentStore', () => {
   beforeEach(() => {
@@ -140,41 +134,6 @@ describe('useDocumentStore', () => {
     const store = useDocumentStore()
     await store.load()
     expect(store.loading).toBe(false)
-  })
-
-  it('rechunk() returns chunk count on success', async () => {
-    api.rechunkDocument.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }])
-    const store = useDocumentStore()
-    const result = await store.rechunk('42')
-    expect(api.rechunkDocument).toHaveBeenCalledWith('42')
-    expect(result).toBe(3)
-  })
-
-  it('rechunk() returns null on error', async () => {
-    api.rechunkDocument.mockRejectedValue(new Error('fail'))
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const store = useDocumentStore()
-    const result = await store.rechunk('42')
-    expect(result).toBeNull()
-  })
-
-  it('pushToStore() delegates to chunks/api.pushChunksToStore and returns pushId', async () => {
-    chunksApi.pushChunksToStore.mockResolvedValue({
-      pushId: 'p2',
-      summary: { embeds: 5, tokens: 50 },
-    })
-    const store = useDocumentStore()
-    const result = await store.pushToStore('42', 'my-store')
-    expect(chunksApi.pushChunksToStore).toHaveBeenCalledWith('42', 'my-store')
-    expect(result).toBe('p2')
-  })
-
-  it('pushToStore() returns null on error', async () => {
-    chunksApi.pushChunksToStore.mockRejectedValue(new Error('fail'))
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const store = useDocumentStore()
-    const result = await store.pushToStore('42', 'my-store')
-    expect(result).toBeNull()
   })
 
   it('workspacePages parses the pages of the analysis the page set, empty without one', () => {

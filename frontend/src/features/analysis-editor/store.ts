@@ -12,7 +12,7 @@ import {
 import { canMerge, sortInReadingOrder, validateMerge } from './commands'
 import { toggleSelectedId, toggleSelectedIds } from './mergeSelection'
 import { buildPendingDraftKey, readPendingDraft, writePendingDraft } from './pendingDraft'
-import { createPreviewScheduler } from './previewScheduler'
+import { PreviewScheduler } from './previewScheduler'
 import type {
   AnalysisEditCommand,
   AnalysisEditHistoryEntry,
@@ -44,7 +44,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   /** A save the server refused (not a 409): the pending edits stay on screen. */
   const saveError = ref<string | null>(null)
   const historyError = ref<string | null>(null)
-  const previewScheduler = createPreviewScheduler(PREVIEW_DEBOUNCE_MS)
+  const previewScheduler = new PreviewScheduler(PREVIEW_DEBOUNCE_MS)
 
   const effective = computed(() => preview.value ?? saved.value)
   const elements = computed(() => effective.value?.model.elements ?? [])

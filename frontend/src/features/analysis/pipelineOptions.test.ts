@@ -7,7 +7,6 @@ vi.mock('../../shared/api/http', () => ({
 }))
 
 vi.mock('./api', () => ({
-  fetchAnalyses: vi.fn(),
   fetchAnalysis: vi.fn(),
   createAnalysis: vi.fn(),
   deleteAnalysis: vi.fn(),

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createPreviewScheduler } from './previewScheduler'
+import { PreviewScheduler } from './previewScheduler'
 
 describe('preview scheduler', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
   it('runs only the last debounced task, after the delay', () => {
-    const scheduler = createPreviewScheduler(400)
+    const scheduler = new PreviewScheduler(400)
     const first = vi.fn()
     const second = vi.fn()
 
@@ -22,7 +22,7 @@ describe('preview scheduler', () => {
   })
 
   it('drops a waiting task', () => {
-    const scheduler = createPreviewScheduler(400)
+    const scheduler = new PreviewScheduler(400)
     const task = vi.fn()
 
     scheduler.debounce(task)
@@ -33,7 +33,7 @@ describe('preview scheduler', () => {
   })
 
   it('aborts the previous request when a new one begins', () => {
-    const scheduler = createPreviewScheduler(400)
+    const scheduler = new PreviewScheduler(400)
     const first = scheduler.begin()
     const second = scheduler.begin()
 
@@ -44,7 +44,7 @@ describe('preview scheduler', () => {
   })
 
   it('keeps an aborted request current, but forgets it once cancelled', () => {
-    const scheduler = createPreviewScheduler(400)
+    const scheduler = new PreviewScheduler(400)
     const controller = scheduler.begin()
 
     scheduler.abort()

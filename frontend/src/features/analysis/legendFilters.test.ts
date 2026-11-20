@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GraphNode } from './graphApi'
-import { LEGEND_CHIPS, findChip, partitionByHiddenChips } from './legendFilters'
+import { LEGEND_CHIPS, findChip } from './legendFilters'
 
 function node(overrides: Partial<GraphNode>): GraphNode {
   return {
@@ -50,46 +50,5 @@ describe('LEGEND_CHIPS matching', () => {
       'page',
       'chunk',
     ])
-  })
-})
-
-describe('partitionByHiddenChips', () => {
-  const nodes: GraphNode[] = [
-    node({ id: 'd', group: 'document' }),
-    node({ id: 's1', group: 'element', label: 'SectionHeader' }),
-    node({ id: 'p1', group: 'element', label: 'Paragraph' }),
-    node({ id: 'f1', group: 'element', label: 'Figure' }),
-    node({ id: 'pg1', group: 'page' }),
-  ]
-
-  it('returns everything in `show` when the hidden set is empty', () => {
-    const { hide, show } = partitionByHiddenChips(nodes, new Set())
-    expect(hide).toHaveLength(0)
-    expect(show).toHaveLength(nodes.length)
-  })
-
-  it('hides the nodes matching the selected chips', () => {
-    const { hide, show } = partitionByHiddenChips(nodes, new Set(['figure', 'document']))
-    expect(hide.map((n) => n.id).sort()).toEqual(['d', 'f1'])
-    expect(show.map((n) => n.id).sort()).toEqual(['p1', 'pg1', 's1'])
-  })
-
-  it('ignores unknown chip keys (no silent breakage)', () => {
-    const { hide, show } = partitionByHiddenChips(nodes, new Set(['some-new-kind']))
-    expect(hide).toHaveLength(0)
-    expect(show).toHaveLength(nodes.length)
-  })
-
-  it('keeps un-classifiable nodes visible even if all chips are off', () => {
-    // A hypothetical element with an unmapped label (e.g. :Formula is in the
-    // writer but has no chip yet) must not be hidden when toggling unrelated
-    // chips — only explicit chip matches cause hiding.
-    const weird = node({ id: 'w', group: 'element', label: 'Formula' })
-    const { hide, show } = partitionByHiddenChips(
-      [weird, ...nodes],
-      new Set(['section', 'paragraph']),
-    )
-    expect(hide.map((n) => n.id)).toEqual(['s1', 'p1'])
-    expect(show.some((n) => n.id === 'w')).toBe(true)
   })
 })

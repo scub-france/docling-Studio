@@ -3,7 +3,6 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useAnalysisStore } from './store'
 
 vi.mock('./api', () => ({
-  fetchAnalyses: vi.fn(),
   fetchAnalysis: vi.fn(),
   fetchAnalysisSummaries: vi.fn(),
   createAnalysis: vi.fn(),
@@ -57,7 +56,6 @@ describe('useAnalysisStore', () => {
     await store.load()
 
     expect(store.analyses).toEqual(data)
-    expect(api.fetchAnalyses).not.toHaveBeenCalled()
   })
 
   it('run() creates analysis, sets current, and starts polling', async () => {

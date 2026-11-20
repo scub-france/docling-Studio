@@ -43,10 +43,6 @@ export function rechunkAnalysis(jobId: string, chunkingOptions: ChunkingOptions)
   })
 }
 
-export function fetchAnalyses(): Promise<Analysis[]> {
-  return apiFetch<Analysis[]>('/api/analyses')
-}
-
 /** Every analysis without its content: light enough to poll (#354). */
 export function fetchAnalysisSummaries(): Promise<AnalysisSummary[]> {
   return apiFetch<AnalysisSummary[]>('/api/analyses/summaries')

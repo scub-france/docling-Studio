@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import type { Analysis, Document, Page } from '../../shared/types'
 import { appMaxFileSizeMb } from '../../shared/appConfig'
 import { parseAnalysisPages } from '../../shared/analysisPages'
-import { pushChunksToStore } from '@/features/chunks'
 import * as api from './api'
 
 export const useDocumentStore = defineStore('document', () => {
@@ -86,28 +85,6 @@ export const useDocumentStore = defineStore('document', () => {
     selectedId.value = id
   }
 
-  async function rechunk(id: string): Promise<number | null> {
-    try {
-      const chunks = await api.rechunkDocument(id)
-      return chunks.length
-    } catch (e) {
-      error.value = (e as Error).message || 'Failed to rechunk'
-      console.error('Rechunk failed', e)
-      return null
-    }
-  }
-
-  async function pushToStore(id: string, store: string): Promise<string | null> {
-    try {
-      const res = await pushChunksToStore(id, store)
-      return res.pushId
-    } catch (e) {
-      error.value = (e as Error).message || 'Failed to push to store'
-      console.error('Push to store failed', e)
-      return null
-    }
-  }
-
   return {
     documents,
     selectedId,
@@ -126,7 +103,5 @@ export const useDocumentStore = defineStore('document', () => {
     upload,
     remove,
     select,
-    rechunk,
-    pushToStore,
   }
 })

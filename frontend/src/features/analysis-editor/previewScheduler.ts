@@ -5,60 +5,48 @@
  * The scheduler only owns the timer and the abort controller; the store keeps
  * the preview state and decides when to run.
  */
-export interface PreviewScheduler {
+export class PreviewScheduler {
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private controller: AbortController | null = null
+
+  constructor(private readonly delayMs: number) {}
+
   /** Run `task` after the delay, replacing a run still waiting. */
-  debounce(task: () => void): void
+  debounce(task: () => void): void {
+    this.clearDebounce()
+    this.timer = setTimeout(() => {
+      this.timer = null
+      task()
+    }, this.delayMs)
+  }
+
   /** Drop the waiting run, if any. */
-  clearDebounce(): void
+  clearDebounce(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+  }
+
   /** Abort the request in flight and hand out the controller of a new one. */
-  begin(): AbortController
+  begin(): AbortController {
+    this.abort()
+    this.controller = new AbortController()
+    return this.controller
+  }
+
   /** Whether `controller` belongs to the latest request, i.e. its result still counts. */
-  isCurrent(controller: AbortController): boolean
+  isCurrent(controller: AbortController): boolean {
+    return this.controller === controller
+  }
+
   /** Abort the request in flight, if any. */
-  abort(): void
+  abort(): void {
+    this.controller?.abort()
+  }
+
   /** Drop the waiting run and abort the request in flight. */
-  cancel(): void
-}
-
-interface SchedulerState {
-  timer: ReturnType<typeof setTimeout> | null
-  controller: AbortController | null
-}
-
-function clearTimer(state: SchedulerState): void {
-  if (state.timer) clearTimeout(state.timer)
-  state.timer = null
-}
-
-function scheduleRun(state: SchedulerState, task: () => void, delayMs: number): void {
-  clearTimer(state)
-  state.timer = setTimeout(() => {
-    state.timer = null
-    task()
-  }, delayMs)
-}
-
-function startRequest(state: SchedulerState): AbortController {
-  state.controller?.abort()
-  state.controller = new AbortController()
-  return state.controller
-}
-
-function cancelAll(state: SchedulerState): void {
-  clearTimer(state)
-  state.controller?.abort()
-  state.controller = null
-}
-
-export function createPreviewScheduler(delayMs: number): PreviewScheduler {
-  const state: SchedulerState = { timer: null, controller: null }
-
-  return {
-    debounce: (task) => scheduleRun(state, task, delayMs),
-    clearDebounce: () => clearTimer(state),
-    begin: () => startRequest(state),
-    isCurrent: (candidate) => state.controller === candidate,
-    abort: () => state.controller?.abort(),
-    cancel: () => cancelAll(state),
+  cancel(): void {
+    this.clearDebounce()
+    this.abort()
+    this.controller = null
   }
 }
