@@ -124,13 +124,11 @@ class AnalysisService:
         self._chunker = chunker
         self._analysis_repo = analysis_repo
         self._document_repo = document_repo
-        self._conversion_timeout = config.conversion_timeout
         self._semaphore = asyncio.Semaphore(config.max_concurrent)
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._background_tasks: set[asyncio.Task] = set()
         self._config = config
-        # `GraphWriter` port (#audit-01) — was a raw `Neo4jDriver` until
-        # the hex-arch fix. None when no graph store is wired in.
+        # None when no graph store is wired in.
         self._graph_writer = graph_writer
         self._docling_importer = docling_importer
         self._pdf_inspector = pdf_inspector
@@ -353,7 +351,7 @@ class AnalysisService:
         try:
             return await asyncio.wait_for(
                 self._converter.convert(file_path, options, page_range=(start, end)),
-                timeout=self._conversion_timeout,
+                timeout=self._config.conversion_timeout,
             )
         except Exception as exc:
             raise RuntimeError(f"Batch {batch_label} (pages {start}-{end}) failed: {exc}") from exc
@@ -476,7 +474,7 @@ class AnalysisService:
             )
         return await asyncio.wait_for(
             self._converter.convert(file_path, options),
-            timeout=self._conversion_timeout,
+            timeout=self._config.conversion_timeout,
         )
 
     async def _finalize_analysis(
@@ -612,9 +610,11 @@ class AnalysisService:
             await self._finalize_analysis(job_id, result, run.chunking_options)
 
         except TimeoutError:
-            logger.error("Analysis timed out after %ds: %s", self._conversion_timeout, job_id)
+            logger.error(
+                "Analysis timed out after %ds: %s", self._config.conversion_timeout, job_id
+            )
             await self._mark_failed(
-                job_id, f"Conversion timed out after {self._conversion_timeout}s"
+                job_id, f"Conversion timed out after {self._config.conversion_timeout}s"
             )
 
         except Exception as e:

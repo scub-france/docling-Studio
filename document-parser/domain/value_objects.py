@@ -147,9 +147,6 @@ class ChunkResult:
     doc_items: list[ChunkDocItem] = field(default_factory=list)
 
 
-# --- Reasoning (live docling-agent runner) -----------------------------------
-
-
 @dataclass(frozen=True)
 class IngestionSource:
     """The document whose chunks are being indexed."""
@@ -157,6 +154,9 @@ class IngestionSource:
     doc_id: str
     filename: str
     binary_hash: str | None = None
+
+
+# --- Reasoning (live docling-agent runner) -----------------------------------
 
 
 @dataclass(frozen=True)
