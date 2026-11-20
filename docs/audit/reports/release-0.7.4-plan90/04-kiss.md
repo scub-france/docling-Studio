@@ -3,10 +3,12 @@
 **Release** : 0.7.4
 **Date** : 2026-11-20
 **Auditeur** : claude-code
-**Arbre audité** : branche `fix/0.7.4-editor-followups`, commit `513e8f9` (HEAD), arbre de travail (`experiments/mcp-bench/` non suivi, hors périmètre)
-**Nature** : Contrôle après le « plan 90 », en deux passages. Premier passage sur `8dc0623` (score 75), recontrôle sur `513e8f9` après les corrections `c4fca8a`, `8e1560b`, `513e8f9`. Base de comparaison : contrôle final sur `707a486` (`docs/audit/reports/release-0.7.4-final/04-kiss.md`, score 75).
+**Arbre audité** : branche `fix/0.7.4-editor-followups`, commit `3ba8cf9` (HEAD), arbre de travail (`experiments/mcp-bench/` non suivi, hors périmètre)
+**Nature** : Contrôle après le « plan 90 », en trois passages. Premier passage sur `8dc0623` (score 75), recontrôle sur `513e8f9` (score 83), second recontrôle sur `3ba8cf9` après `6295dc0` et `3ba8cf9` (score 83). Base de comparaison : contrôle final sur `707a486` (`docs/audit/reports/release-0.7.4-final/04-kiss.md`, score 75).
 
-Code non exécuté par l'auditeur. Le mainteneur indique, sur `513e8f9` : ruff propre, 1 776 tests passés, 15 ignorés ; front : eslint, prettier, vue-tsc propres, 580 tests passés, build réussi ; document OpenAPI identique. Non vérifié ici.
+Code non exécuté par l'auditeur. Le mainteneur indique, sur `3ba8cf9` : backend ruff propre, 1 776 tests passés ; front : eslint, prettier, vue-tsc propres, 550 tests passés sur 69 fichiers, build réussi. Non vérifié ici.
+
+**Second recontrôle, en bref** : les suppressions annoncées sont faites et aucune clé de traduction lue n'a été retirée. Mais une recherche d'atteignabilité depuis `app/main.ts` (graphe des imports statiques et dynamiques) trouve un autre bloc mort que la recherche par nom avait manqué : toute la fonctionnalité `frontend/src/features/chunks/` (1 971 lignes) et ses 44 clés i18n. 4.2 reste non conforme ; le score reste 83. Le détail est dans la section « Second recontrôle sur 3ba8cf9 » ; les sections plus bas décrivent l'état à `513e8f9`, sauf mention contraire.
 
 Périmètre : `document-parser/` (hors `.venv/`, `__pycache__/`, `tests/` pour les constats) et `frontend/src/`.
 Delta examiné : `git log 039778c..513e8f9` (15 commits). Quatre visent KISS (`16144f4`, `0ac6ee2`, `92390c6`, `1ad4846`), sept sont le découpage de masse de l'audit 03 (`52610cf` à `8dc0623`), un modifie la fiche 03 (`e4a73b3`), trois corrigent après le premier passage (`c4fca8a`, `8e1560b`, `513e8f9`).
@@ -26,14 +28,16 @@ Méthode : lecture de l'arbre à HEAD, `rg`, `git diff` / `git show` en lecture 
 | Ecarts INFO | 12 |
 
 Poids total : 12. Poids conformes : 10 (4.1, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8). Non conforme : 4.2 (2).
-`score = 10 / 12 × 100 = 83`. Premier passage (`8dc0623`) : 75. Contrôle précédent (`707a486`) : 75.
+`score = 10 / 12 × 100 = 83`. Recontrôle (`513e8f9`) : 83. Premier passage (`8dc0623`) : 75. Contrôle précédent (`707a486`) : 75.
+
+Écart MAJOR à `3ba8cf9` : la fonctionnalité front des stores est supprimée, mais `features/chunks/` est mort (voir « Second recontrôle »). Le tableau des items ci-dessous vaut à `3ba8cf9` ; la justification de 4.2 décrit le constat à `513e8f9`, levé depuis, et le constat qui le remplace est dans la section du second recontrôle.
 
 Toutes les corrections annoncées sont faites et 4.3 redevient conforme. 4.2 reste non conforme, pour du code mort plus ancien que le plan 90 que ni le contrôle précédent ni mon premier passage n'avaient trouvé : toute la fonctionnalité front des stores (environ 1 030 lignes) et `StatusBadge.vue`, sans importeur depuis le 2026-07-29.
 
 | # | Item | Poids | Conforme | Justification |
 |---|------|-------|----------|---------------|
 | 4.1 | Pas de design pattern complexe superflu | 2 | Oui | Grep fiche : `AppStateBuilder` seul (`bootstrap/builder.py:88`). `PreviewScheduler` redevient une classe simple de 52 lignes, sans fabrique |
-| 4.2 | Résout le problème actuel, pas hypothétique | 2 | **Non** | Les restes du premier passage sont levés. Mais `frontend/src/features/store/` (api, `StoreForm.vue`, trois sous-formulaires, logique, barrel : 1 034 lignes) n'a aucun importeur de production depuis `61ccd54` ; `shared/ui/StatusBadge.vue` (91 l.) non plus ; environ 51 clés i18n par langue ne sont lues que par ce code ou par rien |
+| 4.2 | Résout le problème actuel, pas hypothétique | 2 | **Non** | **À 3ba8cf9** : `features/store/`, `StatusBadge.vue` et 162 clés i18n par langue supprimés ; reste `frontend/src/features/chunks/` (api, store, quatre composants : 1 971 l.) hors d'atteinte depuis `app/main.ts`, `rechunkDocument` (`features/document/api.ts:63`) lu seulement par lui, et 44 clés i18n par langue. **À 513e8f9** : les restes du premier passage sont levés. Mais `frontend/src/features/store/` (api, `StoreForm.vue`, trois sous-formulaires, logique, barrel : 1 034 lignes) n'a aucun importeur de production depuis `61ccd54` ; `shared/ui/StatusBadge.vue` (91 l.) non plus ; environ 51 clés i18n par langue ne sont lues que par ce code ou par rien |
 | 4.3 | Pas de wrapper sans valeur ajoutée | 1 | **Oui** | Relais `mcp_adapter.build_mcp_server` supprimé, les deux appelants importent `mcp_adapter.server` (`bootstrap/mcp_mount.py:106`, `mcp_stdio.py:58`) ; `PreviewScheduler` sans délégation. Reste un relais, justifié par écrit (`services/parse_loader.py:72-79`) |
 | 4.4 | Outils standard avant solutions maison | 1 | Oui | Inchangé : contrôle `Host` maison, raison écrite (`infra/host_guard.py:79-86`) ; cache d'aperçu sur `OrderedDict` |
 | 4.5 | Configuration simple | 1 | Oui | Inchangé depuis le premier passage : `API_ALLOWED_HOSTS` en noms seuls (`infra/host_guard.py`, 104 l.), `MAX_IMPORT_SIZE_MB` constante (`main.py:53`). `AnalysisConfig` reçoit `conversion_timeout` et `max_concurrent` (`services/analysis_service.py:90-98`) : un seul objet de réglage au lieu de deux canaux |
@@ -43,19 +47,20 @@ Toutes les corrections annoncées sont faites et 4.3 redevient conforme. 4.2 res
 
 ### Métriques de périmètre
 
-| Mesure | efc0bc5 | a744f48 | 707a486 | 8dc0623 | 513e8f9 |
-|--------|---------|---------|---------|---------|---------|
-| Lignes Python de production, net depuis la colonne précédente (hors `tests/`) | — | −278 | +182 | +327 (+2 322 / −1 995) | **−35** (+108 / −143) |
-| Lignes Python de production, net depuis `039778c` | | | | +327 | **+292** (+2 351 / −2 059) |
-| Lignes front de production, net depuis la colonne précédente (hors tests) | — | −1 781 | +12 | −523 (+705 / −1 228) | **−279** (+41 / −320) |
-| Lignes front de production, net depuis `039778c` | | | | −523 | **−802** (+709 / −1 511) |
-| Paramètres du constructeur de `ChunkService` | 13 | 4 | 5 | 4 | 4 |
-| Paramètres du constructeur d'`AnalysisService` | | | | 10 | 8 |
-| `infra/host_guard.py` | 113 l. | 89 l. | 130 l. | 104 l. | 104 l. |
-| Relais purs | 6 | 1 | 1 (justifié) | 2 + 6 délégations | **1** (justifié) |
-| Création dynamique de classes en production | 0 | 1 | 0 | 0 | 0 |
-| Objets valeur qui ne font que déplacer des paramètres | — | — | — | 6 (+ 2 états TS) | 4 (+ 1 état TS) |
-| Code front sans importeur de production | — | — | — | ≈ 150 l. relevées | ≈ 1 125 l. (`features/store/`, `StatusBadge.vue`) + ≈ 102 lignes i18n |
+| Mesure | efc0bc5 | a744f48 | 707a486 | 8dc0623 | 513e8f9 | 3ba8cf9 |
+|--------|---------|---------|---------|---------|---------|---------|
+| Lignes Python de production, net depuis la colonne précédente (hors `tests/`) | — | −278 | +182 | +327 (+2 322 / −1 995) | −35 (+108 / −143) | **0** (+10 / −10) |
+| Lignes Python de production, net depuis `039778c` | | | | +327 | +292 | **+292** (+2 356 / −2 064) |
+| Lignes front de production, net depuis la colonne précédente (hors tests) | — | −1 781 | +12 | −523 (+705 / −1 228) | −279 (+41 / −320) | **−1 511** (+0 / −1 511) |
+| Lignes front de production, net depuis `039778c` | | | | −523 | −802 | **−2 313** (+709 / −3 022) |
+| Paramètres du constructeur de `ChunkService` | 13 | 4 | 5 | 4 | 4 | 4 |
+| Paramètres du constructeur d'`AnalysisService` | | | | 10 | 8 | 8 |
+| `infra/host_guard.py` | 113 l. | 89 l. | 130 l. | 104 l. | 104 l. | 104 l. |
+| Relais purs | 6 | 1 | 1 (justifié) | 2 + 6 délégations | 1 (justifié) | 1 (justifié) |
+| Création dynamique de classes en production | 0 | 1 | 0 | 0 | 0 | 0 |
+| Objets valeur qui ne font que déplacer des paramètres | — | — | — | 6 (+ 2 états TS) | 4 (+ 1 état TS) | 4 (+ 1 état TS) |
+| Code front hors d'atteinte depuis `app/main.ts` | — | — | — | non mesuré | non mesuré (≈ 1 125 l. trouvées par nom) | **1 972 l.** (`features/chunks/` 1 971, `features/search/index.ts` 1) |
+| Clés i18n par langue sans lecteur vivant | | | | | ≈ 51 | **48** (44 lues seulement par `features/chunks/`, 4 lues seulement par `i18n.test.ts`) |
 
 ---
 
@@ -177,6 +182,40 @@ La recherche d'importeurs étendue à tous les composants `.vue` et à tous les 
 
 ---
 
+## Second recontrôle sur 3ba8cf9
+
+Lu : `git diff 513e8f9..3ba8cf9` hors `docs/audit/reports/` (`6295dc0`, `3ba8cf9` ; `b77b07a` ne touche que des rapports). Production : Python +10 / −10, front −1 511.
+
+### Ce qui est annoncé, vérifié
+
+| Annonce | Vérifié | Preuve |
+|---------|---------|--------|
+| `frontend/src/features/store/` supprimé en entier | Oui | api, barrel, `StoreForm.vue`, trois sous-formulaires, logique et deux fichiers de test supprimés ; plus aucune référence (`rg "features/store\|StoreForm"` vide) |
+| `shared/ui/StatusBadge.vue` supprimé | Oui | 91 lignes ; il était le seul lecteur des clés construites `status.${state}` et `status.tooltip.${state}`, retirées avec lui |
+| « 108 clés par langue » retirées | **Plus que ça** | Le diff retire **162 clés distinctes, chacune dans les deux langues** (324 lignes) : `storeForm` 40, `stores` 18, `ingest` 17, `docs` 15, `storeDetail` 13, `status` 12, `storeQuery` 12, `comingSoon` 9, et 26 autres. Le nombre annoncé est faux, pas le résultat (voir ligne suivante) |
+| Aucune clé lue n'est retirée | **Oui** | Pour chacune des 162 clés : aucune lecture littérale (`'clé'`, `"clé"`, `` `clé` ``) dans le code de production. Seules constructions dynamiques du front : `` t(`docsNew.${status}`) `` (`pages/DocsNewPage.vue:114`) et `` `analysisEditor.commandType.${commandType}` `` (`AnalysisEditHistoryPanel.vue:66`) ; leurs 11 et 6 clés sont toutes présentes. `t(item.labelKey)` (`AppSidebar.vue:13`) lit des clés écrites en clair, toutes présentes. Pas de défaut visible à l'écran attendu |
+| Les deux langues restent alignées | Oui | 485 clés, chacune exactement deux fois |
+| `IngestionSource` sortie de la section « Reasoning » | Oui | `domain/value_objects.py:150-159` |
+| `AnalysisService` lit son délai dans la configuration | Oui | Attribut `_conversion_timeout` supprimé, trois lectures de `self._config.conversion_timeout` (`services/analysis_service.py:354`, `:477`, `:613-617`) ; plus de copie de la même valeur. Plus simple |
+
+### Ce que le second recontrôle trouve
+
+**[MAJ] `frontend/src/features/chunks/` hors d'atteinte — porte l'item 4.2 (nouveau constat, code antérieur au plan 90).**
+
+- **Localisation** : `frontend/src/features/chunks/api.ts` (60 l.), `index.ts` (2), `store.ts` (230), `ui/ChunksPanel.vue` (301), `ui/ChunksEditor.vue` (622), `ui/ChunkItem.vue` (387), `ui/StrategyPopover.vue` (369) : 1 971 lignes ; `frontend/src/features/document/api.ts:63` (`rechunkDocument`, seul lecteur `features/chunks/store.ts:158`) ; 44 clés i18n par langue lues seulement par ce dossier (`chunk.panel.*`, `chunks.*`, `strategy.*`).
+- **Constat** : un parcours du graphe d'imports (statiques, dynamiques `import()` du routeur, barrels résolus) depuis `app/main.ts` n'atteint aucun de ces fichiers. Rien hors du dossier n'importe `features/chunks`, `@/features/chunks`, `useChunksStore`, `ChunksPanel` ou `ChunksEditor`. Le dernier importeur de `ChunksPanel` était `pages/DocChunkTab.vue`, supprimé par `60234e4` (2026-11-19, « remove components nothing mounts ») ; `ChunksEditor` n'y apparaissait déjà qu'en commentaire. Le seul lien vivant était l'import de `pushChunksToStore` par `features/document/store.ts`, retiré par `513e8f9` : depuis, le dossier entier est isolé. Le contrôle précédent et mes deux passages l'ont manqué : la recherche par nom trouvait des mentions en commentaire (`shared/elementColors.ts:4`, `features/document/ui/DocTreeRail.vue:60`) et les comptait comme des importeurs. Les routes backend `/api/documents/{id}/chunks/*` (CRUD, fusion, découpe, diff, push) restent une API légitime ; seul le client front est mort. `features/chunking/` (chunks d'une analyse), lui, est vivant.
+- **Règle violée** : item 4.2 (poids 2).
+- **Remédiation** : décider « code mort ou écran perdu » (l'édition des chunks d'un document et leur envoi vers un store n'ont plus d'écran). Si aucun écran n'est prévu en 0.7.x : supprimer `features/chunks/` avec ses tests, `rechunkDocument` et son export dans `features/document/index.ts`, et les 44 clés par langue. 4.2 redevient conforme (score 100).
+
+**[INFO] Restes mineurs.**
+- 4 clés par langue lues seulement par `shared/i18n.test.ts` (`nav.studio`, `nav.history`, `history.tabAnalyses`, `history.tabDocuments`) : le test les prend comme exemples. Changer d'exemples dans le test et retirer les clés.
+- `features/search/index.ts` (1 ligne) : barrel que rien n'importe ; le store de recherche est importé directement.
+- `ALL_MODES` (`shared/routing/modes.ts:28`) : lu seulement par son test.
+
+**Rien d'introduit par les deux commits.** 4.1, 4.3, 4.5, 4.6, 4.7 et 4.8 inchangés. Backend : aucune méthode de port sans appelant, aucun nouveau relais ; la recherche de symboles Python sans second usage (`pyunused.py`) ne trouve rien.
+
+---
+
 ## Delta vs contrôle précédent (707a486)
 
 Score : **75 → 83 (+8)**. Items conformes : 6/8 → 7/8. 4.5 devient conforme ; 4.3 reste conforme (après un aller-retour au premier passage) ; 4.2 reste non conforme. CRIT 0 → 0, MAJ 1 → 1, MIN 4 → 0.
@@ -221,6 +260,8 @@ Les trois formes de complexité relevées au premier passage sont réduites : le
 
 ## Verdict partiel : GO
 
-Aucun écart CRITICAL. Un écart MAJOR (4.2), sous le seuil bloquant (plus de trois MAJ). Score 83 / 100, au-dessus du seuil GO (80), en hausse de 8 points sur le contrôle précédent et sur le premier passage.
+Aucun écart CRITICAL. Un écart MAJOR (4.2), sous le seuil bloquant (plus de trois MAJ). Score 83 / 100 à `3ba8cf9`, au-dessus du seuil GO (80), en hausse de 8 points sur le contrôle précédent et sur le premier passage.
 
-Pour atteindre 100 : **4.2** — supprimer `frontend/src/features/store/` (code et tests), `shared/ui/StatusBadge.vue` et les 51 clés i18n par langue qu'ils sont seuls à lire ou que rien ne lit ; ou rebrancher un écran de gestion des stores si ce besoin existe.
+Pour atteindre 100 : **4.2** — supprimer `frontend/src/features/chunks/` (code et tests), `rechunkDocument` et les 44 clés i18n par langue que seul ce dossier lit ; ou rebrancher un écran d'édition des chunks d'un document si ce besoin existe. (Le constat de `513e8f9`, `features/store/` et `StatusBadge.vue`, est levé par `3ba8cf9`.)
+
+Non vérifié en plus, au second recontrôle : la recherche d'atteignabilité suit les imports écrits en clair ; un composant enregistré globalement par un plugin tiers ou chargé par un chemin calculé lui échapperait (aucun `app.component(` ni `import.meta.glob` dans `frontend/src`). Les clés i18n lues par une construction dynamique autre que les deux trouvées échapperaient aussi au comptage.
