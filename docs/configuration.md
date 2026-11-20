@@ -28,7 +28,7 @@ Two more timeouts exist, in seconds: `DOCUMENT_TIMEOUT` (120) and `LOCK_TIMEOUT`
 | `MAX_FILE_SIZE_MB` | `50` | Largest upload, in MB. `0` means no limit. |
 | `MAX_PAGE_COUNT` | `0` | Most pages per PDF. `0` means no limit. |
 | `MAX_FILE_SIZE` | `0` | Local engine only. Largest file Docling itself accepts, in bytes. `0` means no limit. Uploads are already capped by `MAX_FILE_SIZE_MB`. |
-| `NGINX_MAX_BODY_SIZE` | `200M` | Body limit in nginx for every `/api` request, in nginx format. Over it, nginx answers `413` itself, before the backend. Keep it at least as large as `MAX_FILE_SIZE_MB`. **Import analysis** (`POST /api/analyses/import`) accepts a Docling JSON of 200 MB at most, whatever this value: over it, the backend answers `413`. |
+| `NGINX_MAX_BODY_SIZE` | `200M` | Body limit in nginx for every `/api` request, in nginx format. Over it, nginx answers `413` itself, before the backend. Keep it at least as large as `MAX_FILE_SIZE_MB`. **Import analysis** (`POST /api/analyses/import`) accepts a Docling JSON of 200 MB at most, whatever this value. With the default, nginx refuses a larger import first, with its own `413` page; with a higher value, the backend answers `413`. |
 | `RATE_LIMIT_RPM` | `100` | Requests per minute per client address, as the backend sees it. Behind the bundled nginx, that address is nginx itself, so all users share the limit. `0` turns it off. `/api/health` is not counted. |
 | `MAX_PASTE_IMAGE_SIZE_MB`, `PASTE_ALLOWED_IMAGE_TYPES` | `10`, `image/png,image/jpeg,image/webp` | Limits for pasted images. `/api/health` reports them, but no screen uses them yet. |
 
@@ -137,7 +137,7 @@ Set `API_ALLOWED_HOSTS` to turn the check on. A request to `/api/*` whose `Host`
 API_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
 ```
 
-- List host names only, without a port: against DNS rebinding the port does not matter, and the bundled nginx forwards `Host` without it. An entry that is not a bare name (`name:3000`, a URL, `*`) is ignored, and the start-up log names it. To turn the check off, leave the variable empty.
+- List host names only, without a port: against DNS rebinding the port does not matter, and the bundled nginx forwards `Host` without it. An entry that is not a bare name (`name:3000`, a URL, `*`) is ignored, and the start-up log names it. To turn the check off, leave the variable empty: a list made only of ignored entries, such as `*`, keeps the check on for loopback alone, unlike `MCP_ALLOWED_HOSTS=*`.
 - `localhost`, `127.0.0.1` and `[::1]` are always accepted once the check is on, so health checks such as `curl http://localhost:8000/api/health` keep working.
 - If people open Studio by a LAN name, an IP address or a domain, list it: `API_ALLOWED_HOSTS=localhost,studio.lan`. Behind your own proxy, list the name the proxy forwards in `Host`.
 - Only `/api/*` is checked. `/mcp` has its own list; the web app itself is static.

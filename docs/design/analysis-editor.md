@@ -2,6 +2,8 @@
 
 For the current user workflow and editing model, see [Analysis editor](../analysis-editor.md).
 
+> **What shipped differs from this design on two points.** `moveElement` takes `targetElementId` and `placement` (`before`, `after` or `inside`), not `beforeElementId`. There is no `rebuild` route: a working copy that cannot be read, or that another version of the editing engine wrote, is replayed from the history when the editor loads.
+
 ## Objective
 
 Implement an editor that allows users to:

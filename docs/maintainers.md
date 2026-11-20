@@ -20,8 +20,8 @@ flowchart LR
 
 1. **Audit.** Run the [quality audit](audit/master.md) on the release branch and fix what blocks.
 2. **Freeze.** On `release/x.y.z`, make one commit `chore(release): freeze [x.y.z]` that:
-    - renames `[Unreleased]` to `[x.y.z] - YYYY-MM-DD` in `CHANGELOG.md`,
-    - sets `version` in `frontend/package.json`.
+    - renames `[Unreleased]` to `[x.y.z] - YYYY-MM-DD` in `CHANGELOG.md` and opens an empty `[Unreleased]` section above it,
+    - sets `version` in `frontend/package.json` and in `frontend/package-lock.json` (two places).
 3. **Pull request.** Open `release/x.y.z` → `main`. The release gate runs and posts GO, GO CONDITIONAL or NO-GO as a comment. `main` needs one approval.
 4. **Merge** with **Rebase and merge**.
 5. **Tag** `main`:

@@ -62,7 +62,7 @@ Il manque une seule donnée : la date de release.
 | # | Sujet | Proposition | Conséquence |
 |---|-------|-------------|-------------|
 | D1 | Plomberie de l'éditeur (PR #319) | Retirer la route `POST .../analysis-edits/rebuild` et son client, jamais appelés ; retirer les champs `warnings`, `reference_changes`, `beforeElementId`, jamais lus ; comparer `engine_version` au chargement et reconstruire le cache s'il est périmé | Une route annoncée au CHANGELOG disparaît avant d'avoir été publiée. Aucun changement de schéma de base |
-| D2 | Tiroir d'historique | Supprimer `HistoryDrawer.vue`, le chemin « workspace » du store de documents, les deux branches inatteignables de `DocParseTab.vue` et `doc-history-drawer.feature` (environ 450 lignes) | Aucun changement visible : rien ne monte ce tiroir depuis la 0.7.3. Restaurer une version reste possible par l'API. Le remonter devient un sujet 0.8.0, à valider à l'écran |
+| D2 | Tiroir d'historique | Supprimer `HistoryDrawer.vue`, le chemin « workspace » du store de documents, les deux branches inatteignables de `DocParseTab.vue` et `doc-history-drawer.feature` (environ 560 lignes hors tests) | Aucun changement visible : rien ne monte ce tiroir depuis la 0.7.3. Restaurer une version reste possible par l'API. Le remonter devient un sujet 0.8.0, à valider à l'écran |
 | D3 | `VectorStore.get_chunks` et `OPENSEARCH_DEFAULT_LIMIT` | Les supprimer ensemble | Un réglage documenté disparaît : entrée « Removed » au CHANGELOG |
 | D4 | Carte de citation, désactivée par défaut | La garder : le choix est documenté et motivé | Seul point incertain : si le contrôle maintient 4.2 en échec sur elle seule, KISS reste à 83 et il faudra choisir entre la retirer et accepter la note |
 
@@ -83,7 +83,7 @@ Il faut 17 points sur 18 : l'item 3.2.1, plus deux des trois items de comptage. 
 
 | Groupe | Nombre | Traitement |
 |--------|--------|------------|
-| Signatures métier | ≈ 28 | Objets valeur : `StoreDraft` et `StoreUpdate` (signatures de 9 et 10 paramètres), `ChunkReplacement` (5 signatures d'un coup), un objet de requête pour `read_element`, etc. |
+| Signatures métier | ≈ 28 | Objets valeur : `StoreDraft` et `StoreChanges` (signatures de 9 et 10 paramètres), `ChunkReplacement` (5 signatures d'un coup), un objet de requête pour `read_element`, etc. |
 | Constructeurs d'injection | 13 | De 5 à 10 collaborateurs. Passer sous 5 demande soit des paquets de dépendances artificiels, que l'audit KISS relèverait, soit un redécoupage des services, hors 0.7.4 |
 | Signatures imposées | 4 | Trois routes FastAPI et l'outil MCP `read_element`, dont les paramètres sont le contrat public |
 
@@ -103,5 +103,5 @@ Ordre : 2a, 2b, 3a, 3b, 3c, contrôle, puis le freeze.
 
 - **Volume.** La documentation tient en un commit et KISS est surtout de la suppression. Clean Code est le gros du travail : environ 65 extractions et 28 signatures, du même ordre que la seconde remédiation.
 - **Non vérifiable ici.** Les fonctions de dessin (`GraphView.renderGraph`, `BboxOverlay.draw`, `BboxCanvas.draw`, `PdfPageCanvas.render`) n'ont pas de test visuel : à regarder à l'écran, comme le reste de la branche.
-- **Contrat.** Le document OpenAPI est comparé avant et après chaque lot, comme aux cycles précédents. Seuls D1 et D3 le changent, volontairement.
+- **Contrat.** Le document OpenAPI est comparé avant et après chaque lot, comme aux cycles précédents. Seul D1 le change, volontairement.
 - **Rien n'est poussé.** Commits locaux, sans réécriture des commits existants.
