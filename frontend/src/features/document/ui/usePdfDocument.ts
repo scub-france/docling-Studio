@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue'
+import { onBeforeUnmount, ref, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url'
 import { getExportUrl } from '../api'
@@ -6,45 +6,58 @@ import { getExportUrl } from '../api'
 // 256 KiB ranges: a page is fetched in a few requests instead of the whole file.
 const PDF_RANGE_CHUNK_BYTES = 256 * 1024
 
+interface PdfLoaderState {
+  document: ShallowRef<PDFDocumentProxy | null>
+  failed: Ref<boolean>
+  task: PDFDocumentLoadingTask | null
+  generation: number
+}
+
+function openPdfTask(pdfjs: typeof import('pdfjs-dist'), id: string): PDFDocumentLoadingTask {
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+  return pdfjs.getDocument({
+    url: getExportUrl(id, 'pdf'),
+    disableStream: true,
+    disableAutoFetch: true,
+    rangeChunkSize: PDF_RANGE_CHUNK_BYTES,
+  })
+}
+
+async function loadPdf(state: PdfLoaderState, id: string | undefined): Promise<void> {
+  const current = ++state.generation
+  const previous = state.task
+  state.task = null
+  state.document.value = null
+  state.failed.value = false
+  try {
+    if (previous) await previous.destroy()
+    if (!id || current !== state.generation) return
+    const pdfjs = await import('pdfjs-dist')
+    if (current !== state.generation) return
+    const loadingTask = openPdfTask(pdfjs, id)
+    state.task = loadingTask
+    const loaded = await loadingTask.promise
+    if (current !== state.generation) return
+    state.document.value = loaded
+  } catch {
+    if (current === state.generation) state.failed.value = true
+  }
+}
+
 /** Load one PDF per viewer, leaving page selection to the caller. */
 export function usePdfDocument(documentId: Ref<string | undefined>) {
-  const document = shallowRef<PDFDocumentProxy | null>(null)
-  const failed = ref(false)
-  let task: PDFDocumentLoadingTask | null = null
-  let generation = 0
-
-  async function load(id: string | undefined): Promise<void> {
-    const current = ++generation
-    const previous = task
-    task = null
-    document.value = null
-    failed.value = false
-    try {
-      if (previous) await previous.destroy()
-      if (!id || current !== generation) return
-      const pdfjs = await import('pdfjs-dist')
-      if (current !== generation) return
-      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-      const loadingTask = pdfjs.getDocument({
-        url: getExportUrl(id, 'pdf'),
-        disableStream: true,
-        disableAutoFetch: true,
-        rangeChunkSize: PDF_RANGE_CHUNK_BYTES,
-      })
-      task = loadingTask
-      const loaded = await loadingTask.promise
-      if (current !== generation) return
-      document.value = loaded
-    } catch {
-      if (current === generation) failed.value = true
-    }
+  const state: PdfLoaderState = {
+    document: shallowRef<PDFDocumentProxy | null>(null),
+    failed: ref(false),
+    task: null,
+    generation: 0,
   }
 
-  watch(documentId, (id) => void load(id), { immediate: true })
+  watch(documentId, (id) => void loadPdf(state, id), { immediate: true })
   onBeforeUnmount(() => {
-    generation += 1
-    void task?.destroy()
+    state.generation += 1
+    void state.task?.destroy()
   })
 
-  return { document, failed }
+  return { document: state.document, failed: state.failed }
 }

@@ -61,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Core } from 'cytoscape'
+import type { Core, StylesheetJson } from 'cytoscape'
 import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import { useI18n } from '../../../shared/i18n'
 import { fetchDocumentGraph, type GraphNode, type GraphPayload } from '../graphApi'
@@ -190,9 +190,8 @@ async function load(): Promise<void> {
   }
 }
 
-async function renderGraph(): Promise<void> {
-  if (!containerRef.value || !payload.value) return
-  // Dynamic imports keep the heavy Cytoscape bundle out of the main chunk.
+// Dynamic imports keep the heavy Cytoscape bundle out of the main chunk.
+async function loadCytoscape(): Promise<typeof import('cytoscape')> {
   const [{ default: cytoscape }, { default: dagre }, ecMod] = await Promise.all([
     import('cytoscape'),
     import('cytoscape-dagre'),
@@ -203,42 +202,33 @@ async function renderGraph(): Promise<void> {
   C.use(dagre)
   // Plugin registration is idempotent — calling use() twice is a no-op.
   C.use((ecMod as any).default ?? ecMod)
+  return cytoscape
+}
 
-  if (cy.value) {
-    cy.value.destroy()
-    cy.value = null
+function buildNodeElement(n: GraphNode, computedParentMap: Map<string, string>) {
+  return {
+    data: {
+      id: n.id,
+      label: getNodeLabel(n),
+      // `kindLabel` is the specific Neo4j label (SectionHeader, Paragraph,
+      // Figure, …) — kept as a data attribute so legend filters can match
+      // on it. `label` above is the human display string for Cytoscape.
+      kindLabel: n.label ?? null,
+      bg: getNodeColor(n),
+      group: n.group,
+      // Compound-node parent: used by the expand-collapse plugin to
+      // fold/unfold a section's scope. `undefined` = this node is a root
+      // of the compound hierarchy (Documents, unparented sections, etc.).
+      parent: computedParentMap.get(n.id),
+      raw: n,
+    },
   }
+}
 
-  // Compute compound parenting: merge docling-native PARENT_OF with the
-  // synthetic section-scope parents so every non-root element sits inside
-  // its section visually (enables per-section collapse via the legend chips
-  // and the expand-collapse plugin). Also persisted on `parentMap` so the
-  // NodeDetailsPanel can list what a given section contains.
-  const computedParentMap = mergeParentMaps(
-    buildExplicitParentMap(payload.value.edges),
-    computeSectionParents(payload.value.nodes, payload.value.edges),
-  )
-  parentMap.value = computedParentMap
-
-  const elements = [
-    ...payload.value.nodes.map((n) => ({
-      data: {
-        id: n.id,
-        label: getNodeLabel(n),
-        // `kindLabel` is the specific Neo4j label (SectionHeader, Paragraph,
-        // Figure, …) — kept as a data attribute so legend filters can match
-        // on it. `label` above is the human display string for Cytoscape.
-        kindLabel: n.label ?? null,
-        bg: getNodeColor(n),
-        group: n.group,
-        // Compound-node parent: used by the expand-collapse plugin to
-        // fold/unfold a section's scope. `undefined` = this node is a root
-        // of the compound hierarchy (Documents, unparented sections, etc.).
-        parent: computedParentMap.get(n.id),
-        raw: n,
-      },
-    })),
-    ...payload.value.edges.map((e) => ({
+function buildGraphElements(graph: GraphPayload, computedParentMap: Map<string, string>) {
+  return [
+    ...graph.nodes.map((n) => buildNodeElement(n, computedParentMap)),
+    ...graph.edges.map((e) => ({
       data: {
         id: e.id,
         source: e.source,
@@ -247,107 +237,132 @@ async function renderGraph(): Promise<void> {
       },
     })),
   ]
+}
 
+const GRAPH_STYLE: StylesheetJson = [
+  {
+    selector: 'node',
+    style: {
+      'background-color': 'data(bg)',
+      label: 'data(label)',
+      color: '#0F172A',
+      'font-size': 10,
+      'text-wrap': 'ellipsis',
+      'text-max-width': '140px',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      width: 28,
+      height: 28,
+      'border-width': 1,
+      'border-color': '#0F172A',
+    },
+  },
+  {
+    selector: 'node[group = "document"]',
+    style: { shape: 'round-rectangle', width: 60, height: 36, color: '#F8FAFC' },
+  },
+  {
+    selector: 'node[group = "page"]',
+    style: { shape: 'round-rectangle', width: 40, height: 24 },
+  },
+  {
+    selector: 'node[group = "chunk"]',
+    style: { shape: 'diamond', color: '#F8FAFC' },
+  },
+  {
+    selector: 'edge',
+    style: {
+      width: 1,
+      'line-color': '#94A3B8',
+      'target-arrow-color': '#94A3B8',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier',
+      'font-size': 8,
+      color: '#64748B',
+    },
+  },
+  {
+    selector: 'edge[type = "PARENT_OF"]',
+    style: { 'line-color': '#1E293B', 'target-arrow-color': '#1E293B', width: 1.5 },
+  },
+  {
+    selector: 'edge[type = "NEXT"]',
+    style: { 'line-style': 'dashed', 'line-color': '#64748B' },
+  },
+  {
+    selector: 'edge[type = "ON_PAGE"]',
+    style: { 'line-color': '#CBD5E1', width: 1 },
+  },
+  {
+    selector: 'edge[type = "DERIVED_FROM"]',
+    style: { 'line-color': '#DC2626', 'target-arrow-color': '#DC2626' },
+  },
+  // Legend-driven visibility: chips toggle the `.hidden` class on
+  // matching nodes. `display: none` cascades to connected edges for free.
+  { selector: 'node.hidden', style: { display: 'none' } },
+  // Compound nodes (section scope + explicit PARENT_OF containers). A
+  // node with :parent children is rendered as a bounding box here —
+  // visually groups the section's content together. Minimal padding so
+  // the layout stays compact.
+  {
+    selector: ':parent',
+    style: {
+      'background-opacity': 0.08,
+      'background-color': '#F97316',
+      'border-color': '#FDBA74',
+      'border-width': 1,
+      'padding-top': '12px',
+      'padding-bottom': '12px',
+      'padding-left': '12px',
+      'padding-right': '12px',
+      'text-valign': 'top',
+      'text-halign': 'center',
+      'text-margin-y': -4,
+      shape: 'round-rectangle',
+    },
+  },
+  // Click-selected node: stronger border so the user sees which one
+  // populated the details panel.
+  {
+    selector: 'node.nd-selected',
+    style: {
+      'border-width': 4,
+      'border-color': '#0EA5E9',
+      'overlay-color': '#0EA5E9',
+      'overlay-opacity': 0.12,
+      'overlay-padding': 4,
+      'z-index': 60,
+    },
+  },
+]
+
+// Compute compound parenting: merge docling-native PARENT_OF with the
+// synthetic section-scope parents so every non-root element sits inside
+// its section visually (enables per-section collapse via the legend chips
+// and the expand-collapse plugin).
+function computeCompoundParents(graph: GraphPayload): Map<string, string> {
+  return mergeParentMaps(
+    buildExplicitParentMap(graph.edges),
+    computeSectionParents(graph.nodes, graph.edges),
+  )
+}
+
+async function renderGraph(): Promise<void> {
+  if (!containerRef.value || !payload.value) return
+  const cytoscape = await loadCytoscape()
+  if (cy.value) {
+    cy.value.destroy()
+    cy.value = null
+  }
+
+  // Also persisted on `parentMap` so the NodeDetailsPanel can list what a
+  // given section contains.
+  const computedParentMap = computeCompoundParents(payload.value)
+  parentMap.value = computedParentMap
   cy.value = cytoscape({
     container: containerRef.value,
-    elements,
-    style: [
-      {
-        selector: 'node',
-        style: {
-          'background-color': 'data(bg)',
-          label: 'data(label)',
-          color: '#0F172A',
-          'font-size': 10,
-          'text-wrap': 'ellipsis',
-          'text-max-width': '140px',
-          'text-valign': 'center',
-          'text-halign': 'center',
-          width: 28,
-          height: 28,
-          'border-width': 1,
-          'border-color': '#0F172A',
-        },
-      },
-      {
-        selector: 'node[group = "document"]',
-        style: { shape: 'round-rectangle', width: 60, height: 36, color: '#F8FAFC' },
-      },
-      {
-        selector: 'node[group = "page"]',
-        style: { shape: 'round-rectangle', width: 40, height: 24 },
-      },
-      {
-        selector: 'node[group = "chunk"]',
-        style: { shape: 'diamond', color: '#F8FAFC' },
-      },
-      {
-        selector: 'edge',
-        style: {
-          width: 1,
-          'line-color': '#94A3B8',
-          'target-arrow-color': '#94A3B8',
-          'target-arrow-shape': 'triangle',
-          'curve-style': 'bezier',
-          'font-size': 8,
-          color: '#64748B',
-        },
-      },
-      {
-        selector: 'edge[type = "PARENT_OF"]',
-        style: { 'line-color': '#1E293B', 'target-arrow-color': '#1E293B', width: 1.5 },
-      },
-      {
-        selector: 'edge[type = "NEXT"]',
-        style: { 'line-style': 'dashed', 'line-color': '#64748B' },
-      },
-      {
-        selector: 'edge[type = "ON_PAGE"]',
-        style: { 'line-color': '#CBD5E1', width: 1 },
-      },
-      {
-        selector: 'edge[type = "DERIVED_FROM"]',
-        style: { 'line-color': '#DC2626', 'target-arrow-color': '#DC2626' },
-      },
-      // Legend-driven visibility: chips toggle the `.hidden` class on
-      // matching nodes. `display: none` cascades to connected edges for free.
-      { selector: 'node.hidden', style: { display: 'none' } },
-      // Compound nodes (section scope + explicit PARENT_OF containers). A
-      // node with :parent children is rendered as a bounding box here —
-      // visually groups the section's content together. Minimal padding so
-      // the layout stays compact.
-      {
-        selector: ':parent',
-        style: {
-          'background-opacity': 0.08,
-          'background-color': '#F97316',
-          'border-color': '#FDBA74',
-          'border-width': 1,
-          'padding-top': '12px',
-          'padding-bottom': '12px',
-          'padding-left': '12px',
-          'padding-right': '12px',
-          'text-valign': 'top',
-          'text-halign': 'center',
-          'text-margin-y': -4,
-          shape: 'round-rectangle',
-        },
-      },
-      // Click-selected node: stronger border so the user sees which one
-      // populated the details panel.
-      {
-        selector: 'node.nd-selected',
-        style: {
-          'border-width': 4,
-          'border-color': '#0EA5E9',
-          'overlay-color': '#0EA5E9',
-          'overlay-opacity': 0.12,
-          'overlay-padding': 4,
-          'z-index': 60,
-        },
-      },
-    ],
-
+    elements: buildGraphElements(payload.value, computedParentMap),
+    style: GRAPH_STYLE,
     layout: {
       name: 'dagre',
       rankDir: 'TB',
@@ -358,11 +373,16 @@ async function renderGraph(): Promise<void> {
     wheelSensitivity: 0.15,
   })
 
-  // --- Plugin activation ---------------------------------------------------
-  // Expand/collapse on compound nodes. `layoutBy` re-runs dagre after each
-  // toggle so the graph stays tidy. Don't animate — on big docs the per-node
-  // tween is choppy and the user just wants the end state.
-  ;(cy.value as any).expandCollapse({
+  activateExpandCollapse(cy.value)
+  bindSelectionHandlers(cy.value)
+  bindTooltipHandlers(cy.value)
+}
+
+// Expand/collapse on compound nodes. `layoutBy` re-runs dagre after each
+// toggle so the graph stays tidy. Don't animate — on big docs the per-node
+// tween is choppy and the user just wants the end state.
+function activateExpandCollapse(core: Core): void {
+  ;(core as any).expandCollapse({
     layoutBy: { name: 'dagre', rankDir: 'TB', nodeSep: 30, rankSep: 40 },
     fisheye: false,
     animate: false,
@@ -371,9 +391,10 @@ async function renderGraph(): Promise<void> {
     expandCollapseCuePosition: 'top-left',
     expandCollapseCueSize: 12,
   })
+}
 
-  // --- Interactions --------------------------------------------------------
-  cy.value.on('tap', 'node', (evt) => {
+function bindSelectionHandlers(core: Core): void {
+  core.on('tap', 'node', (evt) => {
     const raw = evt.target.data('raw') as GraphNode | undefined
     if (!raw) return
     selectedNode.value = raw
@@ -382,15 +403,17 @@ async function renderGraph(): Promise<void> {
     evt.target.addClass('nd-selected')
   })
   // Click on background → close details panel.
-  cy.value.on('tap', (evt) => {
+  core.on('tap', (evt) => {
     if (evt.target === cy.value) {
       selectedNode.value = null
       cy.value?.nodes('.nd-selected').removeClass('nd-selected')
     }
   })
+}
 
-  // Hover tooltip — shows the full node text (backend truncates to 200 chars).
-  cy.value.on('mouseover', 'node', (evt) => {
+// Hover tooltip — shows the full node text (backend truncates to 200 chars).
+function bindTooltipHandlers(core: Core): void {
+  core.on('mouseover', 'node', (evt) => {
     const raw = evt.target.data('raw') as GraphNode | undefined
     if (!raw) return
     const text = formatTooltipText(raw)
@@ -398,10 +421,10 @@ async function renderGraph(): Promise<void> {
     const pos = evt.target.renderedPosition()
     tooltip.value = { x: pos.x, y: pos.y, text }
   })
-  cy.value.on('mouseout', 'node', () => {
+  core.on('mouseout', 'node', () => {
     tooltip.value = null
   })
-  cy.value.on('pan zoom', () => {
+  core.on('pan zoom', () => {
     // Tooltip coordinates are in rendered space; on pan/zoom they're stale.
     tooltip.value = null
   })

@@ -28,61 +28,89 @@
 
 import type { GraphEdge, GraphNode } from './graphApi'
 
+/** Element nodes and the edges between them that drive the section walk. */
+interface ReadingOrder {
+  kindById: Map<string, string | undefined>
+  explicitParentOf: Set<string>
+  nextMap: Map<string, string>
+  hasIncomingNext: Set<string>
+}
+
+function indexElementKinds(nodes: readonly GraphNode[]): Map<string, string | undefined> {
+  const kindById = new Map<string, string | undefined>()
+  for (const n of nodes) {
+    if (n.group !== 'element') continue
+    kindById.set(n.id, n.label)
+  }
+  return kindById
+}
+
+function buildReadingOrder(
+  kindById: Map<string, string | undefined>,
+  edges: readonly GraphEdge[],
+): ReadingOrder {
+  const order: ReadingOrder = {
+    kindById,
+    explicitParentOf: new Set<string>(),
+    nextMap: new Map<string, string>(),
+    hasIncomingNext: new Set<string>(),
+  }
+  for (const e of edges) {
+    if (!kindById.has(e.source) || !kindById.has(e.target)) continue
+    if (e.type === 'PARENT_OF') {
+      order.explicitParentOf.add(e.target)
+    } else if (e.type === 'NEXT') {
+      // Preserve first-seen NEXT edge per source (should be unique anyway).
+      if (!order.nextMap.has(e.source)) order.nextMap.set(e.source, e.target)
+      order.hasIncomingNext.add(e.target)
+    }
+  }
+  return order
+}
+
+function walkChainFromHead(
+  head: string,
+  order: ReadingOrder,
+  parents: Map<string, string>,
+  visited: Set<string>,
+): void {
+  let currentSection: string | null = null
+  let node: string | undefined = head
+
+  while (node && !visited.has(node)) {
+    visited.add(node)
+    const kind = order.kindById.get(node)
+
+    if (kind === 'SectionHeader') {
+      currentSection = node
+      // The SectionHeader itself does NOT get a synthetic parent — it is
+      // the anchor. If it has an explicit PARENT_OF, that one remains
+      // authoritative downstream (the merger respects it).
+    } else if (currentSection && !order.explicitParentOf.has(node)) {
+      parents.set(node, currentSection)
+    }
+
+    node = order.nextMap.get(node)
+  }
+}
+
 export function computeSectionParents(
   nodes: readonly GraphNode[],
   edges: readonly GraphEdge[],
 ): Map<string, string> {
-  const elementIds = new Set<string>()
-  const kindById = new Map<string, string | undefined>()
-  for (const n of nodes) {
-    if (n.group !== 'element') continue
-    elementIds.add(n.id)
-    kindById.set(n.id, n.label)
-  }
-  if (elementIds.size === 0) return new Map()
+  const kindById = indexElementKinds(nodes)
+  if (kindById.size === 0) return new Map()
 
-  const explicitParentOf = new Set<string>()
-  const nextMap = new Map<string, string>()
-  const hasIncomingNext = new Set<string>()
-
-  for (const e of edges) {
-    if (!elementIds.has(e.source) || !elementIds.has(e.target)) continue
-    if (e.type === 'PARENT_OF') {
-      explicitParentOf.add(e.target)
-    } else if (e.type === 'NEXT') {
-      // Preserve first-seen NEXT edge per source (should be unique anyway).
-      if (!nextMap.has(e.source)) nextMap.set(e.source, e.target)
-      hasIncomingNext.add(e.target)
-    }
-  }
+  const order = buildReadingOrder(kindById, edges)
 
   // Walk heads deterministically (sorted) so the same graph always produces
   // the same parenting map — useful for tests and reproducible debugging.
-  const heads = [...elementIds].filter((id) => !hasIncomingNext.has(id)).sort()
+  const heads = [...kindById.keys()].filter((id) => !order.hasIncomingNext.has(id)).sort()
 
   const parents = new Map<string, string>()
   const visited = new Set<string>()
 
-  for (const head of heads) {
-    let currentSection: string | null = null
-    let node: string | undefined = head
-
-    while (node && !visited.has(node)) {
-      visited.add(node)
-      const kind = kindById.get(node)
-
-      if (kind === 'SectionHeader') {
-        currentSection = node
-        // The SectionHeader itself does NOT get a synthetic parent — it is
-        // the anchor. If it has an explicit PARENT_OF, that one remains
-        // authoritative downstream (the merger respects it).
-      } else if (currentSection && !explicitParentOf.has(node)) {
-        parents.set(node, currentSection)
-      }
-
-      node = nextMap.get(node)
-    }
-  }
+  for (const head of heads) walkChainFromHead(head, order, parents, visited)
 
   return parents
 }

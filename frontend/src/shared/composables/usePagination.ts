@@ -16,13 +16,7 @@ export interface PaginationReturn<T> {
   setPageSize: (size: number) => void
 }
 
-export function usePagination<T>(
-  items: Ref<T[]>,
-  options: PaginationOptions = {},
-): PaginationReturn<T> {
-  const page = ref(1)
-  const pageSize = ref(options.pageSize ?? 20)
-
+function createPageWindow<T>(items: Ref<T[]>, page: Ref<number>, pageSize: Ref<number>) {
   const totalItems = computed(() => items.value.length)
 
   const pageCount = computed(() => Math.max(1, Math.ceil(totalItems.value / pageSize.value)))
@@ -32,11 +26,10 @@ export function usePagination<T>(
     return items.value.slice(start, start + pageSize.value)
   })
 
-  // Reset to page 1 when source data or page size changes
-  watch([items, pageSize], () => {
-    page.value = 1
-  })
+  return { totalItems, pageCount, paginatedItems }
+}
 
+function createPageNavigation(page: Ref<number>, pageCount: Ref<number>) {
   function clamp(target: number): number {
     return Math.max(1, Math.min(target, pageCount.value))
   }
@@ -53,6 +46,23 @@ export function usePagination<T>(
     goTo(page.value - 1)
   }
 
+  return { goNext, goPrev, goTo }
+}
+
+export function usePagination<T>(
+  items: Ref<T[]>,
+  options: PaginationOptions = {},
+): PaginationReturn<T> {
+  const page = ref(1)
+  const pageSize = ref(options.pageSize ?? 20)
+
+  const { totalItems, pageCount, paginatedItems } = createPageWindow(items, page, pageSize)
+
+  // Reset to page 1 when source data or page size changes
+  watch([items, pageSize], () => {
+    page.value = 1
+  })
+
   function setPageSize(size: number): void {
     if (size > 0) pageSize.value = size
   }
@@ -63,9 +73,7 @@ export function usePagination<T>(
     pageCount,
     paginatedItems,
     totalItems,
-    goNext,
-    goPrev,
-    goTo,
+    ...createPageNavigation(page, pageCount),
     setPageSize,
   }
 }

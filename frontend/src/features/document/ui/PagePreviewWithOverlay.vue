@@ -374,6 +374,28 @@ function scrollToPage(pageNumber: number): void {
   })
 }
 
+function trackPageVisibility(entries: IntersectionObserverEntry[]): void {
+  for (const entry of entries) {
+    const page = Number((entry.target as HTMLElement).dataset.pageNumber)
+    if (!page) continue
+    visibilityRatios.set(page, entry.isIntersecting ? entry.intersectionRatio : 0)
+  }
+  const bestPage = findMostVisiblePage(visibilityRatios)
+  if (!bestPage || bestPage === visiblePage.value) return
+  visiblePage.value = bestPage
+  emit('update:currentPage', bestPage)
+}
+
+function observePageCards(observer: IntersectionObserver): void {
+  for (const page of props.pages) {
+    if (viewMode.value !== 'scroll' && page.page_number !== props.currentPage) continue
+    const card = pageCardRefs[page.page_number]
+    if (!card) continue
+    card.dataset.pageNumber = String(page.page_number)
+    observer.observe(card)
+  }
+}
+
 function setupObserver(): void {
   if (viewMode.value !== 'scroll') {
     pageObserver?.disconnect()
@@ -385,31 +407,12 @@ function setupObserver(): void {
   const stage = stageRef.value
   if (!stage) return
 
-  pageObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        const page = Number((entry.target as HTMLElement).dataset.pageNumber)
-        if (!page) continue
-        visibilityRatios.set(page, entry.isIntersecting ? entry.intersectionRatio : 0)
-      }
-      const bestPage = findMostVisiblePage(visibilityRatios)
-      if (!bestPage || bestPage === visiblePage.value) return
-      visiblePage.value = bestPage
-      emit('update:currentPage', bestPage)
-    },
-    {
-      root: stage,
-      threshold: [0, 0.25, 0.5, 0.75],
-    },
-  )
+  pageObserver = new IntersectionObserver(trackPageVisibility, {
+    root: stage,
+    threshold: [0, 0.25, 0.5, 0.75],
+  })
 
-  for (const page of props.pages) {
-    if (viewMode.value !== 'scroll' && page.page_number !== props.currentPage) continue
-    const card = pageCardRefs[page.page_number]
-    if (!card) continue
-    card.dataset.pageNumber = String(page.page_number)
-    pageObserver.observe(card)
-  }
+  observePageCards(pageObserver)
 }
 
 function highlightTarget(): { page: Page; element: PageElement } | null {
@@ -425,6 +428,33 @@ function highlightTarget(): { page: Page; element: PageElement } | null {
 
 /** Page the highlight sits on — the one page the render window may not evict. */
 const focusedPage = computed<number | null>(() => highlightTarget()?.page.page_number ?? null)
+
+/**
+ * The highlighted bbox in viewport coordinates, or `null` when the frame has
+ * no size yet or the bbox is empty.
+ */
+function resolveViewportBbox(
+  frame: HTMLElement,
+  target: { page: Page; element: PageElement },
+): { x: number; y: number; w: number; h: number } | null {
+  if (!frame.clientWidth || !frame.clientHeight) return null
+
+  const scale = computeScale(
+    frame.clientWidth,
+    frame.clientHeight,
+    target.page.width,
+    target.page.height,
+  )
+  const rect = bboxToRect(target.element.bbox, scale)
+  if (rect.w <= 0 || rect.h <= 0) return null
+
+  // `getBoundingClientRect` measures the border box; `clientLeft`/`clientTop`
+  // are the border widths, so adding them lands on the raster's own origin.
+  const frameRect = frame.getBoundingClientRect()
+  const bboxLeft = frameRect.left + frame.clientLeft + rect.x
+  const bboxTop = frameRect.top + frame.clientTop + rect.y
+  return { x: bboxLeft, y: bboxTop, w: rect.w, h: rect.h }
+}
 
 /**
  * Scroll the preview stage so the first highlighted element sits near the
@@ -444,38 +474,20 @@ function centerHighlighted(): boolean {
   if (!target || !stage) return false
 
   const frame = frameRefs[target.page.page_number]
-  if (!frame || !frame.clientWidth || !frame.clientHeight) return false
+  if (!frame) return false
+  const bbox = resolveViewportBbox(frame, target)
+  if (!bbox) return false
 
-  const scale = computeScale(
-    frame.clientWidth,
-    frame.clientHeight,
-    target.page.width,
-    target.page.height,
-  )
-  const rect = bboxToRect(target.element.bbox, scale)
-  if (rect.w <= 0 || rect.h <= 0) return false
-
-  // `getBoundingClientRect` measures the border box; `clientLeft`/`clientTop`
-  // are the border widths, so adding them lands on the raster's own origin.
-  const frameRect = frame.getBoundingClientRect()
   const stageRect = stage.getBoundingClientRect()
-  const bboxLeft = frameRect.left + frame.clientLeft + rect.x
-  const bboxTop = frameRect.top + frame.clientTop + rect.y
-
   const bboxViewportRect = {
-    top: bboxTop,
-    right: bboxLeft + rect.w,
-    bottom: bboxTop + rect.h,
-    left: bboxLeft,
+    top: bbox.y,
+    right: bbox.x + bbox.w,
+    bottom: bbox.y + bbox.h,
+    left: bbox.x,
   }
   if (isRectVisible(bboxViewportRect, stageRect)) return true
 
-  const position = computeCenteredScrollPosition(stage, stageRect, {
-    x: bboxLeft,
-    y: bboxTop,
-    w: rect.w,
-    h: rect.h,
-  })
+  const position = computeCenteredScrollPosition(stage, stageRect, bbox)
 
   stage.scrollTo({
     left: position.left,

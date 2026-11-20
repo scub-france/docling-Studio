@@ -1,7 +1,7 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 
 import { useFeatureFlagStore } from '../../features/feature-flags/store'
-import { isDocMode } from '../../shared/routing/modes'
+import { isDocMode, type DocMode } from '../../shared/routing/modes'
 import { ROUTES } from '../../shared/routing/names'
 import { resolveMode } from '../../shared/routing/resolveMode'
 import { resolveSurface } from '../../shared/routing/resolveSurface'
@@ -13,6 +13,31 @@ export const router = createRouter({
   history: createWebHistory(),
   routes,
 })
+
+/**
+ * Mode gating for the doc workspace: `null` when the requested mode stands,
+ * otherwise the redirect to the first enabled mode (or to the library when
+ * none is).
+ */
+function resolveModeRedirect(to: RouteLocationNormalized, flags: Record<DocMode, boolean>) {
+  const requestedRaw = Array.isArray(to.query.mode) ? to.query.mode[0] : to.query.mode
+  const requested = isDocMode(requestedRaw) ? requestedRaw : undefined
+  const resolved = resolveMode(requested, flags)
+
+  if (resolved === null) {
+    return {
+      name: ROUTES.DOCS_LIBRARY,
+      query: { reason: 'no-mode-enabled' },
+    }
+  }
+  if (resolved !== requested) {
+    return {
+      ...to,
+      query: { ...to.query, mode: resolved },
+    }
+  }
+  return null
+}
 
 /**
  * Surface gating (#257) + mode gating (#210).
@@ -49,22 +74,5 @@ router.beforeEach(async (to) => {
 
   if (to.name !== ROUTES.DOC_WORKSPACE) return true
 
-  const flags = flagStore.getModeFlags()
-  const requestedRaw = Array.isArray(to.query.mode) ? to.query.mode[0] : to.query.mode
-  const requested = isDocMode(requestedRaw) ? requestedRaw : undefined
-  const resolved = resolveMode(requested, flags)
-
-  if (resolved === null) {
-    return {
-      name: ROUTES.DOCS_LIBRARY,
-      query: { reason: 'no-mode-enabled' },
-    }
-  }
-  if (resolved !== requested) {
-    return {
-      ...to,
-      query: { ...to.query, mode: resolved },
-    }
-  }
-  return true
+  return resolveModeRedirect(to, flagStore.getModeFlags()) ?? true
 })

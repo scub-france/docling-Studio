@@ -20,41 +20,45 @@ export interface PreviewScheduler {
   cancel(): void
 }
 
+interface SchedulerState {
+  timer: ReturnType<typeof setTimeout> | null
+  controller: AbortController | null
+}
+
+function clearTimer(state: SchedulerState): void {
+  if (state.timer) clearTimeout(state.timer)
+  state.timer = null
+}
+
+function scheduleRun(state: SchedulerState, task: () => void, delayMs: number): void {
+  clearTimer(state)
+  state.timer = setTimeout(() => {
+    state.timer = null
+    task()
+  }, delayMs)
+}
+
+function startRequest(state: SchedulerState): AbortController {
+  state.controller?.abort()
+  state.controller = new AbortController()
+  return state.controller
+}
+
+function cancelAll(state: SchedulerState): void {
+  clearTimer(state)
+  state.controller?.abort()
+  state.controller = null
+}
+
 export function createPreviewScheduler(delayMs: number): PreviewScheduler {
-  let timer: ReturnType<typeof setTimeout> | null = null
-  let controller: AbortController | null = null
-
-  function clearDebounce(): void {
-    if (timer) clearTimeout(timer)
-    timer = null
-  }
-
-  function abort(): void {
-    controller?.abort()
-  }
+  const state: SchedulerState = { timer: null, controller: null }
 
   return {
-    debounce(task) {
-      clearDebounce()
-      timer = setTimeout(() => {
-        timer = null
-        task()
-      }, delayMs)
-    },
-    clearDebounce,
-    begin() {
-      abort()
-      controller = new AbortController()
-      return controller
-    },
-    isCurrent(candidate) {
-      return controller === candidate
-    },
-    abort,
-    cancel() {
-      clearDebounce()
-      abort()
-      controller = null
-    },
+    debounce: (task) => scheduleRun(state, task, delayMs),
+    clearDebounce: () => clearTimer(state),
+    begin: () => startRequest(state),
+    isCurrent: (candidate) => state.controller === candidate,
+    abort: () => state.controller?.abort(),
+    cancel: () => cancelAll(state),
   }
 }

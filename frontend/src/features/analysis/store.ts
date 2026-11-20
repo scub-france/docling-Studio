@@ -98,6 +98,23 @@ export const useAnalysisStore = defineStore('analysis', () => {
     lastOutcome.value = outcome
   }
 
+  function applyPolledAnalysis(updated: Analysis, id: string, documentId: string): void {
+    currentAnalysis.value = updated
+    const idx = analyses.value.findIndex((a) => a.id === id)
+    if (idx !== -1) analyses.value[idx] = updated
+    if (updated.status === 'COMPLETED') {
+      finishRun({ kind: 'completed', documentId, analysisId: id })
+    } else if (updated.status === 'FAILED') {
+      finishRun({ kind: 'failed', documentId, error: updated.errorMessage })
+    }
+  }
+
+  function abandonPolling(e: unknown, documentId: string): void {
+    error.value = (e as Error).message || 'Polling error'
+    console.error('Polling abandoned after retries', e)
+    finishRun({ kind: 'failed', documentId, error: error.value })
+  }
+
   function startPolling(id: string, documentId: string): void {
     stopPolling()
     let consecutiveErrors = 0
@@ -105,22 +122,11 @@ export const useAnalysisStore = defineStore('analysis', () => {
       try {
         const updated = await api.fetchAnalysis(id)
         consecutiveErrors = 0
-        currentAnalysis.value = updated
-        const idx = analyses.value.findIndex((a) => a.id === id)
-        if (idx !== -1) analyses.value[idx] = updated
-        if (updated.status === 'COMPLETED') {
-          finishRun({ kind: 'completed', documentId, analysisId: id })
-        } else if (updated.status === 'FAILED') {
-          finishRun({ kind: 'failed', documentId, error: updated.errorMessage })
-        }
+        applyPolledAnalysis(updated, id, documentId)
       } catch (e) {
         consecutiveErrors++
         console.warn(`Polling error (${consecutiveErrors}/${MAX_POLL_RETRIES})`, e)
-        if (consecutiveErrors >= MAX_POLL_RETRIES) {
-          error.value = (e as Error).message || 'Polling error'
-          console.error('Polling abandoned after retries', e)
-          finishRun({ kind: 'failed', documentId, error: error.value })
-        }
+        if (consecutiveErrors >= MAX_POLL_RETRIES) abandonPolling(e, documentId)
       }
     }, 2000)
     pollingTimeout.value = setTimeout(() => {

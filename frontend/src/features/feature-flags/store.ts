@@ -162,31 +162,35 @@ export const useFeatureFlagStore = defineStore('feature-flags', () => {
   // explicit reload can re-fetch.
   let loadPromise: Promise<void> | null = null
 
+  function applyHealth(data: HealthResponse): void {
+    engine.value = data.engine
+    deploymentMode.value = data.deploymentMode ?? 'self-hosted'
+    maxPageCount.value = data.maxPageCount ?? 0
+    maxFileSizeMb.value = data.maxFileSizeMb ?? 0
+    ingestionAvailable.value = data.ingestionAvailable ?? false
+    reasoningAvailable.value = data.reasoningAvailable ?? false
+    askVisible.value = (data.askMode ?? 'visible') === 'visible'
+    // 0.6.1 — surface flags. Backward compat: missing studio → false
+    // (production target), missing rag pipeline → true (legacy behaviour).
+    studioModeEnabled.value = data.studioModeEnabled ?? false
+    ragPipelineEnabled.value = data.ragPipelineEnabled ?? true
+    // Sub-flags: fall back to true so an older backend keeps every mode
+    // visible.
+    inspectModeEnabled.value = data.inspectModeEnabled ?? true
+    linkedModeEnabled.value = data.linkedModeEnabled ?? true
+    analysisEditorEnabled.value = data.analysisEditorEnabled ?? false
+    appMaxFileSizeMb.value = maxFileSizeMb.value
+    appMaxPageCount.value = maxPageCount.value
+    if (data.version) appVersion.value = data.version
+  }
+
   function load(): Promise<void> {
     if (loaded.value) return Promise.resolve()
     if (loadPromise) return loadPromise
     loadPromise = (async () => {
       try {
         const data = await apiFetch<HealthResponse>('/api/health')
-        engine.value = data.engine
-        deploymentMode.value = data.deploymentMode ?? 'self-hosted'
-        maxPageCount.value = data.maxPageCount ?? 0
-        maxFileSizeMb.value = data.maxFileSizeMb ?? 0
-        ingestionAvailable.value = data.ingestionAvailable ?? false
-        reasoningAvailable.value = data.reasoningAvailable ?? false
-        askVisible.value = (data.askMode ?? 'visible') === 'visible'
-        // 0.6.1 — surface flags. Backward compat: missing studio → false
-        // (production target), missing rag pipeline → true (legacy behaviour).
-        studioModeEnabled.value = data.studioModeEnabled ?? false
-        ragPipelineEnabled.value = data.ragPipelineEnabled ?? true
-        // Sub-flags: fall back to true so an older backend keeps every mode
-        // visible.
-        inspectModeEnabled.value = data.inspectModeEnabled ?? true
-        linkedModeEnabled.value = data.linkedModeEnabled ?? true
-        analysisEditorEnabled.value = data.analysisEditorEnabled ?? false
-        appMaxFileSizeMb.value = maxFileSizeMb.value
-        appMaxPageCount.value = maxPageCount.value
-        if (data.version) appVersion.value = data.version
+        applyHealth(data)
         loaded.value = true
         error.value = null
       } catch (e) {

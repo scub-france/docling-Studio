@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as api from './api'
 import {
@@ -233,6 +233,25 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     }
   }
 
+  async function reloadHistory(id: string): Promise<void> {
+    history.value = await api.fetchAnalysisEditHistory(id, baseAnalysisId.value ?? undefined)
+  }
+
+  /** A 409 is a conflict with someone else's save; anything else lands in `target`. */
+  function recordEditFailure(e: unknown, fallback: string, target: Ref<string | null>): void {
+    const message = (e as Error).message || fallback
+    if (message.startsWith('409:')) conflict.value = message
+    else target.value = message
+  }
+
+  function resetPendingEdits(): void {
+    preview.value = null
+    pendingCommands.value = []
+    redoCommands.value = []
+    mergeSelection.value = []
+    persistPendingCommands()
+  }
+
   async function save(): Promise<void> {
     if (!documentId.value || !saved.value || pendingCommands.value.length === 0) return
     saving.value = true
@@ -255,19 +274,10 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
         baseAnalysisId.value ?? undefined,
       )
       saved.value = next
-      history.value = await api.fetchAnalysisEditHistory(
-        documentId.value,
-        baseAnalysisId.value ?? undefined,
-      )
-      preview.value = null
-      pendingCommands.value = []
-      redoCommands.value = []
-      mergeSelection.value = []
-      persistPendingCommands()
+      await reloadHistory(documentId.value)
+      resetPendingEdits()
     } catch (e) {
-      const message = (e as Error).message || 'Failed to save analysis edits'
-      if (message.startsWith('409:')) conflict.value = message
-      else saveError.value = message
+      recordEditFailure(e, 'Failed to save analysis edits', saveError)
     } finally {
       saving.value = false
     }
@@ -287,19 +297,14 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
         baseAnalysisId.value ?? undefined,
       )
       saved.value = next
-      history.value = await api.fetchAnalysisEditHistory(
-        documentId.value,
-        baseAnalysisId.value ?? undefined,
-      )
+      await reloadHistory(documentId.value)
       mergeSelection.value = []
       if (!next.model.elements.some((element) => element.id === selectedElementId.value)) {
         selectedElementId.value =
           next.model.elements.find((element) => element.editable)?.id ?? null
       }
     } catch (e) {
-      const message = (e as Error).message || 'Failed to change saved edit history'
-      if (message.startsWith('409:')) conflict.value = message
-      else historyError.value = message
+      recordEditFailure(e, 'Failed to change saved edit history', historyError)
     } finally {
       saving.value = false
     }

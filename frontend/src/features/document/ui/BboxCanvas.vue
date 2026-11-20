@@ -97,11 +97,16 @@ function draw(): void {
   // Second pass so the highlighted element ends up on top, fully crisp.
   if (highlighted.size > 0) drawHighlightedBoxes(frame, highlighted)
 
+  drawReadingOrderMarkers(frame)
+}
+
+/** Next-element marker and reading-order badges, drawn over the element boxes. */
+function drawReadingOrderMarkers(frame: DrawFrame): void {
   // Theme colours come from the design tokens in app/App.vue (no literal
   // copies here), so the overlay follows the light/dark theme.
   const order = props.readingOrderByRef
   const readToken: CssTokenReader =
-    props.nextRef || order?.size ? createCssTokenReader(canvas) : () => ''
+    props.nextRef || order?.size ? createCssTokenReader(frame.canvas) : () => ''
   const success = readToken('--success')
   if (props.nextRef) drawNextElementMarker(frame, props.nextRef, success)
   if (order?.size) {
