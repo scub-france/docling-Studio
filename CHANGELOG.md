@@ -36,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **`LLM_PROVIDER_TYPE`**: Ollama is the only provider Ask can use, so the variable no longer selects anything. It is still read: a value other than `ollama` keeps Ask off with a warning, as before. It will be removed in a later release.
 
+### Removed
+
+- **`OPENSEARCH_DEFAULT_LIMIT`**: the setting only bounded a read of indexed chunks that nothing called. It is ignored if still set.
+
 ### Fixed
 
 - **Upgrade from 0.7.3** (#391): booting on a 0.7.3 database now adds the two new `document_versions` columns and selects an active analysis for each already-analysed document, so versions, chunking, exports and the editor keep working without re-analysing anything.

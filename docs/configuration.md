@@ -98,7 +98,6 @@ Ingestion sends chunks to OpenSearch or Neo4j. It turns on when `EMBEDDING_URL` 
 | `NEO4J_URI` | empty | Neo4j address, for example `bolt://neo4j:7687`. Empty means Neo4j is not used. |
 | `NEO4J_USER`, `NEO4J_PASSWORD` | `neo4j`, `changeme` | Neo4j login. Change the password. |
 | `STORE_SECRET_KEY` | empty | Encrypts store passwords in the database. Required as soon as a store has a password, and it must never change. |
-| `OPENSEARCH_DEFAULT_LIMIT` | `1000` | Most chunks read back from OpenSearch in one request. |
 | `DEFAULT_EMBEDDER` | `bge-m3` | Embedder name given to the `default` store when the backend creates it, at first start. Ignored once that store exists. |
 
 Create a `STORE_SECRET_KEY` with the image itself:

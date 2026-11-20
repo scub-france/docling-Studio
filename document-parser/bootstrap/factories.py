@@ -344,10 +344,7 @@ def build_ingestion_service(graph_writer) -> IngestionService | None:
     if has_opensearch:
         from infra.opensearch_store import OpenSearchStore
 
-        vector_store = OpenSearchStore(
-            settings.opensearch_url,
-            default_limit=settings.opensearch_default_limit,
-        )
+        vector_store = OpenSearchStore(settings.opensearch_url)
 
     logger.info(
         "Ingestion enabled (embedding=%s, opensearch=%s, neo4j=%s)",

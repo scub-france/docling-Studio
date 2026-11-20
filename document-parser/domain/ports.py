@@ -568,16 +568,6 @@ class VectorStore(Protocol):
         """Full-text search on the chunk content, optionally within one document."""
         ...
 
-    async def get_chunks(
-        self,
-        index_name: str,
-        doc_id: str,
-        *,
-        limit: int = 1000,
-    ) -> list[SearchResult]:
-        """Retrieve all indexed chunks for a given document, ordered by chunk_index."""
-        ...
-
     async def delete_document(self, index_name: str, doc_id: str) -> int:
         """Delete all chunks for a document from the index. Returns count deleted."""
         ...
@@ -598,7 +588,6 @@ class VectorStorePool(Protocol):
         username: str | None = None,
         password: str | None = None,
         verify_certs: bool = False,
-        default_limit: int = 1000,
     ) -> VectorStore: ...
 
 

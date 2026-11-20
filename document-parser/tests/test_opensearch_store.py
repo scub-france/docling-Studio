@@ -241,29 +241,6 @@ class TestSearchSimilar:
         assert "filter" not in call_body["query"]["knn"]["embedding"]
 
 
-# -- get_chunks ----------------------------------------------------------------
-
-
-class TestGetChunks:
-    async def test_retrieves_by_doc_id(
-        self, store: OpenSearchStore, mock_client: AsyncMock
-    ) -> None:
-        mock_client.search.return_value = {
-            "hits": {"hits": [_make_hit(chunk_index=0), _make_hit(chunk_index=1)]}
-        }
-        results = await store.get_chunks("idx", "doc-1")
-        assert len(results) == 2
-        call_body = mock_client.search.call_args[1]["body"]
-        assert call_body["query"] == {"term": {"doc_id": "doc-1"}}
-        assert call_body["sort"] == [{"chunk_index": {"order": "asc"}}]
-
-    async def test_respects_limit(self, store: OpenSearchStore, mock_client: AsyncMock) -> None:
-        mock_client.search.return_value = {"hits": {"hits": []}}
-        await store.get_chunks("idx", "doc-1", limit=50)
-        call_body = mock_client.search.call_args[1]["body"]
-        assert call_body["size"] == 50
-
-
 # -- delete_document -----------------------------------------------------------
 
 
