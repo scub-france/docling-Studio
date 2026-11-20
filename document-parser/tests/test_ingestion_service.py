@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.ingestion_service import IngestionConfig, IngestionService, IngestionSource
+from domain.value_objects import IngestionSource
+from services.ingestion_service import IngestionConfig, IngestionService
 
 _SOURCE = IngestionSource(doc_id="doc-1", filename="test.pdf")
 

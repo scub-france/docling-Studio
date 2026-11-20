@@ -13,8 +13,7 @@ from contextlib import asynccontextmanager
 from mcp import Client
 
 from domain.navigation import estimate_tokens
-from mcp_adapter import build_mcp_server
-from mcp_adapter.server import McpSurface
+from mcp_adapter.server import McpSurface, build_mcp_server
 from mcp_adapter.wire import CONTENT_CLOSE
 from services.navigation_config import NavigationConfig
 from tests.navigation_fixtures import (

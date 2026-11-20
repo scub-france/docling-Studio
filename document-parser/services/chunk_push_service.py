@@ -14,8 +14,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from domain.models import ChunkPush, DocumentStoreLink, generate_id, get_utc_now
+from domain.value_objects import IngestionSource
 from services.chunk_errors import ChunkServiceError, require_document
-from services.ingestion_service import IngestionSource
 
 if TYPE_CHECKING:
     from domain.models import Chunk, Store

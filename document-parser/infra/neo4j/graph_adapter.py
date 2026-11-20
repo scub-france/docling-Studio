@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 
 from infra.neo4j.chunk_writer import write_chunks as _write_chunks
 from infra.neo4j.queries import fetch_graph as _fetch_graph
-from infra.neo4j.tree_writer import GraphDocument
 from infra.neo4j.tree_writer import write_document as _write_document
 
 if TYPE_CHECKING:
@@ -55,8 +54,7 @@ class Neo4jGraphWriter:
         document_json: str,
     ) -> None:
         await _write_document(
-            self._driver,
-            GraphDocument(doc_id=doc_id, filename=filename, document_json=document_json),
+            self._driver, doc_id=doc_id, filename=filename, document_json=document_json
         )
 
     async def write_chunks(self, *, doc_id: str, chunks_json: str) -> None:

@@ -286,7 +286,7 @@ def _build_analysis_services(
         graph_writer,
     )
     analysis_edit_service = _build_analysis_edit_service(repos, current_analysis, graph_writer)
-    # Doc-centric chunks (#256), their pushes to stores, and the tree.
+    # Doc-centric chunks (#256).
     chunk_service = ChunkService(
         chunk_repo=repos.chunk_repo,
         document_repo=repos.document_repo,

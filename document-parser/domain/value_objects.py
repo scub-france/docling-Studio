@@ -151,6 +151,15 @@ class ChunkResult:
 
 
 @dataclass(frozen=True)
+class IngestionSource:
+    """The document whose chunks are being indexed."""
+
+    doc_id: str
+    filename: str
+    binary_hash: str | None = None
+
+
+@dataclass(frozen=True)
 class ReasoningIteration:
     """One step of the reasoning loop — section the agent visited and what
     it concluded. Mirrors the upstream docling-agent `RAGIteration` shape so

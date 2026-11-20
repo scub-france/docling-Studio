@@ -82,14 +82,14 @@ def _build_chunk_rows(
     return chunk_rows, derived_rows
 
 
-async def _clear_document_chunks(tx: AsyncTransaction, doc_id: str) -> None:
-    # MERGE the Document node first — chunk-ingest must not silently
-    # fail when the workspace wasn't analyzed via the tree writer
-    # yet (or the graph was wiped manually). MERGE is idempotent;
-    # `write_document` later fills in the metadata.
+async def _ensure_document_node(tx: AsyncTransaction, doc_id: str) -> None:
+    # Chunk-ingest must not silently fail when the workspace wasn't
+    # analyzed via the tree writer yet (or the graph was wiped manually).
+    # MERGE is idempotent; `write_document` later fills in the metadata.
     await tx.run("MERGE (d:Document {id: $doc_id})", doc_id=doc_id)
 
-    # Replace existing chunks.
+
+async def _clear_document_chunks(tx: AsyncTransaction, doc_id: str) -> None:
     await tx.run(
         """
         MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk)
@@ -173,6 +173,7 @@ async def write_chunks(
         neo.driver.session(database=neo.database) as session,
         await session.begin_transaction() as tx,
     ):
+        await _ensure_document_node(tx, doc_id)
         await _clear_document_chunks(tx, doc_id)
         if chunk_rows:
             await _create_chunk_nodes(tx, doc_id, chunk_rows)

@@ -46,7 +46,7 @@ class TreeWriteResult:
 def _build_element_props(item: dict[str, Any], doc_id: str) -> dict[str, Any]:
     """Properties stored on the `:Element` node itself.
 
-    Provenance (page + bbox) is NOT here anymore — see `_iter_provs` and the
+    Provenance (page + bbox) is NOT here anymore — see `iter_provs` and the
     `:Provenance` nodes. Keeping it out of the element matches DoclingDocument's
     own model (`prov` is a list of objects, not a scalar).
     """
@@ -69,22 +69,12 @@ def _build_element_props(item: dict[str, Any], doc_id: str) -> dict[str, Any]:
 
 
 @dataclass(frozen=True)
-class GraphDocument:
-    """A parsed document to write to the graph, with its verbatim DoclingDocument JSON."""
+class _DocumentNode:
+    """The `:Document` node, which carries the verbatim DoclingDocument JSON."""
 
     doc_id: str
-    filename: str
+    title: str
     document_json: str
-    tenant_id: str = "default"
-    source_uri: str | None = None
-    docling_version: str | None = None
-
-
-@dataclass(frozen=True)
-class _DocumentNode:
-    """The `:Document` node: the document as written, stamped with its ingestion time."""
-
-    document: GraphDocument
     ingested_at: str
 
 
@@ -162,7 +152,8 @@ async def _wipe_document_graph(tx: AsyncTransaction, doc_id: str) -> None:
 
 
 async def _create_document_node(tx: AsyncTransaction, node: _DocumentNode) -> None:
-    document = node.document
+    # `source_uri`, `docling_version` and `tenant_id` have no source yet:
+    # written with their neutral values so every `:Document` has the same shape.
     await tx.run(
         """
         CREATE (d:Document {
@@ -177,13 +168,13 @@ async def _create_document_node(tx: AsyncTransaction, node: _DocumentNode) -> No
           document_json: $document_json
         })
         """,
-        doc_id=document.doc_id,
-        title=document.filename,
-        source_uri=document.source_uri or "",
+        doc_id=node.doc_id,
+        title=node.title,
+        source_uri="",
         ingested_at=node.ingested_at,
-        docling_version=document.docling_version or "",
-        tenant_id=document.tenant_id,
-        document_json=document.document_json,
+        docling_version="",
+        tenant_id="default",
+        document_json=node.document_json,
     )
 
 
@@ -349,15 +340,21 @@ async def _write_tree(
         await _link_reading_order(tx, projection.doc_id, projection.reading_order)
 
 
-async def write_document(neo: Neo4jDriver, document: GraphDocument) -> TreeWriteResult:
+async def write_document(
+    neo: Neo4jDriver, *, doc_id: str, filename: str, document_json: str
+) -> TreeWriteResult:
     """Persist the full DoclingDocument tree to Neo4j.
 
     Idempotent: wipes any existing graph for doc_id before writing.
     Fails fast (exception propagates) if Neo4j is unavailable — per design §8.5.
     """
-    doc_id = document.doc_id
-    doc_data = json.loads(document.document_json)
-    node = _DocumentNode(document, ingested_at=datetime.now(tz=UTC).isoformat())
+    doc_data = json.loads(document_json)
+    node = _DocumentNode(
+        doc_id=doc_id,
+        title=filename,
+        document_json=document_json,
+        ingested_at=datetime.now(tz=UTC).isoformat(),
+    )
     projection = _build_tree_projection(doc_data, doc_id)
     async with (
         neo.driver.session(database=neo.database) as session,

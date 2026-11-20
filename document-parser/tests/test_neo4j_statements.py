@@ -20,15 +20,15 @@ import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import pytest
 
 from infra.neo4j import tree_writer
 from infra.neo4j.chunk_writer import write_chunks
+from infra.neo4j.graph_adapter import Neo4jGraphWriter
 from infra.neo4j.queries import fetch_graph
-from infra.neo4j.tree_writer import GraphDocument, write_document
-
-if TYPE_CHECKING:
-    import pytest
+from infra.neo4j.tree_writer import write_document
 
 SNAPSHOT_PATH = Path(__file__).parent / "fixtures" / "neo4j_statements.json"
 
@@ -378,20 +378,15 @@ def _scenarios() -> dict[str, tuple[Any, list[Any]]]:
         "write_document": (
             lambda neo: write_document(
                 neo,
-                GraphDocument(
-                    doc_id="doc-1",
-                    filename="sample.pdf",
-                    document_json=doc_json,
-                    tenant_id="acme",
-                    source_uri="s3://bucket/sample.pdf",
-                    docling_version="2.1.0",
-                ),
+                doc_id="doc-1",
+                filename="sample.pdf",
+                document_json=doc_json,
             ),
             [],
         ),
         "write_document_defaults_empty_doc": (
             lambda neo: write_document(
-                neo, GraphDocument(doc_id="doc-2", filename="empty.pdf", document_json="{}")
+                neo, doc_id="doc-2", filename="empty.pdf", document_json="{}"
             ),
             [],
         ),
@@ -454,8 +449,25 @@ async def test_neo4j_statements_match_snapshot(
     if os.environ.get("NEO4J_SNAPSHOT_UPDATE"):
         SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
         SNAPSHOT_PATH.write_text(_dump(actual) + "\n", encoding="utf-8")
+        pytest.fail("Snapshot rewritten: review its diff, then run without NEO4J_SNAPSHOT_UPDATE")
 
     expected = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
     assert list(actual) == list(expected)
     for name in actual:
         assert _dump(actual[name]) == _dump(expected[name]), name
+
+
+async def test_graph_writer_adapter_writes_the_same_tree_as_write_document(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The port adapter hands its three arguments to `write_document` unchanged."""
+    monkeypatch.setattr(tree_writer, "datetime", _FrozenDatetime)
+    document = {"doc_id": "doc-1", "filename": "sample.pdf"}
+    document["document_json"] = json.dumps(_docling_document())
+
+    direct = await _run_scenario(lambda neo: write_document(neo, **document), [], caplog)
+    through_port = await _run_scenario(
+        lambda neo: Neo4jGraphWriter(neo).write_document_tree(**document), [], caplog
+    )
+
+    assert through_port["events"] == direct["events"]

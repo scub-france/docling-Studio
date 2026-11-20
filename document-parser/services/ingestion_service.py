@@ -25,6 +25,7 @@ from domain.vector_schema import (
 
 if TYPE_CHECKING:
     from domain.ports import EmbeddingService, GraphWriter, VectorStore
+    from domain.value_objects import IngestionSource
     from services.store_backend_resolver import IngestionTargets
 
 logger = logging.getLogger(__name__)
@@ -36,15 +37,6 @@ class IngestionConfig:
 
     index_name: str = "docling-studio-chunks"
     embedding_dimension: int = 384
-
-
-@dataclass(frozen=True)
-class IngestionSource:
-    """The document whose chunks are being indexed."""
-
-    doc_id: str
-    filename: str
-    binary_hash: str | None = None
 
 
 @dataclass

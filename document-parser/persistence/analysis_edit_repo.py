@@ -211,13 +211,12 @@ class SqliteAnalysisEditRepository:
                     rows,
                 )
                 await db.execute(_CACHE_UPSERT, _to_cache_params(cache))
+                await db.execute(
+                    "UPDATE analysis_edit_streams SET engine_version = ? WHERE analysis_id = ?",
+                    (stream.engine_version, stream.analysis_id),
+                )
                 await db.commit()
                 return saved
             except Exception:
                 await db.rollback()
                 raise
-
-    async def replace_cache(self, cache: EditedAnalysisCache) -> None:
-        async with get_connection() as db:
-            await db.execute(_CACHE_UPSERT, _to_cache_params(cache))
-            await db.commit()

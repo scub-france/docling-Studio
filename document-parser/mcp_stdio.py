@@ -55,8 +55,7 @@ async def _serve() -> None:
     # import time.
     from bootstrap.factories import build_env_mcp_config
     from infra.settings import settings
-    from mcp_adapter import build_mcp_server
-    from mcp_adapter.server import McpSurface
+    from mcp_adapter.server import McpSurface, build_mcp_server
     from persistence.app_settings_repo import SqliteAppSettingsRepository
     from persistence.database import init_db
     from services.mcp_config_service import load_effective_mcp_config

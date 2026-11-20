@@ -43,7 +43,6 @@ from starlette.routing import Route
 
 from domain.mcp_config import McpServerStatus, McpToolInfo
 from infra.settings import settings
-from mcp_adapter import build_mcp_server
 from services.navigation_errors import NavigationUnavailableError
 
 if TYPE_CHECKING:
@@ -104,7 +103,7 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
 def _build_server(app: FastAPI) -> MCPServer:
     """The document server, over the tools `app` publishes once it is wired."""
     # Imported here, not at module level: the SDK loads only when a server is built.
-    from mcp_adapter.server import McpSurface
+    from mcp_adapter.server import McpSurface, build_mcp_server
 
     surface = McpSurface(
         version=settings.app_version,

@@ -71,6 +71,7 @@ class EditHistoryEntry:
 class EditStream:
     analysis_id: str
     base_document_hash: str
+    # The engine that projected the stream's working copy, stamped on each save.
     engine_version: str
     created_at: datetime
 

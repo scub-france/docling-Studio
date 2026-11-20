@@ -21,9 +21,8 @@ from mcp.client.extension import advertise
 from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from domain.navigation import BoundingBox
-from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI
-from mcp_adapter.server import McpSurface
+from mcp_adapter.server import McpSurface, build_mcp_server
 from mcp_adapter.sources_view import SOURCES_APP_HTML
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError

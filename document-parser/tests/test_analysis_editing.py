@@ -5,7 +5,7 @@ import json
 import logging
 import sqlite3
 import threading
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -43,7 +43,7 @@ from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
-from services.analysis_edit_service import AnalysisEditService
+from services.analysis_edit_service import ENGINE_VERSION, AnalysisEditService
 from services.current_analysis import CurrentAnalysisResolver
 from services.export_service import ExportFormat, ExportService
 from tests.analysis_state_helpers import set_chunk_source, set_selection
@@ -731,9 +731,13 @@ async def test_corrupt_edited_cache_is_replayed_instead_of_failing(edit_service)
     await service.save(
         "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
     )
-    cache = await edits.find_cache("analysis-1")
-    assert cache is not None
-    await edits.replace_cache(replace(cache, document_json="{not json"))
+    assert await edits.find_cache("analysis-1") is not None
+    async with database.get_connection() as connection:
+        await connection.execute(
+            "UPDATE edited_analysis_cache SET document_json = ? WHERE analysis_id = ?",
+            ("{not json", "analysis-1"),
+        )
+        await connection.commit()
 
     reloaded = await _service_with_chunks(0).load_editor("doc-1")
 
@@ -1089,6 +1093,29 @@ async def test_load_replays_a_stream_saved_by_another_engine_version(edit_servic
 
     read_working_copy.assert_not_awaited()
     assert _projection_values(reloaded) == _projection_values(saved)
+
+
+@pytest.mark.asyncio
+async def test_a_save_stamps_the_stream_with_the_current_engine_version(edit_service):
+    """After a save by this engine, the working copy is trusted again."""
+    service, edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "First"})], 0
+    )
+    async with database.get_connection() as connection:
+        await connection.execute(
+            "UPDATE analysis_edit_streams SET engine_version = ? WHERE analysis_id = ?",
+            ("analysis-editor-0", "analysis-1"),
+        )
+        await connection.commit()
+
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Second"})], 1
+    )
+
+    assert (await edits.find_stream("analysis-1")).engine_version == ENGINE_VERSION
 
 
 @pytest.mark.parametrize(

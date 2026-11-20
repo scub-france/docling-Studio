@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -86,7 +87,8 @@ class AnalysisEditService:
             stream is not None
             and cache is not None
             # A working copy projected by another engine version is not
-            # trusted: the stream is replayed by this one.
+            # trusted: the stream is replayed by this one, until a save
+            # writes a new working copy.
             and stream.engine_version == ENGINE_VERSION
             and cache.analysis_id == base.id
             and cache.applied_through_sequence == sequence
@@ -167,7 +169,7 @@ class AnalysisEditService:
         # The graph mirrors the current analysis only.
         activate = await self._current.find_current_analysis_id(document_id) == base.id
         await self._edits.save_commands_and_cache(
-            stream=stream,
+            stream=replace(stream, engine_version=ENGINE_VERSION),
             commands=pending_commands,
             expected_sequence=actual_sequence,
             cache=cache,

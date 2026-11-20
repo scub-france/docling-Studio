@@ -441,9 +441,13 @@ class AnalysisEditRepository(Protocol):
         commands: list[EditCommand],
         expected_sequence: int,
         cache: EditedAnalysisCache,
-    ) -> list[StoredEditCommand]: ...
+    ) -> list[StoredEditCommand]:
+        """Append `commands` and replace the working copy, in one transaction.
 
-    async def replace_cache(self, cache: EditedAnalysisCache) -> None: ...
+        The stream is stamped with `stream.engine_version`, the engine that
+        projected this working copy.
+        """
+        ...
 
 
 class ActiveAnalysisResultReader(Protocol):

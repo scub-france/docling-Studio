@@ -34,6 +34,11 @@ class DocumentConfig:
     max_file_size_mb: int = 0
     max_page_count: int = 0
 
+    @property
+    def max_file_size_bytes(self) -> int:
+        """The upload ceiling in bytes, 0 when there is none."""
+        return self.max_file_size_mb * 1024 * 1024 if self.max_file_size_mb > 0 else 0
+
 
 @dataclass(frozen=True)
 class DocumentStoreLinkView:
@@ -65,14 +70,10 @@ class DocumentService:
         self._pdf_inspector = pdf_inspector
         self._file_store = file_store
         self._config = config
-        self._max_file_size = (
-            config.max_file_size_mb * 1024 * 1024 if config.max_file_size_mb > 0 else 0
-        )
-        self._max_page_count = config.max_page_count
 
     @property
     def max_file_size(self) -> int:
-        return self._max_file_size
+        return self._config.max_file_size_bytes
 
     @property
     def max_file_size_mb(self) -> int:
@@ -112,7 +113,8 @@ class DocumentService:
 
     def _check_upload(self, file_content: bytes) -> None:
         """Refuse a file over the size limit or one that is not a PDF."""
-        if self._max_file_size > 0 and len(file_content) > self._max_file_size:
+        max_bytes = self._config.max_file_size_bytes
+        if max_bytes > 0 and len(file_content) > max_bytes:
             raise ValueError(f"File too large (max {self._config.max_file_size_mb} MB)")
 
         if not file_content[:4].startswith(_PDF_MAGIC):
@@ -121,13 +123,13 @@ class DocumentService:
     async def _check_page_count(self, storage_path: str, page_count: int | None) -> None:
         """Refuse a PDF over the page limit, discarding the file already written."""
         if (
-            self._max_page_count > 0
+            self._config.max_page_count > 0
             and page_count is not None
-            and page_count > self._max_page_count
+            and page_count > self._config.max_page_count
         ):
             await asyncio.to_thread(self._file_store.discard, storage_path)
             raise ValueError(
-                f"Too many pages ({page_count}). Maximum allowed: {self._max_page_count}"
+                f"Too many pages ({page_count}). Maximum allowed: {self._config.max_page_count}"
             )
 
     async def find_all(self) -> list[Document]:

@@ -13,7 +13,7 @@ from api.schemas import (
     SearchResponse,
     SearchResultItem,
 )
-from services.ingestion_service import IngestionSource
+from domain.value_objects import IngestionSource
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ingestion", tags=["ingestion"])

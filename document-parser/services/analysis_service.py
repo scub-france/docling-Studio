@@ -87,13 +87,22 @@ class PageBatching:
     batch_size: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class AnalysisConfig:
     """Configuration values needed by AnalysisService, extracted from settings."""
 
     default_table_mode: str = "accurate"
     batch_page_size: int = 0
     neo4j_required: bool = False  # if True, ingestion fails when Neo4j write fails
+    conversion_timeout: int = 600  # seconds, for one conversion or one batch
+    max_concurrent: int = _DEFAULT_MAX_CONCURRENT  # analyses converting at once
+
+
+def _plan_batches(batching: PageBatching) -> list[tuple[int, int]]:
+    """The 1-based page range of each batch, in order."""
+    num_batches = math.ceil(batching.total_pages / batching.batch_size)
+    starts = [index * batching.batch_size + 1 for index in range(num_batches)]
+    return [(start, min(start + batching.batch_size - 1, batching.total_pages)) for start in starts]
 
 
 class AnalysisService:
@@ -106,9 +115,7 @@ class AnalysisService:
         document_repo: DocumentRepository,
         *,
         chunker: DocumentChunker | None = None,
-        conversion_timeout: int = 600,
-        max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
-        config: AnalysisConfig | None = None,
+        config: AnalysisConfig = AnalysisConfig(),
         graph_writer: GraphWriter | None = None,
         docling_importer: DoclingDocumentImporter | None = None,
         pdf_inspector: PdfInspector | None = None,
@@ -117,18 +124,18 @@ class AnalysisService:
         self._chunker = chunker
         self._analysis_repo = analysis_repo
         self._document_repo = document_repo
-        self._conversion_timeout = conversion_timeout
-        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._conversion_timeout = config.conversion_timeout
+        self._semaphore = asyncio.Semaphore(config.max_concurrent)
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._background_tasks: set[asyncio.Task] = set()
-        self._config = config or AnalysisConfig()
+        self._config = config
         # `GraphWriter` port (#audit-01) — was a raw `Neo4jDriver` until
         # the hex-arch fix. None when no graph store is wired in.
         self._graph_writer = graph_writer
         self._docling_importer = docling_importer
         self._pdf_inspector = pdf_inspector
-        # Duck-typed recorder for document versions (#267). Wired in
-        # main.py to `VersionService.record_on_analysis` so each
+        # Duck-typed recorder for document versions (#267). Wired at boot
+        # to `VersionService.record_on_analysis` so each
         # successful analysis appends a frozen pair to History.
         self._version_recorder = None
 
@@ -310,48 +317,29 @@ class AnalysisService:
         Returns None if the job was deleted mid-batch (caller should abort).
         Raises on batch failure (fail-fast: entire job fails).
         """
-        page_ranges = await self._plan_batches(job_id, batching)
+        page_ranges = _plan_batches(batching)
         num_batches = len(page_ranges)
+        await self._analysis_repo.update_progress(job_id, 0, batching.total_pages)
+        logger.info(
+            "Batched conversion: %d pages in %d batches of %d for job %s",
+            batching.total_pages,
+            num_batches,
+            batching.batch_size,
+            job_id,
+        )
         results: list[ConversionResult] = []
         for number, page_range in enumerate(page_ranges, start=1):
+            batch_label = f"{number}/{num_batches}"
             if not await self._analysis_repo.find_by_id(job_id):
-                logger.info(
-                    "Job %s deleted during batch %d/%d, aborting",
-                    job_id,
-                    number,
-                    num_batches,
-                )
+                logger.info("Job %s deleted during batch %s, aborting", job_id, batch_label)
                 return None
 
-            batch_label = f"{number}/{num_batches}"
             results.append(await self._convert_batch(file_path, options, page_range, batch_label))
             start, end = page_range
             await self._analysis_repo.update_progress(job_id, end, batching.total_pages)
-            logger.info(
-                "Batch %d/%d done (pages %d-%d) for job %s",
-                number,
-                num_batches,
-                start,
-                end,
-                job_id,
-            )
+            logger.info("Batch %s done (pages %d-%d) for job %s", batch_label, start, end, job_id)
 
         return await self._converter.merge_batches(results)
-
-    async def _plan_batches(self, job_id: str, batching: PageBatching) -> list[tuple[int, int]]:
-        """Split the document into 1-based page ranges and reset the job's progress."""
-        total_pages, batch_size = batching.total_pages, batching.batch_size
-        num_batches = math.ceil(total_pages / batch_size)
-        await self._analysis_repo.update_progress(job_id, 0, total_pages)
-        logger.info(
-            "Batched conversion: %d pages in %d batches of %d for job %s",
-            total_pages,
-            num_batches,
-            batch_size,
-            job_id,
-        )
-        starts = [batch_idx * batch_size + 1 for batch_idx in range(num_batches)]
-        return [(start, min(start + batch_size - 1, total_pages)) for start in starts]
 
     async def _convert_batch(
         self,
@@ -534,14 +522,8 @@ class AnalysisService:
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)
 
-        # Canonical chunk promotion was previously called here (#256), but
-        # the 0.6.1 doc workspace (#266) requires the analysis and chunk
-        # actions to be independent — running an analysis must NOT
-        # implicitly create chunks. Chunks are now produced explicitly via
-        # `POST /api/documents/{id}/rechunk` (driven from the Strategy
-        # popover, #268). The promoter hook stays wired in main.py so
-        # legacy callers / tests can still trigger it directly, but it is
-        # no longer invoked as part of the analysis flow.
+        # Running an analysis does not create canonical chunks (#266): they
+        # are produced explicitly by `POST /api/documents/{id}/rechunk`.
 
         # Drive the document lifecycle (#202): chunks present → Chunked,
         # otherwise → Parsed.

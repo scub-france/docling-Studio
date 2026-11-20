@@ -92,7 +92,7 @@ class StoreBackendResolver:
         self._stores = store_repo
         self._neo4j_pool = neo4j_pool
         self._opensearch_pool = opensearch_pool
-        # Injected by main.py with `Neo4jGraphWriter` — kept here as an
+        # Injected at boot with `Neo4jGraphWriter` — kept here as an
         # opaque factory so services/ never has to runtime-import infra
         # (#audit-01). The factory takes a Neo4jDriver and returns a port.
         self._make_graph_writer = graph_writer_factory

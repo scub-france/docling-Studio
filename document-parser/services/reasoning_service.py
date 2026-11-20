@@ -9,7 +9,7 @@ The service owns the use-case sequencing — validate the query, resolve the
 document's current analysis, time the run, project the raw `ReasoningResult`
 onto a `ReasoningTrace` via the pure `domain.trace_builder`. It must not
 import `infra/` (architecture test): the default model id is constructor-
-injected from settings by `main.py`, like every other service.
+injected from settings by the bootstrap, like every other service.
 
 Ask reads the current analysis as stored, without its saved edits: the
 Parse view's structure tree is built from the original result of that

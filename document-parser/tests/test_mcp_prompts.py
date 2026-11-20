@@ -12,8 +12,7 @@ from contextlib import asynccontextmanager
 import pytest
 from mcp import Client
 
-from mcp_adapter import build_mcp_server
-from mcp_adapter.server import McpSurface
+from mcp_adapter.server import McpSurface, build_mcp_server
 from tests.navigation_fixtures import make_document_tools
 
 ARGS = {"document": "d", "question": "q"}

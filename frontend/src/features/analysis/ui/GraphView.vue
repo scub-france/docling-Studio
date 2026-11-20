@@ -94,7 +94,7 @@ const selectedNode = ref<GraphNode | null>(null)
 
 // Compound parenting map (childId → parentId), kept in sync with the
 // Cytoscape render so the details panel can show "this section contains …".
-// Updated at the end of `renderGraph` — before that it's empty.
+// Set by `renderGraph` before the graph is drawn — empty until then.
 const parentMap = ref<Map<string, string>>(new Map())
 
 // Inverse index of parentMap: parentId → childId[]. Enables the

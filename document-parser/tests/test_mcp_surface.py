@@ -13,8 +13,7 @@ import json
 import pytest
 from mcp import Client
 
-from mcp_adapter import build_mcp_server
-from mcp_adapter.server import McpSurface
+from mcp_adapter.server import McpSurface, build_mcp_server
 from tests.navigation_fixtures import make_document_tools
 from tests.test_mcp_apps import APPS_CLIENT
 

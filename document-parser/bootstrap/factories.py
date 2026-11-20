@@ -214,11 +214,11 @@ def build_analysis_service(document_repo, analysis_repo, graph_writer) -> Analys
         analysis_repo=analysis_repo,
         document_repo=document_repo,
         chunker=build_chunker(),
-        conversion_timeout=settings.conversion_timeout,
-        max_concurrent=settings.max_concurrent_analyses,
         config=AnalysisConfig(
             default_table_mode=settings.default_table_mode,
             batch_page_size=settings.batch_page_size,
+            conversion_timeout=settings.conversion_timeout,
+            max_concurrent=settings.max_concurrent_analyses,
         ),
         graph_writer=graph_writer,
         docling_importer=DoclingDocumentImporter(),

@@ -275,7 +275,7 @@ class TestAnalysisServiceConcurrency:
     """Verify that the semaphore limits concurrent analysis jobs."""
 
     def test_semaphore_initialized_with_max_concurrent(self):
-        service = _make_service(max_concurrent=5)
+        service = _make_service(config=AnalysisConfig(max_concurrent=5))
         assert service._semaphore._value == 5
 
     def test_default_max_concurrent(self):
@@ -288,7 +288,7 @@ class TestAnalysisServiceConcurrency:
         call_order: list[str] = []
         blocker = asyncio.Event()
 
-        service = _make_service(max_concurrent=1)
+        service = _make_service(config=AnalysisConfig(max_concurrent=1))
 
         async def fake_inner(self, *args, **kwargs):
             call_order.append("start")
@@ -460,7 +460,7 @@ class TestBatchedConversion:
         service = _make_service(
             converter=converter,
             analysis_repo=mock_analysis_repo,
-            conversion_timeout=60,
+            config=AnalysisConfig(conversion_timeout=60),
         )
 
         result = await service._run_batched_conversion(
@@ -505,7 +505,7 @@ class TestBatchedConversion:
         service = _make_service(
             converter=converter,
             analysis_repo=mock_analysis_repo,
-            conversion_timeout=60,
+            config=AnalysisConfig(conversion_timeout=60),
         )
 
         with pytest.raises(RuntimeError, match=r"Batch 2/2 \(pages 6-8\) failed: OOM"):
@@ -587,13 +587,14 @@ class TestBatchedConversion:
         mock_document_repo = MagicMock()
         mock_document_repo.update_page_count = AsyncMock()
 
-        config = AnalysisConfig(default_table_mode="accurate", batch_page_size=5)
+        config = AnalysisConfig(
+            default_table_mode="accurate", batch_page_size=5, conversion_timeout=60
+        )
 
         service = AnalysisService(
             converter=converter,
             analysis_repo=mock_analysis_repo,
             document_repo=mock_document_repo,
-            conversion_timeout=60,
             config=config,
             pdf_inspector=MagicMock(count_pages=MagicMock(return_value=8)),
         )
@@ -630,7 +631,7 @@ class TestBatchedConversion:
         service = _make_service(
             converter=converter,
             analysis_repo=mock_analysis_repo,
-            conversion_timeout=60,
+            config=AnalysisConfig(conversion_timeout=60),
         )
 
         result = await service._run_batched_conversion(

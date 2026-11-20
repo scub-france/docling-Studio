@@ -10,7 +10,6 @@ import json
 
 from infra.neo4j import fetch_graph, write_chunks, write_document
 from infra.neo4j.schema import bootstrap_schema
-from infra.neo4j.tree_writer import GraphDocument
 from tests.neo4j.test_tree_writer import FIXTURE
 
 CHUNKS = [
@@ -39,9 +38,9 @@ async def test_write_chunks_and_derived_from(neo4j_driver):
     await bootstrap_schema(neo4j_driver)
     await write_document(
         neo4j_driver,
-        GraphDocument(
-            doc_id="doc-fixture", filename="fixture.pdf", document_json=json.dumps(FIXTURE)
-        ),
+        doc_id="doc-fixture",
+        filename="fixture.pdf",
+        document_json=json.dumps(FIXTURE),
     )
 
     result = await write_chunks(
@@ -84,9 +83,9 @@ async def test_fetch_graph_returns_full_payload(neo4j_driver):
     await bootstrap_schema(neo4j_driver)
     await write_document(
         neo4j_driver,
-        GraphDocument(
-            doc_id="doc-fixture", filename="fixture.pdf", document_json=json.dumps(FIXTURE)
-        ),
+        doc_id="doc-fixture",
+        filename="fixture.pdf",
+        document_json=json.dumps(FIXTURE),
     )
     await write_chunks(
         neo4j_driver,

@@ -6,7 +6,7 @@ defaults. Reads are tolerant — an unparseable row falls back to env and keeps
 `source: env` — writes are strict (`domain.app_config.validate_reasoning_config`).
 
 The service must not import `infra/` (architecture test). Everything
-infra-flavored is constructor-injected by `main.py`: the env defaults as a
+infra-flavored is constructor-injected by the bootstrap: the env defaults as a
 domain VO, the Ollama probe behind the `LLMHostProbe` port, the hot rebuild of
 `app.state.reasoning_runner` / `reasoning_service` as the `apply_config`
 callback, and the diagnostics snapshot as a callable — same binding pattern as

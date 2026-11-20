@@ -2,8 +2,8 @@
 
 Exposes the History timeline for a document — frozen (analysis_id,
 chunks_snapshot) pairs created on `+ New analysis` runs and on
-`+ Generate chunks` invocations. The drawer in the doc workspace reads
-this list and can restore any version to overwrite the live chunkset.
+`+ Generate chunks` invocations. A client reads this list and can restore
+any version to overwrite the live chunkset.
 
 Routes mount under `/api/documents/{doc_id}/...`. Read-mostly + a single
 write endpoint (`restore`) — the version-creation triggers fire from

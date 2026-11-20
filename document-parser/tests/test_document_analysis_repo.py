@@ -151,6 +151,35 @@ async def test_a_rechunk_keeps_a_selection_made_meanwhile(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_a_rechunk_keeps_a_cleared_selection_cleared(tmp_path, monkeypatch):
+    """A state row whose selection was cleared is an existing selection too:
+    the chunked analysis does not become active."""
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "cleared.db"))
+    await database.init_db()
+    await SqliteDocumentRepository().insert(Document(id="doc-a", storage_path="/tmp/a.pdf"))
+    await SqliteAnalysisRepository().insert(
+        AnalysisJob(id="analysis-a", document_id="doc-a", status=AnalysisStatus.COMPLETED)
+    )
+    # Clearing only applies to an existing row: select first, then clear.
+    await set_selection("doc-a", "analysis-a")
+    await set_selection("doc-a", None)
+
+    await SqliteChunkRepository().replace_keeping_selection(
+        ChunkReplacement(
+            "doc-a",
+            [Chunk(document_id="doc-a", sequence=0, text="t")],
+            at=get_utc_now(),
+            chunk_source=DocumentChunkSource("doc-a", "analysis-a", "a" * 64),
+            active_analysis_id="analysis-a",
+        )
+    )
+
+    state = await SqliteDocumentAnalysisRepository().find_state("doc-a")
+    assert state.active_analysis_id is None
+    assert state.chunk_source == DocumentChunkSource("doc-a", "analysis-a", "a" * 64)
+
+
+@pytest.mark.asyncio
 async def test_a_restore_selecting_a_deleted_analysis_writes_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "gone.db"))
     await database.init_db()
