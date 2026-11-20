@@ -120,9 +120,7 @@ class ServeConverter:
 
         response = await self._post_convert_with_startup_retry(
             url=url,
-            filename=path.name,
-            content_type=content_type,
-            file_bytes=file_bytes,
+            upload=(path.name, file_bytes, content_type),
             form_data=form_data,
         )
 
@@ -142,13 +140,12 @@ class ServeConverter:
         self,
         *,
         url: str,
-        filename: str,
-        content_type: str,
-        file_bytes: bytes,
+        upload: tuple[str, bytes, str],
         form_data: dict[str, str | list[str]],
     ) -> httpx.Response:
         """POST the multipart upload, retrying on 404 to absorb docling-serve startup.
 
+        `upload` is the httpx file tuple: (filename, bytes, content type).
         See the module-level note on `_SERVE_STARTUP_RETRY_*` constants.
         """
         last_response: httpx.Response | None = None
@@ -156,7 +153,7 @@ class ServeConverter:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.post(
                     url,
-                    files={"files": (filename, file_bytes, content_type)},
+                    files={"files": upload},
                     data=form_data,
                     headers=self._build_headers(),
                 )
@@ -172,19 +169,23 @@ class ServeConverter:
                     url,
                 )
                 return response
-            delay = _SERVE_STARTUP_RETRY_BASE_DELAY * (2 ** (attempt - 1))
-            logger.warning(
-                "Docling Serve returned 404 for %s (attempt %d/%d) — "
-                "likely startup race, retrying in %.0fs",
-                url,
-                attempt,
-                _SERVE_STARTUP_RETRY_ATTEMPTS,
-                delay,
-            )
-            await asyncio.sleep(delay)
+            await _wait_for_serve_startup(url, attempt)
         # Defensive — the loop always returns or sleeps, but mypy needs this.
         assert last_response is not None
         return last_response
+
+
+async def _wait_for_serve_startup(url: str, attempt: int) -> None:
+    delay = _SERVE_STARTUP_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+    logger.warning(
+        "Docling Serve returned 404 for %s (attempt %d/%d) — "
+        "likely startup race, retrying in %.0fs",
+        url,
+        attempt,
+        _SERVE_STARTUP_RETRY_ATTEMPTS,
+        delay,
+    )
+    await asyncio.sleep(delay)
 
 
 def _build_form_data(
@@ -335,13 +336,7 @@ def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
     """
     label = item.get("label", "text")
     element_type = _LABEL_MAP.get(label, "text")
-    content = item.get("text", "") or ""
-    # Tables carry no `text` field — their content lives in a structured
-    # cell grid under `data.grid`. Rebuild a markdown table so the Parse
-    # view shows it instead of an empty "no text" panel. Local mode gets
-    # this for free via `TableItem.export_to_markdown()`.
-    if element_type == "table" and not content:
-        content = _table_to_markdown(item.get("data", {}))
+    content = _read_element_content(item, element_type)
     self_ref = item.get("self_ref", "") or ""
 
     for prov in item.get("prov", []):
@@ -365,6 +360,17 @@ def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
                 self_ref=self_ref,
             )
         )
+
+
+def _read_element_content(item: dict, element_type: str) -> str:
+    content = item.get("text", "") or ""
+    # Tables carry no `text` field — their content lives in a structured
+    # cell grid under `data.grid`. Rebuild a markdown table so the Parse
+    # view shows it instead of an empty "no text" panel. Local mode gets
+    # this for free via `TableItem.export_to_markdown()`.
+    if element_type == "table" and not content:
+        content = _table_to_markdown(item.get("data", {}))
+    return content
 
 
 def _extract_bbox(bbox_data: dict, page_height: float) -> list[float]:

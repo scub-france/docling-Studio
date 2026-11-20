@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from typing import Any
 
 from domain.app_config import MAX_ITERATIONS_MAX as _MAX_ITERATIONS_MAX
 from domain.app_config import MAX_ITERATIONS_MIN as _MAX_ITERATIONS_MIN
@@ -130,6 +131,17 @@ class Settings:
     analysis_editor_enabled: bool = True
 
     def __post_init__(self) -> None:
+        errors = [
+            *self._check_timeouts_and_concurrency(),
+            *self._check_size_and_rate_limits(),
+            *self._check_embedding_and_mcp(),
+            *self._check_modes(),
+            *self._check_timeout_cascade(),
+        ]
+        if errors:
+            raise ValueError("Invalid settings:\n  " + "\n  ".join(errors))
+
+    def _check_timeouts_and_concurrency(self) -> list[str]:
         errors: list[str] = []
         if self.document_timeout <= 0:
             errors.append(f"document_timeout must be > 0 (got {self.document_timeout})")
@@ -141,6 +153,10 @@ class Settings:
             errors.append(
                 f"max_concurrent_analyses must be >= 1 (got {self.max_concurrent_analyses})"
             )
+        return errors
+
+    def _check_size_and_rate_limits(self) -> list[str]:
+        errors: list[str] = []
         if self.max_page_count < 0:
             errors.append(f"max_page_count must be >= 0 (got {self.max_page_count})")
         if self.max_file_size < 0:
@@ -157,6 +173,10 @@ class Settings:
             errors.append(f"rate_limit_rpm must be >= 0 (got {self.rate_limit_rpm})")
         if self.batch_page_size < 0:
             errors.append(f"batch_page_size must be >= 0 (got {self.batch_page_size})")
+        return errors
+
+    def _check_embedding_and_mcp(self) -> list[str]:
+        errors: list[str] = []
         if self.embedding_dimension < 1:
             errors.append(f"embedding_dimension must be >= 1 (got {self.embedding_dimension})")
         if self.mcp_max_read_tokens < 1:
@@ -168,6 +188,10 @@ class Settings:
             )
         if self.mcp_enabled and not self.mcp_allowed_hosts:
             errors.append("mcp_allowed_hosts must not be empty when MCP_ENABLED is true")
+        return errors
+
+    def _check_modes(self) -> list[str]:
+        errors: list[str] = []
         if not (self.studio_mode_enabled or self.rag_pipeline_enabled):
             errors.append("at least one of STUDIO_MODE_ENABLED / RAG_PIPELINE_ENABLED must be true")
         if not (_MAX_ITERATIONS_MIN <= self.reasoning_max_iterations <= _MAX_ITERATIONS_MAX):
@@ -181,7 +205,11 @@ class Settings:
             )
         if self.ask_mode not in ("hidden", "visible"):
             errors.append(f"ask_mode must be 'hidden' or 'visible' (got '{self.ask_mode}')")
+        return errors
+
+    def _check_timeout_cascade(self) -> list[str]:
         # Timeout cascade: document_timeout < lock_timeout < conversion_timeout
+        errors: list[str] = []
         if self.document_timeout > 0 and self.lock_timeout > 0 and self.conversion_timeout > 0:
             if self.document_timeout >= self.lock_timeout:
                 errors.append(
@@ -193,95 +221,119 @@ class Settings:
                     f"lock_timeout ({self.lock_timeout}s) must be "
                     f"< conversion_timeout ({self.conversion_timeout}s)"
                 )
-        if errors:
-            raise ValueError("Invalid settings:\n  " + "\n  ".join(errors))
+        return errors
 
     @classmethod
     def from_env(cls) -> Settings:
         """Build a Settings instance from environment variables."""
-        cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
-        paste_types_raw = os.environ.get(
-            "PASTE_ALLOWED_IMAGE_TYPES", "image/png,image/jpeg,image/webp"
-        )
         return cls(
             app_version=os.environ.get("APP_VERSION", "dev"),
-            conversion_engine=os.environ.get("CONVERSION_ENGINE", "local"),
             deployment_mode=os.environ.get("DEPLOYMENT_MODE", "self-hosted"),
-            docling_serve_url=os.environ.get("DOCLING_SERVE_URL", "http://localhost:5001"),
-            docling_serve_api_key=os.environ.get("DOCLING_SERVE_API_KEY"),
-            conversion_timeout=int(os.environ.get("CONVERSION_TIMEOUT", "900")),
-            document_timeout=float(os.environ.get("DOCUMENT_TIMEOUT", "120.0")),
-            lock_timeout=int(os.environ.get("LOCK_TIMEOUT", "300")),
-            max_concurrent_analyses=int(os.environ.get("MAX_CONCURRENT_ANALYSES", "3")),
-            default_table_mode=os.environ.get("DEFAULT_TABLE_MODE", "accurate"),
-            max_page_count=int(os.environ.get("MAX_PAGE_COUNT", "0")),
-            max_file_size=int(os.environ.get("MAX_FILE_SIZE", "0")),
-            max_file_size_mb=int(os.environ.get("MAX_FILE_SIZE_MB", "50")),
-            rate_limit_rpm=int(os.environ.get("RATE_LIMIT_RPM", "100")),
-            # 0 = batching disabled (matches dataclass default). Batching
-            # preserves memory on very large docs and reports progress after
-            # each batch; the local converter merges the batch documents back
-            # into one (#344). Enable explicitly for memory-bound deploys.
-            batch_page_size=int(os.environ.get("BATCH_PAGE_SIZE", "0")),
-            opensearch_url=os.environ.get("OPENSEARCH_URL", ""),
-            embedding_url=os.environ.get("EMBEDDING_URL", ""),
-            neo4j_uri=os.environ.get("NEO4J_URI", ""),
-            neo4j_user=os.environ.get("NEO4J_USER", "neo4j"),
-            neo4j_password=os.environ.get("NEO4J_PASSWORD", "changeme"),
-            store_secret_key=os.environ.get("STORE_SECRET_KEY", ""),
-            reasoning_enabled=os.environ.get("REASONING_ENABLED", "false").lower()
-            in ("1", "true", "yes", "on"),
-            llm_provider_type=os.environ.get("LLM_PROVIDER_TYPE", "ollama"),
-            ollama_host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
-            reasoning_model_id=os.environ.get("REASONING_MODEL_ID", "gpt-oss:20b"),
-            reasoning_max_iterations=int(os.environ.get("REASONING_MAX_ITERATIONS", "5")),
-            # Empty counts as unset: compose passes `${ASK_MODE:-hidden}` through.
-            ask_mode=(os.environ.get("ASK_MODE") or "hidden").strip().lower(),
-            embedding_dimension=int(os.environ.get("EMBEDDING_DIMENSION", "384")),
-            upload_dir=os.environ.get("UPLOAD_DIR", "./uploads"),
-            db_path=os.environ.get("DB_PATH", "./data/docling_studio.db"),
-            max_paste_image_size_mb=int(os.environ.get("MAX_PASTE_IMAGE_SIZE_MB", "10")),
-            paste_allowed_image_types=[t.strip() for t in paste_types_raw.split(",") if t.strip()],
-            cors_origins=[o.strip() for o in cors_raw.split(",")],
-            # 0.6.1 — Surface flags (#257).
-            studio_mode_enabled=os.environ.get("STUDIO_MODE_ENABLED", "false").lower()
-            in ("1", "true", "yes", "on"),
-            rag_pipeline_enabled=os.environ.get("RAG_PIPELINE_ENABLED", "true").lower()
-            in ("1", "true", "yes", "on"),
-            # 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257).
-            inspect_mode_enabled=os.environ.get("INSPECT_MODE_ENABLED", "true").lower()
-            in ("1", "true", "yes", "on"),
-            linked_mode_enabled=os.environ.get("LINKED_MODE_ENABLED", "true").lower()
-            in ("1", "true", "yes", "on"),
-            # MCP document server (read-only agent surface).
-            # On unless set off; the Hugging Face Space keeps it off by default.
-            mcp_enabled=os.environ.get(
-                "MCP_ENABLED",
-                "false" if os.environ.get("DEPLOYMENT_MODE") == "huggingface" else "true",
-            ).lower()
-            in ("1", "true", "yes", "on"),
-            # Empty counts as unset: compose passes `${MCP_ALLOWED_HOSTS:-}` through.
-            mcp_allowed_hosts=[
-                h.strip()
-                for h in (
-                    os.environ.get("MCP_ALLOWED_HOSTS") or "127.0.0.1:*,localhost:*,[::1]:*"
-                ).split(",")
-                if h.strip()
-            ],
-            # Empty or unset: no check. Compose passes `${API_ALLOWED_HOSTS:-}`.
-            api_allowed_hosts=[
-                h.strip() for h in os.environ.get("API_ALLOWED_HOSTS", "").split(",") if h.strip()
-            ],
-            mcp_apps_enabled=os.environ.get("MCP_APPS_ENABLED", "true").lower()
-            in ("1", "true", "yes", "on"),
-            mcp_citation_card=os.environ.get("MCP_CITATION_CARD", "false").lower()
-            in ("1", "true", "yes", "on"),
-            mcp_max_read_tokens=int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
-            mcp_max_rounds=int(os.environ.get("MCP_MAX_ROUNDS", "5")),
-            mcp_studio_base_url=os.environ.get("MCP_STUDIO_BASE_URL", ""),
-            analysis_editor_enabled=os.environ.get("ANALYSIS_EDITOR_ENABLED", "true").lower()
-            in ("1", "true", "yes", "on"),
+            **_read_conversion_env(),
+            **_read_api_env(),
+            **_read_storage_env(),
+            **_read_reasoning_env(),
+            **_read_surface_flags_env(),
+            **_read_mcp_env(),
         )
+
+
+def _read_flag(name: str, default: str) -> bool:
+    return os.environ.get(name, default).lower() in ("1", "true", "yes", "on")
+
+
+def _read_list(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _read_conversion_env() -> dict[str, Any]:
+    return {
+        "conversion_engine": os.environ.get("CONVERSION_ENGINE", "local"),
+        "docling_serve_url": os.environ.get("DOCLING_SERVE_URL", "http://localhost:5001"),
+        "docling_serve_api_key": os.environ.get("DOCLING_SERVE_API_KEY"),
+        "conversion_timeout": int(os.environ.get("CONVERSION_TIMEOUT", "900")),
+        "document_timeout": float(os.environ.get("DOCUMENT_TIMEOUT", "120.0")),
+        "lock_timeout": int(os.environ.get("LOCK_TIMEOUT", "300")),
+        "max_concurrent_analyses": int(os.environ.get("MAX_CONCURRENT_ANALYSES", "3")),
+        "default_table_mode": os.environ.get("DEFAULT_TABLE_MODE", "accurate"),
+        "max_file_size": int(os.environ.get("MAX_FILE_SIZE", "0")),
+        # 0 = batching disabled (matches dataclass default). Batching
+        # preserves memory on very large docs and reports progress after
+        # each batch; the local converter merges the batch documents back
+        # into one (#344). Enable explicitly for memory-bound deploys.
+        "batch_page_size": int(os.environ.get("BATCH_PAGE_SIZE", "0")),
+    }
+
+
+def _read_api_env() -> dict[str, Any]:
+    cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
+    paste_types_raw = os.environ.get("PASTE_ALLOWED_IMAGE_TYPES", "image/png,image/jpeg,image/webp")
+    return {
+        "max_page_count": int(os.environ.get("MAX_PAGE_COUNT", "0")),
+        "max_file_size_mb": int(os.environ.get("MAX_FILE_SIZE_MB", "50")),
+        "rate_limit_rpm": int(os.environ.get("RATE_LIMIT_RPM", "100")),
+        "max_paste_image_size_mb": int(os.environ.get("MAX_PASTE_IMAGE_SIZE_MB", "10")),
+        "paste_allowed_image_types": _read_list(paste_types_raw),
+        "cors_origins": [o.strip() for o in cors_raw.split(",")],
+        # Empty or unset: no check. Compose passes `${API_ALLOWED_HOSTS:-}`.
+        "api_allowed_hosts": _read_list(os.environ.get("API_ALLOWED_HOSTS", "")),
+    }
+
+
+def _read_storage_env() -> dict[str, Any]:
+    return {
+        "opensearch_url": os.environ.get("OPENSEARCH_URL", ""),
+        "embedding_url": os.environ.get("EMBEDDING_URL", ""),
+        "embedding_dimension": int(os.environ.get("EMBEDDING_DIMENSION", "384")),
+        "neo4j_uri": os.environ.get("NEO4J_URI", ""),
+        "neo4j_user": os.environ.get("NEO4J_USER", "neo4j"),
+        "neo4j_password": os.environ.get("NEO4J_PASSWORD", "changeme"),
+        "store_secret_key": os.environ.get("STORE_SECRET_KEY", ""),
+        "upload_dir": os.environ.get("UPLOAD_DIR", "./uploads"),
+        "db_path": os.environ.get("DB_PATH", "./data/docling_studio.db"),
+    }
+
+
+def _read_reasoning_env() -> dict[str, Any]:
+    return {
+        "reasoning_enabled": _read_flag("REASONING_ENABLED", "false"),
+        "llm_provider_type": os.environ.get("LLM_PROVIDER_TYPE", "ollama"),
+        "ollama_host": os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
+        "reasoning_model_id": os.environ.get("REASONING_MODEL_ID", "gpt-oss:20b"),
+        "reasoning_max_iterations": int(os.environ.get("REASONING_MAX_ITERATIONS", "5")),
+        # Empty counts as unset: compose passes `${ASK_MODE:-hidden}` through.
+        "ask_mode": (os.environ.get("ASK_MODE") or "hidden").strip().lower(),
+    }
+
+
+def _read_surface_flags_env() -> dict[str, Any]:
+    return {
+        # 0.6.1 — Surface flags (#257).
+        "studio_mode_enabled": _read_flag("STUDIO_MODE_ENABLED", "false"),
+        "rag_pipeline_enabled": _read_flag("RAG_PIPELINE_ENABLED", "true"),
+        # 0.6.0 — RAG-pipeline sub-flags (#210, renamed in #257).
+        "inspect_mode_enabled": _read_flag("INSPECT_MODE_ENABLED", "true"),
+        "linked_mode_enabled": _read_flag("LINKED_MODE_ENABLED", "true"),
+        "analysis_editor_enabled": _read_flag("ANALYSIS_EDITOR_ENABLED", "true"),
+    }
+
+
+def _read_mcp_env() -> dict[str, Any]:
+    # MCP document server (read-only agent surface).
+    # On unless set off; the Hugging Face Space keeps it off by default.
+    on_space = os.environ.get("DEPLOYMENT_MODE") == "huggingface"
+    return {
+        "mcp_enabled": _read_flag("MCP_ENABLED", "false" if on_space else "true"),
+        # Empty counts as unset: compose passes `${MCP_ALLOWED_HOSTS:-}` through.
+        "mcp_allowed_hosts": _read_list(
+            os.environ.get("MCP_ALLOWED_HOSTS") or "127.0.0.1:*,localhost:*,[::1]:*"
+        ),
+        "mcp_apps_enabled": _read_flag("MCP_APPS_ENABLED", "true"),
+        "mcp_citation_card": _read_flag("MCP_CITATION_CARD", "false"),
+        "mcp_max_read_tokens": int(os.environ.get("MCP_MAX_READ_TOKENS", "4000")),
+        "mcp_max_rounds": int(os.environ.get("MCP_MAX_ROUNDS", "5")),
+        "mcp_studio_base_url": os.environ.get("MCP_STUDIO_BASE_URL", ""),
+    }
 
 
 # Module-level singleton — import this from other modules.

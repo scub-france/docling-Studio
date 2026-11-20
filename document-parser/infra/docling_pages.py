@@ -14,6 +14,7 @@ from docling_core.types.doc import (
     GroupItem,
     ListItem,
     PictureItem,
+    ProvenanceItem,
     SectionHeaderItem,
     TableItem,
     TextItem,
@@ -79,34 +80,10 @@ def _process_content_item(
     for provenance in item.prov:
         try:
             page_no = provenance.page_no
-            if page_no not in pages:
-                logger.warning(
-                    "Page %d not found in document metadata — using US Letter fallback (%sx%s pt)",
-                    page_no,
-                    DEFAULT_PAGE_WIDTH,
-                    DEFAULT_PAGE_HEIGHT,
-                )
-                pages[page_no] = PageDetail(
-                    page_number=page_no,
-                    width=DEFAULT_PAGE_WIDTH,
-                    height=DEFAULT_PAGE_HEIGHT,
-                )
-
+            _add_fallback_page(pages, page_no)
             page_height = pages[page_no].height
-            bbox = to_topleft_list(provenance.bbox, page_height) if provenance.bbox else [0.0] * 4
-            content = getattr(item, "text", "") or ""
-            if isinstance(item, TableItem):
-                with contextlib.suppress(AttributeError, ValueError):
-                    content = item.export_to_markdown()
-
             pages[page_no].elements.append(
-                PageElement(
-                    type=_get_element_type(item),
-                    bbox=bbox,
-                    content=content,
-                    level=level,
-                    self_ref=getattr(item, "self_ref", "") or "",
-                )
+                _build_page_element(item, level, provenance, page_height)
             )
         except (AttributeError, KeyError, TypeError, ValueError):
             logger.warning(
@@ -118,3 +95,37 @@ def _process_content_item(
             return False
 
     return True
+
+
+def _add_fallback_page(pages: dict[int, PageDetail], page_no: int) -> None:
+    if page_no in pages:
+        return
+    logger.warning(
+        "Page %d not found in document metadata — using US Letter fallback (%sx%s pt)",
+        page_no,
+        DEFAULT_PAGE_WIDTH,
+        DEFAULT_PAGE_HEIGHT,
+    )
+    pages[page_no] = PageDetail(
+        page_number=page_no,
+        width=DEFAULT_PAGE_WIDTH,
+        height=DEFAULT_PAGE_HEIGHT,
+    )
+
+
+def _build_page_element(
+    item: DocItem, level: int, provenance: ProvenanceItem, page_height: float
+) -> PageElement:
+    bbox = to_topleft_list(provenance.bbox, page_height) if provenance.bbox else [0.0] * 4
+    content = getattr(item, "text", "") or ""
+    if isinstance(item, TableItem):
+        with contextlib.suppress(AttributeError, ValueError):
+            content = item.export_to_markdown()
+
+    return PageElement(
+        type=_get_element_type(item),
+        bbox=bbox,
+        content=content,
+        level=level,
+        self_ref=getattr(item, "self_ref", "") or "",
+    )

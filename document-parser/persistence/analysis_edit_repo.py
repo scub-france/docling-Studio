@@ -91,6 +91,53 @@ def _to_cache_params(cache: EditedAnalysisCache) -> tuple:
     )
 
 
+async def _read_chain_tip(db, analysis_id: str) -> tuple[int, str]:
+    """The last stored sequence and hash of a stream: (0, "") when it is empty."""
+    cursor = await db.execute(
+        """SELECT sequence, command_hash FROM analysis_edit_commands
+           WHERE analysis_id = ? ORDER BY sequence DESC LIMIT 1""",
+        (analysis_id,),
+    )
+    last = await cursor.fetchone()
+    actual_sequence = int(last["sequence"]) if last else 0
+    previous_hash = last["command_hash"] if last else ""
+    return actual_sequence, previous_hash
+
+
+def _chain_commands(
+    analysis_id: str,
+    commands: list[EditCommand],
+    actual_sequence: int,
+    previous_hash: str,
+) -> tuple[list[tuple], list[StoredEditCommand]]:
+    """Number and hash-chain `commands` after the tip: insert rows and stored records."""
+    saved: list[StoredEditCommand] = []
+    rows: list[tuple] = []
+    for offset, command in enumerate(commands, start=1):
+        sequence = actual_sequence + offset
+        command_hash = hash_command(previous_hash, sequence, command)
+        record_id = uuid.uuid4().hex
+        created = datetime.now(UTC)
+        rows.append(
+            (
+                record_id,
+                analysis_id,
+                sequence,
+                command.command_version,
+                command.command_type,
+                serialize_command_payload(command.payload),
+                previous_hash or None,
+                command_hash,
+                str(created),
+            )
+        )
+        saved.append(
+            StoredEditCommand(record_id, analysis_id, sequence, command, command_hash, created)
+        )
+        previous_hash = command_hash
+    return rows, saved
+
+
 class SqliteAnalysisEditRepository:
     """One transaction owns command sequencing and cache replacement."""
 
@@ -148,43 +195,13 @@ class SqliteAnalysisEditRepository:
         async with get_connection() as db:
             try:
                 await db.execute("BEGIN IMMEDIATE")
-                cursor = await db.execute(
-                    """SELECT sequence, command_hash FROM analysis_edit_commands
-                       WHERE analysis_id = ? ORDER BY sequence DESC LIMIT 1""",
-                    (stream.analysis_id,),
-                )
-                last = await cursor.fetchone()
-                actual_sequence = int(last["sequence"]) if last else 0
+                actual_sequence, previous_hash = await _read_chain_tip(db, stream.analysis_id)
                 check_expected_sequence(
                     expected_sequence, actual_sequence, STORED_SEQUENCE_CONFLICT
                 )
-                previous_hash = last["command_hash"] if last else ""
-                saved: list[StoredEditCommand] = []
-                rows: list[tuple] = []
-                for offset, command in enumerate(commands, start=1):
-                    sequence = actual_sequence + offset
-                    command_hash = hash_command(previous_hash, sequence, command)
-                    record_id = uuid.uuid4().hex
-                    created = datetime.now(UTC)
-                    rows.append(
-                        (
-                            record_id,
-                            stream.analysis_id,
-                            sequence,
-                            command.command_version,
-                            command.command_type,
-                            serialize_command_payload(command.payload),
-                            previous_hash or None,
-                            command_hash,
-                            str(created),
-                        )
-                    )
-                    saved.append(
-                        StoredEditCommand(
-                            record_id, stream.analysis_id, sequence, command, command_hash, created
-                        )
-                    )
-                    previous_hash = command_hash
+                rows, saved = _chain_commands(
+                    stream.analysis_id, commands, actual_sequence, previous_hash
+                )
                 # One statement for the whole batch, still inside BEGIN IMMEDIATE.
                 await db.executemany(
                     """INSERT INTO analysis_edit_commands

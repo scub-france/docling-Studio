@@ -158,11 +158,21 @@ class DoclingAgentReasoningRunner:
 
         raw_model_id = model_id or self._provider.default_model_id
 
-        try:
-            doc = deps.document_cls.model_validate_json(document_json)
-        except Exception as e:
-            raise RuntimeError(f"Failed to parse document_json: {e}") from e
+        doc = _parse_document(deps, document_json)
+        agent = self._build_agent(deps, raw_model_id)
+        logger.info(
+            "Reasoning run: model_id=%s ollama_host=%s max_iterations=%d query=%r",
+            raw_model_id,
+            self._provider.host,
+            self._max_iterations,
+            query[:120],
+        )
 
+        run_result = await _run_agent_with_trace(agent, doc, query, raw_model_id)
+        rag_result = _read_single_document_result(run_result, query, raw_model_id)
+        return _build_reasoning_result(rag_result, raw_model_id)
+
+    def _build_agent(self, deps: _Deps, raw_model_id: str) -> Any:
         # Per-instance Ollama backend — the host lives on the config, not in a
         # shared env var. `reasoning` is the role the RAG loop reads; `writing`
         # mirrors it so the merge step (multi-doc, unused here) stays coherent.
@@ -175,63 +185,69 @@ class DoclingAgentReasoningRunner:
         )
         # `max_iterations` bounds the RAG loop — runtime-configurable via the
         # admin panel (#317); DoclingRAGAgent's own default is 5.
-        agent = deps.rag_agent_cls(tools=[], backend=backend, max_iterations=self._max_iterations)
-        logger.info(
-            "Reasoning run: model_id=%s ollama_host=%s max_iterations=%d query=%r",
+        return deps.rag_agent_cls(tools=[], backend=backend, max_iterations=self._max_iterations)
+
+
+def _parse_document(deps: _Deps, document_json: str) -> Any:
+    try:
+        return deps.document_cls.model_validate_json(document_json)
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse document_json: {e}") from e
+
+
+async def _run_agent_with_trace(agent: Any, doc: Any, query: str, raw_model_id: str) -> Any:
+    try:
+        # `run_with_trace` is sync + LLM-heavy (N * model latency). Offload
+        # to a worker thread so concurrent calls don't block the event loop.
+        return await asyncio.to_thread(agent.run_with_trace, task=query, document=doc)
+    except IndexError as e:
+        # docling-agent's `_attempt_answer` still ends with an unguarded
+        # `find_json_dicts(answer)[0]`. When the model can't produce a
+        # parseable JSON after rejection-sampling retries, the list is
+        # empty and `[0]` raises IndexError. Translate to a domain-level
+        # error the API maps to 502.
+        logger.warning(
+            "docling-agent produced no parseable JSON for model=%s query=%r",
             raw_model_id,
-            self._provider.host,
-            self._max_iterations,
             query[:120],
         )
+        raise ReasoningParseError(
+            model_id=raw_model_id,
+            reason="no parseable answer after retries",
+        ) from e
 
-        try:
-            # `run_with_trace` is sync + LLM-heavy (N * model latency). Offload
-            # to a worker thread so concurrent calls don't block the event loop.
-            run_result = await asyncio.to_thread(agent.run_with_trace, task=query, document=doc)
-        except IndexError as e:
-            # docling-agent's `_attempt_answer` still ends with an unguarded
-            # `find_json_dicts(answer)[0]`. When the model can't produce a
-            # parseable JSON after rejection-sampling retries, the list is
-            # empty and `[0]` raises IndexError. Translate to a domain-level
-            # error the API maps to 502.
-            logger.warning(
-                "docling-agent produced no parseable JSON for model=%s query=%r",
-                raw_model_id,
-                query[:120],
-            )
-            raise ReasoningParseError(
-                model_id=raw_model_id,
-                reason="no parseable answer after retries",
-            ) from e
 
-        # Single-document reasoning: read the first (only) per-document result.
-        # An empty list means the agent produced nothing for the doc — map it to
-        # a domain parse error (502) instead of letting IndexError surface as 500.
-        if not run_result.per_document:
-            logger.warning(
-                "docling-agent returned no per-document result for model=%s query=%r",
-                raw_model_id,
-                query[:120],
-            )
-            raise ReasoningParseError(
-                model_id=raw_model_id,
-                reason="agent returned no per-document result",
-            )
-        rag_result = run_result.per_document[0]
-
-        # `RAGResult` / `RAGIteration` are pydantic models, so the mapping goes
-        # through `model_dump()` rather than attribute-by-attribute reads
-        # (#306 review). The timing fields stay `.get()`-with-default on
-        # purpose: docling-agent 0.6.0 declares neither `duration_ms` nor
-        # `model_id` (verified against `model_fields`), they exist only on the
-        # fork carrying the timing commit. The trace timeline degrades to a
-        # uniform step-order layout when they are absent, so a default of 0 is
-        # a supported state, not a silent failure.
-        raw = rag_result.model_dump()
-        return ReasoningResult(
-            answer=raw["answer"],
-            iterations=[_to_iteration(it) for it in raw["iterations"]],
-            converged=raw["converged"],
-            duration_ms=raw.get("duration_ms", 0),
-            model_id=raw.get("model_id") or raw_model_id,
+def _read_single_document_result(run_result: Any, query: str, raw_model_id: str) -> Any:
+    # Single-document reasoning: read the first (only) per-document result.
+    # An empty list means the agent produced nothing for the doc — map it to
+    # a domain parse error (502) instead of letting IndexError surface as 500.
+    if not run_result.per_document:
+        logger.warning(
+            "docling-agent returned no per-document result for model=%s query=%r",
+            raw_model_id,
+            query[:120],
         )
+        raise ReasoningParseError(
+            model_id=raw_model_id,
+            reason="agent returned no per-document result",
+        )
+    return run_result.per_document[0]
+
+
+def _build_reasoning_result(rag_result: Any, raw_model_id: str) -> ReasoningResult:
+    # `RAGResult` / `RAGIteration` are pydantic models, so the mapping goes
+    # through `model_dump()` rather than attribute-by-attribute reads
+    # (#306 review). The timing fields stay `.get()`-with-default on
+    # purpose: docling-agent 0.6.0 declares neither `duration_ms` nor
+    # `model_id` (verified against `model_fields`), they exist only on the
+    # fork carrying the timing commit. The trace timeline degrades to a
+    # uniform step-order layout when they are absent, so a default of 0 is
+    # a supported state, not a silent failure.
+    raw = rag_result.model_dump()
+    return ReasoningResult(
+        answer=raw["answer"],
+        iterations=[_to_iteration(it) for it in raw["iterations"]],
+        converged=raw["converged"],
+        duration_ms=raw.get("duration_ms", 0),
+        model_id=raw.get("model_id") or raw_model_id,
+    )

@@ -35,12 +35,7 @@ class DoclingAnalysisProjector:
         by_ref = {
             item.self_ref: item for item, _ in items_with_levels if getattr(item, "self_ref", None)
         }
-        ref_to_id = {ref: logical for logical, ref in logical_ids.items()}
-        object_to_id = {
-            id(item): ref_to_id[item.self_ref]
-            for item, _ in items_with_levels
-            if getattr(item, "self_ref", None) in ref_to_id
-        }
+        object_to_id = self._map_objects_to_ids(items_with_levels, logical_ids)
         editor_elements = tuple(
             self._build_editor_element(item, level, object_to_id, document)
             for item, level in items_with_levels
@@ -54,13 +49,7 @@ class DoclingAnalysisProjector:
             "baseAnalysisId": base_analysis_id,
             "elements": [self._to_element_dict(element) for element in editor_elements],
         }
-        export_document = document.model_copy(deep=True)
-        for item in export_document.texts:
-            if isinstance(item, TextItem) and item.orig != item.text:
-                # Docling's exporters prefer `orig` as OCR evidence. Keep that
-                # immutable in document_json, but render the user's edited text
-                # in Markdown and HTML projections.
-                item.orig = item.text
+        export_document = self._build_export_document(document)
         return ProjectedAnalysis(
             document_json=document.model_dump_json(),
             content_markdown=export_document.export_to_markdown(),
@@ -70,6 +59,28 @@ class DoclingAnalysisProjector:
             tree=tree,
             elements=editor_elements,
         )
+
+    @staticmethod
+    def _map_objects_to_ids(
+        items_with_levels: list[tuple[Any, int]], logical_ids: dict[str, str]
+    ) -> dict[int, str]:
+        ref_to_id = {ref: logical for logical, ref in logical_ids.items()}
+        return {
+            id(item): ref_to_id[item.self_ref]
+            for item, _ in items_with_levels
+            if getattr(item, "self_ref", None) in ref_to_id
+        }
+
+    @staticmethod
+    def _build_export_document(document: Any) -> Any:
+        export_document = document.model_copy(deep=True)
+        for item in export_document.texts:
+            if isinstance(item, TextItem) and item.orig != item.text:
+                # Docling's exporters prefer `orig` as OCR evidence. Keep that
+                # immutable in document_json, but render the user's edited text
+                # in Markdown and HTML projections.
+                item.orig = item.text
+        return export_document
 
     def project_serialized(
         self,
@@ -111,42 +122,13 @@ class DoclingAnalysisProjector:
         label = self._get_label(item)
         parent = item.parent.resolve(doc=document) if getattr(item, "parent", None) else None
         parent_id = object_to_id.get(id(parent)) if parent is not None else None
-        children = tuple(
-            object_to_id[id(ref.resolve(document))]
-            for ref in getattr(item, "children", [])
-            if id(ref.resolve(doc=document)) in object_to_id
-        )
+        children = self._read_child_ids(item, object_to_id, document)
         text = getattr(item, "text", None)
         if isinstance(item, TableItem):
             text = item.export_to_markdown()
-        provenance = tuple(
-            EditorProvenance(
-                page=int(prov.page_no),
-                bbox=tuple(
-                    to_topleft_list(
-                        prov.bbox,
-                        float(
-                            document.pages[int(prov.page_no)].size.height
-                            if int(prov.page_no) in document.pages
-                            else DEFAULT_PAGE_HEIGHT
-                        ),
-                    )
-                ),
-            )
-            for prov in getattr(item, "prov", [])
-        )
+        provenance = self._build_provenance(item, document)
         editable = isinstance(item, TextItem)
-        operations: tuple[str, ...] = ("replaceText", "deleteElement") if editable else ()
-        if isinstance(item, SectionHeaderItem):
-            operations = ("replaceText", "setHeadingLevel", "deleteElement")
-        if label in MERGEABLE_TEXT_LABELS and editable:
-            operations = (
-                "replaceText",
-                "mergeText",
-                "moveElement",
-                "deleteElement",
-                "deleteElements",
-            )
+        operations = self._list_supported_operations(item, label)
         reason = (
             None
             if editable
@@ -166,22 +148,55 @@ class DoclingAnalysisProjector:
             non_editable_reason=reason,
         )
 
+    @staticmethod
+    def _read_child_ids(item: Any, object_to_id: dict[int, str], document: Any) -> tuple[str, ...]:
+        return tuple(
+            object_to_id[id(ref.resolve(document))]
+            for ref in getattr(item, "children", [])
+            if id(ref.resolve(doc=document)) in object_to_id
+        )
+
+    @staticmethod
+    def _build_provenance(item: Any, document: Any) -> tuple[EditorProvenance, ...]:
+        return tuple(
+            EditorProvenance(
+                page=int(prov.page_no),
+                bbox=tuple(
+                    to_topleft_list(
+                        prov.bbox,
+                        float(
+                            document.pages[int(prov.page_no)].size.height
+                            if int(prov.page_no) in document.pages
+                            else DEFAULT_PAGE_HEIGHT
+                        ),
+                    )
+                ),
+            )
+            for prov in getattr(item, "prov", [])
+        )
+
+    @staticmethod
+    def _list_supported_operations(item: Any, label: str) -> tuple[str, ...]:
+        editable = isinstance(item, TextItem)
+        operations: tuple[str, ...] = ("replaceText", "deleteElement") if editable else ()
+        if isinstance(item, SectionHeaderItem):
+            operations = ("replaceText", "setHeadingLevel", "deleteElement")
+        if label in MERGEABLE_TEXT_LABELS and editable:
+            operations = (
+                "replaceText",
+                "mergeText",
+                "moveElement",
+                "deleteElement",
+                "deleteElements",
+            )
+        return operations
+
     def _build_tree(
         self,
         document: Any,
         by_ref: dict[str, Any],
         object_to_id: dict[int, str],
     ) -> tuple[EditorTreeNode, ...]:
-        def build_node(item: Any) -> EditorTreeNode:
-            label = self._get_label(item)
-            text = getattr(item, "text", None) or getattr(item, "name", None) or label
-            children = tuple(
-                build_node(child)
-                for child_ref in getattr(item, "children", [])
-                if (child := child_ref.resolve(doc=document)) is not None
-            )
-            return EditorTreeNode(object_to_id[id(item)], label, str(text), children)
-
         # Docling keeps ordinary body items in reading order and stores
         # heading levels as metadata.  Build the semantic outline here so
         # the editor tree reflects the same hierarchy users see in Markdown.
@@ -193,23 +208,36 @@ class DoclingAnalysisProjector:
         roots: list[dict[str, Any]] = []
         placed: list[dict[str, Any]] = []
         for step in nest_by_heading(top_level, level_of=self._read_heading_level).steps:
-            entry = {"node": build_node(top_level[step.position]), "children": []}
+            node = self._build_tree_node(top_level[step.position], document, object_to_id)
+            entry = {"node": node, "children": []}
             siblings = roots if step.parent is None else placed[step.parent]["children"]
             siblings.append(entry)
             placed.append(entry)
+        return self._freeze_tree(roots)
 
-        def freeze(entries: list[dict[str, Any]]) -> tuple[EditorTreeNode, ...]:
-            return tuple(
-                EditorTreeNode(
-                    element_id=entry["node"].element_id,
-                    type=entry["node"].type,
-                    label=entry["node"].label,
-                    children=freeze(entry["children"]) or entry["node"].children,
-                )
-                for entry in entries
+    def _build_tree_node(
+        self, item: Any, document: Any, object_to_id: dict[int, str]
+    ) -> EditorTreeNode:
+        label = self._get_label(item)
+        text = getattr(item, "text", None) or getattr(item, "name", None) or label
+        children = tuple(
+            self._build_tree_node(child, document, object_to_id)
+            for child_ref in getattr(item, "children", [])
+            if (child := child_ref.resolve(doc=document)) is not None
+        )
+        return EditorTreeNode(object_to_id[id(item)], label, str(text), children)
+
+    @classmethod
+    def _freeze_tree(cls, entries: list[dict[str, Any]]) -> tuple[EditorTreeNode, ...]:
+        return tuple(
+            EditorTreeNode(
+                element_id=entry["node"].element_id,
+                type=entry["node"].type,
+                label=entry["node"].label,
+                children=cls._freeze_tree(entry["children"]) or entry["node"].children,
             )
-
-        return freeze(roots)
+            for entry in entries
+        )
 
     @staticmethod
     def _to_element_dict(element: EditorElement) -> dict[str, Any]:
