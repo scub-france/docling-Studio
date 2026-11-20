@@ -35,9 +35,9 @@ from domain.mcp_config import (
 )
 from services.config_overrides import (
     AppConfigValidationError,
+    NamespaceOverrides,
     parse_bool,
     parse_int_between,
-    pick,
     require_writable,
 )
 
@@ -77,14 +77,11 @@ async def resolve_mcp_config(
     repo: AppSettingsRepository, env: McpRuntimeConfig
 ) -> tuple[McpRuntimeConfig, dict[str, ConfigSource]]:
     """The effective config (db over env) and where each value came from."""
-    rows = await repo.get_namespace(_NAMESPACE)
-    ns = _NAMESPACE
-    rounds, rounds_src = pick(rows, _KEY_MAX_ROUNDS, env.max_rounds, _parse_rounds, namespace=ns)
-    tokens, tokens_src = pick(
-        rows, _KEY_MAX_READ_TOKENS, env.max_read_tokens, _parse_read_tokens, namespace=ns
-    )
-    base, base_src = pick(rows, _KEY_BASE_URL, env.studio_base_url, _parse_base_url, namespace=ns)
-    enabled, enabled_src = pick(rows, _KEY_ENABLED, env.enabled, parse_bool, namespace=ns)
+    stored = NamespaceOverrides(_NAMESPACE, await repo.get_namespace(_NAMESPACE))
+    rounds, rounds_src = stored.pick(_KEY_MAX_ROUNDS, env.max_rounds, _parse_rounds)
+    tokens, tokens_src = stored.pick(_KEY_MAX_READ_TOKENS, env.max_read_tokens, _parse_read_tokens)
+    base, base_src = stored.pick(_KEY_BASE_URL, env.studio_base_url, _parse_base_url)
+    enabled, enabled_src = stored.pick(_KEY_ENABLED, env.enabled, parse_bool)
     config = McpRuntimeConfig(
         max_rounds=rounds, max_read_tokens=tokens, studio_base_url=base, enabled=enabled
     )

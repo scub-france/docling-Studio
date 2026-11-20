@@ -19,7 +19,7 @@ from api.schemas import (
     AnalysisResponse,
     EditorTreeNodeResponse,
 )
-from domain.analysis_editing import AnalysisEditError, EditCommand
+from domain.analysis_editing import AnalysisEditError, CommandActivation, EditCommand
 
 if TYPE_CHECKING:
     from domain.analysis_editing import EditorTreeNode
@@ -156,8 +156,7 @@ async def set_edit_active(
         return await _to_editor_response(
             await service.set_command_active(
                 doc_id,
-                sequence,
-                body.active,
+                CommandActivation(sequence, body.active),
                 body.expected_applied_through_sequence,
                 analysis_id,
             )

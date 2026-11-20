@@ -9,6 +9,7 @@ carry the HTTP status the API layer maps them to.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from services.errors import ServiceError
@@ -78,25 +79,27 @@ def parse_int_between(low: int, high: int) -> Callable[[str], int | None]:
     return parse
 
 
-def pick[T](
-    rows: dict[str, str],
-    key: str,
-    env_value: T,
-    parse: Callable[[str], T | None],
-    *,
-    namespace: str,
-) -> tuple[T, ConfigSource]:
-    """One field's effective `(value, source)`: the row when it parses, env otherwise."""
-    raw = rows.get(key)
-    if raw is None:
-        return env_value, "env"
-    parsed = parse(raw)
-    if parsed is None:
-        logger.warning(
-            "Ignoring unparseable app_settings row %s.%s=%r — falling back to env",
-            namespace,
-            key,
-            raw,
-        )
-        return env_value, "env"
-    return parsed, "db"
+@dataclass(frozen=True)
+class NamespaceOverrides:
+    """The `app_settings` rows stored for one namespace."""
+
+    namespace: str
+    rows: dict[str, str]
+
+    def pick[T](
+        self, key: str, env_value: T, parse: Callable[[str], T | None]
+    ) -> tuple[T, ConfigSource]:
+        """One field's effective `(value, source)`: the row when it parses, env otherwise."""
+        raw = self.rows.get(key)
+        if raw is None:
+            return env_value, "env"
+        parsed = parse(raw)
+        if parsed is None:
+            logger.warning(
+                "Ignoring unparseable app_settings row %s.%s=%r — falling back to env",
+                self.namespace,
+                key,
+                raw,
+            )
+            return env_value, "env"
+        return parsed, "db"

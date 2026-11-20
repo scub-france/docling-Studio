@@ -28,6 +28,7 @@ from domain.analysis_editing import (
     AnalysisEditError,
     AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
+    CommandActivation,
     EditCommand,
     ProjectedAnalysis,
     resolve_active_edit_commands,
@@ -824,9 +825,9 @@ async def test_active_result_always_uses_saved_edits_for_selected_analysis(edit_
     await set_chunk_source("doc-1", "analysis-1", edited_hash)
     assert not (await service.load_editor("doc-1")).chunks_stale
 
-    await service.set_command_active("doc-1", 1, False, 1)
+    await service.set_command_active("doc-1", CommandActivation(1, False), 1)
     assert (await service.load_current_edited("doc-1")).chunks_stale
-    await service.set_command_active("doc-1", 1, True, 2)
+    await service.set_command_active("doc-1", CommandActivation(1, True), 2)
     assert not (await service.load_current_edited("doc-1")).chunks_stale
 
     await set_selection("doc-1", None)
@@ -855,7 +856,9 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     )
     assert "First edited" in saved.job.content_markdown
 
-    reverted = await service.set_command_active("doc-1", 1, False, expected_sequence=2)
+    reverted = await service.set_command_active(
+        "doc-1", CommandActivation(1, False), expected_sequence=2
+    )
     assert reverted.applied_through_sequence == 3
     assert "First edited" not in reverted.job.content_markdown
     assert "Second edited" in reverted.job.content_markdown
@@ -881,7 +884,9 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     assert records[2].command.payload == {"targetSequence": 1, "active": False}
     assert (await _load_replayed(service)).job.document_json == reverted.job.document_json
 
-    reapplied = await service.set_command_active("doc-1", 1, True, expected_sequence=3)
+    reapplied = await service.set_command_active(
+        "doc-1", CommandActivation(1, True), expected_sequence=3
+    )
     assert reapplied.applied_through_sequence == 4
     assert "First edited" in reapplied.job.content_markdown
     assert "Second edited" in reapplied.job.content_markdown
@@ -904,9 +909,9 @@ async def test_saved_history_action_rejects_stale_and_invalid_targets(edit_servi
         "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
     )
     with pytest.raises(AnalysisEditConflictError):
-        await service.set_command_active("doc-1", 1, False, expected_sequence=0)
+        await service.set_command_active("doc-1", CommandActivation(1, False), expected_sequence=0)
     with pytest.raises(AnalysisEditError, match="does not exist"):
-        await service.set_command_active("doc-1", 99, False, expected_sequence=1)
+        await service.set_command_active("doc-1", CommandActivation(99, False), expected_sequence=1)
 
     stream = await edits.find_stream("analysis-1")
     assert stream is not None
@@ -932,7 +937,7 @@ async def test_reverting_an_edit_needed_by_a_later_edit_keeps_history_unchanged(
     )
 
     with pytest.raises(AnalysisEditError, match="Cannot revert edit #1"):
-        await service.set_command_active("doc-1", 1, False, expected_sequence=2)
+        await service.set_command_active("doc-1", CommandActivation(1, False), expected_sequence=2)
 
     stream = await edits.find_stream("analysis-1")
     assert stream is not None

@@ -30,10 +30,10 @@ from services.config_overrides import (
     AppConfigError,
     AppConfigReadOnlyError,
     AppConfigValidationError,
+    NamespaceOverrides,
     parse_bool,
     parse_int_between,
     parse_text,
-    pick,
     require_writable,
 )
 
@@ -157,15 +157,12 @@ class AppConfigService:
         return self._build_view(config, sources)
 
     async def _resolve(self) -> tuple[ReasoningConfig, dict[str, ConfigSource]]:
-        rows = await self._repo.get_namespace(_NAMESPACE)
+        stored = NamespaceOverrides(_NAMESPACE, await self._repo.get_namespace(_NAMESPACE))
         env = self._env_defaults
-        ns = _NAMESPACE
-        enabled, enabled_src = pick(rows, _KEY_ENABLED, env.enabled, parse_bool, namespace=ns)
-        host, host_src = pick(rows, _KEY_HOST, env.ollama_host, parse_text, namespace=ns)
-        model, model_src = pick(rows, _KEY_MODEL, env.model_id, parse_text, namespace=ns)
-        iters, iters_src = pick(
-            rows, _KEY_MAX_ITERATIONS, env.max_iterations, _parse_iterations, namespace=ns
-        )
+        enabled, enabled_src = stored.pick(_KEY_ENABLED, env.enabled, parse_bool)
+        host, host_src = stored.pick(_KEY_HOST, env.ollama_host, parse_text)
+        model, model_src = stored.pick(_KEY_MODEL, env.model_id, parse_text)
+        iters, iters_src = stored.pick(_KEY_MAX_ITERATIONS, env.max_iterations, _parse_iterations)
         config = ReasoningConfig(
             enabled=enabled, ollama_host=host, model_id=model, max_iterations=iters
         )

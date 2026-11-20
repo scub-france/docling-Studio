@@ -36,6 +36,19 @@ class EditCommand:
 
 
 @dataclass(frozen=True)
+class CommandActivation:
+    """A request to revert (`active` False) or reapply (`active` True) one saved edit."""
+
+    target_sequence: int
+    active: bool
+
+    def to_command(self) -> EditCommand:
+        return EditCommand(
+            "setCommandActive", {"targetSequence": self.target_sequence, "active": self.active}
+        )
+
+
+@dataclass(frozen=True)
 class StoredEditCommand:
     id: str
     analysis_id: str

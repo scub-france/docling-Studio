@@ -12,6 +12,7 @@ from domain.analysis_editing import (
     AnalysisEditError,
     AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
+    CommandActivation,
     EditCommand,
     EditedAnalysisCache,
     EditHistoryEntry,
@@ -178,30 +179,22 @@ class AnalysisEditService:
     async def set_command_active(
         self,
         document_id: str,
-        target_sequence: int,
-        active: bool,
+        activation: CommandActivation,
         expected_sequence: int,
         analysis_id: str | None = None,
     ) -> EditorSnapshot:
+        target_sequence = activation.target_sequence
         stored = await self.list_history(document_id, analysis_id)
         check_expected_sequence(expected_sequence, get_last_sequence(stored))
         _, states = resolve_active_edit_commands(stored)
         if target_sequence not in states:
             raise AnalysisEditError(f"Saved edit #{target_sequence} does not exist")
-        if states[target_sequence] == active:
+        if states[target_sequence] == activation.active:
             raise AnalysisEditError(f"Saved edit #{target_sequence} is already in that state")
-        action = "reapply" if active else "revert"
+        action = "reapply" if activation.active else "revert"
         try:
             return await self.save(
-                document_id,
-                [
-                    EditCommand(
-                        "setCommandActive",
-                        {"targetSequence": target_sequence, "active": active},
-                    )
-                ],
-                expected_sequence,
-                analysis_id,
+                document_id, [activation.to_command()], expected_sequence, analysis_id
             )
         except AnalysisEditConflictError:
             raise
