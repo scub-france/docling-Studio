@@ -49,45 +49,22 @@ const messages: Messages = {
     'ask.emptySub':
       'L’agent lira des sections du document analysé jusqu’à pouvoir répondre — et vous montrera son raisonnement.',
 
-    // Top bar
-    'topbar.newAnalysis': 'Nouvelle analyse',
-
     // Breadcrumb (0.6.0 doc workspace — #208)
     'breadcrumb.aria': "Fil d'Ariane",
     'breadcrumb.studio': 'Studio',
-    'breadcrumb.mode.parse': 'Parse',
-    'breadcrumb.mode.chunk': 'Chunk',
-    'breadcrumb.mode.ingest': 'Ingest',
 
     // Feature flags (0.6.0 — #210)
     'flags.allModesDisabled':
       "Aucun mode (Ask / Inspect / Chunks) n'est activé pour ce déploiement. Contactez votre administrateur.",
 
-    // Lifecycle status badges (#215)
-    'status.Uploaded': 'Uploadé',
-    'status.Parsed': 'Parsé',
-    'status.Chunked': 'Chunké',
-    'status.Ingested': 'Ingéré',
-    'status.Stale': 'Obsolète',
-    'status.Failed': 'Échoué',
-    'status.tooltip.Uploaded': 'Fichier reçu, en attente de parsing.',
-    'status.tooltip.Parsed': 'Document parsé avec succès.',
-    'status.tooltip.Chunked': 'Chunks générés, prêts à être ingérés dans un store.',
-    'status.tooltip.Ingested': 'Ingéré dans au moins un store.',
-    'status.tooltip.Stale': 'Chunks modifiés depuis la dernière ingestion — ré-ingestion requise.',
-    'status.tooltip.Failed': 'Une étape du pipeline a échoué. Réessayez.',
-
     // Document library (#211, #212, #213)
     'docs.title': 'Documents',
-    'docs.preview': 'Aperçu',
     'docs.import': 'Importer',
     'docs.emptyTitle': 'Aucun document',
     'docs.emptySubtitle': 'Importez votre premier document pour commencer.',
     'docs.emptyAction': 'Importer un document',
     'docs.emptyFiltered': 'Aucun document ne correspond aux filtres.',
     'docs.colName': 'Nom',
-    'docs.colStatus': 'État',
-    'docs.colStores': 'Stores',
     'docs.colUpdated': 'Mis à jour',
     'docs.filterSearch': 'Rechercher…',
     'docs.filterClear': 'Effacer les filtres',
@@ -99,7 +76,6 @@ const messages: Messages = {
     'docs.clearSelection': 'Désélectionner',
     'docs.batchFailed': "Ces analyses n'ont pas pu démarrer :",
     'docs.openVisualization': 'Ouvrir la visualisation',
-    'docs.selected': '{n} sélectionné(s)',
     'docs.download': 'Télécharger',
     'docs.downloadPdf': 'Document PDF',
     'docs.downloadMarkdown': 'Markdown',
@@ -109,22 +85,11 @@ const messages: Messages = {
       'Une erreur est survenue lors du téléchargement du format {format}.',
     'docs.downloadJsonUnavailable':
       'Le JSON Docling n’est pas disponible. Veuillez relancer le parsing du document.',
-    'docs.bulkRechunk': 'Re-chunker',
-    'docs.bulkPush': 'Ingérer dans un store…',
-    'docs.bulkDelete': 'Supprimer',
     'docs.delete': 'Supprimer',
     'docs.deleteAnalysisLookupFailed':
       'Impossible de vérifier les analyses associées. Suppression annulée.',
-    'docs.bulkCancel': 'Annuler la sélection',
     'docs.deleteConfirm':
       'Supprimer {n} document(s) ? Cette action supprimera aussi {analyses} analyse(s) associée(s). Cette action est irréversible.',
-    'docs.pushTitle': 'Ingérer dans un store',
-    'docs.pushLabel': 'Store cible',
-    'docs.pushPlaceholder': 'Nom du store…',
-    'docs.pushSubmit': 'Ingérer',
-    'docs.pushCancel': 'Annuler',
-    'docs.pushDispatched': 'Push enregistré ({pushId})',
-    'docs.rechunkDone': 'Re-chunkage terminé ({n} document(s))',
 
     // Doc import (#214)
     'docsNew.title': 'Importer des documents',
@@ -141,21 +106,8 @@ const messages: Messages = {
 
     // Coming-soon placeholders (0.6.0 doc-centric routes — #207)
     'comingSoon.title': 'Bientôt disponible',
-    'comingSoon.subtitle.docsLibrary':
-      "La bibliothèque de documents arrive avec la 0.6.0. Vous y verrez l'état du cycle de vie de chaque document, ses stores et ses dernières mises à jour.",
-    'comingSoon.subtitle.docsNew':
-      "L'import multi-fichiers (drop d'un dossier ou sélection multiple) arrive avec la 0.6.0.",
-    'comingSoon.subtitle.docWorkspace':
-      "L'espace de travail document (Inspect / Chunks / Ask) arrive avec la 0.6.0.",
-    'comingSoon.subtitle.stores': 'La liste des stores arrive avec la 0.6.0.',
-    'comingSoon.subtitle.storeDetail':
-      'La vue détaillée du store (documents présents, état par store) arrive avec la 0.6.0.',
-    'comingSoon.subtitle.storeQuery': 'Le playground de requête RAG arrive avec la 0.6.0.',
     'comingSoon.subtitle.runs': "L'historique des runs (audit / debug) arrive avec la 0.6.0.",
     'comingSoon.subtitle.runDetail': "Le détail d'un run arrive avec la 0.6.0.",
-    'comingSoon.hint.docWorkspace': 'doc {id} · mode {mode}',
-    'comingSoon.hint.storeDetail': 'store {store}',
-    'comingSoon.hint.storeQuery': 'store {store}',
     'comingSoon.hint.runDetail': 'run {id}',
     'comingSoon.backHome': "Retour à l'accueil",
 
@@ -222,7 +174,6 @@ const messages: Messages = {
     'results.elements': 'Éléments',
     'results.markdown': 'Markdown',
     'results.images': 'Images',
-    'results.graph': 'Graphe',
     'results.graphLoading': 'Chargement du graphe…',
     'results.graphEmpty': 'Pas encore de graphe pour ce document (activez Neo4j).',
     // GraphView — node details panel & interactions
@@ -240,7 +191,6 @@ const messages: Messages = {
     'results.runAnalysis': 'Lancez une analyse pour voir les résultats',
     'results.analysisFailed': "L'analyse a échoué",
     'results.copy': 'Copier',
-    'results.copied': 'Copié !',
     'results.page': 'Page',
 
     // Upload
@@ -283,7 +233,6 @@ const messages: Messages = {
     'history.emptyDocs': 'Aucun document. Importez un document depuis la bibliothèque.',
     // + New analysis — in-place trigger (#266)
     'newAnalysis.title': 'Nouvelle analyse',
-    'newAnalysis.running': 'Analyse en cours…',
     'newAnalysis.failed': "L'analyse a échoué.",
     'newAnalysis.failedWithReason': "L'analyse a échoué : {reason}",
 
@@ -322,7 +271,6 @@ const messages: Messages = {
     'ingestion.chunkCount': 'Chunks prêts',
     'ingestion.successMessage': 'Ingestion terminée avec succès !',
     'ingestion.ingesting': 'Ingestion...',
-    'ingestion.reindex': 'Ré-ingérer',
     'ingestion.indexed': 'Ingéré',
     'ingestion.notIndexed': 'Non ingéré',
     'ingestion.chunksIndexed': '{n} chunks ingérés',
@@ -368,7 +316,6 @@ const messages: Messages = {
     'settings.ask.hiddenHint':
       'Lancez le backend avec ASK_MODE=visible pour afficher Ask ici et dans la vue Parse.',
     // #317 \u2014 Reasoning runtime config (admin panel).
-    'settings.reasoning.title': 'Raisonnement',
     'settings.reasoning.enabled': 'Activation',
     'settings.reasoning.enabledOn': 'Activ\u00e9',
     'settings.reasoning.enabledOff': 'D\u00e9sactiv\u00e9',
@@ -458,21 +405,12 @@ const messages: Messages = {
     'settings.mcp.restartHow':
       'Pour en changer une : modifiez .env, redémarrez le backend, puis quittez Claude Desktop (Cmd+Q) et relancez-le.',
 
-    // Inspect tab (#240, #241)
-    'inspect.noAnalysis': 'Aucune analyse disponible',
-    'inspect.noAnalysisSub': 'Analysez ce document dans le Studio pour voir sa structure.',
-    'inspect.goToStudio': 'Aller dans le Studio',
-    'inspect.retry': 'R\u00e9essayer',
-
     // Doc workspace (#216, #218 \u2014 switcher refactored in #263, modes renamed
     // in #264, Compare slot replaced by Ingest in #225)
-    'workspace.tabs.parse': 'Parse',
     'workspace.backToLibrary': 'Retour \u00e0 la biblioth\u00e8que',
     'workspace.previewUnavailable': 'Aper\u00e7u indisponible : le PDF ne peut pas \u00eatre lu.',
-    'workspace.modeDisabled': 'Mode d\u00e9sactiv\u00e9 pour ce d\u00e9ploiement',
     'workspace.editAnalysis': "Modifier l'analyse",
     'workspace.inspectAnalysis': "Voir l'analyse",
-    'workspace.analysisEditingUnavailable': 'Lancez une analyse avant de la modifier',
     'analysisEditor.title': "Editeur d'analyse",
     'analysisEditor.unsaved': 'Modifications non enregistrées',
     'analysisEditor.preview': 'Prévisualiser',
@@ -515,8 +453,6 @@ const messages: Messages = {
     'analysisEditor.resolveDraftFirst':
       "Enregistrez ou supprimez d'abord les modifications en cours.",
     'analysisEditor.selectedCount': '{n} élément(s) sélectionné(s)',
-    'analysisEditor.deleteSelectedConfirm':
-      'Supprimer les {n} éléments sélectionnés ? Vous pouvez annuler cette modification avant de l’enregistrer.',
     'analysisEditor.saved': 'Modifications enregistrées.',
     'analysisEditor.saveRejected':
       "Le serveur a refusé l'enregistrement. Vos modifications restent en attente : corrigez-les puis réessayez, ou annulez-les.",
@@ -560,7 +496,6 @@ const messages: Messages = {
       "Fusionnez des éléments d'un même type : texte avec texte, paragraphe avec paragraphe.",
 
     // Parse view (#264) \u2014 Docling extraction graph
-    'parse.layers': 'LAYERS',
     // Element Properties panel (#265)
     'properties.title': 'Propri\u00e9t\u00e9s',
     'properties.empty':
@@ -579,7 +514,6 @@ const messages: Messages = {
     'tableModal.close': 'Fermer',
     'properties.noText': '\u2014 pas de texte \u2014',
     'properties.linkedChunk': 'Chunk li\u00e9',
-    'workspace.pageOf': 'Page {page} sur {total}',
     'workspace.pagePrev': 'Page précédente',
     'workspace.pageNext': 'Page suivante',
     'workspace.pageNumber': 'Numéro de page',
@@ -602,32 +536,12 @@ const messages: Messages = {
     'layers.showBoxesHint': 'R\u00e9affiche toutes les bbox',
 
     // Chunk view (#264) \u2014 chunks aligned to the page preview
-    'chunk.strategy': 'Strat\u00e9gie',
     'chunk.panel.title': 'Chunks',
     'chunk.panel.count': '{n} sur {total} en page {page}',
     'chunk.panel.emptyOnPage': 'Aucun chunk en page {page}.',
     'chunk.panel.emptyAll':
       'Aucun chunk pour ce document. Générez-en depuis la stratégie ci-dessous.',
     'chunk.panel.edited': 'modifi\u00e9',
-
-    // Ingest view (#225, redesigned in #283 \u2014 CTA + history)
-    'ingest.title': 'Ingest',
-    'ingest.noStores': 'Aucun store configur\u00e9.',
-    'ingest.noStoresAction': 'Cr\u00e9er un store \u2192',
-    'ingest.noAnalysis': "Aucune analyse \u2014 lancez d'abord un parse pour pouvoir ing\u00e9rer.",
-    'ingest.noHistory': 'Aucun ingest pour ce document.',
-    'ingest.noHistoryHint': 'Cliquez sur \u00ab Lancer un ingest \u00bb pour le premier push.',
-    'ingest.launchCta': 'Lancer un ingest',
-    'ingest.historyTitle': 'Historique des ingests',
-    'ingest.historyCount': '{n} entr\u00e9e(s)',
-    'ingest.colWhen': 'Quand',
-    'ingest.colTarget': 'Destination',
-    'ingest.colChunks': 'Chunks',
-    'ingest.colVersion': 'Empreinte',
-    'ingest.chunkCount': '{n} chunks',
-    'ingest.loadMore': 'Charger plus',
-    'ingest.loadError': "\u00c9chec du chargement de l'historique",
-    'ingest.storeDeleted': 'Store supprim\u00e9',
 
     // Strategy popover (#268) \u2014 inline rechunk options
     'strategy.title': 'Strat\u00e9gie de chunking',
@@ -650,8 +564,6 @@ const messages: Messages = {
 
     // Doc tree rail (#217)
     'tree.empty': "Aucun n\u0153ud dans l'arbre.",
-    'tree.expand': 'D\u00e9velopper',
-    'tree.collapse': 'R\u00e9duire',
 
     // Chunks editor (#219, #220, #221, #222)
     'chunks.count': '{n} chunk(s)',
@@ -664,13 +576,9 @@ const messages: Messages = {
     'chunks.split': 'Scinder au curseur',
     'chunks.drop': 'Supprimer',
     'chunks.add': 'Ajouter un chunk',
-    'chunks.retitle': 'Renommer',
     'chunks.diffToggle': 'Afficher le diff',
     'chunks.diffClose': 'Fermer le diff',
     'chunks.diffRef': 'R\u00e9f\u00e9rence',
-    'chunks.diffAdded': 'ajout\u00e9(s)',
-    'chunks.diffModified': 'modifi\u00e9(s)',
-    'chunks.diffRemoved': 'supprim\u00e9(s)',
     'chunks.pushTitle': 'Ing\u00e9rer dans un store',
     'chunks.pushStore': 'Store cible',
     'chunks.pushPlaceholder': 'Nom du store\u2026',
@@ -678,115 +586,11 @@ const messages: Messages = {
     'chunks.pushConfirm': 'Ing\u00e9rer',
     'chunks.pushCancel': 'Annuler',
     'chunks.pushDispatched': 'Push enregistr\u00e9 : {pushId}',
-    // Stale stores strip (#224)
 
     'chunks.selected': '{n} s\u00e9lectionn\u00e9(s)',
     'chunks.bulkDrop': 'Supprimer la s\u00e9lection',
     'chunks.bulkMerge': 'Fusionner la s\u00e9lection',
     'chunks.bulkCancel': 'Annuler',
-
-    // Stores list (#243)
-    'stores.title': 'Stores',
-    'stores.empty': 'Aucun store configur\u00e9.',
-    'stores.colName': 'Nom',
-    'stores.colType': 'Type',
-    'stores.colStatus': 'Statut',
-    'stores.colDocs': 'Documents',
-    'stores.colChunks': 'Chunks',
-    'stores.connected': 'Connect\u00e9',
-    'stores.disconnected': 'D\u00e9connect\u00e9',
-    'stores.error': 'Erreur',
-    'stores.new': 'Nouveau store',
-    'stores.edit': 'Modifier',
-    'stores.delete': 'Supprimer',
-    'stores.deleteConfirm': 'Supprimer le store \u00ab\u00a0{name}\u00a0\u00bb\u00a0?',
-    'stores.deleteDefaultBlocked': 'Le store par d\u00e9faut ne peut pas \u00eatre supprim\u00e9.',
-    'stores.colDefault': 'D\u00e9faut',
-    'stores.default.yes': 'Oui',
-    'stores.default.no': 'Non',
-
-    // Store form (#251)
-    'storeForm.titleCreate': 'Cr\u00e9er un store',
-    'storeForm.titleEdit': 'Modifier le store',
-    'storeForm.fieldName': 'Nom',
-    'storeForm.fieldNameHelp': 'Nom affich\u00e9 dans l\u2019UI.',
-    'storeForm.fieldSlug': 'Slug',
-    'storeForm.fieldSlugHelp': 'Identifiant URL : minuscules, chiffres, tirets.',
-    'storeForm.fieldKind': 'Type',
-    'storeForm.fieldEmbedder': 'Embedder',
-    'storeForm.fieldEmbedderHelp': 'Identifiant du mod\u00e8le d\u2019embedding.',
-    'storeForm.fieldIsDefault': 'Store par d\u00e9faut',
-    'storeForm.fieldIsDefaultHelp': 'Un seul store peut \u00eatre par d\u00e9faut.',
-    'storeForm.sectionConfig': 'Configuration',
-    'storeForm.opensearch.indexName': 'Nom de l\u2019index',
-    'storeForm.opensearch.indexNameHelp':
-      'Index OpenSearch cible (cr\u00e9\u00e9 \u00e0 la premi\u00e8re ingestion).',
-    'storeForm.neo4j.indexName': 'Nom de l\u2019index vectoriel',
-    'storeForm.neo4j.indexNameHelp':
-      'Index vector Neo4j (5.x+) cible. URI et auth viennent des variables d\u2019environnement.',
-    'storeForm.neo4j.database': 'Base',
-    'storeForm.neo4j.databaseHelp':
-      'Optionnel \u2014 par d\u00e9faut \u00ab\u00a0neo4j\u00a0\u00bb.',
-    'storeForm.cancel': 'Annuler',
-    'storeForm.save': 'Enregistrer',
-    'storeForm.create': 'Cr\u00e9er',
-    'storeForm.required': 'Champ requis.',
-    'storeForm.invalidSlug':
-      'Slug invalide : minuscules, chiffres, tirets uniquement (ex. \u00ab\u00a0rh-corpus-v3\u00a0\u00bb).',
-
-    // Connection sub-form (#279)
-    'storeForm.sectionConnection': 'Connexion',
-    'storeForm.connectionIntro':
-      "Identifie le cluster cible. Si vide, le backend utilise les variables d'environnement (NEO4J_URI / OPENSEARCH_URL).",
-    'storeForm.fieldConnectionUri': 'URI de connexion',
-    'storeForm.fieldConnectionUriHelp':
-      'Neo4j : bolt:// \u00b7 neo4j:// \u00b7 neo4j+s://. OpenSearch : http:// \u00b7 https://.',
-    'storeForm.fieldConnectionUsername': 'Utilisateur',
-    'storeForm.fieldConnectionUsernameHelp': 'Laissez vide pour un acc\u00e8s anonyme.',
-    'storeForm.fieldConnectionPassword': 'Mot de passe',
-    'storeForm.fieldConnectionPasswordHelp':
-      "Chiffr\u00e9 au repos via Fernet (STORE_SECRET_KEY). Jamais renvoy\u00e9 par l'API.",
-    'storeForm.passwordKeepPlaceholder':
-      '\u2022\u2022\u2022\u2022 (inchang\u00e9 \u2014 tapez pour remplacer)',
-    'storeForm.clearPasswordLabel':
-      "Effacer le mot de passe (l'authentification deviendra anonyme)",
-    'storeForm.revealPassword': 'Afficher le mot de passe',
-    'storeForm.hidePassword': 'Masquer le mot de passe',
-    'storeForm.testConnection': 'Tester la connexion',
-    'storeForm.testConnectionOk': 'Connexion \u00e9tablie',
-    'storeForm.testConnectionFailed': '\u00c9chec de la connexion',
-    'storeForm.invalid-neo4j-scheme':
-      'URI Neo4j attendue : bolt://, bolt+s://, neo4j://, neo4j+s:// (etc.).',
-    'storeForm.invalid-opensearch-scheme': 'URI OpenSearch attendue : http:// ou https://.',
-
-    // Store detail (#244)
-    'storeDetail.back': 'Stores',
-    'storeDetail.query': 'Requ\u00eater',
-    'storeDetail.empty': 'Aucun document dans ce store.',
-    'storeDetail.colDoc': 'Document',
-    'storeDetail.colState': '\u00c9tat',
-    'storeDetail.colChunks': 'Chunks',
-    'storeDetail.colIngested': 'Ing\u00e9r\u00e9 le',
-    'storeDetail.remove': 'Retirer',
-    'storeDetail.removeConfirm': 'Retirer \u00ab\u00a0{doc}\u00a0\u00bb du store\u00a0?',
-    'storeDetail.selected': '{n} s\u00e9lectionn\u00e9(s)',
-    'storeDetail.bulkRemove': 'Retirer du store',
-    'storeDetail.bulkCancel': 'Annuler',
-    'storeDetail.bulkConfirm': 'Retirer {n} document(s) du store\u00a0?',
-
-    // Store query (#245)
-    'storeQuery.back': 'D\u00e9tail du store',
-    'storeQuery.queryLabel': 'Question',
-    'storeQuery.queryPlaceholder': 'Votre question\u2026',
-    'storeQuery.topKLabel': 'R\u00e9sultats (top-k)',
-    'storeQuery.run': 'Rechercher',
-    'storeQuery.running': 'Recherche\u2026',
-    'storeQuery.empty': 'Aucun r\u00e9sultat.',
-    'storeQuery.colScore': 'Score',
-    'storeQuery.colDoc': 'Document',
-    'storeQuery.colText': 'Extrait',
-    'storeQuery.colPage': 'Pages',
-    'storeQuery.viewDoc': 'Voir',
 
     // Disclaimer
     'disclaimer.banner':
@@ -834,44 +638,22 @@ const messages: Messages = {
     'ask.emptySub':
       'The agent will read sections of the parsed document until it can answer — and show you its reasoning.',
 
-    'topbar.newAnalysis': 'New analysis',
-
     // Breadcrumb (0.6.0 doc workspace — #208)
     'breadcrumb.aria': 'Breadcrumb',
     'breadcrumb.studio': 'Studio',
-    'breadcrumb.mode.parse': 'Parse',
-    'breadcrumb.mode.chunk': 'Chunk',
-    'breadcrumb.mode.ingest': 'Ingest',
 
     // Feature flags (0.6.0 — #210)
     'flags.allModesDisabled':
       'No doc workspace mode (Ask / Inspect / Chunks) is enabled for this deployment. Contact your administrator.',
 
-    // Lifecycle status badges (#215)
-    'status.Uploaded': 'Uploaded',
-    'status.Parsed': 'Parsed',
-    'status.Chunked': 'Chunked',
-    'status.Ingested': 'Ingested',
-    'status.Stale': 'Stale',
-    'status.Failed': 'Failed',
-    'status.tooltip.Uploaded': 'File received, awaiting parsing.',
-    'status.tooltip.Parsed': 'Document parsed successfully.',
-    'status.tooltip.Chunked': 'Chunks generated, ready to ingest into a store.',
-    'status.tooltip.Ingested': 'Ingested into at least one store.',
-    'status.tooltip.Stale': 'Chunks modified since last ingestion — re-ingestion required.',
-    'status.tooltip.Failed': 'A pipeline step failed. Retry to recover.',
-
     // Document library (#211, #212, #213)
     'docs.title': 'Documents',
-    'docs.preview': 'Preview',
     'docs.import': 'Import',
     'docs.emptyTitle': 'No documents yet',
     'docs.emptySubtitle': 'Import your first document to get started.',
     'docs.emptyAction': 'Import a document',
     'docs.emptyFiltered': 'No documents match the current filters.',
     'docs.colName': 'Name',
-    'docs.colStatus': 'Status',
-    'docs.colStores': 'Stores',
     'docs.colUpdated': 'Updated',
     'docs.filterSearch': 'Search…',
     'docs.filterClear': 'Clear filters',
@@ -883,7 +665,6 @@ const messages: Messages = {
     'docs.clearSelection': 'Clear selection',
     'docs.batchFailed': 'These analyses could not start:',
     'docs.openVisualization': 'Open visualization',
-    'docs.selected': '{n} selected',
     'docs.download': 'Download',
     'docs.downloadPdf': 'PDF Document',
     'docs.downloadMarkdown': 'Markdown',
@@ -891,21 +672,10 @@ const messages: Messages = {
     'docs.downloadFailed': 'Failed to download the {format} format.',
     'docs.downloadUnexpectedError': 'An error occurred while downloading the {format} format.',
     'docs.downloadJsonUnavailable': 'Docling JSON is not available. Please reparse the document.',
-    'docs.bulkRechunk': 'Re-chunk',
-    'docs.bulkPush': 'Ingest into store…',
-    'docs.bulkDelete': 'Delete',
     'docs.delete': 'Delete',
     'docs.deleteAnalysisLookupFailed': 'Unable to check associated analyses. Deletion cancelled.',
-    'docs.bulkCancel': 'Cancel selection',
     'docs.deleteConfirm':
       'Delete {n} document(s)? This also deletes {analyses} associated analysis/analyses. This action cannot be undone.',
-    'docs.pushTitle': 'Ingest into store',
-    'docs.pushLabel': 'Target store',
-    'docs.pushPlaceholder': 'Store name…',
-    'docs.pushSubmit': 'Ingest',
-    'docs.pushCancel': 'Cancel',
-    'docs.pushDispatched': 'Push recorded ({pushId})',
-    'docs.rechunkDone': 'Rechunk done ({n} document(s))',
 
     // Doc import (#214)
     'docsNew.title': 'Import documents',
@@ -922,21 +692,8 @@ const messages: Messages = {
 
     // Coming-soon placeholders (0.6.0 doc-centric routes — #207)
     'comingSoon.title': 'Coming soon',
-    'comingSoon.subtitle.docsLibrary':
-      'The document library lands with 0.6.0. It will show every document with its lifecycle state, the stores it lives in, and when it was last updated.',
-    'comingSoon.subtitle.docsNew':
-      'Multi-file import (drop a folder or pick multiple files) lands with 0.6.0.',
-    'comingSoon.subtitle.docWorkspace':
-      'The doc workspace (Inspect / Chunks / Ask) lands with 0.6.0.',
-    'comingSoon.subtitle.stores': 'The stores list lands with 0.6.0.',
-    'comingSoon.subtitle.storeDetail':
-      'The store detail view (docs present, per-store state) lands with 0.6.0.',
-    'comingSoon.subtitle.storeQuery': 'The RAG query playground lands with 0.6.0.',
     'comingSoon.subtitle.runs': 'The runs history (audit / debug) lands with 0.6.0.',
     'comingSoon.subtitle.runDetail': 'Run detail lands with 0.6.0.',
-    'comingSoon.hint.docWorkspace': 'doc {id} · mode {mode}',
-    'comingSoon.hint.storeDetail': 'store {store}',
-    'comingSoon.hint.storeQuery': 'store {store}',
     'comingSoon.hint.runDetail': 'run {id}',
     'comingSoon.backHome': 'Back to home',
 
@@ -998,7 +755,6 @@ const messages: Messages = {
     'results.elements': 'Elements',
     'results.markdown': 'Markdown',
     'results.images': 'Images',
-    'results.graph': 'Graph',
     'results.graphLoading': 'Loading graph…',
     'results.graphEmpty': 'No graph yet for this document (enable Neo4j).',
     // GraphView — node details panel & interactions
@@ -1016,7 +772,6 @@ const messages: Messages = {
     'results.runAnalysis': 'Run an analysis to see results',
     'results.analysisFailed': 'Analysis failed',
     'results.copy': 'Copy',
-    'results.copied': 'Copied!',
     'results.page': 'Page',
 
     'upload.drop': 'Drop a PDF here or click to upload',
@@ -1057,7 +812,6 @@ const messages: Messages = {
     'history.emptyDocs': 'No documents yet. Upload a document from the library.',
     // + New analysis — in-place trigger (#266)
     'newAnalysis.title': 'New analysis',
-    'newAnalysis.running': 'Analyzing…',
     'newAnalysis.failed': 'The analysis failed.',
     'newAnalysis.failedWithReason': 'The analysis failed: {reason}',
 
@@ -1093,7 +847,6 @@ const messages: Messages = {
     'ingestion.chunkCount': 'Chunks ready',
     'ingestion.successMessage': 'Ingestion completed successfully!',
     'ingestion.ingesting': 'Ingesting...',
-    'ingestion.reindex': 'Re-ingest',
     'ingestion.indexed': 'Ingested',
     'ingestion.notIndexed': 'Not ingested',
     'ingestion.chunksIndexed': '{n} chunks ingested',
@@ -1137,7 +890,6 @@ const messages: Messages = {
     'settings.ask.hiddenHint':
       'Start the backend with ASK_MODE=visible to show Ask here and in the Parse view.',
     // #317 — Reasoning runtime config (admin panel).
-    'settings.reasoning.title': 'Reasoning',
     'settings.reasoning.enabled': 'Status',
     'settings.reasoning.enabledOn': 'Enabled',
     'settings.reasoning.enabledOff': 'Disabled',
@@ -1225,21 +977,12 @@ const messages: Messages = {
     'settings.mcp.restartHow':
       'To change one: edit .env, restart the backend, then quit Claude Desktop (Cmd+Q) and relaunch it.',
 
-    // Inspect tab (#240, #241)
-    'inspect.noAnalysis': 'No analysis available',
-    'inspect.noAnalysisSub': 'Analyze this document in Studio to see its structure.',
-    'inspect.goToStudio': 'Go to Studio',
-    'inspect.retry': 'Retry',
-
     // Doc workspace (#216, #218 — switcher refactored in #263, modes renamed
     // in #264, Compare slot replaced by Ingest in #225)
-    'workspace.tabs.parse': 'Parse',
     'workspace.backToLibrary': 'Back to library',
     'workspace.previewUnavailable': 'Preview unavailable: the PDF cannot be read.',
-    'workspace.modeDisabled': 'Mode disabled for this deployment',
     'workspace.editAnalysis': 'Edit analysis',
     'workspace.inspectAnalysis': 'Inspect analysis',
-    'workspace.analysisEditingUnavailable': 'Run an analysis before editing it',
     'analysisEditor.title': 'Analysis editor',
     'analysisEditor.unsaved': 'Unsaved changes',
     'analysisEditor.preview': 'Preview',
@@ -1281,8 +1024,6 @@ const messages: Messages = {
     'analysisEditor.reapplied': 'Reapplied',
     'analysisEditor.resolveDraftFirst': 'Save or discard pending changes first.',
     'analysisEditor.selectedCount': '{n} selected',
-    'analysisEditor.deleteSelectedConfirm':
-      'Delete {n} selected elements? You can undo this pending change before saving.',
     'analysisEditor.saved': 'Changes saved.',
     'analysisEditor.saveRejected':
       'The server refused to save. Your edits are still pending: fix them and save again, or discard them.',
@@ -1323,7 +1064,6 @@ const messages: Messages = {
       'Merge elements of one type: text with text, paragraph with paragraph.',
 
     // Parse view (#264) — Docling extraction graph
-    'parse.layers': 'LAYERS',
     // Element Properties panel (#265)
     'properties.title': 'Properties',
     'properties.empty': 'Select a node in the tree or click a bbox.',
@@ -1341,7 +1081,6 @@ const messages: Messages = {
     'tableModal.close': 'Close',
     'properties.noText': '— no text —',
     'properties.linkedChunk': 'Linked chunk',
-    'workspace.pageOf': 'Page {page} of {total}',
     'workspace.pagePrev': 'Previous page',
     'workspace.pageNext': 'Next page',
     'workspace.pageNumber': 'Page number',
@@ -1363,32 +1102,12 @@ const messages: Messages = {
     'layers.showBoxesHint': 'Show every bbox again',
 
     // Chunk view (#264) — chunks aligned to the page preview
-    'chunk.strategy': 'Strategy',
     'chunk.panel.title': 'Chunks',
     'chunk.panel.count': '{n} of {total} on page {page}',
     'chunk.panel.emptyOnPage': 'No chunks on page {page}.',
     'chunk.panel.emptyAll':
       'No chunks for this document yet. Generate them from the strategy below.',
     'chunk.panel.edited': 'edited',
-
-    // Ingest view (#225, redesigned in #283 — CTA + history)
-    'ingest.title': 'Ingest',
-    'ingest.noStores': 'No store configured yet.',
-    'ingest.noStoresAction': 'Create a store →',
-    'ingest.noAnalysis': 'No analysis yet — run a parse before ingesting.',
-    'ingest.noHistory': 'No ingests for this document yet.',
-    'ingest.noHistoryHint': 'Click "Launch ingest" to push for the first time.',
-    'ingest.launchCta': 'Launch ingest',
-    'ingest.historyTitle': 'Ingest history',
-    'ingest.historyCount': '{n} entries',
-    'ingest.colWhen': 'When',
-    'ingest.colTarget': 'Target',
-    'ingest.colChunks': 'Chunks',
-    'ingest.colVersion': 'Hash',
-    'ingest.chunkCount': '{n} chunks',
-    'ingest.loadMore': 'Load more',
-    'ingest.loadError': 'Failed to load history',
-    'ingest.storeDeleted': 'Store deleted',
 
     // Strategy popover (#268) — inline rechunk options
     'strategy.title': 'Chunking strategy',
@@ -1411,8 +1130,6 @@ const messages: Messages = {
 
     // Doc tree rail (#217)
     'tree.empty': 'No nodes in tree.',
-    'tree.expand': 'Expand',
-    'tree.collapse': 'Collapse',
 
     // Chunks editor (#219, #220, #221, #222)
     'chunks.count': '{n} chunk(s)',
@@ -1425,13 +1142,9 @@ const messages: Messages = {
     'chunks.split': 'Split at cursor',
     'chunks.drop': 'Drop',
     'chunks.add': 'Add chunk',
-    'chunks.retitle': 'Rename',
     'chunks.diffToggle': 'Show diff',
     'chunks.diffClose': 'Close diff',
     'chunks.diffRef': 'Reference',
-    'chunks.diffAdded': 'added',
-    'chunks.diffModified': 'modified',
-    'chunks.diffRemoved': 'removed',
     'chunks.pushTitle': 'Ingest into store',
     'chunks.pushStore': 'Target store',
     'chunks.pushPlaceholder': 'Store name\u2026',
@@ -1439,110 +1152,11 @@ const messages: Messages = {
     'chunks.pushConfirm': 'Ingest',
     'chunks.pushCancel': 'Cancel',
     'chunks.pushDispatched': 'Push recorded: {pushId}',
-    // Stale stores strip (#224)
 
     'chunks.selected': '{n} selected',
     'chunks.bulkDrop': 'Drop selected',
     'chunks.bulkMerge': 'Merge selected',
     'chunks.bulkCancel': 'Cancel',
-
-    // Stores list (#243)
-    'stores.title': 'Stores',
-    'stores.empty': 'No stores configured.',
-    'stores.colName': 'Name',
-    'stores.colType': 'Type',
-    'stores.colStatus': 'Status',
-    'stores.colDocs': 'Documents',
-    'stores.colChunks': 'Chunks',
-    'stores.connected': 'Connected',
-    'stores.disconnected': 'Disconnected',
-    'stores.error': 'Error',
-    'stores.new': 'New store',
-    'stores.edit': 'Edit',
-    'stores.delete': 'Delete',
-    'stores.deleteConfirm': 'Delete store "{name}"?',
-    'stores.deleteDefaultBlocked': 'The default store cannot be deleted.',
-    'stores.colDefault': 'Default',
-    'stores.default.yes': 'Yes',
-    'stores.default.no': 'No',
-
-    // Store form (#251)
-    'storeForm.titleCreate': 'Create store',
-    'storeForm.titleEdit': 'Edit store',
-    'storeForm.fieldName': 'Name',
-    'storeForm.fieldNameHelp': 'Display name shown in the UI.',
-    'storeForm.fieldSlug': 'Slug',
-    'storeForm.fieldSlugHelp': 'URL identifier: lowercase, digits, dashes.',
-    'storeForm.fieldKind': 'Kind',
-    'storeForm.fieldEmbedder': 'Embedder',
-    'storeForm.fieldEmbedderHelp': 'Embedding model identifier.',
-    'storeForm.fieldIsDefault': 'Default store',
-    'storeForm.fieldIsDefaultHelp': 'Only one store can be the default.',
-    'storeForm.sectionConfig': 'Configuration',
-    'storeForm.opensearch.indexName': 'Index name',
-    'storeForm.opensearch.indexNameHelp': 'Target OpenSearch index (created on first ingestion).',
-    'storeForm.neo4j.indexName': 'Vector index name',
-    'storeForm.neo4j.indexNameHelp':
-      'Target Neo4j (5.x+) vector index. URI and auth come from environment variables.',
-    'storeForm.neo4j.database': 'Database',
-    'storeForm.neo4j.databaseHelp': 'Optional — defaults to "neo4j".',
-    'storeForm.cancel': 'Cancel',
-    'storeForm.save': 'Save',
-    'storeForm.create': 'Create',
-    'storeForm.required': 'Required field.',
-    'storeForm.invalidSlug': 'Invalid slug: lowercase, digits, dashes only (e.g. "rh-corpus-v3").',
-
-    // Connection sub-form (#279)
-    'storeForm.sectionConnection': 'Connection',
-    'storeForm.connectionIntro':
-      'Identifies the target cluster. Leave blank to fall back to the backend env vars (NEO4J_URI / OPENSEARCH_URL).',
-    'storeForm.fieldConnectionUri': 'Connection URI',
-    'storeForm.fieldConnectionUriHelp':
-      'Neo4j: bolt:// · neo4j:// · neo4j+s://. OpenSearch: http:// · https://.',
-    'storeForm.fieldConnectionUsername': 'Username',
-    'storeForm.fieldConnectionUsernameHelp': 'Leave blank for anonymous access.',
-    'storeForm.fieldConnectionPassword': 'Password',
-    'storeForm.fieldConnectionPasswordHelp':
-      'Sealed at rest with Fernet (STORE_SECRET_KEY). Never returned by the API.',
-    'storeForm.passwordKeepPlaceholder': '•••• (unchanged — type to replace)',
-    'storeForm.clearPasswordLabel': 'Clear password (auth becomes anonymous)',
-    'storeForm.revealPassword': 'Reveal password',
-    'storeForm.hidePassword': 'Hide password',
-    'storeForm.testConnection': 'Test connection',
-    'storeForm.testConnectionOk': 'Connection successful',
-    'storeForm.testConnectionFailed': 'Connection failed',
-    'storeForm.invalid-neo4j-scheme':
-      'Expected a Neo4j URI: bolt://, bolt+s://, neo4j://, neo4j+s:// (etc.).',
-    'storeForm.invalid-opensearch-scheme': 'Expected an OpenSearch URI: http:// or https://.',
-
-    // Store detail (#244)
-    'storeDetail.back': 'Stores',
-    'storeDetail.query': 'Query',
-    'storeDetail.empty': 'No documents in this store.',
-    'storeDetail.colDoc': 'Document',
-    'storeDetail.colState': 'State',
-    'storeDetail.colChunks': 'Chunks',
-    'storeDetail.colIngested': 'Ingested',
-    'storeDetail.remove': 'Remove',
-    'storeDetail.removeConfirm': 'Remove \u00ab{doc}\u00bb from store?',
-    'storeDetail.selected': '{n} selected',
-    'storeDetail.bulkRemove': 'Remove from store',
-    'storeDetail.bulkCancel': 'Cancel',
-    'storeDetail.bulkConfirm': 'Remove {n} document(s) from store?',
-
-    // Store query (#245)
-    'storeQuery.back': 'Store detail',
-    'storeQuery.queryLabel': 'Question',
-    'storeQuery.queryPlaceholder': 'Your question\u2026',
-    'storeQuery.topKLabel': 'Results (top-k)',
-    'storeQuery.run': 'Search',
-    'storeQuery.running': 'Searching\u2026',
-    'storeQuery.empty': 'No results.',
-    'storeQuery.colScore': 'Score',
-    'storeQuery.colDoc': 'Document',
-    'storeQuery.colText': 'Excerpt',
-    'storeQuery.colPage': 'Pages',
-    'storeQuery.viewDoc': 'View',
 
     // Disclaimer
     'disclaimer.banner':
