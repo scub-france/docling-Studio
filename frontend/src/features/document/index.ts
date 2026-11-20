@@ -1,5 +1,5 @@
 export { useDocumentStore } from './store'
-export { fetchDocumentPages, getPreviewUrl, rechunkDocument } from './api'
+export { fetchDocumentPages, getPreviewUrl } from './api'
 export { default as DocumentUpload } from './ui/DocumentUpload.vue'
 export { default as DocumentList } from './ui/DocumentList.vue'
 export { default as DocumentActionsMenu } from './ui/DocumentActionsMenu.vue'

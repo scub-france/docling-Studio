@@ -1,8 +1,7 @@
 /**
  * Single source of truth for OCR element type → swatch color.
  *
- * Consumed by `BboxCanvas`, `LayersBar`, and `ChunksPanel` (for the type
- * badge on chunk cards). The palette mirrors the legacy `BboxOverlay`
+ * Consumed by `BboxCanvas` and `LayersBar`. The palette mirrors the legacy `BboxOverlay`
  * mapping (Studio surface) so the same document looks consistent
  * across both surfaces.
  *

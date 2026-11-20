@@ -1,5 +1,4 @@
-import type { DocChunk, Document, DocTreeNode, Page } from '../../shared/types'
-import type { RechunkOptions } from '@/shared/types'
+import type { Document, DocTreeNode, Page } from '../../shared/types'
 import { apiFetch } from '@/shared/api/http'
 
 export function fetchDocuments(): Promise<Document[]> {
@@ -56,16 +55,6 @@ export function getExportUrl(
   const analysis = analysisId ? `&analysisId=${encodeURIComponent(analysisId)}` : ''
   const editor = edited ? '&edited=true' : ''
   return `/api/documents/${id}/export?format=${format}${analysis}${editor}`
-}
-
-/** Rechunk the canonical chunkset. Backend runs synchronously and returns
- * the new chunks — there is no async job to poll. */
-export function rechunkDocument(id: string, options?: RechunkOptions): Promise<DocChunk[]> {
-  const body = options ? { chunkingOptions: options } : {}
-  return apiFetch<DocChunk[]>(`/api/documents/${id}/rechunk`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
 }
 
 export function fetchDocumentTree(id: string, analysisId?: string): Promise<DocTreeNode[]> {

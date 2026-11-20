@@ -535,62 +535,8 @@ const messages: Messages = {
     'layers.hideBoxesHint': 'Masque toutes les bbox pour voir la page seule',
     'layers.showBoxesHint': 'R\u00e9affiche toutes les bbox',
 
-    // Chunk view (#264) \u2014 chunks aligned to the page preview
-    'chunk.panel.title': 'Chunks',
-    'chunk.panel.count': '{n} sur {total} en page {page}',
-    'chunk.panel.emptyOnPage': 'Aucun chunk en page {page}.',
-    'chunk.panel.emptyAll':
-      'Aucun chunk pour ce document. Générez-en depuis la stratégie ci-dessous.',
-    'chunk.panel.edited': 'modifi\u00e9',
-
-    // Strategy popover (#268) \u2014 inline rechunk options
-    'strategy.title': 'Strat\u00e9gie de chunking',
-    'strategy.close': 'Fermer',
-    'strategy.hint':
-      'Recalcule l\u2019ensemble des chunks \u00e0 partir de la derni\u00e8re analyse.',
-    'strategy.chunkerType': 'Type',
-    'strategy.maxTokens': 'Tokens max',
-    'strategy.maxTokensHint': 'Entre 64 et 8192.',
-    'strategy.mergePeers': 'Fusionner les pairs',
-    'strategy.repeatTableHeader': 'R\u00e9p\u00e9ter les en-t\u00eates de tableaux',
-    'strategy.cancel': 'Annuler',
-    'strategy.apply': 'Appliquer',
-    'strategy.rechunking': 'Re-chunkage\u2026',
-    'strategy.confirmWarning':
-      'Des chunks ont \u00e9t\u00e9 \u00e9dit\u00e9s manuellement. Re-chunker \u00e9crasera ces modifications.',
-    'strategy.confirmHint': 'Continuer ?',
-    'strategy.confirmBack': 'Retour',
-    'strategy.confirmApply': 'Re-chunker quand m\u00eame',
-
     // Doc tree rail (#217)
     'tree.empty': "Aucun n\u0153ud dans l'arbre.",
-
-    // Chunks editor (#219, #220, #221, #222)
-    'chunks.count': '{n} chunk(s)',
-    'chunks.empty': "Aucun chunk \u2014 parsez le document d'abord.",
-    'chunks.saving': 'Sauvegarde\u2026',
-    'chunks.noTitle': '(sans titre)',
-    'chunks.editPlaceholder': 'Texte du chunk\u2026',
-    'chunks.mergePrev': 'Fusionner avec le pr\u00e9c\u00e9dent',
-    'chunks.mergeNext': 'Fusionner avec le suivant',
-    'chunks.split': 'Scinder au curseur',
-    'chunks.drop': 'Supprimer',
-    'chunks.add': 'Ajouter un chunk',
-    'chunks.diffToggle': 'Afficher le diff',
-    'chunks.diffClose': 'Fermer le diff',
-    'chunks.diffRef': 'R\u00e9f\u00e9rence',
-    'chunks.pushTitle': 'Ing\u00e9rer dans un store',
-    'chunks.pushStore': 'Store cible',
-    'chunks.pushPlaceholder': 'Nom du store\u2026',
-    'chunks.pushSummary': '{embeds} chunks \u00b7 ~{tokens} tokens',
-    'chunks.pushConfirm': 'Ing\u00e9rer',
-    'chunks.pushCancel': 'Annuler',
-    'chunks.pushDispatched': 'Push enregistr\u00e9 : {pushId}',
-
-    'chunks.selected': '{n} s\u00e9lectionn\u00e9(s)',
-    'chunks.bulkDrop': 'Supprimer la s\u00e9lection',
-    'chunks.bulkMerge': 'Fusionner la s\u00e9lection',
-    'chunks.bulkCancel': 'Annuler',
 
     // Disclaimer
     'disclaimer.banner':
@@ -1101,62 +1047,8 @@ const messages: Messages = {
     'layers.hideBoxesHint': 'Hide every bbox to see the bare page',
     'layers.showBoxesHint': 'Show every bbox again',
 
-    // Chunk view (#264) — chunks aligned to the page preview
-    'chunk.panel.title': 'Chunks',
-    'chunk.panel.count': '{n} of {total} on page {page}',
-    'chunk.panel.emptyOnPage': 'No chunks on page {page}.',
-    'chunk.panel.emptyAll':
-      'No chunks for this document yet. Generate them from the strategy below.',
-    'chunk.panel.edited': 'edited',
-
-    // Strategy popover (#268) — inline rechunk options
-    'strategy.title': 'Chunking strategy',
-    'strategy.close': 'Close',
-    'strategy.hint':
-      'Re-runs the chunker on the latest analysis and replaces the current chunkset.',
-    'strategy.chunkerType': 'Type',
-    'strategy.maxTokens': 'Max tokens',
-    'strategy.maxTokensHint': 'Between 64 and 8192.',
-    'strategy.mergePeers': 'Merge peers',
-    'strategy.repeatTableHeader': 'Repeat table headers',
-    'strategy.cancel': 'Cancel',
-    'strategy.apply': 'Apply',
-    'strategy.rechunking': 'Rechunking…',
-    'strategy.confirmWarning':
-      'Some chunks have been hand-edited. Rechunking will overwrite those edits.',
-    'strategy.confirmHint': 'Proceed anyway?',
-    'strategy.confirmBack': 'Back',
-    'strategy.confirmApply': 'Rechunk anyway',
-
     // Doc tree rail (#217)
     'tree.empty': 'No nodes in tree.',
-
-    // Chunks editor (#219, #220, #221, #222)
-    'chunks.count': '{n} chunk(s)',
-    'chunks.empty': 'No chunks yet \u2014 parse the document first.',
-    'chunks.saving': 'Saving\u2026',
-    'chunks.noTitle': '(untitled)',
-    'chunks.editPlaceholder': 'Chunk text\u2026',
-    'chunks.mergePrev': 'Merge with previous',
-    'chunks.mergeNext': 'Merge with next',
-    'chunks.split': 'Split at cursor',
-    'chunks.drop': 'Drop',
-    'chunks.add': 'Add chunk',
-    'chunks.diffToggle': 'Show diff',
-    'chunks.diffClose': 'Close diff',
-    'chunks.diffRef': 'Reference',
-    'chunks.pushTitle': 'Ingest into store',
-    'chunks.pushStore': 'Target store',
-    'chunks.pushPlaceholder': 'Store name\u2026',
-    'chunks.pushSummary': '{embeds} chunks \u00b7 ~{tokens} tokens',
-    'chunks.pushConfirm': 'Ingest',
-    'chunks.pushCancel': 'Cancel',
-    'chunks.pushDispatched': 'Push recorded: {pushId}',
-
-    'chunks.selected': '{n} selected',
-    'chunks.bulkDrop': 'Drop selected',
-    'chunks.bulkMerge': 'Merge selected',
-    'chunks.bulkCancel': 'Cancel',
 
     // Disclaimer
     'disclaimer.banner':
