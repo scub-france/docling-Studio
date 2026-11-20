@@ -14,6 +14,7 @@ from mcp import Client
 
 from domain.navigation import estimate_tokens
 from mcp_adapter import build_mcp_server
+from mcp_adapter.server import McpSurface
 from mcp_adapter.wire import CONTENT_CLOSE
 from services.navigation_config import NavigationConfig
 from tests.navigation_fixtures import (
@@ -39,7 +40,9 @@ async def _client(service=None, *, provider=None):
     # apps=False: this module owns the *read* contract. The two cards have
     # tests/test_mcp_apps.py and tests/test_mcp_sources_app.py; pinning them out
     # here is what makes the "exactly these tools" assertion below mean something.
-    async with Client(build_mcp_server(navigation, version="test", apps=False)) as client:
+    async with Client(
+        build_mcp_server(navigation, surface=McpSurface(version="test", apps=False))
+    ) as client:
         yield client
 
 

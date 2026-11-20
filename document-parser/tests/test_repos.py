@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from domain.models import AnalysisJob, AnalysisStatus, Document
+from domain.models import AnalysisJob, AnalysisOutput, AnalysisStatus, Document
 from domain.value_objects import DocumentLifecycleState
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.database import init_db
@@ -148,7 +148,9 @@ class TestParseLookups:
         job = AnalysisJob(id=job_id, document_id=doc_id)
         await analysis_repo.insert(job)
         job.mark_running()
-        job.mark_completed(markdown="", html="", pages_json="[]", document_json=json)
+        job.mark_completed(
+            AnalysisOutput(markdown="", html="", pages_json="[]", document_json=json)
+        )
         await analysis_repo.update_status(job)
 
     async def _docs(self, document_repo, *ids: str):
@@ -229,7 +231,7 @@ class TestAnalysisRepo:
         job = AnalysisJob(id="job-1", document_id="doc-1")
         await analysis_repo.insert(job)
         job.mark_running()
-        job.mark_completed(markdown="# Test", html="<h1>Test</h1>", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="# Test", html="<h1>Test</h1>", pages_json="[]"))
         await analysis_repo.update_status(job)
         await analysis_repo.insert(AnalysisJob(id="job-2", document_id="doc-1"))
 
@@ -282,7 +284,7 @@ class TestAnalysisRepo:
         await analysis_repo.insert(job)
 
         job.mark_running()
-        job.mark_completed(markdown="# Test", html="<h1>Test</h1>", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="# Test", html="<h1>Test</h1>", pages_json="[]"))
         await analysis_repo.update_status(job)
 
         found = await analysis_repo.find_by_id("job-1")

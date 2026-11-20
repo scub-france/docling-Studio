@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from api.state import AppState
 from bootstrap.factories import (
+    Repositories,
     build_analysis_service,
     build_backend_resolver,
     build_chunker,
@@ -246,20 +247,8 @@ class AppStateBuilder:
 # ----------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class _Repositories:
-    """The SQLite repositories, one instance of each, shared by every service."""
-
-    document_repo: SqliteDocumentRepository
-    document_analysis_repo: SqliteDocumentAnalysisRepository
-    analysis_repo: SqliteAnalysisRepository
-    store_repo: SqliteStoreRepository
-    link_repo: SqliteDocumentStoreLinkRepository
-    chunk_repo: SqliteChunkRepository
-
-
-def _build_repositories() -> _Repositories:
-    return _Repositories(
+def _build_repositories() -> Repositories:
+    return Repositories(
         document_repo=SqliteDocumentRepository(),
         document_analysis_repo=SqliteDocumentAnalysisRepository(),
         analysis_repo=SqliteAnalysisRepository(),
@@ -269,7 +258,7 @@ def _build_repositories() -> _Repositories:
     )
 
 
-def _build_current_analysis(repos: _Repositories) -> CurrentAnalysisResolver:
+def _build_current_analysis(repos: Repositories) -> CurrentAnalysisResolver:
     # One rule for "the document's current analysis", shared by every
     # reader below (02-2.3.1).
     return CurrentAnalysisResolver(
@@ -289,7 +278,7 @@ class _AnalysisServices:
 
 
 def _build_analysis_services(
-    repos: _Repositories, current_analysis: CurrentAnalysisResolver, graph_writer
+    repos: Repositories, current_analysis: CurrentAnalysisResolver, graph_writer
 ) -> _AnalysisServices:
     analysis_service = build_analysis_service(
         repos.document_repo,
@@ -319,7 +308,7 @@ def _build_analysis_services(
 
 
 def _build_analysis_edit_service(
-    repos: _Repositories, current_analysis: CurrentAnalysisResolver, graph_writer
+    repos: Repositories, current_analysis: CurrentAnalysisResolver, graph_writer
 ) -> AnalysisEditService:
     return AnalysisEditService(
         analysis_repo=repos.analysis_repo,
@@ -334,7 +323,7 @@ def _build_analysis_edit_service(
 
 
 def _build_version_service(
-    repos: _Repositories, current_analysis: CurrentAnalysisResolver
+    repos: Repositories, current_analysis: CurrentAnalysisResolver
 ) -> VersionService:
     return VersionService(
         version_repo=SqliteDocumentVersionRepository(),
@@ -356,18 +345,12 @@ class _FileServices:
 
 
 def _build_file_services(
-    repos: _Repositories, active_result_service: AnalysisEditService
+    repos: Repositories, active_result_service: AnalysisEditService
 ) -> _FileServices:
     # One file store for every service that touches an uploaded file.
     file_store = build_document_file_store()
     return _FileServices(
-        document_service=build_document_service(
-            repos.document_repo,
-            repos.analysis_repo,
-            repos.link_repo,
-            repos.store_repo,
-            file_store=file_store,
-        ),
+        document_service=build_document_service(repos, file_store=file_store),
         preview_service=PreviewService(
             documents=repos.document_repo,
             files=file_store,
@@ -393,7 +376,7 @@ class _StoreServices:
 
 
 def _build_store_services(
-    repos: _Repositories, backend_resolver, ingestion_service: IngestionService | None
+    repos: Repositories, backend_resolver, ingestion_service: IngestionService | None
 ) -> _StoreServices:
     return _StoreServices(
         store_service=StoreService(
@@ -423,7 +406,7 @@ class _StructureServices:
 
 
 def _build_structure_services(
-    repos: _Repositories, active_result_service: AnalysisEditService, graph_reader
+    repos: Repositories, active_result_service: AnalysisEditService, graph_reader
 ) -> _StructureServices:
     return _StructureServices(
         document_tree_service=DocumentTreeService(

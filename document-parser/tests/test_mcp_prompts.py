@@ -13,6 +13,7 @@ import pytest
 from mcp import Client
 
 from mcp_adapter import build_mcp_server
+from mcp_adapter.server import McpSurface
 from tests.navigation_fixtures import make_document_tools
 
 ARGS = {"document": "d", "question": "q"}
@@ -20,7 +21,9 @@ ARGS = {"document": "d", "question": "q"}
 
 @asynccontextmanager
 async def _client(*, apps: bool = True):
-    server = build_mcp_server(lambda: make_document_tools(), version="test", apps=apps)
+    server = build_mcp_server(
+        lambda: make_document_tools(), surface=McpSurface(version="test", apps=apps)
+    )
     async with Client(server) as client:
         yield client
 
@@ -109,7 +112,7 @@ class TestLiveRoundCap:
         from services.navigation_config import NavigationConfig
 
         tools = make_document_tools(config=NavigationConfig(max_rounds=3))
-        server = build_mcp_server(lambda: tools, version="test")
+        server = build_mcp_server(lambda: tools, surface=McpSurface(version="test"))
         async with Client(server) as client:
             result = await client.get_prompt("chunkless_rag", ARGS)
         text = result.messages[0].content.text
@@ -122,11 +125,13 @@ class TestLiveRoundCap:
         def not_yet():
             raise NavigationUnavailableError("starting")
 
-        server = build_mcp_server(not_yet, version="test", max_rounds=7)
+        server = build_mcp_server(not_yet, surface=McpSurface(version="test", max_rounds=7))
         async with Client(server) as client:
             result = await client.get_prompt("chunkless_rag", ARGS)
         assert "at most 7 rounds" in result.messages[0].content.text
 
     async def test_the_instructions_state_the_boot_cap(self):
-        server = build_mcp_server(lambda: make_document_tools(), version="test", max_rounds=4)
+        server = build_mcp_server(
+            lambda: make_document_tools(), surface=McpSurface(version="test", max_rounds=4)
+        )
         assert "4 rounds at most" in server.instructions

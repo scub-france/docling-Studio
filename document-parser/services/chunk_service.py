@@ -21,7 +21,7 @@ from domain import chunk_editing
 from domain.analysis_editing import AnalysisEditUnavailableError, EditorSnapshot, hash_result
 from domain.chunk_editing import ChunkEditingError, ChunkMergeGapError
 from domain.exceptions import AnalysisNotSelectableError
-from domain.models import Chunk, DocumentChunkSource, get_utc_now
+from domain.models import Chunk, ChunkReplacement, DocumentChunkSource, get_utc_now
 from domain.value_objects import ChunkingOptions, ChunkResult
 from services.chunk_errors import (
     ChunkConflictError,
@@ -222,14 +222,11 @@ class ChunkService:
 
     async def _replace_chunks(self, chunks: list[Chunk], chunk_source: DocumentChunkSource) -> int:
         """Swap the live chunkset and record its source in one write; returns the old count."""
+        replacement = ChunkReplacement(
+            chunk_source.document_id, chunks, get_utc_now(), chunk_source, chunk_source.analysis_id
+        )
         try:
-            return await self._chunks.replace_keeping_selection(
-                chunk_source.document_id,
-                chunks,
-                at=get_utc_now(),
-                chunk_source=chunk_source,
-                active_analysis_id=chunk_source.analysis_id,
-            )
+            return await self._chunks.replace_keeping_selection(replacement)
         except AnalysisNotSelectableError as exc:
             raise ChunkConflictError(
                 "The analysis being chunked is no longer available; reload and try again"

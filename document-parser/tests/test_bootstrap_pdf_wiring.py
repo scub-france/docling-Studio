@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bootstrap.factories import (
+    Repositories,
     build_analysis_service,
     build_document_file_store,
     build_document_service,
@@ -17,6 +18,17 @@ from bootstrap.factories import (
 from infra.document_file_store import LocalDocumentFileStore
 from infra.pdf_inspector import PdfiumInspector
 from infra.settings import settings
+
+
+def _mock_repositories() -> Repositories:
+    return Repositories(
+        document_repo=AsyncMock(),
+        document_analysis_repo=AsyncMock(),
+        analysis_repo=AsyncMock(),
+        store_repo=AsyncMock(),
+        link_repo=AsyncMock(),
+        chunk_repo=AsyncMock(),
+    )
 
 
 def test_analysis_service_is_built_with_the_pdf_inspector():
@@ -31,13 +43,7 @@ def test_analysis_service_is_built_with_the_pdf_inspector():
 
 
 def test_document_service_is_built_with_the_pdf_inspector():
-    service = build_document_service(
-        AsyncMock(),
-        AsyncMock(),
-        AsyncMock(),
-        AsyncMock(),
-        file_store=MagicMock(),
-    )
+    service = build_document_service(_mock_repositories(), file_store=MagicMock())
 
     assert isinstance(service._pdf_inspector, PdfiumInspector)
 
@@ -63,12 +69,6 @@ def test_the_file_store_is_rooted_at_the_configured_upload_dir():
 def test_document_service_is_built_with_the_given_file_store():
     store = build_document_file_store()
 
-    service = build_document_service(
-        AsyncMock(),
-        AsyncMock(),
-        AsyncMock(),
-        AsyncMock(),
-        file_store=store,
-    )
+    service = build_document_service(_mock_repositories(), file_store=store)
 
     assert service._file_store is store

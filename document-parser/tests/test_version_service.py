@@ -10,6 +10,7 @@ import pytest
 
 from domain.models import (
     AnalysisJob,
+    AnalysisOutput,
     AnalysisStatus,
     Chunk,
     Document,
@@ -172,7 +173,9 @@ class TestRestore:
             job = AnalysisJob(id=analysis_id, document_id=doc.id)
             await repos["analyses"].insert(job)
             job.mark_running()
-            job.mark_completed(markdown="", html="", pages_json="[]", document_json="{}")
+            job.mark_completed(
+                AnalysisOutput(markdown="", html="", pages_json="[]", document_json="{}")
+            )
             await repos["analyses"].complete_and_select(job)
         older = await service.record_on_rechunk(doc.id, "a1", "e" * 64)
         assert (await repos["analysis_state"].find_state(doc.id)).active_analysis_id == "a2"
@@ -202,7 +205,7 @@ class TestRestore:
         await service.restore(doc.id, version.id)
 
         replace.assert_awaited_once()
-        assert replace.await_args.args[0] == doc.id
+        assert replace.await_args.args[0].document_id == doc.id
         single.assert_not_awaited()
         live = await chunk_repo.find_for_document(doc.id)
         assert sorted(c.text for c in live) == ["live-0", "live-1", "live-2"]

@@ -38,6 +38,15 @@ class IngestionConfig:
     embedding_dimension: int = 384
 
 
+@dataclass(frozen=True)
+class IngestionSource:
+    """The document whose chunks are being indexed."""
+
+    doc_id: str
+    filename: str
+    binary_hash: str | None = None
+
+
 @dataclass
 class IngestionResult:
     """Result of an ingestion pipeline run."""
@@ -84,11 +93,9 @@ class IngestionService:
 
     async def ingest(
         self,
-        doc_id: str,
-        filename: str,
+        source: IngestionSource,
         chunks_json: str,
         *,
-        binary_hash: str | None = None,
         targets: IngestionTargets | None = None,
     ) -> IngestionResult:
         """Run the embedding + indexing pipeline on pre-chunked data.
@@ -97,10 +104,9 @@ class IngestionService:
         before re-indexing.
 
         Args:
-            doc_id: Unique document identifier.
-            filename: Original filename.
+            source: The document — its id, original filename and, optionally,
+                the hash of the source file for provenance.
             chunks_json: JSON-serialized list of chunk dicts.
-            binary_hash: Optional hash of the source file for provenance.
             targets: Per-call override for the vector_store /
                 graph_writer pair (#279). When None, the
                 service-level backends are used — preserves the pre-
@@ -110,6 +116,7 @@ class IngestionService:
         Returns:
             IngestionResult with the number of chunks indexed.
         """
+        doc_id = source.doc_id
         vector_store, graph_writer = self._resolve_call_targets(targets)
         await self._ensure_index_on(vector_store)
 
@@ -123,13 +130,7 @@ class IngestionService:
         logger.info("Embedding %d chunks for doc %s", len(texts), doc_id)
         embeddings = await self._embedding.embed(texts)
 
-        indexed_chunks = self._build_indexed_chunks(
-            doc_id=doc_id,
-            filename=filename,
-            active_chunks=active_chunks,
-            embeddings=embeddings,
-            binary_hash=binary_hash,
-        )
+        indexed_chunks = self._build_indexed_chunks(source, active_chunks, embeddings)
 
         indexed = await self._write_to_vector_store(vector_store, doc_id, indexed_chunks)
         await self._mirror_to_graph(graph_writer, doc_id, chunks_json)
@@ -160,16 +161,13 @@ class IngestionService:
 
     def _build_indexed_chunks(
         self,
-        *,
-        doc_id: str,
-        filename: str,
+        source: IngestionSource,
         active_chunks: list[dict],
         embeddings: list[list[float]],
-        binary_hash: str | None,
     ) -> list[IndexedChunk]:
-        origin = (
-            ChunkOrigin(binary_hash=binary_hash or "", filename=filename) if binary_hash else None
-        )
+        origin = None
+        if source.binary_hash:
+            origin = ChunkOrigin(binary_hash=source.binary_hash, filename=source.filename)
         indexed_chunks: list[IndexedChunk] = []
         for i, (chunk_data, embedding) in enumerate(zip(active_chunks, embeddings, strict=True)):
             bboxes = [
@@ -184,8 +182,8 @@ class IngestionService:
             ]
             indexed_chunks.append(
                 IndexedChunk(
-                    doc_id=doc_id,
-                    filename=filename,
+                    doc_id=source.doc_id,
+                    filename=source.filename,
                     content=chunk_data["text"],
                     embedding=embedding,
                     chunk_index=i,

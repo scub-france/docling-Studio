@@ -103,8 +103,10 @@ def mount_mcp_server(app: FastAPI) -> MountedMcpServer | None:
 
 def _build_server(app: FastAPI) -> MCPServer:
     """The document server, over the tools `app` publishes once it is wired."""
-    return build_mcp_server(
-        lambda: _resolve_tools(app),
+    # Imported here, not at module level: the SDK loads only when a server is built.
+    from mcp_adapter.server import McpSurface
+
+    surface = McpSurface(
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         citation_card=settings.mcp_citation_card,
@@ -113,6 +115,7 @@ def _build_server(app: FastAPI) -> MCPServer:
         # effective one on every call (#364).
         max_rounds=settings.mcp_max_rounds,
     )
+    return build_mcp_server(lambda: _resolve_tools(app), surface=surface)
 
 
 def _mount_gated_routes(app: FastAPI, server: MCPServer) -> None:

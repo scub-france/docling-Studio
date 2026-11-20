@@ -15,9 +15,11 @@ from domain.value_objects import ConversionResult, PageDetail
 from infra.pdf_inspector import PdfiumInspector
 from services.analysis_service import (
     AnalysisConfig,
+    AnalysisRun,
     AnalysisService,
     ImportDocumentNotFoundError,
     InvalidDoclingDocumentError,
+    PageBatching,
 )
 
 
@@ -294,8 +296,8 @@ class TestAnalysisServiceConcurrency:
             call_order.append("end")
 
         with patch.object(AnalysisService, "_run_analysis_inner", fake_inner):
-            t1 = asyncio.create_task(service._run_analysis("j1", "/f", "f.pdf"))
-            t2 = asyncio.create_task(service._run_analysis("j2", "/f", "f.pdf"))
+            t1 = asyncio.create_task(service._run_analysis(AnalysisRun("j1", "/f", "f.pdf")))
+            t2 = asyncio.create_task(service._run_analysis(AnalysisRun("j2", "/f", "f.pdf")))
             await asyncio.sleep(0.05)
 
             # With max_concurrent=1, only one task should have started
@@ -465,8 +467,7 @@ class TestBatchedConversion:
             "job-1",
             "/fake.pdf",
             MagicMock(),
-            total_pages=8,
-            batch_size=5,
+            PageBatching(total_pages=8, batch_size=5),
         )
 
         assert result is not None
@@ -512,8 +513,7 @@ class TestBatchedConversion:
                 "job-fail",
                 "/fake.pdf",
                 MagicMock(),
-                total_pages=8,
-                batch_size=5,
+                PageBatching(total_pages=8, batch_size=5),
             )
 
     @pytest.mark.asyncio
@@ -598,7 +598,7 @@ class TestBatchedConversion:
             pdf_inspector=MagicMock(count_pages=MagicMock(return_value=8)),
         )
 
-        await service._run_analysis_inner("job-progress", "/fake.pdf", "fake.pdf")
+        await service._run_analysis_inner(AnalysisRun("job-progress", "/fake.pdf", "fake.pdf"))
 
         # The last write is the COMPLETED one, which also selects the analysis
         completed_job = saved_jobs[-1]
@@ -637,8 +637,7 @@ class TestBatchedConversion:
             "job-del",
             "/fake.pdf",
             MagicMock(),
-            total_pages=10,
-            batch_size=5,
+            PageBatching(total_pages=10, batch_size=5),
         )
 
         assert result is None

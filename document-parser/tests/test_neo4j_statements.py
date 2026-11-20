@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 from infra.neo4j import tree_writer
 from infra.neo4j.chunk_writer import write_chunks
 from infra.neo4j.queries import fetch_graph
-from infra.neo4j.tree_writer import write_document
+from infra.neo4j.tree_writer import GraphDocument, write_document
 
 if TYPE_CHECKING:
     import pytest
@@ -378,18 +378,20 @@ def _scenarios() -> dict[str, tuple[Any, list[Any]]]:
         "write_document": (
             lambda neo: write_document(
                 neo,
-                doc_id="doc-1",
-                filename="sample.pdf",
-                document_json=doc_json,
-                tenant_id="acme",
-                source_uri="s3://bucket/sample.pdf",
-                docling_version="2.1.0",
+                GraphDocument(
+                    doc_id="doc-1",
+                    filename="sample.pdf",
+                    document_json=doc_json,
+                    tenant_id="acme",
+                    source_uri="s3://bucket/sample.pdf",
+                    docling_version="2.1.0",
+                ),
             ),
             [],
         ),
         "write_document_defaults_empty_doc": (
             lambda neo: write_document(
-                neo, doc_id="doc-2", filename="empty.pdf", document_json="{}"
+                neo, GraphDocument(doc_id="doc-2", filename="empty.pdf", document_json="{}")
             ),
             [],
         ),

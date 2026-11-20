@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.schemas import ChunkBboxResponse, ChunkingOptionsRequest, ChunkResponse, RechunkRequest
-from domain.models import AnalysisJob, AnalysisStatus, Document
+from domain.models import AnalysisJob, AnalysisOutput, AnalysisStatus, Document
 from domain.value_objects import ChunkBbox, ChunkingOptions, ChunkResult
 from main import app
 from tests.app_state import state_override
@@ -125,11 +125,13 @@ class TestAnalysisJobChunking:
         job = AnalysisJob()
         job.mark_running()
         job.mark_completed(
-            markdown="# Title",
-            html="<h1>Title</h1>",
-            pages_json="[]",
-            document_json='{"name": "doc"}',
-            chunks_json='[{"text": "chunk1"}]',
+            AnalysisOutput(
+                markdown="# Title",
+                html="<h1>Title</h1>",
+                pages_json="[]",
+                document_json='{"name": "doc"}',
+                chunks_json='[{"text": "chunk1"}]',
+            )
         )
         assert job.status == AnalysisStatus.COMPLETED
         assert job.document_json == '{"name": "doc"}'
@@ -138,7 +140,7 @@ class TestAnalysisJobChunking:
     def test_mark_completed_without_chunks(self):
         job = AnalysisJob()
         job.mark_running()
-        job.mark_completed(markdown="md", html="html", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="md", html="html", pages_json="[]"))
         assert job.document_json is None
         assert job.chunks_json is None
 
@@ -260,11 +262,13 @@ class TestCreateAnalysisWithChunking:
         job = AnalysisJob(id="j1", document_id="d1", document_filename="test.pdf")
         job.mark_running()
         job.mark_completed(
-            markdown="# Title",
-            html="<h1>Title</h1>",
-            pages_json="[]",
-            document_json='{"name": "doc"}',
-            chunks_json=json.dumps([asdict(ChunkResult(text="chunk1", token_count=5))]),
+            AnalysisOutput(
+                markdown="# Title",
+                html="<h1>Title</h1>",
+                pages_json="[]",
+                document_json='{"name": "doc"}',
+                chunks_json=json.dumps([asdict(ChunkResult(text="chunk1", token_count=5))]),
+            )
         )
         mock_analysis_service.find_by_id = AsyncMock(return_value=job)
 
@@ -510,34 +514,36 @@ class TestRemoteChunkingPath:
         job = AnalysisJob(id="j-remote", document_id="d1")
         job.mark_running()
         job.mark_completed(
-            markdown="# Title\nParagraph text here.",
-            html="<h1>Title</h1><p>Paragraph text here.</p>",
-            pages_json="[]",
-            document_json=json.dumps(
-                {
-                    "schema_name": "DoclingDocument",
-                    "version": "1.0.0",
-                    "name": "test",
-                    "origin": {
-                        "mimetype": "application/pdf",
-                        "filename": "test.pdf",
-                        "binary_hash": 0,
-                    },
-                    "furniture": {
-                        "self_ref": "#/furniture",
-                        "children": [],
-                        "content_layer": "furniture",
-                    },
-                    "body": {"self_ref": "#/body", "children": [], "content_layer": "body"},
-                    "groups": [],
-                    "texts": [],
-                    "pictures": [],
-                    "tables": [],
-                    "key_value_items": [],
-                    "form_items": [],
-                    "pages": {},
-                }
-            ),
+            AnalysisOutput(
+                markdown="# Title\nParagraph text here.",
+                html="<h1>Title</h1><p>Paragraph text here.</p>",
+                pages_json="[]",
+                document_json=json.dumps(
+                    {
+                        "schema_name": "DoclingDocument",
+                        "version": "1.0.0",
+                        "name": "test",
+                        "origin": {
+                            "mimetype": "application/pdf",
+                            "filename": "test.pdf",
+                            "binary_hash": 0,
+                        },
+                        "furniture": {
+                            "self_ref": "#/furniture",
+                            "children": [],
+                            "content_layer": "furniture",
+                        },
+                        "body": {"self_ref": "#/body", "children": [], "content_layer": "body"},
+                        "groups": [],
+                        "texts": [],
+                        "pictures": [],
+                        "tables": [],
+                        "key_value_items": [],
+                        "form_items": [],
+                        "pages": {},
+                    }
+                ),
+            )
         )
         analysis_repo.find_by_id = AsyncMock(return_value=job)
         analysis_repo.update_chunks = AsyncMock(return_value=True)

@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
 from domain.exceptions import InvalidLifecycleTransitionError
-from domain.models import AnalysisJob, AnalysisStatus
+from domain.models import AnalysisJob, AnalysisOutput, AnalysisStatus
 from domain.services import classify_error
 from domain.value_objects import (
     ChunkingOptions,
@@ -66,6 +66,25 @@ class InvalidDoclingDocumentError(ServiceError):
     """The imported payload is not a valid Docling document."""
 
     http_status = 400
+
+
+@dataclass(frozen=True)
+class AnalysisRun:
+    """An analysis to run: the job, the file and its options."""
+
+    job_id: str
+    file_path: str
+    filename: str
+    pipeline_options: dict | None = None
+    chunking_options: dict | None = None
+
+
+@dataclass(frozen=True)
+class PageBatching:
+    """How a document's pages are split into conversion batches."""
+
+    total_pages: int
+    batch_size: int
 
 
 @dataclass
@@ -138,11 +157,13 @@ class AnalysisService:
 
         task = asyncio.create_task(
             self._run_analysis(
-                job.id,
-                doc.storage_path,
-                doc.filename,
-                pipeline_options,
-                chunking_options,
+                AnalysisRun(
+                    job.id,
+                    doc.storage_path,
+                    doc.filename,
+                    pipeline_options,
+                    chunking_options,
+                )
             )
         )
         self._running_tasks[job.id] = task
@@ -282,15 +303,14 @@ class AnalysisService:
         job_id: str,
         file_path: str,
         options: ConversionOptions,
-        total_pages: int,
-        batch_size: int,
+        batching: PageBatching,
     ) -> ConversionResult | None:
         """Convert a document in batches using page_range.
 
         Returns None if the job was deleted mid-batch (caller should abort).
         Raises on batch failure (fail-fast: entire job fails).
         """
-        page_ranges = await self._plan_batches(job_id, total_pages, batch_size)
+        page_ranges = await self._plan_batches(job_id, batching)
         num_batches = len(page_ranges)
         results: list[ConversionResult] = []
         for number, page_range in enumerate(page_ranges, start=1):
@@ -306,7 +326,7 @@ class AnalysisService:
             batch_label = f"{number}/{num_batches}"
             results.append(await self._convert_batch(file_path, options, page_range, batch_label))
             start, end = page_range
-            await self._analysis_repo.update_progress(job_id, end, total_pages)
+            await self._analysis_repo.update_progress(job_id, end, batching.total_pages)
             logger.info(
                 "Batch %d/%d done (pages %d-%d) for job %s",
                 number,
@@ -318,10 +338,9 @@ class AnalysisService:
 
         return await self._converter.merge_batches(results)
 
-    async def _plan_batches(
-        self, job_id: str, total_pages: int, batch_size: int
-    ) -> list[tuple[int, int]]:
+    async def _plan_batches(self, job_id: str, batching: PageBatching) -> list[tuple[int, int]]:
         """Split the document into 1-based page ranges and reset the job's progress."""
+        total_pages, batch_size = batching.total_pages, batching.batch_size
         num_batches = math.ceil(total_pages / batch_size)
         await self._analysis_repo.update_progress(job_id, 0, total_pages)
         logger.info(
@@ -417,23 +436,14 @@ class AnalysisService:
             event.current.value,
         )
 
-    async def _run_analysis(
-        self,
-        job_id: str,
-        file_path: str,
-        filename: str,
-        pipeline_options: dict | None = None,
-        chunking_options: dict | None = None,
-    ) -> None:
+    async def _run_analysis(self, run: AnalysisRun) -> None:
         """Background task: run conversion and optionally chunk.
 
         Acquires the concurrency semaphore to limit parallel conversions
         and prevent CPU/memory exhaustion on modest hardware.
         """
         async with self._semaphore:
-            await self._run_analysis_inner(
-                job_id, file_path, filename, pipeline_options, chunking_options
-            )
+            await self._run_analysis_inner(run)
 
     def _build_conversion_options(self, pipeline_options: dict | None) -> ConversionOptions:
         """Build ConversionOptions, applying default table_mode if not specified."""
@@ -474,7 +484,7 @@ class AnalysisService:
         batch_size = self._config.batch_page_size
         if batch_size > 0 and total_pages > batch_size and self._converter.supports_page_batching:
             return await self._run_batched_conversion(
-                job_id, file_path, options, total_pages, batch_size
+                job_id, file_path, options, PageBatching(total_pages, batch_size)
             )
         return await asyncio.wait_for(
             self._converter.convert(file_path, options),
@@ -497,11 +507,13 @@ class AnalysisService:
         if not job:
             return
         job.mark_completed(
-            markdown=result.content_markdown,
-            html=result.content_html,
-            pages_json=pages_json,
-            document_json=result.document_json,
-            chunks_json=chunks_json,
+            AnalysisOutput(
+                markdown=result.content_markdown,
+                html=result.content_html,
+                pages_json=pages_json,
+                document_json=result.document_json,
+                chunks_json=chunks_json,
+            )
         )
 
         # Record a frozen (analysis, chunks_snapshot) pair in the
@@ -597,15 +609,9 @@ class AnalysisService:
             if self._config.neo4j_required:
                 raise
 
-    async def _run_analysis_inner(
-        self,
-        job_id: str,
-        file_path: str,
-        filename: str,
-        pipeline_options: dict | None = None,
-        chunking_options: dict | None = None,
-    ) -> None:
+    async def _run_analysis_inner(self, run: AnalysisRun) -> None:
         """Inner analysis logic — called under the concurrency semaphore."""
+        job_id = run.job_id
         try:
             job = await self._analysis_repo.find_by_id(job_id)
             if not job:
@@ -614,14 +620,14 @@ class AnalysisService:
 
             job.mark_running()
             await self._analysis_repo.update_status(job)
-            logger.info("Analysis started: %s (file: %s)", job_id, filename)
+            logger.info("Analysis started: %s (file: %s)", job_id, run.filename)
 
-            options = self._build_conversion_options(pipeline_options)
-            result = await self._run_conversion(job_id, file_path, options)
+            options = self._build_conversion_options(run.pipeline_options)
+            result = await self._run_conversion(job_id, run.file_path, options)
             if result is None:
                 return  # job was deleted mid-batch
 
-            await self._finalize_analysis(job_id, result, chunking_options)
+            await self._finalize_analysis(job_id, result, run.chunking_options)
 
         except TimeoutError:
             logger.error("Analysis timed out after %ds: %s", self._conversion_timeout, job_id)

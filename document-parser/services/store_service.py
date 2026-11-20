@@ -74,6 +74,36 @@ class StoreDocEntryView:
     pushed_at: str | None
 
 
+@dataclass(frozen=True)
+class StoreDraft:
+    """A store to create, as the caller described it."""
+
+    name: str
+    slug: str
+    kind: StoreKind
+    embedder: str
+    config: dict
+    is_default: bool = False
+    connection_uri: str | None = None
+    connection_username: str | None = None
+    connection_password: str | None = None
+
+
+@dataclass(frozen=True)
+class StoreChanges:
+    """The edits to apply to an existing store; a field left to None stays as it is."""
+
+    name: str | None = None
+    new_slug: str | None = None
+    kind: StoreKind | None = None
+    embedder: str | None = None
+    config: dict | None = None
+    is_default: bool | None = None
+    connection_uri: str | None = None
+    connection_username: str | None = None
+    connection_password: str | None = None
+
+
 def _validate_slug(slug: str) -> None:
     if not slug or not _SLUG_PATTERN.match(slug):
         raise StoreValidationError(
@@ -201,42 +231,30 @@ class StoreService:
             raise StoreNotFoundError(f"Store '{slug}' not found")
         return store
 
-    async def create_store(
-        self,
-        *,
-        name: str,
-        slug: str,
-        kind: StoreKind,
-        embedder: str,
-        config: dict,
-        is_default: bool = False,
-        connection_uri: str | None = None,
-        connection_username: str | None = None,
-        connection_password: str | None = None,
-    ) -> Store:
-        name = (name or "").strip()
-        slug = (slug or "").strip().lower()
-        embedder = (embedder or "").strip()
+    async def create_store(self, draft: StoreDraft) -> Store:
+        name = (draft.name or "").strip()
+        slug = (draft.slug or "").strip().lower()
+        embedder = (draft.embedder or "").strip()
 
         _validate_required_fields(name, embedder)
         _validate_slug(slug)
-        _validate_config_for_kind(kind, config)
-        connection_uri = _normalise_uri_for_kind(kind, connection_uri)
-        connection_username = _normalise_optional(connection_username)
+        _validate_config_for_kind(draft.kind, draft.config)
+        connection_uri = _normalise_uri_for_kind(draft.kind, draft.connection_uri)
+        connection_username = _normalise_optional(draft.connection_username)
         await self._check_identity_free(name, slug)
 
         store = Store(
             id=str(uuid.uuid4()),
             name=name,
             slug=slug,
-            kind=kind,
+            kind=draft.kind,
             embedder=embedder,
-            config=config,
+            config=draft.config,
             connection_uri=connection_uri,
             connection_username=connection_username,
-            is_default=is_default,
+            is_default=draft.is_default,
         )
-        await self._insert_store(store, connection_password)
+        await self._insert_store(store, draft.connection_password)
         # Re-read so `has_connection_password` reflects what landed.
         return await self._stores.find_by_id(store.id) or store
 
@@ -254,39 +272,26 @@ class StoreService:
         if store.is_default:
             await self._stores.clear_default_except(store.id)
 
-    async def update_store(
-        self,
-        slug: str,
-        *,
-        name: str | None = None,
-        new_slug: str | None = None,
-        kind: StoreKind | None = None,
-        embedder: str | None = None,
-        config: dict | None = None,
-        is_default: bool | None = None,
-        connection_uri: str | None = None,
-        connection_username: str | None = None,
-        connection_password: str | None = None,
-    ) -> Store:
+    async def update_store(self, slug: str, changes: StoreChanges) -> Store:
         store = await self.get_by_slug(slug)
-        await self._apply_name(store, name)
-        await self._apply_slug(store, new_slug)
-        if kind is not None:
-            store.kind = kind
-        _apply_embedder(store, embedder)
-        if config is not None:
-            store.config = config
+        await self._apply_name(store, changes.name)
+        await self._apply_slug(store, changes.new_slug)
+        if changes.kind is not None:
+            store.kind = changes.kind
+        _apply_embedder(store, changes.embedder)
+        if changes.config is not None:
+            store.config = changes.config
 
         # Validate the (kind, config) pair as a whole — even when only one of
         # the two changed, the combination must still satisfy the schema.
         _validate_config_for_kind(store.kind, store.config)
-        _apply_connection(store, connection_uri, connection_username)
-        if is_default is not None:
-            store.is_default = is_default
+        _apply_connection(store, changes.connection_uri, changes.connection_username)
+        if changes.is_default is not None:
+            store.is_default = changes.is_default
 
         await self._stores.update(store)
-        await self._write_connection_password(store.id, connection_password)
-        if is_default:
+        await self._write_connection_password(store.id, changes.connection_password)
+        if changes.is_default:
             await self._stores.clear_default_except(store.id)
         # Re-read so the response reflects the new sealed-flag state.
         return await self._stores.find_by_id(store.id) or store

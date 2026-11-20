@@ -14,13 +14,15 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from mcp_adapter.server import McpSurface
     from services.document_tools import DocumentTools
 
 __all__ = ["build_mcp_server"]
 
 
-def build_mcp_server(tools: Callable[[], DocumentTools], **kwargs: Any) -> Any:
+def build_mcp_server(tools: Callable[[], DocumentTools], surface: McpSurface | None = None) -> Any:
     """Build the MCP server over lazily resolved document services."""
+    from mcp_adapter.server import McpSurface
     from mcp_adapter.server import build_mcp_server as _build
 
-    return _build(tools, **kwargs)
+    return _build(tools, surface or McpSurface())

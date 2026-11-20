@@ -13,7 +13,7 @@ HTTP route would be the same call.
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from domain.anchors import DocumentAnchor
@@ -46,6 +46,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 READ_MODES = ("self", "section")
+
+
+@dataclass(frozen=True)
+class ReadScope:
+    """How to read an element: the scope, the token budget, where to resume."""
+
+    include: str = "section"
+    max_tokens: int | None = None
+    cursor: str | None = None
 
 
 class NavigationService:
@@ -131,19 +140,19 @@ class NavigationService:
         ref: str,
         *,
         version_id: str | None = None,
-        include: str = "section",
-        max_tokens: int | None = None,
-        cursor: str | None = None,
+        scope: ReadScope = ReadScope(),
     ) -> Excerpt:
         """Read one element — or the whole section it opens — under a budget."""
-        if include not in READ_MODES:
-            raise InvalidArgumentError(f"include must be one of {READ_MODES}, got {include!r}")
+        if scope.include not in READ_MODES:
+            raise InvalidArgumentError(
+                f"include must be one of {READ_MODES}, got {scope.include!r}"
+            )
 
         parse = await self._parses.load(document_id, version_id)
         target = _require_target(parse, document_id, ref)
-        refs, start = self._list_refs_to_read(parse, ref, include=include, cursor=cursor)
+        refs, start = self._list_refs_to_read(parse, ref, scope)
         picked, spent, truncated, next_cursor = pick_within_budget(
-            parse.index, refs, self._compute_budget(max_tokens), start
+            parse.index, refs, self._compute_budget(scope.max_tokens), start
         )
 
         pages = [element.page for element in picked if element.page is not None]
@@ -200,15 +209,14 @@ class NavigationService:
         self,
         parse: LoadedParse,
         ref: str,
-        *,
-        include: str,
-        cursor: str | None,
+        scope: ReadScope,
     ) -> tuple[list[str], int]:
         """The refs this read covers from the cursor on, and the character of
         the first to start at — past 0 when the cursor is `ref@offset`."""
+        cursor = scope.cursor
         # A page ref carries no text of its own, so `self` would read nothing
         # at all — for it, both modes mean "everything on this page".
-        read_whole = include == "section" or parse_page_ref(ref) is not None
+        read_whole = scope.include == "section" or parse_page_ref(ref) is not None
         # `list_section_refs` is empty for a ref that resolves but sits outside
         # reading order — a caption, or text pruned from inside a picture.
         # Those refs carry text and `include="self"` returns it, so the

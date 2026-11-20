@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from domain.exceptions import AnalysisNotSelectableError
-from domain.models import AnalysisJob, AnalysisStatus, Chunk, Document, Store
+from domain.models import AnalysisJob, AnalysisOutput, AnalysisStatus, Chunk, Document, Store
 from domain.value_objects import (
     ChunkDocItem,
     ChunkResult,
@@ -402,7 +402,7 @@ class TestRechunkDocument:
         await service.rechunk_document(doc.id)
 
         replace.assert_awaited_once()
-        assert replace.await_args.args[0] == doc.id
+        assert replace.await_args.args[0].document_id == doc.id
         single.assert_not_awaited()
         source = (await repos["analysis_state"].find_state(doc.id)).chunk_source
         assert source.analysis_id == job.id
@@ -466,7 +466,12 @@ class TestRechunkDocument:
             await repos["analyses"].insert(job)
             job.mark_running()
             job.mark_completed(
-                markdown="", html="", pages_json="[]", document_json=json.dumps({"v": analysis_id})
+                AnalysisOutput(
+                    markdown="",
+                    html="",
+                    pages_json="[]",
+                    document_json=json.dumps({"v": analysis_id}),
+                )
             )
             await repos["analyses"].complete_and_select(job)
 

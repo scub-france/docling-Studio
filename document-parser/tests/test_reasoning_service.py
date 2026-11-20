@@ -182,7 +182,7 @@ async def test_parse_error_propagates():
 
 async def _seed_two_analyses(tmp_path, monkeypatch):
     """A document analysed twice, on SQLite: `newer` completed last and is active."""
-    from domain.models import AnalysisJob, Document
+    from domain.models import AnalysisJob, AnalysisOutput, Document
     from persistence import database
     from persistence.analysis_repo import SqliteAnalysisRepository
     from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
@@ -200,7 +200,9 @@ async def _seed_two_analyses(tmp_path, monkeypatch):
         await analyses.insert(job)
         job.mark_running()
         job.mark_completed(
-            markdown=job_id, html="", pages_json="[]", document_json=f'{{"v": "{job_id}"}}'
+            AnalysisOutput(
+                markdown=job_id, html="", pages_json="[]", document_json=f'{{"v": "{job_id}"}}'
+            )
         )
         await analyses.complete_and_select(job)
     states = SqliteDocumentAnalysisRepository()

@@ -17,6 +17,7 @@ from mcp import Client
 
 from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import SOURCES_APP_URI
+from mcp_adapter.server import McpSurface
 from mcp_adapter.sources_view import SOURCES_APP_HTML
 from services.navigation_config import NavigationConfig
 from tests.navigation_fixtures import (
@@ -33,7 +34,7 @@ PREAVIS_SECTION_URI = anchor_uri("#/texts/3")
 
 @asynccontextmanager
 async def _client(tools, *, apps: bool = True):
-    server = build_mcp_server(lambda: tools, version="test", apps=apps)
+    server = build_mcp_server(lambda: tools, surface=McpSurface(version="test", apps=apps))
     async with Client(server) as client:
         yield client
 

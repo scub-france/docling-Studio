@@ -149,6 +149,7 @@ import {
   clampPageInput,
   isPageInRenderWindow,
   computePageInputWidthCh,
+  type PreviewViewState,
 } from './PagePreviewWithOverlay.logic'
 import {
   computeCenteredScrollPosition,
@@ -309,12 +310,15 @@ function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent):
 }
 
 function shouldRenderPage(pageNumber: number): boolean {
+  const view: PreviewViewState = {
+    currentPage: props.currentPage,
+    viewMode: viewMode.value,
+    focusedPage: focusedPage.value,
+    currentPageSettled: settledPageNumbers.has(props.currentPage),
+  }
   return isPageInRenderWindow(
     pageNumber,
-    props.currentPage,
-    viewMode.value,
-    focusedPage.value,
-    settledPageNumbers.has(props.currentPage),
+    view,
     loadedPageNumbers.has(pageNumber) || pendingPageNumbers.has(pageNumber),
   )
 }

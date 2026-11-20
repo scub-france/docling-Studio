@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.ingestion_service import IngestionConfig, IngestionService
+from services.ingestion_service import IngestionConfig, IngestionService, IngestionSource
+
+_SOURCE = IngestionSource(doc_id="doc-1", filename="test.pdf")
 
 
 def _make_chunks_json(count: int = 3, *, with_deleted: bool = False) -> str:
@@ -55,7 +57,7 @@ class TestIngest:
     async def test_full_pipeline(
         self, service: IngestionService, mock_embedding: AsyncMock, mock_vector_store: AsyncMock
     ) -> None:
-        result = await service.ingest("doc-1", "test.pdf", _make_chunks_json(3))
+        result = await service.ingest(_SOURCE, _make_chunks_json(3))
 
         assert result.doc_id == "doc-1"
         assert result.chunks_indexed == 3
@@ -76,7 +78,7 @@ class TestIngest:
     ) -> None:
         mock_embedding.embed.return_value = [[0.1, 0.2, 0.3]] * 2
         mock_vector_store.index_chunks.return_value = 2
-        result = await service.ingest("doc-1", "test.pdf", _make_chunks_json(3, with_deleted=True))
+        result = await service.ingest(_SOURCE, _make_chunks_json(3, with_deleted=True))
 
         assert result.chunks_indexed == 2
         texts = mock_embedding.embed.call_args[0][0]
@@ -85,7 +87,7 @@ class TestIngest:
     async def test_empty_chunks(
         self, service: IngestionService, mock_embedding: AsyncMock, mock_vector_store: AsyncMock
     ) -> None:
-        result = await service.ingest("doc-1", "test.pdf", json.dumps([]))
+        result = await service.ingest(_SOURCE, json.dumps([]))
         assert result.chunks_indexed == 0
         mock_embedding.embed.assert_not_awaited()
 
@@ -93,7 +95,7 @@ class TestIngest:
         self, service: IngestionService, mock_vector_store: AsyncMock
     ) -> None:
         mock_vector_store.delete_document.return_value = 5
-        await service.ingest("doc-1", "test.pdf", _make_chunks_json(3))
+        await service.ingest(_SOURCE, _make_chunks_json(3))
         mock_vector_store.delete_document.assert_awaited_once_with("test-idx", "doc-1")
 
     async def test_bbox_conversion(
@@ -101,7 +103,7 @@ class TestIngest:
     ) -> None:
         mock_embedding.embed.return_value = [[0.1, 0.2, 0.3]]
         mock_vector_store.index_chunks.return_value = 1
-        await service.ingest("doc-1", "test.pdf", _make_chunks_json(1))
+        await service.ingest(_SOURCE, _make_chunks_json(1))
         indexed = mock_vector_store.index_chunks.call_args[0][1]
         bbox = indexed[0].bboxes[0]
         assert bbox.x == 0.0
@@ -114,7 +116,10 @@ class TestIngest:
     ) -> None:
         mock_embedding = service._embedding
         mock_embedding.embed.return_value = [[0.1]] * 1
-        await service.ingest("doc-1", "test.pdf", _make_chunks_json(1), binary_hash="abc123")
+        await service.ingest(
+            IngestionSource(doc_id="doc-1", filename="test.pdf", binary_hash="abc123"),
+            _make_chunks_json(1),
+        )
         indexed = mock_vector_store.index_chunks.call_args[0][1]
         assert indexed[0].origin is not None
         assert indexed[0].origin.binary_hash == "abc123"
@@ -215,7 +220,7 @@ class TestIngestTargetsOverride:
         override.index_chunks.return_value = 3
         targets = IngestionTargets(vector_store=override, graph_writer=None)
 
-        result = await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
+        result = await service.ingest(_SOURCE, _make_chunks_json(3), targets=targets)
 
         # The override carried the writes.
         override.ensure_index.assert_awaited_once()
@@ -242,7 +247,7 @@ class TestIngestTargetsOverride:
         graph_writer_mock = AsyncMock()
         targets = IngestionTargets(vector_store=mock_vector_store, graph_writer=graph_writer_mock)
 
-        await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
+        await service.ingest(_SOURCE, _make_chunks_json(3), targets=targets)
 
         graph_writer_mock.write_chunks.assert_awaited_once()
         kwargs = graph_writer_mock.write_chunks.await_args.kwargs
@@ -255,7 +260,7 @@ class TestIngestTargetsOverride:
         backwards-compat with single-cluster callers (legacy tests,
         embedding/search endpoints that don't know about stores).
         """
-        await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=None)
+        await service.ingest(_SOURCE, _make_chunks_json(3), targets=None)
         mock_vector_store.index_chunks.assert_awaited_once()
 
     async def test_targets_both_none_inside_envelope_is_a_full_skip(
@@ -270,7 +275,7 @@ class TestIngestTargetsOverride:
         from services.store_backend_resolver import IngestionTargets
 
         targets = IngestionTargets(vector_store=None, graph_writer=None)
-        result = await service.ingest("doc-1", "test.pdf", _make_chunks_json(3), targets=targets)
+        result = await service.ingest(_SOURCE, _make_chunks_json(3), targets=targets)
 
         # Vector store path is entirely skipped despite the
         # service-level default being present (the override wins,
@@ -315,7 +320,7 @@ class TestNeo4jOnlyMode:
     async def test_ingest_skips_opensearch_and_reports_processed_count(
         self, neo4j_only_service: IngestionService, mock_embedding: AsyncMock
     ) -> None:
-        result = await neo4j_only_service.ingest("doc-1", "test.pdf", _make_chunks_json(3))
+        result = await neo4j_only_service.ingest(_SOURCE, _make_chunks_json(3))
         # Embedding still runs (text-search semantics must stay
         # consistent across stores) — only the OpenSearch indexing
         # step is skipped.
@@ -330,7 +335,7 @@ class TestNeo4jOnlyMode:
     async def test_ingest_empty_chunks_short_circuits(
         self, neo4j_only_service: IngestionService, mock_embedding: AsyncMock
     ) -> None:
-        result = await neo4j_only_service.ingest("doc-1", "test.pdf", json.dumps([]))
+        result = await neo4j_only_service.ingest(_SOURCE, json.dumps([]))
         assert result.chunks_indexed == 0
         mock_embedding.embed.assert_not_awaited()
 

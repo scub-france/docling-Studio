@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from domain.exceptions import AnalysisNotSelectableError
 from domain.models import (
     Chunk,
+    ChunkReplacement,
     DocumentVersion,
     DocumentVersionKind,
     generate_compact_id,
@@ -176,11 +177,13 @@ class VersionService:
         active_analysis_id = await self._resolve_restored_selection(document_id, version)
         try:
             await self._chunks.replace_and_select(
-                document_id,
-                new_chunks,
-                at=get_utc_now(),
-                chunk_source=version.chunk_source,
-                active_analysis_id=active_analysis_id,
+                ChunkReplacement(
+                    document_id,
+                    new_chunks,
+                    at=get_utc_now(),
+                    chunk_source=version.chunk_source,
+                    active_analysis_id=active_analysis_id,
+                )
             )
         except AnalysisNotSelectableError as exc:
             raise _build_version_analysis_gone_error() from exc

@@ -13,6 +13,7 @@ from api.schemas import (
     SearchResponse,
     SearchResultItem,
 )
+from services.ingestion_service import IngestionSource
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ingestion", tags=["ingestion"])
@@ -38,11 +39,10 @@ async def ingest_analysis(
         raise HTTPException(status_code=400, detail="Analysis has no chunks — run chunking first")
 
     try:
-        result = await ingestion.ingest(
-            doc_id=job.document_id,
-            filename=job.document_filename or "unknown",
-            chunks_json=job.chunks_json,
+        source = IngestionSource(
+            doc_id=job.document_id, filename=job.document_filename or "unknown"
         )
+        result = await ingestion.ingest(source, job.chunks_json)
     except Exception as e:
         logger.exception("Ingestion failed for analysis %s", analysis_id)
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}") from e

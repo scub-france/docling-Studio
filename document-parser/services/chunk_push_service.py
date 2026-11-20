@@ -15,10 +15,9 @@ from typing import TYPE_CHECKING
 
 from domain.models import ChunkPush, DocumentStoreLink, generate_id, get_utc_now
 from services.chunk_errors import ChunkServiceError, require_document
+from services.ingestion_service import IngestionSource
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable
-
     from domain.models import Chunk, Store
     from domain.ports import (
         ChunkPushRepository,
@@ -27,7 +26,7 @@ if TYPE_CHECKING:
         DocumentStoreLinkRepository,
         StoreRepository,
     )
-    from services.ingestion_service import IngestionResult, IngestionService
+    from services.ingestion_service import IngestionService
     from services.store_backend_resolver import IngestionTargets, StoreBackendResolver
 
 logger = logging.getLogger(__name__)
@@ -130,13 +129,14 @@ class ChunkPushService:
         chunks_json_payload = json.dumps([_chunk_to_ingestion_dict(c) for c in canonical])
         chunkset_hash = _compute_chunkset_hash(canonical)
         targets = await self._resolve_targets(document_id, store, resolved_store_id)
-        ingest_call = ingestion.ingest(
-            doc_id=document_id,
-            filename=(doc.filename if doc else document_id),
-            chunks_json=chunks_json_payload,
-            targets=targets,
-        )
-        ingestion_result = await self._await_ingestion(ingest_call, document_id, resolved_store_id)
+        filename = doc.filename if doc else document_id
+        source = IngestionSource(doc_id=document_id, filename=filename)
+        try:
+            ingestion_result = await ingestion.ingest(source, chunks_json_payload, targets=targets)
+        except Exception as exc:
+            # So the UI shows "Failed", not an endless "Pushing…" or the previous state.
+            await self._mark_link_failed(document_id, resolved_store_id, error=str(exc))
+            raise
 
         push = await self._record_push(document_id, resolved_store_id, canonical, chunkset_hash)
 
@@ -149,19 +149,6 @@ class ChunkPushService:
             token_total,
         )
         return _build_push_response(push.id, ingestion_result.chunks_indexed, token_total)
-
-    async def _await_ingestion(
-        self, ingest_call: Awaitable[IngestionResult], document_id: str, store_id: str
-    ) -> IngestionResult:
-        """Run the ingestion, recording a failure on the link before it propagates."""
-        try:
-            return await ingest_call
-        except Exception as exc:
-            # Push failed mid-flight — record the failure on the link
-            # so the UI can show "Failed" instead of an indefinite
-            # "Pushing…" or the previous state. Then re-raise.
-            await self._mark_link_failed(document_id, store_id, error=str(exc))
-            raise
 
     def _require_ingestion(self) -> IngestionService:
         if self._ingestion is None:

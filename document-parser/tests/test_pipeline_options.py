@@ -417,7 +417,9 @@ class TestServiceForwardsPipelineOptions:
             "images_scale": 2.0,
         }
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", opts)
+        from services.analysis_service import AnalysisRun
+
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", opts))
 
         mock_converter.convert.assert_called_once()
         call_args = mock_converter.convert.call_args
@@ -444,7 +446,9 @@ class TestServiceForwardsPipelineOptions:
         svc = self._make_service(mock_converter)
         svc._analysis_repo.find_by_id = AsyncMock(return_value=mock_job)
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", None)
+        from services.analysis_service import AnalysisRun
+
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", None))
 
         mock_converter.convert.assert_called_once()
         call_args = mock_converter.convert.call_args
@@ -459,7 +463,9 @@ class TestServiceForwardsPipelineOptions:
         svc = self._make_service(mock_converter)
         svc._analysis_repo.find_by_id = AsyncMock(return_value=mock_job)
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", {"do_ocr": False})
+        from services.analysis_service import AnalysisRun
+
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", {"do_ocr": False}))
 
         # Should have called update_status twice: RUNNING then FAILED
         assert svc._analysis_repo.update_status.call_count == 2

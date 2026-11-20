@@ -18,6 +18,8 @@ from api.schemas import (
 )
 from domain.value_objects import StoreKind
 from services.store_service import (
+    StoreChanges,
+    StoreDraft,
     StoreServiceError,
 )
 
@@ -92,15 +94,17 @@ async def create_store(
     kind = _parse_kind(payload.kind)
     try:
         store = await service.create_store(
-            name=payload.name,
-            slug=payload.slug,
-            kind=kind,
-            embedder=payload.embedder,
-            config=payload.config,
-            is_default=payload.is_default,
-            connection_uri=payload.connection_uri,
-            connection_username=payload.connection_username,
-            connection_password=payload.connection_password,
+            StoreDraft(
+                name=payload.name,
+                slug=payload.slug,
+                kind=kind,
+                embedder=payload.embedder,
+                config=payload.config,
+                is_default=payload.is_default,
+                connection_uri=payload.connection_uri,
+                connection_username=payload.connection_username,
+                connection_password=payload.connection_password,
+            )
         )
     except StoreServiceError as exc:
         raise to_http_error(exc) from exc
@@ -126,15 +130,17 @@ async def update_store(
     try:
         store = await service.update_store(
             slug,
-            name=payload.name,
-            new_slug=payload.slug,
-            kind=kind,
-            embedder=payload.embedder,
-            config=payload.config,
-            is_default=payload.is_default,
-            connection_uri=payload.connection_uri,
-            connection_username=payload.connection_username,
-            connection_password=payload.connection_password,
+            StoreChanges(
+                name=payload.name,
+                new_slug=payload.slug,
+                kind=kind,
+                embedder=payload.embedder,
+                config=payload.config,
+                is_default=payload.is_default,
+                connection_uri=payload.connection_uri,
+                connection_username=payload.connection_username,
+                connection_password=payload.connection_password,
+            ),
         )
     except StoreServiceError as exc:
         raise to_http_error(exc) from exc

@@ -23,6 +23,7 @@ from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from domain.navigation import BoundingBox
 from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI
+from mcp_adapter.server import McpSurface
 from mcp_adapter.sources_view import SOURCES_APP_HTML
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError
@@ -49,7 +50,9 @@ def _png(width: int = 1275, height: int = 1650) -> bytes:
 @asynccontextmanager
 async def _client(tools, *, apps: bool = True, negotiates: bool = False):
     # The citation card is off by default; this module is its test, so on.
-    server = build_mcp_server(lambda: tools, version="test", apps=apps, citation_card=True)
+    server = build_mcp_server(
+        lambda: tools, surface=McpSurface(version="test", apps=apps, citation_card=True)
+    )
     async with Client(server, extensions=[APPS_CLIENT] if negotiates else None) as client:
         yield client
 
@@ -164,7 +167,7 @@ class TestAppsSurface:
         """Offered to a model, it was called on its own before every sources
         card, which already shows each cited passage on its page."""
         tools = _service_with_file(tmp_path)
-        server = build_mcp_server(lambda: tools, version="test", apps=True)
+        server = build_mcp_server(lambda: tools, surface=McpSurface(version="test", apps=True))
         async with Client(server) as client:
             listed = {t.name for t in (await client.list_tools()).tools}
             resources = {str(r.uri) for r in (await client.list_resources()).resources}

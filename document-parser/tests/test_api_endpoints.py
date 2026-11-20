@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from domain.models import AnalysisJob, Document
+from domain.models import AnalysisJob, AnalysisOutput, Document
 from infra.document_file_store import LocalDocumentFileStore
 from infra.page_raster import PdfPageRasterizer
 from infra.pdf_inspector import PdfiumInspector
@@ -827,7 +827,7 @@ class TestAnalysisEndpoints:
     def test_import_analysis(self, client, mock_analysis_service):
         job = AnalysisJob(id="j-import", document_id="d1", document_filename="test.pdf")
         job.mark_running()
-        job.mark_completed("# Imported", "<p>Imported</p>", "[]", "{}")
+        job.mark_completed(AnalysisOutput("# Imported", "<p>Imported</p>", "[]", "{}"))
         mock_analysis_service.import_docling_document = AsyncMock(return_value=job)
         payload = {"documentId": "d1", "document": {"schema_name": "DoclingDocument"}}
 

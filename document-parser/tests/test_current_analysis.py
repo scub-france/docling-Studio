@@ -18,6 +18,7 @@ from api.documents import router
 from api.state import AppState, get_app_state
 from domain.models import (
     AnalysisJob,
+    AnalysisOutput,
     AnalysisStatus,
     Document,
     DocumentAnalysisState,
@@ -96,10 +97,12 @@ async def _complete(repos, analysis_id: str, doc_id: str = "doc-1", *, parsed: b
     await repos["analyses"].insert(job)
     job.mark_running()
     job.mark_completed(
-        markdown=f"# {analysis_id}",
-        html="",
-        pages_json="[]",
-        document_json=f'{{"v": "{analysis_id}"}}' if parsed else None,
+        AnalysisOutput(
+            markdown=f"# {analysis_id}",
+            html="",
+            pages_json="[]",
+            document_json=f'{{"v": "{analysis_id}"}}' if parsed else None,
+        )
     )
     await repos["analyses"].complete_and_select(job)
 
@@ -147,7 +150,9 @@ async def test_a_document_without_a_state_row_reads_its_latest_parse(repos):
         job = AnalysisJob(id=analysis_id, document_id="doc-1")
         await repos["analyses"].insert(job)
         job.mark_running()
-        job.mark_completed(markdown="", html="", pages_json="[]", document_json="{}")
+        job.mark_completed(
+            AnalysisOutput(markdown="", html="", pages_json="[]", document_json="{}")
+        )
         await repos["analyses"].update_status(job)
     assert await repos["current"].find_current_analysis_id("doc-1") == "new"
 

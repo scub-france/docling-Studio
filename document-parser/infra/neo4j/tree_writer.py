@@ -69,15 +69,22 @@ def _build_element_props(item: dict[str, Any], doc_id: str) -> dict[str, Any]:
 
 
 @dataclass(frozen=True)
-class _DocumentNode:
-    """Properties of the `:Document` node, which carries the verbatim JSON."""
+class GraphDocument:
+    """A parsed document to write to the graph, with its verbatim DoclingDocument JSON."""
 
     doc_id: str
-    title: str
+    filename: str
     document_json: str
-    tenant_id: str
-    source_uri: str | None
-    docling_version: str | None
+    tenant_id: str = "default"
+    source_uri: str | None = None
+    docling_version: str | None = None
+
+
+@dataclass(frozen=True)
+class _DocumentNode:
+    """The `:Document` node: the document as written, stamped with its ingestion time."""
+
+    document: GraphDocument
     ingested_at: str
 
 
@@ -154,7 +161,8 @@ async def _wipe_document_graph(tx: AsyncTransaction, doc_id: str) -> None:
     await tx.run("MATCH (p:Page {doc_id: $doc_id}) DETACH DELETE p", doc_id=doc_id)
 
 
-async def _create_document_node(tx: AsyncTransaction, document: _DocumentNode) -> None:
+async def _create_document_node(tx: AsyncTransaction, node: _DocumentNode) -> None:
+    document = node.document
     await tx.run(
         """
         CREATE (d:Document {
@@ -170,9 +178,9 @@ async def _create_document_node(tx: AsyncTransaction, document: _DocumentNode) -
         })
         """,
         doc_id=document.doc_id,
-        title=document.title,
+        title=document.filename,
         source_uri=document.source_uri or "",
-        ingested_at=document.ingested_at,
+        ingested_at=node.ingested_at,
         docling_version=document.docling_version or "",
         tenant_id=document.tenant_id,
         document_json=document.document_json,
@@ -324,11 +332,11 @@ async def _link_reading_order(tx: AsyncTransaction, doc_id: str, reading_order: 
 
 
 async def _write_tree(
-    tx: AsyncTransaction, document: _DocumentNode, projection: _TreeProjection
+    tx: AsyncTransaction, node: _DocumentNode, projection: _TreeProjection
 ) -> None:
     # Replace strategy: wipe the existing graph for this doc_id first.
     await _wipe_document_graph(tx, projection.doc_id)
-    await _create_document_node(tx, document)
+    await _create_document_node(tx, node)
     if projection.pages:
         await _create_page_nodes(tx, projection.pages)
     await _create_element_nodes(tx, projection.elements)
@@ -341,37 +349,21 @@ async def _write_tree(
         await _link_reading_order(tx, projection.doc_id, projection.reading_order)
 
 
-async def write_document(
-    neo: Neo4jDriver,
-    *,
-    doc_id: str,
-    filename: str,
-    document_json: str,
-    tenant_id: str = "default",
-    source_uri: str | None = None,
-    docling_version: str | None = None,
-) -> TreeWriteResult:
+async def write_document(neo: Neo4jDriver, document: GraphDocument) -> TreeWriteResult:
     """Persist the full DoclingDocument tree to Neo4j.
 
     Idempotent: wipes any existing graph for doc_id before writing.
     Fails fast (exception propagates) if Neo4j is unavailable — per design §8.5.
     """
-    doc_data = json.loads(document_json)
-    document = _DocumentNode(
-        doc_id=doc_id,
-        title=filename,
-        document_json=document_json,
-        tenant_id=tenant_id,
-        source_uri=source_uri,
-        docling_version=docling_version,
-        ingested_at=datetime.now(tz=UTC).isoformat(),
-    )
+    doc_id = document.doc_id
+    doc_data = json.loads(document.document_json)
+    node = _DocumentNode(document, ingested_at=datetime.now(tz=UTC).isoformat())
     projection = _build_tree_projection(doc_data, doc_id)
     async with (
         neo.driver.session(database=neo.database) as session,
         await session.begin_transaction() as tx,
     ):
-        await _write_tree(tx, document, projection)
+        await _write_tree(tx, node, projection)
         await tx.commit()
     logger.info(
         "Neo4j: wrote doc %s (%d elements, %d pages, %d provenances)",

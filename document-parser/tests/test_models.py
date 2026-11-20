@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from domain.models import AnalysisJob, AnalysisStatus, Document
+from domain.models import AnalysisJob, AnalysisOutput, AnalysisStatus, Document
 
 
 class TestDocument:
@@ -65,9 +65,11 @@ class TestAnalysisJob:
         job.mark_running()
 
         job.mark_completed(
-            markdown="# Title",
-            html="<h1>Title</h1>",
-            pages_json='[{"page": 1}]',
+            AnalysisOutput(
+                markdown="# Title",
+                html="<h1>Title</h1>",
+                pages_json='[{"page": 1}]',
+            )
         )
 
         assert job.status == AnalysisStatus.COMPLETED
@@ -96,7 +98,7 @@ class TestAnalysisJob:
         job.mark_running()
         assert job.status == AnalysisStatus.RUNNING
 
-        job.mark_completed(markdown="md", html="html", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="md", html="html", pages_json="[]"))
         assert job.status == AnalysisStatus.COMPLETED
 
 
@@ -112,7 +114,7 @@ class TestAnalysisJobGuardClauses:
     def test_mark_running_from_completed_raises(self):
         job = AnalysisJob()
         job.mark_running()
-        job.mark_completed(markdown="", html="", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="", html="", pages_json="[]"))
         with pytest.raises(ValueError, match="Cannot mark as RUNNING"):
             job.mark_running()
 
@@ -125,18 +127,18 @@ class TestAnalysisJobGuardClauses:
     def test_mark_completed_from_pending_raises(self):
         job = AnalysisJob()
         with pytest.raises(ValueError, match="Cannot mark as COMPLETED"):
-            job.mark_completed(markdown="", html="", pages_json="[]")
+            job.mark_completed(AnalysisOutput(markdown="", html="", pages_json="[]"))
 
     def test_mark_completed_from_failed_raises(self):
         job = AnalysisJob()
         job.mark_failed("err")
         with pytest.raises(ValueError, match="Cannot mark as COMPLETED"):
-            job.mark_completed(markdown="", html="", pages_json="[]")
+            job.mark_completed(AnalysisOutput(markdown="", html="", pages_json="[]"))
 
     def test_mark_failed_from_completed_raises(self):
         job = AnalysisJob()
         job.mark_running()
-        job.mark_completed(markdown="", html="", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="", html="", pages_json="[]"))
         with pytest.raises(ValueError, match="Cannot mark as FAILED"):
             job.mark_failed("err")
 

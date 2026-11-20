@@ -25,9 +25,9 @@ if TYPE_CHECKING:
         AnalysisJob,
         Chunk,
         ChunkPush,
+        ChunkReplacement,
         Document,
         DocumentAnalysisState,
-        DocumentChunkSource,
         DocumentStoreLink,
         DocumentVersion,
         Store,
@@ -287,52 +287,36 @@ class ChunkRepository(Protocol):
 
     async def soft_delete_many(self, chunk_ids: list[str], *, at: datetime) -> int: ...
 
-    async def replace_and_select(
-        self,
-        document_id: str,
-        chunks: list[Chunk],
-        *,
-        at: datetime,
-        chunk_source: DocumentChunkSource | None,
-        active_analysis_id: str | None,
-    ) -> int:
-        """Soft-delete the live chunks, insert `chunks` and write the document's
-        analysis state, in one transaction. Returns how many chunks were
-        soft-deleted. Used by a restore.
+    async def replace_and_select(self, replacement: ChunkReplacement) -> int:
+        """Soft-delete the live chunks, insert `replacement.chunks` and write the
+        document's analysis state, in one transaction. Returns how many chunks
+        were soft-deleted. Used by a restore.
 
-        `chunk_source` is recorded as given (None forgets it).
-        `active_analysis_id` becomes the active analysis (None clears an
-        existing selection).
+        `replacement.chunk_source` is recorded as given (None forgets it).
+        `replacement.active_analysis_id` becomes the active analysis (None
+        clears an existing selection).
 
         Raises:
-            ValueError: `chunk_source` belongs to another document.
+            ValueError: `replacement.chunk_source` belongs to another document.
             AnalysisNotSelectableError: the analysis to select is gone or
                 belongs to another document; nothing is written.
         """
         ...
 
-    async def replace_keeping_selection(
-        self,
-        document_id: str,
-        chunks: list[Chunk],
-        *,
-        at: datetime,
-        chunk_source: DocumentChunkSource | None,
-        active_analysis_id: str | None,
-    ) -> int:
-        """Soft-delete the live chunks, insert `chunks` and record
-        `chunk_source`, in one transaction, keeping the document's selection.
-        Returns how many chunks were soft-deleted. Used by a rechunk.
+    async def replace_keeping_selection(self, replacement: ChunkReplacement) -> int:
+        """Soft-delete the live chunks, insert `replacement.chunks` and record
+        `replacement.chunk_source`, in one transaction, keeping the document's
+        selection. Returns how many chunks were soft-deleted. Used by a rechunk.
 
-        `chunk_source` is recorded as given (None forgets it). A rechunk never
-        changes an existing selection: an analysis that became active while
-        the chunker ran stays active, and the new chunks report stale against
-        it. `active_analysis_id`, the chunked analysis, only goes into a state
-        row this write creates, so a document without one keeps the analysis
-        the fallback rule gave it.
+        `replacement.chunk_source` is recorded as given (None forgets it). A
+        rechunk never changes an existing selection: an analysis that became
+        active while the chunker ran stays active, and the new chunks report
+        stale against it. `replacement.active_analysis_id`, the chunked
+        analysis, only goes into a state row this write creates, so a document
+        without one keeps the analysis the fallback rule gave it.
 
         Raises:
-            ValueError: `chunk_source` belongs to another document.
+            ValueError: `replacement.chunk_source` belongs to another document.
             AnalysisNotSelectableError: the analysis to select is gone or
                 belongs to another document; nothing is written.
         """

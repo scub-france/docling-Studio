@@ -181,6 +181,17 @@ def resolve_selection_after_restore(
     return fallback_analysis_id
 
 
+@dataclass(frozen=True)
+class AnalysisOutput:
+    """What a completed conversion produces."""
+
+    markdown: str
+    html: str
+    pages_json: str
+    document_json: str | None = None
+    chunks_json: str | None = None
+
+
 @dataclass
 class AnalysisJob:
     id: str = field(default_factory=generate_id)
@@ -221,23 +232,16 @@ class AnalysisJob:
         self.status = AnalysisStatus.RUNNING
         self.started_at = get_utc_now()
 
-    def mark_completed(
-        self,
-        markdown: str,
-        html: str,
-        pages_json: str,
-        document_json: str | None = None,
-        chunks_json: str | None = None,
-    ) -> None:
+    def mark_completed(self, output: AnalysisOutput) -> None:
         """Transition to COMPLETED with conversion results."""
         if self.status != AnalysisStatus.RUNNING:
             raise ValueError(f"Cannot mark as COMPLETED from {self.status} (expected RUNNING)")
         self.status = AnalysisStatus.COMPLETED
-        self.content_markdown = markdown
-        self.content_html = html
-        self.pages_json = pages_json
-        self.document_json = document_json
-        self.chunks_json = chunks_json
+        self.content_markdown = output.markdown
+        self.content_html = output.html
+        self.pages_json = output.pages_json
+        self.document_json = output.document_json
+        self.chunks_json = output.chunks_json
         self.completed_at = get_utc_now()
 
     def update_progress(self, current: int, total: int) -> None:
@@ -364,6 +368,17 @@ class Chunk:
     created_at: datetime = field(default_factory=get_utc_now)
     updated_at: datetime = field(default_factory=get_utc_now)
     deleted_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ChunkReplacement:
+    """The new chunks of a document and the analysis state to write with them."""
+
+    document_id: str
+    chunks: list[Chunk]
+    at: datetime
+    chunk_source: DocumentChunkSource | None
+    active_analysis_id: str | None
 
 
 @dataclass(frozen=True)

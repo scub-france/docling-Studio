@@ -12,6 +12,7 @@ import json
 
 from infra.neo4j import read_document_json, write_document
 from infra.neo4j.schema import bootstrap_schema
+from infra.neo4j.tree_writer import GraphDocument
 
 FIXTURE = {
     "name": "fixture.pdf",
@@ -79,9 +80,7 @@ async def test_write_creates_expected_structure(neo4j_driver):
 
     result = await write_document(
         neo4j_driver,
-        doc_id="doc-fixture",
-        filename="fixture.pdf",
-        document_json=doc_json,
+        GraphDocument(doc_id="doc-fixture", filename="fixture.pdf", document_json=doc_json),
     )
 
     assert result.elements_written == 4
@@ -163,16 +162,12 @@ async def test_rewrite_is_idempotent_replace(neo4j_driver):
 
     await write_document(
         neo4j_driver,
-        doc_id="doc-fixture",
-        filename="fixture.pdf",
-        document_json=doc_json,
+        GraphDocument(doc_id="doc-fixture", filename="fixture.pdf", document_json=doc_json),
     )
     # Second write with the same id must not duplicate anything.
     await write_document(
         neo4j_driver,
-        doc_id="doc-fixture",
-        filename="fixture.pdf",
-        document_json=doc_json,
+        GraphDocument(doc_id="doc-fixture", filename="fixture.pdf", document_json=doc_json),
     )
 
     async with neo4j_driver.driver.session(database=neo4j_driver.database) as s:
@@ -195,9 +190,7 @@ async def test_reader_returns_verbatim_json(neo4j_driver):
     doc_json = json.dumps(FIXTURE, sort_keys=True)
     await write_document(
         neo4j_driver,
-        doc_id="doc-fixture",
-        filename="fixture.pdf",
-        document_json=doc_json,
+        GraphDocument(doc_id="doc-fixture", filename="fixture.pdf", document_json=doc_json),
     )
 
     read_back = await read_document_json(neo4j_driver, "doc-fixture")
@@ -281,9 +274,7 @@ async def test_inline_group_collapses_into_single_paragraph(neo4j_driver):
 
     result = await write_document(
         neo4j_driver,
-        doc_id="doc-inline",
-        filename="inline.html",
-        document_json=doc_json,
+        GraphDocument(doc_id="doc-inline", filename="inline.html", document_json=doc_json),
     )
 
     # Section header + collapsed inline group only — NOT 5 (+3 style runs).
@@ -426,9 +417,7 @@ async def test_picture_internal_labels_are_skipped(neo4j_driver):
 
     result = await write_document(
         neo4j_driver,
-        doc_id="doc-pic",
-        filename="figure.pdf",
-        document_json=doc_json,
+        GraphDocument(doc_id="doc-pic", filename="figure.pdf", document_json=doc_json),
     )
 
     # Caption + picture only — the 3 internal labels are skipped.

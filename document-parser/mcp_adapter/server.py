@@ -19,6 +19,7 @@ cite, verify — and the two cards that show its result.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from mcp.server.mcpserver import MCPServer
@@ -43,6 +44,7 @@ from mcp_adapter.wire_mapping import (
 )
 from services.navigation_config import MAX_ROUNDS
 from services.navigation_errors import NavigationUnavailableError
+from services.navigation_service import ReadScope
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -90,14 +92,19 @@ def build_instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
 _READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
 
+@dataclass(frozen=True)
+class McpSurface:
+    """What the server exposes: its name, its version, the cards, the stated round cap."""
+
+    name: str = SERVER_NAME
+    version: str = ""
+    apps: bool = True
+    citation_card: bool = False
+    max_rounds: int = MAX_ROUNDS
+
+
 def build_mcp_server(
-    tools: Callable[[], DocumentTools],
-    *,
-    name: str = SERVER_NAME,
-    version: str = "",
-    apps: bool = True,
-    citation_card: bool = False,
-    max_rounds: int = MAX_ROUNDS,
+    tools: Callable[[], DocumentTools], surface: McpSurface = McpSurface()
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -107,19 +114,25 @@ def build_mcp_server(
     for the container on each tool call. `tools` raises when the app is not
     wired yet, which surfaces as a tool error rather than an import crash.
 
-    `max_rounds` is the cap the instructions state. The prompt reads the
-    effective cap from the resolved services on every render, falling back to
-    this one while the app is still starting.
+    `surface.max_rounds` is the cap the instructions state. The prompt reads
+    the effective cap from the resolved services on every render, falling back
+    to this one while the app is still starting.
     """
     server = MCPServer(
-        name=name,
-        version=version,
-        instructions=build_instructions(apps=apps, max_rounds=max_rounds),
-        extensions=[build_apps_extension(tools, citation_card=citation_card)] if apps else None,
+        name=surface.name,
+        version=surface.version,
+        instructions=build_instructions(apps=surface.apps, max_rounds=surface.max_rounds),
+        extensions=(
+            [build_apps_extension(tools, citation_card=surface.citation_card)]
+            if surface.apps
+            else None
+        ),
     )
     # The slash command: the whole loop, invoked by the user rather than
     # inflicted on every call (see mcp_adapter/prompts.py).
-    register_prompts(server, apps=apps, rounds=_bind_effective_rounds(tools, max_rounds))
+    register_prompts(
+        server, apps=surface.apps, rounds=_bind_effective_rounds(tools, surface.max_rounds)
+    )
 
     _register_find_documents(server, tools)
     _register_get_outline(server, tools)
@@ -188,9 +201,7 @@ def _register_read_element(server: MCPServer, tools: Callable[[], DocumentTools]
                 document_id,
                 ref,
                 version_id=version_id,
-                include=include,
-                max_tokens=max_tokens,
-                cursor=cursor,
+                scope=ReadScope(include=include, max_tokens=max_tokens, cursor=cursor),
             )
         return to_compact_result(to_excerpt_result(excerpt))
 

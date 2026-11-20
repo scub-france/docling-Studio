@@ -205,7 +205,7 @@ def build_source_map(
     return SourceMap(
         nodes=trail.build_nodes(flat),
         hops=hops,
-        totals=_compute_totals(outline, len(flat), hops, covered, index),
+        totals=_compute_totals(outline, hops, covered, index),
         segments=build_segments(flat, trail.status, trail.reached),
         passages=list(passages.values()),
     )
@@ -244,7 +244,6 @@ def _build_passage(
 
 def _compute_totals(
     outline: DocumentOutline,
-    sections_total: int,
     hops: list[SourceHop],
     covered: dict[str, set[str]],
     index: DocumentIndex,
@@ -254,7 +253,7 @@ def _compute_totals(
         mode=outline.mode,
         rounds=len(hops),
         sections_read=len({hop.node_ref for hop in hops if hop.node_ref}),
-        sections_total=sections_total,
+        sections_total=len(flatten(outline.nodes)),
         tokens_read=_compute_cost(index, every),
         tokens_total=outline.total_est_tokens,
     )

@@ -9,6 +9,8 @@ conditionals. Split out of a single `bootstrap.py` to hold the project's
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from domain.app_config import ReasoningConfig
 from domain.mcp_config import McpRuntimeConfig
@@ -31,6 +33,14 @@ from services.navigation_service import NavigationService
 from services.parse_loader import ParseLoader
 from services.source_service import SourceService
 from services.store_backend_resolver import StoreBackendResolver
+
+if TYPE_CHECKING:
+    from persistence.analysis_repo import SqliteAnalysisRepository
+    from persistence.chunk_repo import SqliteChunkRepository
+    from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
+    from persistence.document_repo import SqliteDocumentRepository
+    from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
+    from persistence.store_repo import SqliteStoreRepository
 
 logger = logging.getLogger(__name__)
 
@@ -223,18 +233,28 @@ def build_document_file_store():
     return LocalDocumentFileStore(upload_dir=settings.upload_dir)
 
 
-def build_document_service(
-    document_repo, analysis_repo, link_repo, store_repo, *, file_store
-) -> DocumentService:
+@dataclass(frozen=True)
+class Repositories:
+    """The SQLite repositories, one instance of each, shared by every service."""
+
+    document_repo: SqliteDocumentRepository
+    document_analysis_repo: SqliteDocumentAnalysisRepository
+    analysis_repo: SqliteAnalysisRepository
+    store_repo: SqliteStoreRepository
+    link_repo: SqliteDocumentStoreLinkRepository
+    chunk_repo: SqliteChunkRepository
+
+
+def build_document_service(repos: Repositories, *, file_store) -> DocumentService:
     return DocumentService(
-        document_repo=document_repo,
-        analysis_repo=analysis_repo,
+        document_repo=repos.document_repo,
+        analysis_repo=repos.analysis_repo,
         config=DocumentConfig(
             max_file_size_mb=settings.max_file_size_mb,
             max_page_count=settings.max_page_count,
         ),
-        link_repo=link_repo,
-        store_repo=store_repo,
+        link_repo=repos.link_repo,
+        store_repo=repos.store_repo,
         pdf_inspector=_build_pdf_inspector(),
         file_store=file_store,
     )

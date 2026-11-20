@@ -56,6 +56,7 @@ async def _serve() -> None:
     from bootstrap.factories import build_env_mcp_config
     from infra.settings import settings
     from mcp_adapter import build_mcp_server
+    from mcp_adapter.server import McpSurface
     from persistence.app_settings_repo import SqliteAppSettingsRepository
     from persistence.database import init_db
     from services.mcp_config_service import load_effective_mcp_config
@@ -65,8 +66,7 @@ async def _serve() -> None:
 
     config = await load_effective_mcp_config(SqliteAppSettingsRepository(), build_env_mcp_config())
     tools = _build_document_tools(config)
-    server = build_mcp_server(
-        lambda: tools,
+    surface = McpSurface(
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         citation_card=settings.mcp_citation_card,
@@ -74,6 +74,7 @@ async def _serve() -> None:
         # instructions state the effective cap, not the env one.
         max_rounds=config.max_rounds,
     )
+    server = build_mcp_server(lambda: tools, surface=surface)
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()
 

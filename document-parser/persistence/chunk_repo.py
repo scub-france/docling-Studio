@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
     import aiosqlite
 
-    from domain.models import DocumentChunkSource
+    from domain.models import ChunkReplacement
 
 
 def _row_to_chunk(row) -> Chunk:
@@ -133,80 +133,45 @@ class SqliteChunkRepository:
             await db.commit()
             return cursor.rowcount
 
-    async def replace_and_select(
-        self,
-        document_id: str,
-        chunks: list[Chunk],
-        *,
-        at: datetime,
-        chunk_source: DocumentChunkSource | None,
-        active_analysis_id: str | None,
-    ) -> int:
+    async def replace_and_select(self, replacement: ChunkReplacement) -> int:
         """Replace a document's live chunks and write its selection, atomically (restore)."""
-        return await self._replace(
-            document_id,
-            chunks,
-            at=at,
-            chunk_source=chunk_source,
-            active_analysis_id=active_analysis_id,
-            write_state_selection=write_selection,
-        )
+        return await self._replace(replacement, write_selection)
 
-    async def replace_keeping_selection(
-        self,
-        document_id: str,
-        chunks: list[Chunk],
-        *,
-        at: datetime,
-        chunk_source: DocumentChunkSource | None,
-        active_analysis_id: str | None,
-    ) -> int:
+    async def replace_keeping_selection(self, replacement: ChunkReplacement) -> int:
         """Replace a document's live chunks, keeping its selection, atomically (rechunk).
 
-        `active_analysis_id` is only adopted by a state row this write creates.
+        `replacement.active_analysis_id` is only adopted by a state row this write creates.
         """
-        return await self._replace(
-            document_id,
-            chunks,
-            at=at,
-            chunk_source=chunk_source,
-            active_analysis_id=active_analysis_id,
-            write_state_selection=adopt_selection,
-        )
+        return await self._replace(replacement, adopt_selection)
 
     async def _replace(
         self,
-        document_id: str,
-        chunks: list[Chunk],
-        *,
-        at: datetime,
-        chunk_source: DocumentChunkSource | None,
-        active_analysis_id: str | None,
+        replacement: ChunkReplacement,
         write_state_selection: Callable[[aiosqlite.Connection, str, str | None], Awaitable[None]],
     ) -> int:
         """Replace a document's live chunks and write its analysis state, atomically.
 
-        Soft-deletes every live chunk, inserts `chunks`, writes the selection
-        (with `write_state_selection`) and the chunk source in one transaction
-        (02-2.4.3): the live chunks and the record of where they came from
-        never disagree after a failure. Returns how many chunks were
+        Soft-deletes every live chunk, inserts `replacement.chunks`, writes the
+        selection (with `write_state_selection`) and the chunk source in one
+        transaction (02-2.4.3): the live chunks and the record of where they
+        came from never disagree after a failure. Returns how many chunks were
         soft-deleted.
         """
+        document_id = replacement.document_id
+        chunk_source = replacement.chunk_source
         if chunk_source is not None and chunk_source.document_id != document_id:
             raise ValueError("The chunk source must belong to the document")
+        at = str(replacement.at)
         async with get_connection() as db:
-            cursor = await db.execute(
-                _SOFT_DELETE_FOR_DOCUMENT_SQL,
-                (str(at), str(at), document_id),
-            )
+            cursor = await db.execute(_SOFT_DELETE_FOR_DOCUMENT_SQL, (at, at, document_id))
             deleted = cursor.rowcount
-            if chunks:
-                await db.executemany(_INSERT_SQL, [_chunk_to_params(c) for c in chunks])
+            if replacement.chunks:
+                await db.executemany(_INSERT_SQL, [_chunk_to_params(c) for c in replacement.chunks])
             try:
-                await write_state_selection(db, document_id, active_analysis_id)
+                await write_state_selection(db, document_id, replacement.active_analysis_id)
             except sqlite3.IntegrityError as exc:
                 raise AnalysisNotSelectableError(
-                    f"Analysis {active_analysis_id} is no longer available"
+                    f"Analysis {replacement.active_analysis_id} is no longer available"
                 ) from exc
             await write_chunk_source(db, document_id, chunk_source)
             await db.commit()
