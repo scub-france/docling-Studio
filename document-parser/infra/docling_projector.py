@@ -30,8 +30,6 @@ class DoclingAnalysisProjector:
         *,
         base_analysis_id: str,
         logical_ids: dict[str, str],
-        reference_changes: dict[str, str] | None = None,
-        warnings: tuple[str, ...] = (),
     ) -> ProjectedAnalysis:
         items_with_levels = list(document.iterate_items(with_groups=True, traverse_pictures=True))
         by_ref = {
@@ -71,8 +69,6 @@ class DoclingAnalysisProjector:
             editor_model_json=json.dumps(model),
             tree=tree,
             elements=editor_elements,
-            reference_changes=reference_changes or {},
-            warnings=warnings,
         )
 
     def project_serialized(

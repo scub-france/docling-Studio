@@ -322,7 +322,8 @@ def test_realistic_structure_reorders_without_moving_provenance():
                 "moveElement",
                 {
                     "elementId": f"base:{children[0].cref}",
-                    "beforeElementId": f"base:{children[-1].cref}",
+                    "targetElementId": f"base:{children[-1].cref}",
+                    "placement": "before",
                 },
             )
         ],
@@ -347,7 +348,8 @@ def test_move_moves_subtree_to_the_drop_target_parent():
                 "moveElement",
                 {
                     "elementId": f"base:{first.self_ref}",
-                    "beforeElementId": f"base:{nested.self_ref}",
+                    "targetElementId": f"base:{nested.self_ref}",
+                    "placement": "before",
                 },
             )
         ],
@@ -404,33 +406,6 @@ def test_move_subtree_rejects_an_incompatible_docling_private_api():
 
     with pytest.raises(AnalysisEditError, match="incompatible subtree move API"):
         DoclingDocumentEditor._move_subtree(IncompatibleDocument(), object(), object(), 0)
-
-
-@pytest.mark.parametrize(
-    ("payload", "protocol"),
-    [
-        (
-            {"elementId": "base:a", "targetElementId": "base:b", "placement": "after"},
-            "_move_relative_to_target",
-        ),
-        ({"elementId": "base:a", "placement": "inside"}, "_move_relative_to_target"),
-        ({"elementId": "base:a", "targetElementId": "base:b"}, "_move_relative_to_target"),
-        ({"elementId": "base:a", "beforeElementId": "base:b"}, "_move_before_sibling"),
-        ({"elementId": "base:a"}, "_move_before_sibling"),
-    ],
-)
-def test_move_element_hands_each_protocol_to_its_own_mover(payload, protocol):
-    editor = DoclingDocumentEditor()
-    movers = {name: Mock() for name in ("_move_relative_to_target", "_move_before_sibling")}
-    for name, mover in movers.items():
-        setattr(editor, name, mover)
-    document, item = object(), object()
-    logical_objects = {"base:a": item}
-
-    editor._move_element(document, logical_objects, payload)
-
-    movers[protocol].assert_called_once_with(document, logical_objects, item, payload)
-    assert all(not mover.called for name, mover in movers.items() if name != protocol)
 
 
 def test_projector_normalizes_bottom_left_bboxes_for_the_frontend():
@@ -515,7 +490,10 @@ def test_projector_renders_edited_text_without_overwriting_original_ocr_text():
         ("replaceText", {"elementId": "first", "text": "Edited"}),
         ("setHeadingLevel", {"elementId": "heading", "level": 2}),
         ("mergeText", {"elementIds": ["first", "second"], "separator": " "}),
-        ("moveElement", {"elementId": "first", "beforeElementId": "nested"}),
+        (
+            "moveElement",
+            {"elementId": "first", "targetElementId": "nested", "placement": "before"},
+        ),
         ("deleteElement", {"elementId": "second"}),
         ("deleteElements", {"elementIds": ["first", "second"]}),
     ],
@@ -652,7 +630,7 @@ async def test_save_persists_commands_and_rebuilds_edited_cache(edit_service):
     commands = await edits.list_commands(stream.analysis_id)
     assert len(commands) == 1
     assert commands[0].command.payload["text"] == "Edited"
-    rebuilt = await service.rebuild("doc-1")
+    rebuilt = await _load_replayed(service)
     assert rebuilt.job.document_json == saved.job.document_json
 
 
@@ -901,7 +879,7 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     assert states == {1: False, 2: True}
     assert records[2].command.command_type == "setCommandActive"
     assert records[2].command.payload == {"targetSequence": 1, "active": False}
-    assert (await service.rebuild("doc-1")).job.document_json == reverted.job.document_json
+    assert (await _load_replayed(service)).job.document_json == reverted.job.document_json
 
     reapplied = await service.set_command_active("doc-1", 1, True, expected_sequence=3)
     assert reapplied.applied_through_sequence == 4
@@ -913,7 +891,7 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     assert (
         await exports.export_edited("doc-1", ExportFormat.JSON, "analysis-1")
     ).content == reapplied.job.document_json
-    assert (await service.rebuild("doc-1")).job.document_json == reapplied.job.document_json
+    assert (await _load_replayed(service)).job.document_json == reapplied.job.document_json
     assert len(await edits.list_commands(stream.analysis_id)) == 4
 
 
@@ -1018,10 +996,20 @@ async def test_every_durable_command_saves_and_replays(edit_service, command_typ
     saved = await service.save(
         "doc-1", [EditCommand(command_type, command_payload)], expected_sequence=0
     )
-    rebuilt = await service.rebuild("doc-1")
+    rebuilt = await _load_replayed(service)
 
     assert saved.applied_through_sequence == rebuilt.applied_through_sequence == 1
     assert _projection_values(saved) == _projection_values(rebuilt)
+
+
+async def _load_replayed(service, document_id="doc-1", analysis_id="analysis-1"):
+    """The editor state replayed from the command stream, without the working copy."""
+    async with database.get_connection() as connection:
+        await connection.execute(
+            "DELETE FROM edited_analysis_cache WHERE analysis_id = ?", (analysis_id,)
+        )
+        await connection.commit()
+    return await service.load_editor(document_id)
 
 
 def _projection_values(snapshot):
@@ -1032,7 +1020,6 @@ def _projection_values(snapshot):
         snapshot.job.pages_json,
         snapshot.projection.editor_model_json,
         snapshot.projection.tree,
-        snapshot.projection.reference_changes,
     )
 
 
@@ -1070,6 +1057,32 @@ async def test_load_replays_saved_stream_when_edited_cache_is_missing(edit_servi
 
     reloaded = await service.load_editor("doc-1")
     assert reloaded.applied_through_sequence == saved.applied_through_sequence
+    assert _projection_values(reloaded) == _projection_values(saved)
+
+
+@pytest.mark.asyncio
+async def test_load_replays_a_stream_saved_by_another_engine_version(edit_service, monkeypatch):
+    """A working copy projected by another engine version is not trusted."""
+    service, _edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    saved = await service.save(
+        "doc-1",
+        [EditCommand("replaceText", {"elementId": text_id, "text": "Replayed"})],
+        expected_sequence=0,
+    )
+    async with database.get_connection() as connection:
+        await connection.execute(
+            "UPDATE analysis_edit_streams SET engine_version = ? WHERE analysis_id = ?",
+            ("analysis-editor-0", "analysis-1"),
+        )
+        await connection.commit()
+    read_working_copy = AsyncMock()
+    monkeypatch.setattr(service, "_project_cache", read_working_copy)
+
+    reloaded = await service.load_editor("doc-1")
+
+    read_working_copy.assert_not_awaited()
     assert _projection_values(reloaded) == _projection_values(saved)
 
 

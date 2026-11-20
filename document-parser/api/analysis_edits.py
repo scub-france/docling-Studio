@@ -1,4 +1,4 @@
-"""Analysis editor API: load, preview, save, and rebuild."""
+"""Analysis editor API: load, preview, save, and history."""
 
 from __future__ import annotations
 
@@ -72,8 +72,6 @@ def _build_editor_response(snapshot) -> AnalysisEditorResponse:
         result=_to_analysis_response(snapshot.job),
         applied_through_sequence=snapshot.applied_through_sequence,
         chunks_stale=snapshot.chunks_stale,
-        warnings=list(snapshot.projection.warnings),
-        reference_changes=snapshot.projection.reference_changes,
     )
 
 
@@ -188,17 +186,5 @@ async def save_edits(
             applied_through_sequence=snapshot.applied_through_sequence,
             chunks_stale=snapshot.chunks_stale,
         )
-    except AnalysisEditError as exc:
-        raise to_http_error(exc) from exc
-
-
-@router.post("/{doc_id}/analysis-edits/rebuild", response_model=AnalysisEditorResponse)
-async def rebuild_edits(
-    doc_id: str,
-    service: deps.AnalysisEditServiceDep,
-    analysis_id: str | None = Query(default=None, alias="analysisId"),
-) -> AnalysisEditorResponse:
-    try:
-        return await _to_editor_response(await service.rebuild(doc_id, analysis_id))
     except AnalysisEditError as exc:
         raise to_http_error(exc) from exc

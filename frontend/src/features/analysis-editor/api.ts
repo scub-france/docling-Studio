@@ -67,16 +67,3 @@ export function setAnalysisEditActive(
     },
   )
 }
-
-export function rebuildAnalysisEdits(
-  documentId: string,
-  analysisId?: string,
-): Promise<AnalysisEditorResponse> {
-  const query = analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : ''
-  return apiFetch<AnalysisEditorResponse>(
-    `/api/documents/${documentId}/analysis-edits/rebuild${query}`,
-    {
-      method: 'POST',
-    },
-  )
-}

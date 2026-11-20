@@ -58,7 +58,7 @@ flowchart LR
 
 A revert or reapply appends a history event pointing to a saved command; it does not delete or rewrite that command. For example, after edits `#1` and `#2`, reverting `#1` appends event `#3`. Replay then applies only `#2`. Reapplying `#1` appends event `#4`, and replay applies `#1` and `#2` in their original order. The complete history remains available for audit and rebuild.
 
-Preview replays the saved state plus pending commands without writing to the database. Save replays and validates again, then appends the commands and replaces the working copy in one transaction. The request includes the sequence the editor last saw; a stale sequence produces a conflict instead of overwriting another save. The working copy is rebuildable from the immutable base and the full history.
+Preview replays the saved state plus pending commands without writing to the database. Save replays and validates again, then appends the commands and replaces the working copy in one transaction. The request includes the sequence the editor last saw; a stale sequence produces a conflict instead of overwriting another save. The working copy is rebuildable from the immutable base and the full history: one that cannot be read, or that another version of the editing engine wrote, is ignored and the history is replayed instead.
 
 ## API
 
@@ -71,7 +71,6 @@ The editor routes live under `/api/documents/{id}`. Each one takes an optional `
 | `POST …/analysis-edits` | Saves the `commands`. `expectedAppliedThroughSequence` is the last sequence the client saw. |
 | `GET …/analysis-edits/history` | The saved commands, each with its active state. |
 | `PATCH …/analysis-edits/history/{sequence}` | Reverts (`"active": false`) or reapplies (`"active": true`) one saved command. Also takes `expectedAppliedThroughSequence`. |
-| `POST …/analysis-edits/rebuild` | Rebuilds the working copy from the original analysis and the history. |
 
 `GET …/export?format=md` or `format=json`, with `analysisId` and `edited=true`, downloads the saved edited result. Without `edited`, the export is the original result of the analysis named by `analysisId`, or the active result, edits included, when `analysisId` is left out.
 

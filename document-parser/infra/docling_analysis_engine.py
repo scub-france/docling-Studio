@@ -42,8 +42,6 @@ class DoclingAnalysisEngine:
             mutation.document,
             base_analysis_id=base_analysis_id,
             logical_ids=mutation.logical_ids,
-            reference_changes=mutation.reference_changes,
-            warnings=mutation.warnings,
         )
 
     def project_serialized(

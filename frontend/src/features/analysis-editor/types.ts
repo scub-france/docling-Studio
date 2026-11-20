@@ -12,9 +12,8 @@ export type AnalysisEditCommand =
   | {
       type: 'moveElement'
       elementId: string
-      beforeElementId?: string | null
-      targetElementId?: string
-      placement?: 'before' | 'after' | 'inside'
+      targetElementId: string
+      placement: 'before' | 'after' | 'inside'
     }
   | { type: 'deleteElement'; elementId: string }
   | { type: 'deleteElements'; elementIds: string[] }
@@ -52,8 +51,6 @@ export interface AnalysisEditorResponse {
   result: Analysis
   appliedThroughSequence: number
   chunksStale: boolean
-  warnings: string[]
-  referenceChanges: Record<string, string>
 }
 
 export interface AnalysisEditSaveResponse {

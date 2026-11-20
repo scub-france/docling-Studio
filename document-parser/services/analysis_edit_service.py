@@ -84,13 +84,14 @@ class AnalysisEditService:
         if (
             stream is not None
             and cache is not None
+            # A working copy projected by another engine version is not
+            # trusted: the stream is replayed by this one.
+            and stream.engine_version == ENGINE_VERSION
             and cache.analysis_id == base.id
             and cache.applied_through_sequence == sequence
             and cache.command_stream_hash == hash_command_stream(stored, [])
         ):
             projection = await self._project_cache(base, cache)
-        else:
-            projection = None
         if projection is None:
             projection = await self._replay(base, stored)
         if not stored:
@@ -208,18 +209,6 @@ class AnalysisEditService:
             raise AnalysisEditError(
                 f"Cannot {action} edit #{target_sequence}; a remaining edit cannot be replayed: {exc}"
             ) from exc
-
-    async def rebuild(self, document_id: str, analysis_id: str | None = None) -> EditorSnapshot:
-        document = await self._require_document(document_id)
-        base = await self._load_base_analysis(document, analysis_id)
-        stream = await self._edits.find_stream(base.id)
-        stored = await self._edits.list_commands(base.id) if stream else []
-        projection = await self._replay(base, stored)
-        sequence = get_last_sequence(stored)
-        if stream is not None:
-            cache = _build_cache(base.id, projection, sequence, hash_command_stream(stored, []))
-            await self._edits.replace_cache(cache)
-        return await self._build_snapshot(document, base, projection, sequence)
 
     async def _ensure_stream(self, base) -> EditStream:
         """The base analysis's edit stream, created on its first save.

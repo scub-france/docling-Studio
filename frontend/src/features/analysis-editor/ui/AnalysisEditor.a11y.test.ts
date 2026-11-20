@@ -52,8 +52,6 @@ const editorResponse = {
   result: { contentMarkdown: 'Accessible paragraph', pagesJson: '[]' },
   appliedThroughSequence: 0,
   chunksStale: false,
-  warnings: [],
-  referenceChanges: {},
 }
 
 describe('AnalysisEditor accessibility', () => {

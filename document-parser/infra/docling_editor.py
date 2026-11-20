@@ -35,8 +35,6 @@ from domain.analysis_editing import (
 class MutationResult:
     document: DoclingDocument
     logical_ids: dict[str, str]
-    reference_changes: dict[str, str]
-    warnings: tuple[str, ...] = ()
 
 
 class DoclingDocumentEditor:
@@ -55,7 +53,6 @@ class DoclingDocumentEditor:
             raise AnalysisEditError(f"Invalid canonical Docling document: {exc}") from exc
 
         logical_objects = self._map_logical_refs(document, base_analysis_id)
-        before_refs = {logical: obj.self_ref for logical, obj in logical_objects.items()}
         for command in commands:
             self._apply_one(document, logical_objects, command)
 
@@ -75,12 +72,7 @@ class DoclingDocumentEditor:
             for logical, obj in logical_objects.items()
             if id(obj) in live_object_ids
         }
-        changes = {
-            old_ref: new_ref
-            for logical, old_ref in before_refs.items()
-            if (new_ref := current_refs.get(logical)) is not None and old_ref != new_ref
-        }
-        return MutationResult(document, current_refs, changes)
+        return MutationResult(document, current_refs)
 
     @staticmethod
     def _list_all_items(document: DoclingDocument) -> list[Any]:
@@ -269,26 +261,8 @@ class DoclingDocumentEditor:
         logical_objects: dict[str, Any],
         payload: dict[str, Any],
     ) -> None:
-        """Dispatch a move to its protocol.
-
-        A payload with `targetElementId` or `placement` drops the element
-        before, after or inside a target; one without names the sibling to
-        land before (`beforeElementId`), or none for the end of its parent.
-        """
+        """Move an element before, after or inside (a section heading) its target."""
         item = self._get(logical_objects, str(payload.get("elementId", "")))
-        if payload.get("targetElementId") is not None or payload.get("placement") is not None:
-            self._move_relative_to_target(document, logical_objects, item, payload)
-        else:
-            self._move_before_sibling(document, logical_objects, item, payload)
-
-    def _move_relative_to_target(
-        self,
-        document: DoclingDocument,
-        logical_objects: dict[str, Any],
-        item: Any,
-        payload: dict[str, Any],
-    ) -> None:
-        """Move `item` before, after or inside (a section heading) the target."""
         target_id = payload.get("targetElementId")
         placement = payload.get("placement")
         check_move_target(target_id, placement)
@@ -310,34 +284,6 @@ class DoclingDocumentEditor:
         source_parent = item.parent.resolve(doc=document) if item.parent is not None else None
         if parent is source_parent and target_index > list(parent.children).index(item.get_ref()):
             target_index -= 1
-        self._move_subtree(document, item, parent, target_index)
-
-    def _move_before_sibling(
-        self,
-        document: DoclingDocument,
-        logical_objects: dict[str, Any],
-        item: Any,
-        payload: dict[str, Any],
-    ) -> None:
-        """Move `item` before `beforeElementId`, or to the end of its parent without one."""
-        before_id = payload.get("beforeElementId")
-        before = self._get(logical_objects, str(before_id)) if before_id else None
-        if item.parent is None:
-            raise AnalysisEditError("The document root cannot be moved")
-        source_parent = item.parent.resolve(doc=document)
-        parent = source_parent
-        if before is not None:
-            if before.parent is None:
-                raise AnalysisEditError("The document root cannot be used as a move target")
-            if before is item or self._is_descendant(before, item, document):
-                raise AnalysisEditError("Move would create a cycle")
-            parent = before.parent.resolve(doc=document)
-        target_refs = list(parent.children)
-        target_index = len(target_refs) if before is None else target_refs.index(before.get_ref())
-        if parent is source_parent and target_index > target_refs.index(item.get_ref()):
-            target_index -= 1
-        # Docling has no public move API; this private helper updates both
-        # parent references and child order atomically.
         self._move_subtree(document, item, parent, target_index)
 
     @staticmethod

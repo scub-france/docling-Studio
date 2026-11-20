@@ -194,9 +194,8 @@ class SetHeadingLevelEditRequest(_CamelModel):
 class MoveElementEditRequest(_CamelModel):
     type: Literal["moveElement"]
     element_id: ElementId
-    before_element_id: ElementId | None = None
-    target_element_id: ElementId | None = None
-    placement: Literal["before", "after", "inside"] | None = None
+    target_element_id: ElementId
+    placement: Literal["before", "after", "inside"]
 
 
 class DeleteElementEditRequest(_CamelModel):
@@ -294,8 +293,6 @@ class AnalysisEditorResponse(_CamelModel):
     result: AnalysisResponse
     applied_through_sequence: int
     chunks_stale: bool
-    warnings: list[str] = Field(default_factory=list)
-    reference_changes: dict[str, str] = Field(default_factory=dict)
 
 
 class AnalysisEditSaveResponse(_CamelModel):
@@ -339,9 +336,8 @@ class SetHeadingLevelPayloadResponse(_StoredPayload):
 
 class MoveElementPayloadResponse(_StoredPayload):
     element_id: str
-    before_element_id: str | None
-    target_element_id: str | None
-    placement: Literal["before", "after", "inside"] | None
+    target_element_id: str
+    placement: Literal["before", "after", "inside"]
 
 
 class DeleteElementPayloadResponse(_StoredPayload):

@@ -132,8 +132,6 @@ def test_load_answers_the_full_typed_editor_shape(client):
         "result",
         "appliedThroughSequence",
         "chunksStale",
-        "warnings",
-        "referenceChanges",
     }
     assert set(body["model"]) == {"baseAnalysisId", "elements"}
     by_id = {element["id"]: element for element in body["model"]["elements"]}
@@ -183,7 +181,7 @@ def test_load_answers_the_full_typed_editor_shape(client):
             ],
         }
     ]
-    assert (body["warnings"], body["referenceChanges"], body["chunksStale"]) == ([], {}, False)
+    assert body["chunksStale"] is False
 
 
 def test_history_answers_each_payload_with_its_command_keys(client):
@@ -205,9 +203,14 @@ def test_history_answers_each_payload_with_its_command_keys(client):
     ]
 
 
-def test_move_payload_keeps_its_null_keys_in_the_history(client):
+def test_move_payload_reads_back_with_its_target_and_placement(client):
     ids = _ids_by_text(client)
-    move = {"type": "moveElement", "elementId": ids["Third"], "beforeElementId": ids["First"]}
+    move = {
+        "type": "moveElement",
+        "elementId": ids["Third"],
+        "targetElementId": ids["First"],
+        "placement": "before",
+    }
     client.post(
         f"{BASE}/analysis-edits",
         json={"commands": [move], "expectedAppliedThroughSequence": 0},
@@ -217,9 +220,8 @@ def test_move_payload_keeps_its_null_keys_in_the_history(client):
 
     assert entry["payload"] == {
         "elementId": ids["Third"],
-        "beforeElementId": ids["First"],
-        "targetElementId": None,
-        "placement": None,
+        "targetElementId": ids["First"],
+        "placement": "before",
     }
 
 
@@ -318,19 +320,6 @@ def test_history_marks_a_reverted_command_and_its_toggle(client):
     ]
 
 
-def test_rebuild_replays_the_saved_stream(client):
-    element_id = _first_text_id(client)
-    client.post(
-        f"{BASE}/analysis-edits",
-        json={"commands": [_replace(element_id, "Saved")], "expectedAppliedThroughSequence": 0},
-    )
-
-    response = client.post(f"{BASE}/analysis-edits/rebuild")
-
-    assert response.status_code == 200
-    assert "Saved" in response.json()["result"]["contentMarkdown"]
-
-
 # --- Every command type the request schema accepts, through HTTP -------------
 
 
@@ -383,7 +372,12 @@ def test_move_element_before_another_element(client):
 
     response = _preview(
         client,
-        {"type": "moveElement", "elementId": ids["Third"], "beforeElementId": ids["First"]},
+        {
+            "type": "moveElement",
+            "elementId": ids["Third"],
+            "targetElementId": ids["First"],
+            "placement": "before",
+        },
     )
 
     assert response.status_code == 200
