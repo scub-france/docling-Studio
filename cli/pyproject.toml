@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docling-studio-cli"
+version = "0.1.0"
+description = "CLI to convert PDFs with Google Colab or local Docling and import them into Docling Studio"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "google-colab-cli==0.7.5",
+  "pypdf>=4.0.0",
+  "docling-core>=2.65.2,<3.0.0",
+  "pydantic>=2.0.0,<3.0.0",
+  "pydantic-settings>=2.0.0,<3.0.0",
+]
+
+[project.optional-dependencies]
+local = [
+  "docling>=2.80.0,<3.0.0",
+]
+
+[project.scripts]
+docling-studio = "docling_studio_cli.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docling_studio_cli"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]

@@ -1,0 +1,83 @@
+"""Docling Studio CLI for cloud/local PDF conversion and Studio import."""
+
+from docling_studio_cli.models import (
+    ColabAuthMethod,
+    ColabGpuType,
+    ColabProviderSettings,
+    ConversionJobConfig,
+    DoclingServeProviderSettings,
+    ImportJobConfig,
+    LocalProviderSettings,
+    PipelineOptions,
+    ProviderCheckResult,
+    ProviderDescriptor,
+    ProviderName,
+    StudioAnalysisImportPayload,
+    StudioAnalysisResponse,
+    StudioDocumentUploadResponse,
+    StudioHealthResponse,
+    StudioImportResult,
+)
+from docling_studio_cli.pipeline import (
+    run_conversion_pipeline,
+    run_worker_session,
+    split_pdf,
+)
+from docling_studio_cli.providers import (
+    ColabProvider,
+    ConversionProvider,
+    DoclingServeProvider,
+    LocalProvider,
+    ProviderSession,
+    get_provider,
+    list_provider_descriptors,
+    list_providers,
+    register_provider,
+)
+from docling_studio_cli.settings import (
+    CliSettings,
+    default_config_path,
+    load_settings,
+)
+from docling_studio_cli.studio import (
+    check_studio_health,
+    import_into_studio,
+    request_json,
+)
+
+__all__ = [
+    "CliSettings",
+    "ColabAuthMethod",
+    "ColabGpuType",
+    "ColabProvider",
+    "ColabProviderSettings",
+    "ConversionJobConfig",
+    "ConversionProvider",
+    "DoclingServeProvider",
+    "DoclingServeProviderSettings",
+    "ImportJobConfig",
+    "LocalProvider",
+    "LocalProviderSettings",
+    "PipelineOptions",
+    "ProviderCheckResult",
+    "ProviderDescriptor",
+    "ProviderName",
+    "ProviderSession",
+    "StudioAnalysisImportPayload",
+    "StudioAnalysisResponse",
+    "StudioDocumentUploadResponse",
+    "StudioHealthResponse",
+    "StudioImportResult",
+    "check_studio_health",
+    "default_config_path",
+    "get_provider",
+    "import_into_studio",
+    "list_provider_descriptors",
+    "list_providers",
+    "load_settings",
+    "register_provider",
+    "request_json",
+    "run_conversion_pipeline",
+    "run_worker_session",
+    "split_pdf",
+]
