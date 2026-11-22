@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         AnalysisEditRepository,
         AnalysisRepository,
         AnalysisSelectionRepository,
+        ChunkRepository,
         ChunkSourceRepository,
         DocumentRepository,
     )
@@ -55,6 +56,7 @@ class AnalysisEditService:
         document_repo: DocumentRepository,
         selection_repo: AnalysisSelectionRepository,
         chunk_source_repo: ChunkSourceRepository,
+        chunk_repo: ChunkRepository,
         edit_repo: AnalysisEditRepository,
         editor,
         projector,
@@ -64,6 +66,7 @@ class AnalysisEditService:
         self._documents = document_repo
         self._selection = selection_repo
         self._chunk_sources = chunk_source_repo
+        self._chunks = chunk_repo
         self._edits = edit_repo
         self._editor = editor
         self._projector = projector
@@ -151,7 +154,7 @@ class AnalysisEditService:
         analysis_id: str | None = None,
     ) -> EditorSnapshot:
         if not pending_commands:
-            return await self.load_editor(document_id)
+            return await self.load_editor(document_id, analysis_id)
         document = await self._require_document(document_id)
         base = await self._base_analysis(document, analysis_id)
         if not base.document_json:
@@ -350,9 +353,13 @@ class AnalysisEditService:
             created_at=base.created_at,
         )
         source = await self._chunk_sources.get_chunk_source(document.id)
-        stale = source is not None and (
-            source.analysis_id != base.id or source.result_hash != _sha256(projection.document_json)
-        )
+        if source is None:
+            # Chunks without a recorded source (legacy) have unknown provenance: treat as stale.
+            stale = await self._chunks.count_for_document(document.id) > 0
+        else:
+            stale = source.analysis_id != base.id or source.result_hash != _sha256(
+                projection.document_json
+            )
         return EditorSnapshot(job, projection, sequence, stale, base.id)
 
 
