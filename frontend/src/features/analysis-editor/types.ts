@@ -1,4 +1,4 @@
-import type { Analysis, Page } from '../../shared/types'
+import type { Analysis } from '../../shared/types'
 
 export interface EditorProvenance {
   page: number
@@ -12,9 +12,8 @@ export type AnalysisEditCommand =
   | {
       type: 'moveElement'
       elementId: string
-      beforeElementId?: string | null
-      targetElementId?: string
-      placement?: 'before' | 'after' | 'inside'
+      targetElementId: string
+      placement: 'before' | 'after' | 'inside'
     }
   | { type: 'deleteElement'; elementId: string }
   | { type: 'deleteElements'; elementIds: string[] }
@@ -52,8 +51,6 @@ export interface AnalysisEditorResponse {
   result: Analysis
   appliedThroughSequence: number
   chunksStale: boolean
-  warnings: string[]
-  referenceChanges: Record<string, string>
 }
 
 export interface AnalysisEditSaveResponse {
@@ -79,11 +76,11 @@ export interface AnalysisEditRequest {
   expectedAppliedThroughSequence: number
 }
 
-export function pagesFromAnalysis(analysis: Analysis | null): Page[] {
-  if (!analysis?.pagesJson) return []
-  try {
-    return JSON.parse(analysis.pagesJson) as Page[]
-  } catch {
-    return []
-  }
+/** Revert (`active: false`) or reapply a saved edit, checked against the stream head. */
+export interface AnalysisEditActiveChange {
+  sequence: number
+  active: boolean
+  expectedAppliedThroughSequence: number
 }
+
+export { parseAnalysisPages } from '../../shared/analysisPages'

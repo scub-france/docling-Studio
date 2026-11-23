@@ -24,9 +24,9 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from domain.anchors import AnchorParseError, DocumentAnchor
-from domain.element_reader import element_text, resolve
-from domain.parse_index import label_of
-from domain.quote_marks import quote_marks
+from domain.element_reader import read_element_text, resolve
+from domain.parse_index import get_label
+from domain.quote_marks import find_quote_marks
 from domain.source_map import SourceCited, SourceRead, build_source_map
 from services.navigation_errors import InvalidArgumentError, NavigationServiceError
 
@@ -96,48 +96,37 @@ class SourceService:
     ) -> SourceReport:
         """Project `(uri, why, found)` rounds and `(uri, quote)` citations onto
         the parse they pin."""
-        self._bound(question, reads, cited)
+        self._check_bounds(question, reads, cited)
         unknown: list[str] = []
-        read_anchors = [(a, w, f) for uri, w, f in reads if (a := _anchor(uri, unknown))]
-        checked = [await self._check(uri, quote) for uri, quote in cited]
-        cited_anchors = [(a, q, st) for uri, q, st in checked if (a := _anchor(uri, unknown))]
+        read_anchors = [(a, w, f) for uri, w, f in reads if (a := _parse_anchor(uri, unknown))]
+        current_parses = await self._find_current_parses(cited)
+        checked = [await self._check(uri, quote, current_parses) for uri, quote in cited]
+        cited_anchors = [(a, q, st) for uri, q, st in checked if (a := _parse_anchor(uri, unknown))]
         anchors = [a for a, *_ in read_anchors] + [a for a, *_ in cited_anchors]
-        document_id, version_id = _single_pin(anchors)
+        document_id, version_id = _require_single_pin(anchors)
 
         parse = await self._parses.load(document_id, version_id)
         outline = await self._navigation.get_outline(
             document_id, version_id=version_id, depth=_MAP_DEPTH
         )
-        known = _resolvable(parse, anchors, unknown)
-        sources = build_source_map(
-            outline,
-            parse.index,
-            [
-                SourceRead(a.ref, a.uri, why.strip(), found.strip())
-                for a, why, found in read_anchors
-                if a.uri in known
-            ],
-            [
-                SourceCited(a.ref, a.uri, quote, status)
-                for a, quote, status in cited_anchors
-                if a.uri in known
-            ],
-        )
-        sources = await self._marked(parse, sources)
+        known = _find_resolvable(parse, anchors, unknown)
+        source_reads, source_cited = _build_known_rounds(read_anchors, cited_anchors, known)
+        sources = build_source_map(outline, parse.index, source_reads, source_cited)
+        sources = await self._add_quote_marks(parse, sources)
         return SourceReport(
             document_id=document_id,
             version_id=version_id,
             filename=parse.document.filename,
             question=question.strip(),
             sources=sources,
-            deep_links=self._deep_links(parse, sources),
+            deep_links=self._build_deep_links(parse, sources),
             unknown=unknown,
             max_rounds=self._config.max_rounds,
             page_count=parse.index.page_count or None,
-            title=_title(parse.index) or parse.document.filename,
+            title=_find_document_title(parse.index) or parse.document.filename,
         )
 
-    async def _marked(self, parse: LoadedParse, sources: SourceMap) -> SourceMap:
+    async def _add_quote_marks(self, parse: LoadedParse, sources: SourceMap) -> SourceMap:
         """Each quoted passage with the lines its quote covers.
 
         Off the event loop: pdfium is blocking. Best effort: a page it cannot
@@ -153,20 +142,40 @@ class SourceService:
         def mark_all() -> list[SourcePassage]:
             pages: dict[int, list[Glyph]] = {}
 
-            def glyphs(page: int) -> list[Glyph]:
+            def read_page_glyphs(page: int) -> list[Glyph]:
                 if page not in pages:
                     try:
-                        pages[page] = reader.glyphs(storage_path, page=page)
+                        pages[page] = reader.read_glyphs(storage_path, page=page)
                     except Exception:
                         logger.warning("No text layer for page %s of %s", page, storage_path)
                         pages[page] = []
                 return pages[page]
 
-            return [replace(p, marks=_marks(p, glyphs)) if p.quote else p for p in sources.passages]
+            return [
+                replace(p, marks=_find_quote_marks(p, read_page_glyphs)) if p.quote else p
+                for p in sources.passages
+            ]
 
         return replace(sources, passages=await asyncio.to_thread(mark_all))
 
-    async def _check(self, uri: str, quote: str) -> tuple[str, str, str | None]:
+    async def _find_current_parses(self, cited: list[tuple[str, str]]) -> dict[str, str]:
+        """The current parse of every document a quoted citation names, resolved
+        once for the whole card instead of once per citation."""
+        document_ids = set()
+        for uri, quote in cited:
+            if not (quote or "").strip():
+                continue
+            try:
+                document_ids.add(DocumentAnchor.parse(uri).document_id)
+            except AnchorParseError:
+                continue
+        if not document_ids:
+            return {}
+        return await self._parses.find_current_parse_ids(sorted(document_ids))
+
+    async def _check(
+        self, uri: str, quote: str, current_parses: dict[str, str]
+    ) -> tuple[str, str, str | None]:
         """The anchor to show for one citation, and the server's word on its quote.
 
         A quote that checks out may sit in a narrower element than the anchor
@@ -179,13 +188,15 @@ class SourceService:
         if not quote:
             return uri, "", None
         try:
-            check = await self._citations.verify_citation(uri, quote)
+            check = await self._citations.verify_citation(
+                uri, quote, current_parse_ids=current_parses
+            )
         except (AnchorParseError, NavigationServiceError):
             return uri, quote, None
         narrowed = check.citation.uri if check.valid and check.citation else uri
         return narrowed, quote, check.status.value
 
-    def _bound(
+    def _check_bounds(
         self, question: str, reads: list[tuple[str, str, str]], cited: list[tuple[str, str]]
     ) -> None:
         """Refuse an input past its ceiling before any work is done."""
@@ -206,7 +217,7 @@ class SourceService:
             if len(text or "") > limit:
                 raise InvalidArgumentError(f"`{label}` is over {limit} characters. Shorten it.")
 
-    def _deep_links(self, parse: LoadedParse, sources: SourceMap) -> dict[str, str]:
+    def _build_deep_links(self, parse: LoadedParse, sources: SourceMap) -> dict[str, str]:
         refs = (
             {node.ref for node in sources.nodes}
             | {DocumentAnchor.parse(uri).ref for hop in sources.hops for uri in hop.cited}
@@ -215,23 +226,25 @@ class SourceService:
         links: dict[str, str] = {}
         for ref in refs:
             element = resolve(parse.index, ref)
-            link = self._citations.deep_link(parse.version_id, element) if element else None
+            link = self._citations.build_deep_link(parse.version_id, element) if element else None
             if link:
                 links[ref] = link
         return links
 
 
-def _marks(passage: SourcePassage, glyphs: Callable[[int], list[Glyph]]) -> list[PageRegion]:
+def _find_quote_marks(
+    passage: SourcePassage, glyphs: Callable[[int], list[Glyph]]
+) -> list[PageRegion]:
     """The quote's lines on the first of its pages that holds it."""
     for page in sorted({r.page for r in passage.regions}):
         blocks = [r for r in passage.regions if r.page == page]
-        marks = quote_marks(glyphs(page), passage.quote, page=page, within=blocks)
+        marks = find_quote_marks(glyphs(page), passage.quote, page=page, within=blocks)
         if marks:
             return marks
     return []
 
 
-def _title(index: DocumentIndex) -> str:
+def _find_document_title(index: DocumentIndex) -> str:
     """The document's own title, as the parse found it.
 
     Its `title` element when it has one. Docling often labels a paper's title
@@ -240,22 +253,22 @@ def _title(index: DocumentIndex) -> str:
     Introduction" names a section, not the document). Else nothing.
     """
 
-    def text(ref: str) -> str:
-        return " ".join(element_text(index, ref).split())
+    def read_flat_text(ref: str) -> str:
+        return " ".join(read_element_text(index, ref).split())
 
     for ref in index.order:
-        if label_of(index.by_ref.get(ref) or {}) == "title":
-            return text(ref)
+        if get_label(index.by_ref.get(ref) or {}) == "title":
+            return read_flat_text(ref)
     for ref in index.order:
-        label = label_of(index.by_ref.get(ref) or {})
-        if label in _FURNITURE or not text(ref):
+        label = get_label(index.by_ref.get(ref) or {})
+        if label in _FURNITURE or not read_flat_text(ref):
             continue
         opens = label == "section_header" and index.page_of.get(ref) == 1
-        return text(ref) if opens and not text(ref)[:1].isdigit() else ""
+        return read_flat_text(ref) if opens and not read_flat_text(ref)[:1].isdigit() else ""
     return ""
 
 
-def _anchor(uri: str, unknown: list[str]) -> DocumentAnchor | None:
+def _parse_anchor(uri: str, unknown: list[str]) -> DocumentAnchor | None:
     try:
         return DocumentAnchor.parse(uri)
     except AnchorParseError:
@@ -263,7 +276,7 @@ def _anchor(uri: str, unknown: list[str]) -> DocumentAnchor | None:
         return None
 
 
-def _single_pin(anchors: list[DocumentAnchor]) -> tuple[str, str]:
+def _require_single_pin(anchors: list[DocumentAnchor]) -> tuple[str, str]:
     """The one `(document_id, version_id)` every anchor names."""
     pins = {(anchor.document_id, anchor.version_id) for anchor in anchors}
     if not pins:
@@ -279,7 +292,9 @@ def _single_pin(anchors: list[DocumentAnchor]) -> tuple[str, str]:
     return pins.pop()
 
 
-def _resolvable(parse: LoadedParse, anchors: list[DocumentAnchor], unknown: list[str]) -> set[str]:
+def _find_resolvable(
+    parse: LoadedParse, anchors: list[DocumentAnchor], unknown: list[str]
+) -> set[str]:
     """The uris whose ref this parse holds; the others join `unknown`."""
     known: set[str] = set()
     for anchor in anchors:
@@ -291,3 +306,22 @@ def _resolvable(parse: LoadedParse, anchors: list[DocumentAnchor], unknown: list
         else:
             known.add(anchor.uri)
     return known
+
+
+def _build_known_rounds(
+    read_anchors: list[tuple[DocumentAnchor, str, str]],
+    cited_anchors: list[tuple[DocumentAnchor, str, str | None]],
+    known: set[str],
+) -> tuple[list[SourceRead], list[SourceCited]]:
+    """The reads and citations whose anchor this parse holds, as the source map takes them."""
+    reads = [
+        SourceRead(a.ref, a.uri, why.strip(), found.strip())
+        for a, why, found in read_anchors
+        if a.uri in known
+    ]
+    cited = [
+        SourceCited(a.ref, a.uri, quote, status)
+        for a, quote, status in cited_anchors
+        if a.uri in known
+    ]
+    return reads, cited

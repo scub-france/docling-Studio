@@ -31,7 +31,9 @@ frontend/dist/
 # Backend dev / cache / runtime artefacts
 document-parser/.venv/
 document-parser/__pycache__/
+document-parser/**/__pycache__/
 document-parser/*.pyc
+document-parser/**/*.pyc
 document-parser/*.iml
 document-parser/.pytest_cache/
 document-parser/.mypy_cache/
@@ -47,6 +49,7 @@ document-parser/tests/
 docs/
 e2e/
 experiments/
+out/
 site/
 mkdocs.yml
 node_modules/

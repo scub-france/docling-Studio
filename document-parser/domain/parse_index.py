@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from domain.heading_tree import nest_by_heading
 from domain.navigation import BoundingBox, is_heading
 
 if TYPE_CHECKING:
@@ -29,7 +30,7 @@ PAGE_REF_PREFIX = "#/pages/"
 _MAX_TITLE_LEN = 96
 
 
-def page_ref(page: int) -> str:
+def build_page_ref(page: int) -> str:
     return f"{PAGE_REF_PREFIX}{page}"
 
 
@@ -77,39 +78,98 @@ class DocumentIndex:
         return max(self.page_numbers) if self.page_numbers else 0
 
 
+@dataclass(frozen=True)
+class _Provenance:
+    """Where each located element sits: see the fields of `DocumentIndex`."""
+
+    page_of: dict[str, int]
+    pages_of: dict[str, frozenset[int]]
+    bbox_of: dict[str, BoundingBox]
+    boxes_of: dict[str, tuple[BoundingBox, ...]]
+
+
 def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> DocumentIndex:
     """Walk a parse once and pre-compute order, breadcrumbs and provenance."""
     skip_refs, inline_meta = tree_reader.build_collapse_index(doc_data)
+    by_ref = index_items_by_ref(doc_data, tree_reader)
 
+    order = [ref for ref in tree_reader.list_dfs_order(doc_data, skip_refs) if ref in by_ref]
+    position = {ref: idx for idx, ref in enumerate(order)}
+    heading_path, section_end = _map_sections(order, by_ref, inline_meta)
+    page_sizes = _read_page_sizes(doc_data, tree_reader)
+    located = _locate_items(by_ref, inline_meta, page_sizes, tree_reader)
+
+    page_numbers = _list_page_numbers(page_sizes, located)
+
+    return DocumentIndex(
+        by_ref=by_ref,
+        order=order,
+        position=position,
+        heading_path=heading_path,
+        section_end=section_end,
+        page_of=located.page_of,
+        pages_of=located.pages_of,
+        bbox_of=located.bbox_of,
+        inline_meta=inline_meta,
+        page_numbers=page_numbers,
+        page_sizes=page_sizes,
+        boxes_of=located.boxes_of,
+    )
+
+
+def index_items_by_ref(
+    doc_data: dict[str, Any], tree_reader: DocumentTreeReader
+) -> dict[str, dict[str, Any]]:
+    """Every item of the parse that has a `self_ref`, by that ref."""
     by_ref: dict[str, dict[str, Any]] = {}
     for _, item in tree_reader.iter_items(doc_data):
         ref = item.get("self_ref")
         if ref:
             by_ref[ref] = item
+    return by_ref
 
-    order = [ref for ref in tree_reader.dfs_order(doc_data, skip_refs) if ref in by_ref]
-    position = {ref: idx for idx, ref in enumerate(order)}
 
+def _map_sections(
+    order: list[str],
+    by_ref: dict[str, dict[str, Any]],
+    inline_meta: dict[str, dict[str, Any]],
+) -> tuple[dict[str, list[str]], dict[str, int]]:
+    """Each element's heading breadcrumb, and where each heading's section ends.
+
+    A section ends where the next heading at its level or above starts, or
+    at the end of the document; the breadcrumb is the open headings' titles.
+    """
     heading_path: dict[str, list[str]] = {}
     section_end: dict[str, int] = {}
-    stack: list[tuple[int, str, str]] = []  # (level, ref, title)
+    titles: dict[int, str] = {}
+    nesting = nest_by_heading([by_ref[ref] for ref in order], level_of=read_heading_level)
+    for step in nesting.steps:
+        ref = order[step.position]
+        for closed in step.closed:
+            section_end[order[closed]] = step.position
+        heading_path[ref] = [titles[ancestor] for ancestor in step.ancestors]
+        if step.opened:
+            titles[step.position] = get_title(by_ref[ref], inline_meta)
+    for still_open in reversed(nesting.still_open):
+        section_end[order[still_open]] = len(order)
+    return heading_path, section_end
 
-    for idx, ref in enumerate(order):
-        item = by_ref[ref]
-        label = label_of(item)
-        if is_heading(label):
-            level = heading_level(item)
-            while stack and stack[-1][0] >= level:
-                _, closed, _ = stack.pop()
-                section_end[closed] = idx
-            heading_path[ref] = [title for _, _, title in stack]
-            stack.append((level, ref, title_of(item, inline_meta)))
-        else:
-            heading_path[ref] = [title for _, _, title in stack]
-    while stack:
-        _, closed, _ = stack.pop()
-        section_end[closed] = len(order)
 
+def _list_page_numbers(
+    page_sizes: dict[int, tuple[float, float]], located: _Provenance
+) -> list[int]:
+    # Union, not `or`: a parse whose `pages` map is partial (a page with no
+    # `size`) would otherwise drop that page from the map entirely — and the
+    # page fallback exists precisely for scans, where that metadata is the
+    # first thing to be missing. A page an element sits on is a page.
+    return sorted(
+        set(page_sizes) | {number for pages in located.pages_of.values() for number in pages}
+    )
+
+
+def _read_page_sizes(
+    doc_data: dict[str, Any], tree_reader: DocumentTreeReader
+) -> dict[int, tuple[float, float]]:
     page_sizes: dict[int, tuple[float, float]] = {}
     for page in tree_reader.iter_pages(doc_data):
         number = page.get("page_no")
@@ -118,11 +178,17 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         width, height = page.get("width"), page.get("height")
         if width and height:
             page_sizes[int(number)] = (float(width), float(height))
+    return page_sizes
 
-    page_of: dict[str, int] = {}
-    pages_of: dict[str, frozenset[int]] = {}
-    bbox_of: dict[str, BoundingBox] = {}
-    boxes_of: dict[str, tuple[BoundingBox, ...]] = {}
+
+def _locate_items(
+    by_ref: dict[str, dict[str, Any]],
+    inline_meta: dict[str, dict[str, Any]],
+    page_sizes: dict[int, tuple[float, float]],
+    tree_reader: DocumentTreeReader,
+) -> _Provenance:
+    """The pages and boxes of every element with a located provenance."""
+    located_items = _Provenance(page_of={}, pages_of={}, bbox_of={}, boxes_of={})
     for ref, item in by_ref.items():
         provs = tree_reader.iter_provs(item)
         if not provs and ref in inline_meta:
@@ -130,37 +196,15 @@ def build_index(doc_data: dict[str, Any], tree_reader: DocumentTreeReader) -> Do
         located = [p for p in provs if p.get("page_no") is not None]
         if not located:
             continue
-        page_of[ref] = int(located[0]["page_no"])
-        pages_of[ref] = frozenset(int(p["page_no"]) for p in located)
-        boxes = tuple(_box(prov, page_sizes) for prov in located)
-        bbox_of[ref] = boxes[0]
-        boxes_of[ref] = boxes
-
-    # Union, not `or`: a parse whose `pages` map is partial (a page with no
-    # `size`) would otherwise drop that page from the map entirely — and the
-    # page fallback exists precisely for scans, where that metadata is the
-    # first thing to be missing. A page an element sits on is a page.
-    page_numbers = sorted(
-        set(page_sizes) | {number for pages in pages_of.values() for number in pages}
-    )
-
-    return DocumentIndex(
-        by_ref=by_ref,
-        order=order,
-        position=position,
-        heading_path=heading_path,
-        section_end=section_end,
-        page_of=page_of,
-        pages_of=pages_of,
-        bbox_of=bbox_of,
-        inline_meta=inline_meta,
-        page_numbers=page_numbers,
-        page_sizes=page_sizes,
-        boxes_of=boxes_of,
-    )
+        located_items.page_of[ref] = int(located[0]["page_no"])
+        located_items.pages_of[ref] = frozenset(int(p["page_no"]) for p in located)
+        boxes = tuple(_to_box(prov, page_sizes) for prov in located)
+        located_items.bbox_of[ref] = boxes[0]
+        located_items.boxes_of[ref] = boxes
+    return located_items
 
 
-def _box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> BoundingBox:
+def _to_box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> BoundingBox:
     """One provenance row as a box on its own page, with that page's size."""
     page = int(prov["page_no"])
     width, height = page_sizes.get(page, (None, None))
@@ -176,9 +220,9 @@ def _box(prov: dict[str, Any], page_sizes: dict[int, tuple[float, float]]) -> Bo
     )
 
 
-def heading_level(item: dict[str, Any]) -> int:
+def get_heading_level(item: dict[str, Any]) -> int:
     """0 for the document title, >=1 for section headers (docling `level`)."""
-    if label_of(item) == "title":
+    if get_label(item) == "title":
         return 0
     try:
         return max(int(item.get("level") or 1), 1)
@@ -186,18 +230,27 @@ def heading_level(item: dict[str, Any]) -> int:
         return 1
 
 
-def label_of(item: dict[str, Any]) -> str:
+def read_heading_level(item: dict[str, Any]) -> int | None:
+    """The heading level of an item, None when its label is not a heading.
+
+    The rule the parse index and the outline nest by: `HEADING_LABELS` for
+    what a heading is, `get_heading_level` for its level.
+    """
+    return get_heading_level(item) if is_heading(get_label(item)) else None
+
+
+def get_label(item: dict[str, Any]) -> str:
     return (item.get("label") or "text").lower()
 
 
-def title_of(item: dict[str, Any], inline_meta: dict[str, dict[str, Any]]) -> str:
+def get_title(item: dict[str, Any], inline_meta: dict[str, dict[str, Any]]) -> str:
     ref = item.get("self_ref") or ""
     meta = inline_meta.get(ref)
     raw = (meta or {}).get("text") or item.get("text") or ""
     title = str(raw).strip()
     if title:
         return truncate_title(title)
-    label = label_of(item)
+    label = get_label(item)
     return {"table": "Table", "picture": "Figure", "list": "List"}.get(label, label or "node")
 
 

@@ -22,7 +22,6 @@ def test_all_editor_endpoints_return_not_found_when_disabled():
                 json={"active": False, "expectedAppliedThroughSequence": 1},
             ),
             client.post("/api/documents/doc-1/analysis-edits", json={"commands": []}),
-            client.post("/api/documents/doc-1/analysis-edits/rebuild"),
         ]
 
-    assert [response.status_code for response in responses] == [404] * 6
+    assert [response.status_code for response in responses] == [404] * 5

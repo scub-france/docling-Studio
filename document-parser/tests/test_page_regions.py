@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from domain.navigation import BoundingBox
-from domain.page_regions import PageRegion, regions_of
+from domain.page_regions import PageRegion, collect_regions
 from domain.parse_index import DocumentIndex, build_index
 from infra.docling_tree import DoclingTreeReader
 from tests.navigation_fixtures import MESSY
@@ -30,7 +30,7 @@ def box(left, top, right, bottom, *, page=1, size=True):
 
 
 def index_of(**boxes: list[BoundingBox]) -> DocumentIndex:
-    """An index that only knows boxes: the one thing `regions_of` reads."""
+    """An index that only knows boxes: the one thing `collect_regions` reads."""
     return DocumentIndex(
         by_ref={},
         order=list(boxes),
@@ -54,13 +54,13 @@ def edges(region: PageRegion):
 class TestBlocks:
     def test_paragraphs_stacked_in_one_column_are_one_block(self):
         index = index_of(a=[box(60, 100, 540, 200)], b=[box(60, 210, 540, 300)])
-        [region] = regions_of(index, ["a", "b"])
+        [region] = collect_regions(index, ["a", "b"])
         assert region.page == 1
         assert edges(region) == (0.1, 0.1, 0.9, 0.3)
 
     def test_a_wide_gap_keeps_two_blocks(self):
         index = index_of(a=[box(60, 100, 540, 200)], b=[box(60, 400, 540, 500)])
-        assert len(regions_of(index, ["a", "b"])) == 2
+        assert len(collect_regions(index, ["a", "b"])) == 2
 
     def test_two_columns_stay_two_blocks_in_reading_order(self):
         """A section that runs from the foot of the left column to the head of
@@ -69,7 +69,7 @@ class TestBlocks:
             left=[box(40, 700, 290, 950)],
             right=[box(310, 50, 560, 300)],
         )
-        regions = regions_of(index, ["left", "right"])
+        regions = collect_regions(index, ["left", "right"])
         assert [round(r.left, 3) for r in regions] == [0.067, 0.517]
 
     def test_the_order_boxes_arrive_in_cannot_leave_a_split_block(self):
@@ -79,37 +79,37 @@ class TestBlocks:
             bottom=[box(60, 260, 540, 360)],
             middle=[box(60, 205, 540, 255)],
         )
-        [region] = regions_of(index, ["top", "bottom", "middle"])
+        [region] = collect_regions(index, ["top", "bottom", "middle"])
         assert (region.top, region.bottom) == pytest.approx((0.1, 0.36))
 
     def test_an_element_across_a_page_break_has_a_block_on_each_page(self):
         index = build_index(MESSY, DoclingTreeReader())
-        regions = regions_of(index, ["#/texts/3"])
+        regions = collect_regions(index, ["#/texts/3"])
         assert [r.page for r in regions] == [1, 2]
 
     def test_pages_come_in_order_whatever_the_reading_order(self):
         index = index_of(a=[box(60, 100, 540, 200, page=3)], b=[box(60, 100, 540, 200, page=1)])
-        assert [r.page for r in regions_of(index, ["a", "b"])] == [1, 3]
+        assert [r.page for r in collect_regions(index, ["a", "b"])] == [1, 3]
 
 
 class TestWhatIsLeftOut:
     def test_a_box_on_a_page_of_unknown_size(self):
         index = index_of(a=[box(60, 100, 540, 200, size=False)])
-        assert regions_of(index, ["a"]) == []
+        assert collect_regions(index, ["a"]) == []
 
     def test_a_box_with_no_area(self):
         index = index_of(a=[box(60, 100, 60, 200)])
-        assert regions_of(index, ["a"]) == []
+        assert collect_regions(index, ["a"]) == []
 
     def test_running_headers_and_footers(self):
         """Inside a section's range in reading order, but nobody reads them."""
         index = build_index(MESSY, DoclingTreeReader())
-        assert regions_of(index, ["#/texts/0", "#/texts/4"]) == []
+        assert collect_regions(index, ["#/texts/0", "#/texts/4"]) == []
 
     def test_a_ref_with_no_box(self):
-        assert regions_of(index_of(), ["#/groups/0"]) == []
+        assert collect_regions(index_of(), ["#/groups/0"]) == []
 
     def test_blocks_past_the_limit(self):
         index = index_of(**{f"p{n}": [box(60, 100, 540, 200, page=n)] for n in range(1, 6)})
-        regions = regions_of(index, [f"p{n}" for n in range(1, 6)], limit=3)
+        regions = collect_regions(index, [f"p{n}" for n in range(1, 6)], limit=3)
         assert [r.page for r in regions] == [1, 2, 3]

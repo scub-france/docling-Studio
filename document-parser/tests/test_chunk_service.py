@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from domain.models import AnalysisJob, AnalysisStatus, Chunk, Document, Store
+from domain.exceptions import AnalysisNotSelectableError
+from domain.models import AnalysisJob, AnalysisOutput, AnalysisStatus, Chunk, Document, Store
 from domain.value_objects import (
     ChunkDocItem,
     ChunkResult,
@@ -24,18 +25,31 @@ from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
 from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
 from persistence.store_repo import SqliteStoreRepository
-from services.chunk_service import (
+from services.chunk_errors import (
     ChunkConflictError,
     ChunkNotFoundError,
-    ChunkService,
     ChunkServiceError,
     ChunkValidationError,
     DocumentNotFoundError,
 )
+from services.chunk_push_service import ChunkPushService
+from services.chunk_service import ChunkService
+from services.current_analysis import CurrentAnalysisResolver
+from services.document_tree_service import DocumentTreeService
 from services.ingestion_service import IngestionResult
+from tests.analysis_state_helpers import set_selection
+from tests.current_result_fakes import UneditedResultReader
 
 # Stateless shim — safe to share across the entire test module.
 _TREE_READER = DoclingTreeReader()
+
+
+def _spy(monkeypatch, repo, name: str) -> AsyncMock:
+    """Wrap a repository coroutine so a test can count its calls (#398)."""
+    spy = AsyncMock(wraps=getattr(repo, name))
+    monkeypatch.setattr(repo, name, spy)
+    return spy
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -60,12 +74,15 @@ async def doc():
 
 @pytest.fixture
 def repos():
+    analysis_state = SqliteDocumentAnalysisRepository()
+    analyses = SqliteAnalysisRepository()
     return {
         "chunks": SqliteChunkRepository(),
         "pushes": SqliteChunkPushRepository(),
         "documents": SqliteDocumentRepository(),
-        "analysis_state": SqliteDocumentAnalysisRepository(),
-        "analyses": SqliteAnalysisRepository(),
+        "analysis_state": analysis_state,
+        "analyses": analyses,
+        "current": CurrentAnalysisResolver(state_repo=analysis_state, analysis_repo=analyses),
     }
 
 
@@ -73,13 +90,28 @@ def repos():
 def service(repos):
     return ChunkService(
         chunk_repo=repos["chunks"],
+        document_repo=repos["documents"],
+        active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
+        chunker=None,
+    )
+
+
+def _push_service(repos, **collaborators) -> ChunkPushService:
+    return ChunkPushService(
+        chunk_repo=repos["chunks"],
         chunk_push_repo=repos["pushes"],
         document_repo=repos["documents"],
-        chunk_source_repo=repos["analysis_state"],
+        **collaborators,
+    )
+
+
+@pytest.fixture
+def tree_service(repos):
+    return DocumentTreeService(
+        document_repo=repos["documents"],
         analysis_repo=repos["analyses"],
         tree_reader=_TREE_READER,
-        chunker=None,
-        ingestion_service=None,
+        active_result_service=UneditedResultReader(repos["current"], repos["analyses"]),
     )
 
 
@@ -130,6 +162,29 @@ class TestAddChunk:
         # `last` was shifted from sequence=1 to sequence=2
         refreshed_last = next(c for c in chunks if c.id == last.id)
         assert refreshed_last.sequence == 2
+
+    async def test_shift_is_one_bulk_update(self, service, repos, doc, monkeypatch):
+        """#398 — making room shifts every later chunk in one statement."""
+        first = await service.add_chunk(doc.id, text="a")
+        for text in ("c", "d", "e"):
+            await service.add_chunk(doc.id, text=text)
+        shift = _spy(monkeypatch, repos["chunks"], "shift_sequences")
+        update = _spy(monkeypatch, repos["chunks"], "update")
+
+        await service.add_chunk(doc.id, text="b", after_id=first.id)
+
+        shift.assert_awaited_once()
+        assert shift.await_args.args == (doc.id,)
+        assert shift.await_args.kwargs["from_sequence"] == 1
+        update.assert_not_awaited()
+        chunks = await service.list_chunks(doc.id)
+        assert [(c.text, c.sequence) for c in chunks] == [
+            ("a", 0),
+            ("b", 1),
+            ("c", 2),
+            ("d", 3),
+            ("e", 4),
+        ]
 
     async def test_anchor_not_found(self, service, doc):
         with pytest.raises(ChunkNotFoundError):
@@ -204,6 +259,27 @@ class TestSplitChunk:
         assert [c.text for c in chunks] == ["abc", "def", "next"]
         assert [c.sequence for c in chunks] == [0, 1, 2]
 
+    async def test_split_shifts_in_one_bulk_update(self, service, repos, doc, monkeypatch):
+        """#398 — no per-chunk `update` to push the later chunks down."""
+        a = await service.add_chunk(doc.id, text="abcdef")
+        for text in ("x", "y"):
+            await service.add_chunk(doc.id, text=text)
+        shift = _spy(monkeypatch, repos["chunks"], "shift_sequences")
+        update = _spy(monkeypatch, repos["chunks"], "update")
+
+        await service.split_chunk(doc.id, a.id, cursor_offset=3)
+
+        shift.assert_awaited_once()
+        assert shift.await_args.kwargs["from_sequence"] == 1
+        update.assert_not_awaited()
+        chunks = await service.list_chunks(doc.id)
+        assert [(c.text, c.sequence) for c in chunks] == [
+            ("abc", 0),
+            ("def", 1),
+            ("x", 2),
+            ("y", 3),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # merge_chunks
@@ -222,12 +298,52 @@ class TestMergeChunks:
         # New chunk at sequence 0, then `c` still at 2 (gap is allowed)
         assert {c2.text for c2 in chunks} == {"a\nb", "c"}
 
+    async def test_merge_soft_deletes_sources_in_one_statement(
+        self, service, repos, doc, monkeypatch
+    ):
+        """#398 — the merged chunks are retired together, not one by one."""
+        a = await service.add_chunk(doc.id, text="a")
+        b = await service.add_chunk(doc.id, text="b")
+        c = await service.add_chunk(doc.id, text="c")
+        bulk = _spy(monkeypatch, repos["chunks"], "soft_delete_many")
+        single = _spy(monkeypatch, repos["chunks"], "soft_delete")
+
+        merged = await service.merge_chunks(doc.id, [c.id, a.id, b.id])
+
+        bulk.assert_awaited_once()
+        assert bulk.await_args.args == ([a.id, b.id, c.id],)
+        single.assert_not_awaited()
+        chunks = await service.list_chunks(doc.id)
+        assert [x.id for x in chunks] == [merged.id]
+        every = await repos["chunks"].find_for_document(doc.id, include_deleted=True)
+        retired = {x.id: x.deleted_at for x in every if x.deleted_at is not None}
+        assert set(retired) == {a.id, b.id, c.id}
+        assert len(set(retired.values())) == 1
+
     async def test_merge_409_on_non_contiguous(self, service, doc):
         a = await service.add_chunk(doc.id, text="a")
         await service.add_chunk(doc.id, text="b")
         c = await service.add_chunk(doc.id, text="c")
         with pytest.raises(ChunkConflictError):
             await service.merge_chunks(doc.id, [a.id, c.id])
+
+    async def test_merge_with_a_chunk_of_another_document_is_not_found(
+        self, service, repos, doc, monkeypatch
+    ):
+        other = Document(filename="other.pdf")
+        await repos["documents"].insert(other)
+        a = await service.add_chunk(doc.id, text="a")
+        foreign = await service.add_chunk(other.id, text="b")
+        bulk = _spy(monkeypatch, repos["chunks"], "soft_delete_many")
+        insert = _spy(monkeypatch, repos["chunks"], "insert")
+
+        with pytest.raises(ChunkNotFoundError, match=foreign.id):
+            await service.merge_chunks(doc.id, [a.id, foreign.id])
+
+        bulk.assert_not_awaited()
+        insert.assert_not_awaited()
+        assert [c.id for c in await service.list_chunks(doc.id)] == [a.id]
+        assert [c.id for c in await service.list_chunks(other.id)] == [foreign.id]
 
     async def test_merge_validates_min_two(self, service, doc):
         a = await service.add_chunk(doc.id, text="a")
@@ -264,6 +380,39 @@ class TestRechunkDocument:
         assert [c.text for c in result] == ["new1", "new2"]
         chunks = await service.list_chunks(doc.id)
         assert [c.text for c in chunks] == ["new1", "new2"]
+
+    async def test_rechunk_retires_old_chunks_in_one_statement(
+        self, service, repos, doc, monkeypatch
+    ):
+        """#398 — one bulk soft-delete for the whole old chunkset, inside the one
+        transaction that also records the chunk source (02-2.4.3)."""
+        for text in ("old1", "old2", "old3"):
+            await service.add_chunk(doc.id, text=text)
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = json.dumps({"texts": []})
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(return_value=[ChunkResult(text="new", source_page=1)])
+        service._chunker = chunker
+        replace = _spy(monkeypatch, repos["chunks"], "replace_keeping_selection")
+        single = _spy(monkeypatch, repos["chunks"], "soft_delete")
+
+        await service.rechunk_document(doc.id)
+
+        replace.assert_awaited_once()
+        assert replace.await_args.args[0].document_id == doc.id
+        single.assert_not_awaited()
+        source = (await repos["analysis_state"].find_state(doc.id)).chunk_source
+        assert source.analysis_id == job.id
+        assert [c.text for c in await service.list_chunks(doc.id)] == ["new"]
+        every = await repos["chunks"].find_for_document(doc.id, include_deleted=True)
+        assert sorted(c.text for c in every if c.deleted_at is not None) == [
+            "old1",
+            "old2",
+            "old3",
+        ]
 
     async def test_rechunk_409_when_no_completed_analysis(self, service, doc):
         service._chunker = MagicMock()
@@ -310,49 +459,89 @@ class TestRechunkDocument:
         chunks = await service.list_chunks(doc.id)
         assert [d.self_ref for d in chunks[0].doc_items] == ["#/texts/0", "#/texts/1"]
 
+    async def _complete_two_analyses(self, repos, doc) -> None:
+        """`older` then `newer` complete; `newer` becomes the active one."""
+        for analysis_id in ("older", "newer"):
+            job = AnalysisJob(id=analysis_id, document_id=doc.id)
+            await repos["analyses"].insert(job)
+            job.mark_running()
+            job.mark_completed(
+                AnalysisOutput(
+                    markdown="",
+                    html="",
+                    pages_json="[]",
+                    document_json=json.dumps({"v": analysis_id}),
+                )
+            )
+            await repos["analyses"].complete_and_select(job)
 
-# ---------------------------------------------------------------------------
-# promote_from_analysis_if_empty
-# ---------------------------------------------------------------------------
+    async def test_rechunk_reads_the_active_analysis_not_the_latest(self, service, repos, doc):
+        """02-2.3.1: two completed analyses, the user restored the older one."""
+        await self._complete_two_analyses(repos, doc)
+        await set_selection(doc.id, "older")
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(return_value=[ChunkResult(text="t", source_page=1)])
+        service._chunker = chunker
 
+        await service.rechunk_document(doc.id)
 
-class TestPromote:
-    async def test_promotes_when_canonical_empty(self, service, repos, doc):
-        chunks_json = json.dumps(
-            [
-                {"text": "first", "headings": ["H"], "sourcePage": 1, "tokenCount": 2},
-                {"text": "second", "sourcePage": 2, "tokenCount": 3},
-            ]
+        assert json.loads(chunker.chunk.await_args.args[0]) == {"v": "older"}
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == "older"
+        assert state.chunk_source.analysis_id == "older"
+
+    async def test_rechunk_409_when_the_active_analysis_was_cleared(self, service, repos, doc):
+        """A cleared selection is a choice: no fallback to the latest analysis."""
+        await self._complete_two_analyses(repos, doc)
+        await set_selection(doc.id, None)
+        service._chunker = MagicMock()
+
+        with pytest.raises(ChunkServiceError) as exc:
+            await service.rechunk_document(doc.id)
+
+        assert exc.value.http_status == 409
+
+    async def test_first_rechunk_without_a_state_row_keeps_the_current_analysis(
+        self, service, repos, doc
+    ):
+        """The row a rechunk creates selects the analysis the fallback gave, not NULL."""
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = json.dumps({"texts": []})
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        assert await repos["analysis_state"].find_state(doc.id) is None
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(return_value=[ChunkResult(text="t", source_page=1)])
+        service._chunker = chunker
+
+        await service.rechunk_document(doc.id)
+
+        state = await repos["analysis_state"].find_state(doc.id)
+        assert state.active_analysis_id == job.id
+        assert state.chunk_source.analysis_id == job.id
+        assert await repos["current"].find_current_analysis_id(doc.id) == job.id
+
+    async def test_rechunk_409_when_the_analysis_disappears_before_the_write(
+        self, service, repos, doc, monkeypatch
+    ):
+        """An analysis deleted while the chunker runs is a conflict, not a 500."""
+        job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
+        await repos["analyses"].insert(job)
+        job.document_json = json.dumps({"texts": []})
+        job.completed_at = datetime.now(UTC)
+        await repos["analyses"].update_status(job)
+        chunker = MagicMock()
+        chunker.chunk = AsyncMock(return_value=[ChunkResult(text="t", source_page=1)])
+        service._chunker = chunker
+        monkeypatch.setattr(
+            repos["chunks"],
+            "replace_keeping_selection",
+            AsyncMock(side_effect=AnalysisNotSelectableError(f"Analysis {job.id} is gone")),
         )
-        promoted = await service.promote_from_analysis_if_empty(doc.id, chunks_json)
-        assert promoted == 2
-        chunks = await service.list_chunks(doc.id)
-        assert [c.text for c in chunks] == ["first", "second"]
 
-    async def test_idempotent_when_canonical_not_empty(self, service, doc):
-        await service.add_chunk(doc.id, text="manual")
-        promoted = await service.promote_from_analysis_if_empty(
-            doc.id, json.dumps([{"text": "auto"}])
-        )
-        assert promoted == 0
-        chunks = await service.list_chunks(doc.id)
-        assert [c.text for c in chunks] == ["manual"]
-
-    async def test_skips_invalid_json(self, service, doc):
-        promoted = await service.promote_from_analysis_if_empty(doc.id, "not-json")
-        assert promoted == 0
-
-    async def test_skips_deleted_chunks_from_analysis(self, service, doc):
-        chunks_json = json.dumps(
-            [
-                {"text": "keep"},
-                {"text": "drop", "deleted": True},
-            ]
-        )
-        promoted = await service.promote_from_analysis_if_empty(doc.id, chunks_json)
-        assert promoted == 1
-        chunks = await service.list_chunks(doc.id)
-        assert [c.text for c in chunks] == ["keep"]
+        with pytest.raises(ChunkConflictError, match=r"no longer available"):
+            await service.rechunk_document(doc.id)
 
 
 # ---------------------------------------------------------------------------
@@ -361,10 +550,10 @@ class TestPromote:
 
 
 class TestDiff:
-    async def test_no_push_history_returns_all_added(self, service, doc):
+    async def test_no_push_history_returns_all_added(self, service, repos, doc):
         c1 = await service.add_chunk(doc.id, text="a")
         c2 = await service.add_chunk(doc.id, text="b")
-        diffs = await service.diff_against_store(doc.id, "store-1")
+        diffs = await _push_service(repos).diff_against_store(doc.id, "store-1")
         statuses = {d["chunkId"]: d["status"] for d in diffs}
         assert statuses == {c1.id: "added", c2.id: "added"}
 
@@ -417,23 +606,17 @@ class TestPushToStore:
 
     @pytest.fixture
     def service_with_store(self, repos, store_repo, link_repo, mock_ingestion):
-        return ChunkService(
-            chunk_repo=repos["chunks"],
-            chunk_push_repo=repos["pushes"],
-            document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
-            analysis_repo=repos["analyses"],
-            tree_reader=_TREE_READER,
-            chunker=None,
+        return _push_service(
+            repos,
             ingestion_service=mock_ingestion,
             store_repo=store_repo,
             link_repo=link_repo,
         )
 
     async def test_resolves_slug_to_store_id_before_recording_push(
-        self, service_with_store, repos, doc, mock_ingestion
+        self, service, service_with_store, repos, doc, mock_ingestion
     ):
-        await service_with_store.add_chunk(doc.id, text="hello")
+        await service.add_chunk(doc.id, text="hello")
         result = await service_with_store.push_to_store(doc.id, "rh-corpus-v3")
         assert result["summary"]["embeds"] == 2
         # The audit row must carry the resolved UUID, not the slug —
@@ -447,18 +630,18 @@ class TestPushToStore:
         assert by_slug is None
         mock_ingestion.ingest.assert_awaited_once()
 
-    async def test_also_accepts_an_explicit_store_id(self, service_with_store, repos, doc):
+    async def test_also_accepts_an_explicit_store_id(self, service, service_with_store, repos, doc):
         """Backwards compat: older callers pass the id directly. The
         service must accept that too (try slug first, fall back to id).
         """
-        await service_with_store.add_chunk(doc.id, text="hello")
+        await service.add_chunk(doc.id, text="hello")
         await service_with_store.push_to_store(doc.id, "store-uuid-1")
         latest = await repos["pushes"].find_latest(doc.id, "store-uuid-1")
         assert latest is not None
         assert latest.store_id == "store-uuid-1"
 
-    async def test_unknown_store_raises_404(self, service_with_store, doc):
-        await service_with_store.add_chunk(doc.id, text="hello")
+    async def test_unknown_store_raises_404(self, service, service_with_store, doc):
+        await service.add_chunk(doc.id, text="hello")
         with pytest.raises(ChunkServiceError) as excinfo:
             await service_with_store.push_to_store(doc.id, "nope-not-a-store")
         assert excinfo.value.http_status == 404
@@ -468,19 +651,13 @@ class TestPushToStore:
         # Service constructed without an IngestionService (#199 — backend
         # has neither OpenSearch nor Neo4j configured) must surface a
         # 503, not a generic 500.
-        service = ChunkService(
-            chunk_repo=repos["chunks"],
-            chunk_push_repo=repos["pushes"],
-            document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
-            analysis_repo=repos["analyses"],
-            tree_reader=_TREE_READER,
-            chunker=None,
+        pusher = _push_service(
+            repos,
             ingestion_service=None,
             store_repo=store_repo,
         )
         with pytest.raises(ChunkServiceError) as excinfo:
-            await service.push_to_store(doc.id, "rh-corpus-v3")
+            await pusher.push_to_store(doc.id, "rh-corpus-v3")
         assert excinfo.value.http_status == 503
         # The error message must be actionable — it's what the user
         # sees in the toast when push fails.
@@ -496,7 +673,9 @@ class TestPushToStore:
         with pytest.raises(DocumentNotFoundError):
             await service_with_store.push_to_store("ghost-doc", "rh-corpus-v3")
 
-    async def test_upserts_document_store_link_on_success(self, service_with_store, link_repo, doc):
+    async def test_upserts_document_store_link_on_success(
+        self, service, service_with_store, link_repo, doc
+    ):
         """The push must populate `document_store_links` — that's the
         table the UI reads from for the per-store state badge. Without
         the upsert, the row stays NotPushed forever even though the
@@ -506,7 +685,7 @@ class TestPushToStore:
         jour du statut une fois poussé"): the audit log was being
         written but the live link wasn't.
         """
-        await service_with_store.add_chunk(doc.id, text="hello")
+        await service.add_chunk(doc.id, text="hello")
         await service_with_store.push_to_store(doc.id, "rh-corpus-v3")
 
         link = await link_repo.find_one(doc.id, "store-uuid-1")
@@ -519,17 +698,19 @@ class TestPushToStore:
         # cross-reference back to the audit log.
         assert link.last_run_id is not None
 
-    async def test_second_push_updates_the_same_link_row(self, service_with_store, link_repo, doc):
+    async def test_second_push_updates_the_same_link_row(
+        self, service, service_with_store, link_repo, doc
+    ):
         """Re-pushing the same (doc, store) pair must update the
         existing link, not create a duplicate. The chunkset hash on
         the link must reflect the *latest* push.
         """
-        await service_with_store.add_chunk(doc.id, text="first")
+        await service.add_chunk(doc.id, text="first")
         await service_with_store.push_to_store(doc.id, "rh-corpus-v3")
         first = await link_repo.find_one(doc.id, "store-uuid-1")
 
         # Edit the chunkset so the hash changes.
-        await service_with_store.add_chunk(doc.id, text="second")
+        await service.add_chunk(doc.id, text="second")
         await service_with_store.push_to_store(doc.id, "rh-corpus-v3")
         second = await link_repo.find_one(doc.id, "store-uuid-1")
 
@@ -538,7 +719,9 @@ class TestPushToStore:
         assert second.chunkset_hash != first.chunkset_hash
         assert second.state == DocumentStoreLinkState.INGESTED
 
-    async def test_marks_link_failed_when_ingestion_raises(self, repos, store_repo, link_repo, doc):
+    async def test_marks_link_failed_when_ingestion_raises(
+        self, service, repos, store_repo, link_repo, doc
+    ):
         """If the ingestion step fails (OpenSearch/Neo4j down), the
         link must transition to Failed with the error message
         attached — otherwise the UI shows nothing changed and the
@@ -546,14 +729,8 @@ class TestPushToStore:
         """
         failing = AsyncMock()
         failing.ingest.side_effect = RuntimeError("opensearch unreachable")
-        service = ChunkService(
-            chunk_repo=repos["chunks"],
-            chunk_push_repo=repos["pushes"],
-            document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
-            analysis_repo=repos["analyses"],
-            tree_reader=_TREE_READER,
-            chunker=None,
+        pusher = _push_service(
+            repos,
             ingestion_service=failing,
             store_repo=store_repo,
             link_repo=link_repo,
@@ -561,7 +738,7 @@ class TestPushToStore:
         await service.add_chunk(doc.id, text="hello")
 
         with pytest.raises(RuntimeError, match="opensearch unreachable"):
-            await service.push_to_store(doc.id, "rh-corpus-v3")
+            await pusher.push_to_store(doc.id, "rh-corpus-v3")
 
         link = await link_repo.find_one(doc.id, "store-uuid-1")
         assert link is not None
@@ -569,7 +746,7 @@ class TestPushToStore:
         assert link.error_message == "opensearch unreachable"
 
     async def test_calls_backend_resolver_and_forwards_targets(
-        self, repos, store_repo, link_repo, doc, mock_ingestion
+        self, service, repos, store_repo, link_repo, doc, mock_ingestion
     ):
         """When a backend resolver is wired (#279), push_to_store
         resolves the per-store backends and forwards them as the
@@ -581,21 +758,15 @@ class TestPushToStore:
         resolved = IngestionTargets(vector_store="vs-sentinel", graph_writer=None)
         resolver = AsyncMock()
         resolver.resolve = AsyncMock(return_value=resolved)
-        service = ChunkService(
-            chunk_repo=repos["chunks"],
-            chunk_push_repo=repos["pushes"],
-            document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
-            analysis_repo=repos["analyses"],
-            tree_reader=_TREE_READER,
-            chunker=None,
+        pusher = _push_service(
+            repos,
             ingestion_service=mock_ingestion,
             store_repo=store_repo,
             link_repo=link_repo,
             backend_resolver=resolver,
         )
         await service.add_chunk(doc.id, text="hello")
-        await service.push_to_store(doc.id, "rh-corpus-v3")
+        await pusher.push_to_store(doc.id, "rh-corpus-v3")
 
         resolver.resolve.assert_awaited_once()
         # The Store passed to resolve is the row from the repo —
@@ -607,7 +778,7 @@ class TestPushToStore:
         assert ingest_call.kwargs["targets"] is resolved
 
     async def test_resolver_failure_raises_503_and_marks_link_failed(
-        self, repos, store_repo, link_repo, doc, mock_ingestion
+        self, service, repos, store_repo, link_repo, doc, mock_ingestion
     ):
         """If the resolver cannot map a Store to a backend (e.g. store
         has no connection_uri and no env fallback), surface a 503 — not
@@ -618,14 +789,8 @@ class TestPushToStore:
 
         resolver = AsyncMock()
         resolver.resolve = AsyncMock(side_effect=StoreBackendNotConfiguredError("no NEO4J_URI"))
-        service = ChunkService(
-            chunk_repo=repos["chunks"],
-            chunk_push_repo=repos["pushes"],
-            document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
-            analysis_repo=repos["analyses"],
-            tree_reader=_TREE_READER,
-            chunker=None,
+        pusher = _push_service(
+            repos,
             ingestion_service=mock_ingestion,
             store_repo=store_repo,
             link_repo=link_repo,
@@ -634,7 +799,7 @@ class TestPushToStore:
         await service.add_chunk(doc.id, text="hello")
 
         with pytest.raises(ChunkServiceError) as excinfo:
-            await service.push_to_store(doc.id, "rh-corpus-v3")
+            await pusher.push_to_store(doc.id, "rh-corpus-v3")
         assert excinfo.value.http_status == 503
 
         # The Ingestion call should never happen if resolution fails.
@@ -671,14 +836,8 @@ class TestListPushes:
 
     @pytest.fixture
     def service_with_pushes(self, repos, store_repo, doc):
-        return ChunkService(
-            chunk_repo=repos["chunks"],
-            chunk_push_repo=repos["pushes"],
-            document_repo=repos["documents"],
-            chunk_source_repo=repos["analysis_state"],
-            analysis_repo=repos["analyses"],
-            tree_reader=_TREE_READER,
-            chunker=None,
+        return _push_service(
+            repos,
             ingestion_service=None,
             store_repo=store_repo,
         )
@@ -744,10 +903,10 @@ class TestListPushes:
 
 
 class TestGetTree:
-    async def test_tree_empty_when_no_analysis(self, service, doc):
-        assert await service.get_tree(doc.id) == []
+    async def test_tree_empty_when_no_analysis(self, tree_service, doc):
+        assert await tree_service.get_tree(doc.id) == []
 
-    async def test_tree_uses_requested_completed_analysis(self, service, repos, doc):
+    async def test_tree_uses_requested_completed_analysis(self, tree_service, repos, doc):
         older = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
         older.document_json = json.dumps(
             {
@@ -773,20 +932,20 @@ class TestGetTree:
         await repos["analyses"].update_status(older)
         await repos["analyses"].update_status(newer)
 
-        tree = await service.get_tree(doc.id, older.id)
+        tree = await tree_service.get_tree(doc.id, older.id)
 
         assert tree[0]["label"] == "Older"
 
-    async def test_tree_rejects_analysis_from_another_document(self, service, repos, doc):
+    async def test_tree_rejects_analysis_from_another_document(self, tree_service, repos, doc):
         other = Document(filename="other.pdf")
         await repos["documents"].insert(other)
         analysis = AnalysisJob(document_id=other.id, status=AnalysisStatus.COMPLETED)
         await repos["analyses"].insert(analysis)
 
         with pytest.raises(ChunkNotFoundError):
-            await service.get_tree(doc.id, analysis.id)
+            await tree_service.get_tree(doc.id, analysis.id)
 
-    async def test_tree_follows_document_hierarchy(self, service, repos, doc):
+    async def test_tree_follows_document_hierarchy(self, tree_service, repos, doc):
         """Title → H1 → H2 nest by heading level, leaves under their section."""
         job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
         await repos["analyses"].insert(job)
@@ -833,7 +992,7 @@ class TestGetTree:
         )
         job.completed_at = datetime.now(UTC)
         await repos["analyses"].update_status(job)
-        tree = await service.get_tree(doc.id)
+        tree = await tree_service.get_tree(doc.id)
 
         # Single top-level title containing both chapters.
         assert len(tree) == 1
@@ -852,7 +1011,7 @@ class TestGetTree:
         chapter2 = title["children"][1]
         assert chapter2["children"] == []
 
-    async def test_tree_keeps_list_items_under_list(self, service, repos, doc):
+    async def test_tree_keeps_list_items_under_list(self, tree_service, repos, doc):
         """`list` containers preserve their `list_item` descendants."""
         job = AnalysisJob(document_id=doc.id, status=AnalysisStatus.COMPLETED)
         await repos["analyses"].insert(job)
@@ -882,7 +1041,7 @@ class TestGetTree:
         )
         job.completed_at = datetime.now(UTC)
         await repos["analyses"].update_status(job)
-        tree = await service.get_tree(doc.id)
+        tree = await tree_service.get_tree(doc.id)
 
         assert len(tree) == 1
         list_node = tree[0]

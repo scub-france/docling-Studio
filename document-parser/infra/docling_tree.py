@@ -39,7 +39,7 @@ LABEL_MAP: dict[str, str] = {
 DEFAULT_LABEL = "TextElement"
 
 
-def element_label(docling_label: str) -> str:
+def map_element_label(docling_label: str) -> str:
     return LABEL_MAP.get(docling_label.lower(), DEFAULT_LABEL)
 
 
@@ -72,7 +72,7 @@ def iter_items(doc_data: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]
             yield key, item
 
 
-def parent_ref(item: dict[str, Any]) -> str | None:
+def get_parent_ref(item: dict[str, Any]) -> str | None:
     parent = item.get("parent")
     if isinstance(parent, dict):
         return parent.get("$ref") or parent.get("cref")
@@ -116,7 +116,7 @@ def iter_provs(item: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def dfs_order(doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
+def list_dfs_order(doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
     """Return `self_ref`s in reading order (DFS pre-order from body).
 
     `skip_refs` (typically the set returned by `build_inline_index`) is omitted
@@ -297,8 +297,10 @@ class DoclingTreeReader:
     ) -> tuple[set[str], dict[str, dict[str, Any]]]:
         return build_collapse_index(doc_data)
 
-    def dfs_order(self, doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
-        return dfs_order(doc_data, skip_refs)
+    def list_dfs_order(
+        self, doc_data: dict[str, Any], skip_refs: set[str] | None = None
+    ) -> list[str]:
+        return list_dfs_order(doc_data, skip_refs)
 
     def iter_provs(self, item: dict[str, Any]) -> list[dict[str, Any]]:
         return iter_provs(item)

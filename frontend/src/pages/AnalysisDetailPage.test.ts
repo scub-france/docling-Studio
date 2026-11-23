@@ -20,6 +20,7 @@ vi.mock('vue-router', () => ({
 describe('AnalysisDetailPage analysis editor flag', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.clearAllMocks()
     vi.mocked(fetchAnalysisSummaries).mockResolvedValue([])
     vi.mocked(fetchDocumentPages).mockResolvedValue([])
     vi.mocked(fetchAnalysis).mockResolvedValue({
@@ -136,6 +137,36 @@ describe('AnalysisDetailPage analysis editor flag', () => {
     const wrapper = await render()
     expect(wrapper.find('.state--error').exists()).toBe(true)
     expect(wrapper.find('doc-parse-tab-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('opens the full analysis when the summary list cannot be loaded', async () => {
+    vi.mocked(fetchAnalysisSummaries).mockRejectedValue(new Error('offline'))
+
+    const wrapper = await render()
+    expect(wrapper.find('.state--error').exists()).toBe(false)
+    expect(wrapper.find('doc-parse-tab-stub').exists()).toBe(true)
+    expect(fetchDocumentPages).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('opens the full analysis when the page manifest cannot be loaded', async () => {
+    vi.mocked(fetchAnalysisSummaries).mockResolvedValue([
+      { id: 'analysis-1', documentId: 'doc-1', status: 'COMPLETED' } as never,
+    ])
+    vi.mocked(fetchDocumentPages).mockRejectedValue(new Error('missing'))
+
+    const wrapper = await render()
+    expect(wrapper.find('doc-parse-tab-stub').exists()).toBe(true)
+    expect(fetchAnalysis).toHaveBeenCalledWith('analysis-1')
+    wrapper.unmount()
+  })
+
+  it('shows an error when the analysis is neither summarised nor loadable', async () => {
+    vi.mocked(fetchAnalysis).mockRejectedValue(new Error('not found'))
+
+    const wrapper = await render()
+    expect(wrapper.find('.state--error').exists()).toBe(true)
+    expect(fetchDocumentPages).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

@@ -70,7 +70,6 @@ class OpenSearchStore:
         username: Optional HTTP basic-auth username (#279).
         password: Optional HTTP basic-auth password (#279). Required
             when `username` is set; ignored otherwise.
-        default_limit: Cap on rows returned by paginated reads.
     """
 
     def __init__(
@@ -78,7 +77,6 @@ class OpenSearchStore:
         url: str,
         *,
         verify_certs: bool = False,
-        default_limit: int = 1000,
         username: str | None = None,
         password: str | None = None,
     ) -> None:
@@ -90,7 +88,6 @@ class OpenSearchStore:
             verify_certs=verify_certs,
             ssl_show_warn=False,
         )
-        self._default_limit = default_limit
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -165,27 +162,6 @@ class OpenSearchStore:
         )
         return [_hit_to_result(hit) for hit in resp["hits"]["hits"]]
 
-    async def get_chunks(
-        self,
-        index_name: str,
-        doc_id: str,
-        *,
-        limit: int | None = None,
-    ) -> list[SearchResult]:
-        """Retrieve all indexed chunks for a document, ordered by chunk_index."""
-        if limit is None:
-            limit = self._default_limit
-        resp = await self._client.search(
-            index=index_name,
-            body={
-                "size": limit,
-                "query": {"term": {"doc_id": doc_id}},
-                "sort": [{"chunk_index": {"order": "asc"}}],
-            },
-            _source_excludes=["embedding"],
-        )
-        return [_hit_to_result(hit) for hit in resp["hits"]["hits"]]
-
     async def delete_document(self, index_name: str, doc_id: str) -> int:
         """Delete all chunks for a document. Returns the number deleted."""
         try:
@@ -209,11 +185,7 @@ class OpenSearchStore:
         k: int = 10,
         doc_id: str | None = None,
     ) -> list[SearchResult]:
-        """Full-text search on the content field.
-
-        This method is not part of the VectorStore protocol but is specified
-        in the issue acceptance criteria.
-        """
+        """Full-text search on the content field."""
         must: list[dict[str, Any]] = [{"match": {"content": query_text}}]
         if doc_id:
             must.append({"term": {"doc_id": doc_id}})

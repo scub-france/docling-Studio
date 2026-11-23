@@ -21,8 +21,8 @@ from mcp.client.extension import advertise
 from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from domain.navigation import BoundingBox
-from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import CITATION_APP_HTML, CITATION_APP_URI
+from mcp_adapter.server import McpSurface, build_mcp_server
 from mcp_adapter.sources_view import SOURCES_APP_HTML
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError
@@ -49,7 +49,9 @@ def _png(width: int = 1275, height: int = 1650) -> bytes:
 @asynccontextmanager
 async def _client(tools, *, apps: bool = True, negotiates: bool = False):
     # The citation card is off by default; this module is its test, so on.
-    server = build_mcp_server(lambda: tools, version="test", apps=apps, citation_card=True)
+    server = build_mcp_server(
+        lambda: tools, surface=McpSurface(version="test", apps=apps, citation_card=True)
+    )
     async with Client(server, extensions=[APPS_CLIENT] if negotiates else None) as client:
         yield client
 
@@ -70,7 +72,7 @@ def _service_with_file(tmp_path: Path, **kwargs):
 class TestPixelProjection:
     def test_topleft_scales_by_dpi(self):
         box = BoundingBox(page=1, left=72, top=100, right=172, bottom=200, page_height=792)
-        assert box.pixel_box(dpi=144, padding=0) == (144, 200, 344, 400)
+        assert box.to_pixel_box(dpi=144, padding=0) == (144, 200, 344, 400)
 
     def test_bottomleft_is_flipped_through_the_page_height(self):
         # y grows upwards: `top` is the larger number, and the crop needs the
@@ -84,18 +86,18 @@ class TestPixelProjection:
             coord_origin="BOTTOMLEFT",
             page_height=792,
         )
-        assert box.pixel_box(dpi=72, padding=0) == (72, 92, 172, 192)
+        assert box.to_pixel_box(dpi=72, padding=0) == (72, 92, 172, 192)
 
     def test_padding_never_goes_negative(self):
         box = BoundingBox(page=1, left=2, top=2, right=50, bottom=50)
-        left, top, _, _ = box.pixel_box(dpi=72, padding=20)
+        left, top, _, _ = box.to_pixel_box(dpi=72, padding=20)
         assert (left, top) == (0, 0)
 
     def test_inverted_corners_are_normalised(self):
         # A box whose corners arrive the wrong way round must not produce a
         # negative-height crop — that raises deep inside the imaging library.
         box = BoundingBox(page=1, left=200, top=300, right=100, bottom=100)
-        left, top, right, bottom = box.pixel_box(dpi=72, padding=0)
+        left, top, right, bottom = box.to_pixel_box(dpi=72, padding=0)
         assert left < right and top < bottom
 
     def test_bottomleft_without_a_page_height_has_no_box(self):
@@ -103,7 +105,7 @@ class TestPixelProjection:
         box = BoundingBox(
             page=1, left=10, top=300, right=100, bottom=100, coord_origin="BOTTOMLEFT"
         )
-        assert box.pixel_box(dpi=72, padding=0) is None
+        assert box.to_pixel_box(dpi=72, padding=0) is None
 
 
 class TestRenderPage:
@@ -164,7 +166,7 @@ class TestAppsSurface:
         """Offered to a model, it was called on its own before every sources
         card, which already shows each cited passage on its page."""
         tools = _service_with_file(tmp_path)
-        server = build_mcp_server(lambda: tools, version="test", apps=True)
+        server = build_mcp_server(lambda: tools, surface=McpSurface(version="test", apps=True))
         async with Client(server) as client:
             listed = {t.name for t in (await client.list_tools()).tools}
             resources = {str(r.uri) for r in (await client.list_resources()).resources}
@@ -314,6 +316,7 @@ class TestTemplate:
     def test_it_states_one_claim_and_shows_no_ids(self):
         """The proof (#363): the document's own text, at the place cited — and
         no element id, parse version or hash for a room to squint at."""
+        assert "Exact text from the document" in CITATION_APP_HTML
         assert "Texte exact du document" in CITATION_APP_HTML
         for gone in ("Quote hash", "Parse version", "Copier l'ancre", "shortHash"):
             assert gone not in CITATION_APP_HTML, gone
@@ -321,11 +324,14 @@ class TestTemplate:
     def test_a_long_passage_folds_and_a_table_never_does(self):
         assert "LONG_CHARS" in CITATION_APP_HTML
         assert "!asTitle && !stats.rows && stats.chars > LONG_CHARS" in CITATION_APP_HTML
+        assert "Read more" in CITATION_APP_HTML
         assert "Lire la suite" in CITATION_APP_HTML
 
-    def test_the_element_kind_is_said_in_french(self):
+    def test_the_element_kind_is_said_in_the_reader_s_language(self):
+        assert 'text: "paragraph"' in CITATION_APP_HTML
         assert 'text: "paragraphe"' in CITATION_APP_HTML
         assert 'table: "tableau"' in CITATION_APP_HTML
+        assert "L.kinds[label]" in CITATION_APP_HTML
 
     def test_it_is_light_only(self):
         assert "color-scheme: light;" in CITATION_APP_HTML
@@ -386,6 +392,7 @@ class TestTemplate:
         # A grey rectangle that never fills in is a bug the reader has to
         # guess at.
         assert "failLocator" in CITATION_APP_HTML
+        assert "Page preview unavailable" in CITATION_APP_HTML
         assert "Aperçu de la page indisponible" in CITATION_APP_HTML
 
     def test_answers_the_host_s_teardown_request(self):
@@ -540,6 +547,32 @@ class TestTemplate:
         ):
             assert f'{label}: "{color}"' in CITATION_APP_HTML, label
         assert "#94A3B8" in CITATION_APP_HTML  # the unknown-type fallback
+
+
+@pytest.mark.parametrize("html", [CITATION_APP_HTML, SOURCES_APP_HTML], ids=["citation", "sources"])
+class TestLocale:
+    """Audit 03, item 3.1.3: the cards speak English unless the reader's
+    browser asks for French."""
+
+    def test_english_is_the_default(self, html):
+        assert '<html lang="en">' in html
+        assert 'lang="fr"' not in html
+        assert "Waiting for" in html
+
+    def test_a_french_browser_gets_the_french_table(self, html):
+        assert "const MESSAGES = {" in html
+        assert "    en: {" in html and "    fr: {" in html
+        assert 'String(navigator.language || "").toLowerCase().startsWith("fr")' in html
+        assert "const L = MESSAGES[LOCALE];" in html
+        assert "document.documentElement.lang = LOCALE;" in html
+
+    def test_both_tables_carry_the_same_keys(self, html):
+        start = html.index("const MESSAGES = {")
+        table = html[start : html.index("\n  };\n", start)]
+        en = table[table.index("    en: {") : table.index("    fr: {")]
+        fr = table[table.index("    fr: {") :]
+        keys = re.compile(r"^ {6,8}(\w+):", re.MULTILINE)
+        assert set(keys.findall(en)) == set(keys.findall(fr))
 
 
 @pytest.mark.parametrize("html", [CITATION_APP_HTML, SOURCES_APP_HTML], ids=["citation", "sources"])

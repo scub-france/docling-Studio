@@ -20,6 +20,7 @@ from services.navigation_errors import (
     NoParseError,
     RefNotFoundError,
 )
+from services.navigation_service import ReadScope
 from tests.navigation_fixtures import (
     DOC_ID,
     FLAT,
@@ -145,12 +146,16 @@ class TestReadElement:
         assert "Chaque partie peut résilier" in excerpt.markdown
 
     async def test_self_mode_reads_only_that_element(self):
-        excerpt = await _service().read_element(DOC_ID, "#/texts/3", include="self")
+        excerpt = await _service().read_element(
+            DOC_ID, "#/texts/3", scope=ReadScope(include="self")
+        )
         assert excerpt.markdown == "### 12.2 Préavis"
         assert len(excerpt.citations) == 1
 
     async def test_citation_carries_verbatim_page_bbox_and_deep_link(self):
-        excerpt = await _service().read_element(DOC_ID, PREAVIS_REF, include="self")
+        excerpt = await _service().read_element(
+            DOC_ID, PREAVIS_REF, scope=ReadScope(include="self")
+        )
         citation = excerpt.citations[0]
         assert citation.quote == PREAVIS_TEXT
         assert citation.quote_hash.startswith("sha256:")
@@ -163,30 +168,34 @@ class TestReadElement:
 
     async def test_budget_truncates_at_an_element_boundary_and_resumes(self):
         service = _service()
-        first = await service.read_element(DOC_ID, "#/texts/0", max_tokens=100)
+        first = await service.read_element(DOC_ID, "#/texts/0", scope=ReadScope(max_tokens=100))
         assert first.truncated is True
         assert first.next_cursor is not None
         # No half element: the cursor is the first ref that did not fit.
         assert first.next_cursor not in [c.ref for c in first.citations]
 
         second = await service.read_element(
-            DOC_ID, "#/texts/0", cursor=first.next_cursor, max_tokens=200
+            DOC_ID, "#/texts/0", scope=ReadScope(max_tokens=200, cursor=first.next_cursor)
         )
         assert second.citations[0].ref == first.next_cursor
 
     async def test_always_returns_at_least_one_element(self):
-        excerpt = await _service().read_element(DOC_ID, PREAVIS_REF, max_tokens=1)
+        excerpt = await _service().read_element(DOC_ID, PREAVIS_REF, scope=ReadScope(max_tokens=1))
         assert len(excerpt.citations) == 1
         assert excerpt.markdown
 
     async def test_client_cannot_raise_the_server_ceiling(self):
         service = _service(config=NavigationConfig(max_read_tokens=5))
-        excerpt = await service.read_element(DOC_ID, "#/texts/0", max_tokens=10_000)
+        excerpt = await service.read_element(
+            DOC_ID, "#/texts/0", scope=ReadScope(max_tokens=10_000)
+        )
         assert excerpt.truncated is True
 
     async def test_self_mode_on_a_page_still_reads_the_page(self):
         # A page ref has no text of its own; "self" must not return nothing.
-        excerpt = await _service(job=_job(FLAT)).read_element(DOC_ID, "#/pages/1", include="self")
+        excerpt = await _service(job=_job(FLAT)).read_element(
+            DOC_ID, "#/pages/1", scope=ReadScope(include="self")
+        )
         assert "Première ligne" in excerpt.markdown
 
     async def test_reading_a_page_ref(self):
@@ -200,11 +209,13 @@ class TestReadElement:
 
     async def test_unknown_include_mode(self):
         with pytest.raises(InvalidArgumentError):
-            await _service().read_element(DOC_ID, "#/texts/0", include="everything")
+            await _service().read_element(
+                DOC_ID, "#/texts/0", scope=ReadScope(include="everything")
+            )
 
     async def test_foreign_cursor_is_refused(self):
         with pytest.raises(InvalidArgumentError, match="does not belong"):
-            await _service().read_element(DOC_ID, "#/texts/3", cursor="#/texts/7")
+            await _service().read_element(DOC_ID, "#/texts/3", scope=ReadScope(cursor="#/texts/7"))
 
 
 class TestVerifyCitation:
@@ -281,6 +292,22 @@ class TestVerifyCitation:
         assert check.status is CitationStatus.STALE_VERSION
         assert "an-2" in check.detail
 
+    async def test_the_current_parse_is_the_active_analysis_not_the_latest(self):
+        # 02-2.3.1: the user restored the older analysis in Studio. An anchor
+        # on it is current; one on the newer parse is the stale one.
+        jobs = [_job(), _job(job_id="an-2")]
+        tools = _tools(jobs=jobs, active={DOC_ID: JOB_ID})
+
+        on_active = await tools.citations.verify_citation(_uri(PREAVIS_REF), "trois mois")
+        on_newer = await tools.citations.verify_citation(
+            _uri(PREAVIS_REF, job_id="an-2"), "trois mois"
+        )
+
+        assert on_active.status is CitationStatus.VERIFIED
+        assert on_newer.valid is True
+        assert on_newer.status is CitationStatus.STALE_VERSION
+        assert JOB_ID in on_newer.detail
+
     async def test_a_section_anchor_verifies_a_quote_from_inside_it(self):
         # The advertised workflow reads a section by its uri, so the uri an
         # agent holds is usually the section's, not the paragraph's. That must
@@ -315,7 +342,9 @@ class TestVersionPinning:
 
     async def test_a_ref_of_the_pinned_parse_reads_its_own_text(self):
         service = _service(jobs=[_job(SECTIONED, "an-1"), _job(FLAT, "an-2")])
-        excerpt = await service.read_element(DOC_ID, PREAVIS_REF, version_id="an-1", include="self")
+        excerpt = await service.read_element(
+            DOC_ID, PREAVIS_REF, version_id="an-1", scope=ReadScope(include="self")
+        )
         assert PREAVIS_TEXT in excerpt.markdown
         assert excerpt.version_id == "an-1"
 
@@ -323,9 +352,44 @@ class TestVersionPinning:
         # #/texts/2 exists in both parses and says something different in each —
         # exactly the drift the version token prevents.
         service = _service(jobs=[_job(SECTIONED, "an-1"), _job(FLAT, "an-2")])
-        old = await service.read_element(DOC_ID, "#/texts/2", version_id="an-1", include="self")
-        new = await service.read_element(DOC_ID, "#/texts/2", version_id="an-2", include="self")
+        old = await service.read_element(
+            DOC_ID, "#/texts/2", version_id="an-1", scope=ReadScope(include="self")
+        )
+        new = await service.read_element(
+            DOC_ID, "#/texts/2", version_id="an-2", scope=ReadScope(include="self")
+        )
         assert old.markdown != new.markdown
+
+    async def test_the_default_parse_is_the_active_analysis_not_the_latest(self):
+        # 02-2.3.1: after a restore of the older analysis in Studio, the tools
+        # read what Studio shows by default; a pinned version is unchanged.
+        service = _service(
+            jobs=[_job(SECTIONED, "an-1"), _job(FLAT, "an-2")], active={DOC_ID: "an-1"}
+        )
+        default = await service.get_outline(DOC_ID)
+        pinned = await service.get_outline(DOC_ID, version_id="an-2")
+        search = await service.find_documents()
+        assert (default.version_id, default.mode) == ("an-1", "sections")
+        assert (pinned.version_id, pinned.mode) == ("an-2", "pages")
+        assert search.documents[0].version_id == "an-1"
+
+    async def test_a_document_left_without_an_active_analysis_has_no_default_parse(self):
+        # A state row whose selection is NULL is a choice, not a gap: no
+        # fallback to the latest parse.
+        service = _service(jobs=[_job(SECTIONED, "an-1")], active={DOC_ID: None})
+        with pytest.raises(NoParseError):
+            await service.get_outline(DOC_ID)
+        assert (await service.find_documents()).documents[0].version_id is None
+        pinned = await service.get_outline(DOC_ID, version_id="an-1")
+        assert pinned.version_id == "an-1"
+
+    async def test_an_active_analysis_without_a_parse_has_no_default_parse(self):
+        unparsed = _job(SECTIONED, "an-2")
+        unparsed.document_json = None
+        service = _service(jobs=[_job(SECTIONED, "an-1"), unparsed], active={DOC_ID: "an-2"})
+        with pytest.raises(NoParseError):
+            await service.get_outline(DOC_ID)
+        assert (await service.find_documents()).documents[0].version_id is None
 
 
 class TestBudgetEdges:
@@ -333,9 +397,9 @@ class TestBudgetEdges:
         # Pins `>` rather than `>=` at the cut-off: an element that exactly
         # fills the remaining budget belongs to this page, not the next.
         service = _service()
-        first = await service.read_element(DOC_ID, PREAVIS_REF, include="self")
+        first = await service.read_element(DOC_ID, PREAVIS_REF, scope=ReadScope(include="self"))
         exact = first.est_tokens
-        excerpt = await service.read_element(DOC_ID, PREAVIS_REF, max_tokens=exact)
+        excerpt = await service.read_element(DOC_ID, PREAVIS_REF, scope=ReadScope(max_tokens=exact))
         assert excerpt.est_tokens == exact
         assert excerpt.truncated is False
 
@@ -344,7 +408,7 @@ class TestBudgetEdges:
         # larger than the whole budget must not sail past it unannounced.
         ceiling = read_cost(PREAVIS_TEXT) - 1
         service = _service(config=NavigationConfig(max_read_tokens=ceiling))
-        excerpt = await service.read_element(DOC_ID, PREAVIS_REF, include="self")
+        excerpt = await service.read_element(DOC_ID, PREAVIS_REF, scope=ReadScope(include="self"))
         # The clip marker and the anchor are charged to the budget too.
         assert excerpt.est_tokens <= ceiling
         assert excerpt.truncated is True
@@ -362,7 +426,7 @@ class TestBudgetEdges:
         pieces, cursor = [], None
         while True:
             read = await service.read_element(
-                DOC_ID, ref, include="self", max_tokens=150, cursor=cursor
+                DOC_ID, ref, scope=ReadScope(include="self", max_tokens=150, cursor=cursor)
             )
             assert read.est_tokens <= 150
             pieces.append(read.markdown.removesuffix(CLIP_MARKER))
@@ -376,12 +440,16 @@ class TestBudgetEdges:
     async def test_a_cursor_offset_outside_the_element_is_refused(self, offset):
         with pytest.raises(InvalidArgumentError, match="does not belong"):
             await _service().read_element(
-                DOC_ID, PREAVIS_REF, include="self", cursor=f"{PREAVIS_REF}@{offset}"
+                DOC_ID,
+                PREAVIS_REF,
+                scope=ReadScope(include="self", cursor=f"{PREAVIS_REF}@{offset}"),
             )
 
     async def test_a_clipped_quote_still_verifies(self):
         tools = _tools(config=NavigationConfig(max_read_tokens=read_cost(PREAVIS_TEXT) - 1))
-        excerpt = await tools.navigation.read_element(DOC_ID, PREAVIS_REF, include="self")
+        excerpt = await tools.navigation.read_element(
+            DOC_ID, PREAVIS_REF, scope=ReadScope(include="self")
+        )
         citation = excerpt.citations[0]
         check = await tools.citations.verify_citation(citation.uri, citation.quote.split(" […")[0])
         assert check.valid is True
@@ -394,7 +462,7 @@ class TestUnorderedRefs:
         # default mode must not answer "this element is empty".
         service = _service()
         section = await service.read_element(DOC_ID, "#/texts/5")
-        alone = await service.read_element(DOC_ID, "#/texts/5", include="self")
+        alone = await service.read_element(DOC_ID, "#/texts/5", scope=ReadScope(include="self"))
         assert section.markdown == alone.markdown
         assert len(section.citations) == 1
 
@@ -455,7 +523,9 @@ class TestSpanCitations:
 
     async def test_a_single_element_read_offers_no_span(self):
         # Nothing to span. Offering the range would be noise on every read.
-        excerpt = await _service().read_element(DOC_ID, PREAVIS_REF, include="self")
+        excerpt = await _service().read_element(
+            DOC_ID, PREAVIS_REF, scope=ReadScope(include="self")
+        )
         assert excerpt.span_uri is None
 
     async def test_the_span_covers_nothing_the_read_did_not_return(self):

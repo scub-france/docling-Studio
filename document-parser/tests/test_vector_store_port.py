@@ -27,15 +27,6 @@ class FakeVectorStore:
     ) -> list[SearchResult]:
         return []
 
-    async def get_chunks(
-        self,
-        index_name: str,
-        doc_id: str,
-        *,
-        limit: int = 1000,
-    ) -> list[SearchResult]:
-        return []
-
     async def delete_document(self, index_name: str, doc_id: str) -> int:
         return 0
 
@@ -79,18 +70,6 @@ class TestVectorStorePort:
         assert results == []
 
     @pytest.mark.asyncio
-    async def test_get_chunks(self):
-        store = FakeVectorStore()
-        results = await store.get_chunks("test-index", "d1")
-        assert results == []
-
-    @pytest.mark.asyncio
-    async def test_get_chunks_with_limit(self):
-        store = FakeVectorStore()
-        results = await store.get_chunks("test-index", "d1", limit=50)
-        assert results == []
-
-    @pytest.mark.asyncio
     async def test_delete_document(self):
         store = FakeVectorStore()
         count = await store.delete_document("test-index", "d1")
@@ -102,7 +81,6 @@ class TestVectorStorePort:
             "ensure_index",
             "index_chunks",
             "search_similar",
-            "get_chunks",
             "delete_document",
         }
         protocol_methods = {

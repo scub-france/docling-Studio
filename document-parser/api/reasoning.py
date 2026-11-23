@@ -1,7 +1,7 @@
 """Reasoning API — HTTP layer over `ReasoningService`.
 
 `POST /api/documents/:id/reasoning` runs the wired-up reasoning service
-against the document's latest completed analysis and returns a camelCase
+against the document's current analysis and returns a camelCase
 `ReasoningTraceResponse` (the Parse-view trace timeline contract, #303).
 
 This module has zero coupling to docling-agent / mellea / docling-core. The
@@ -17,6 +17,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from api import deps  # noqa: TC001
+from api.errors import to_http_error
 from api.schemas import ReasoningRunRequest, ReasoningTraceResponse
 from domain.ports import ReasoningParseError
 from services.reasoning_service import ReasoningServiceError
@@ -34,7 +35,7 @@ async def run_reasoning(
     except ReasoningServiceError as exc:
         # 503 (unavailable) / 400 (empty query) / 404 (no analysis) — the
         # service carries the status hint.
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+        raise to_http_error(exc) from exc
     except ReasoningParseError as exc:
         # The upstream LLM couldn't produce a parseable answer after retries.
         # 502 Bad Gateway — not our fault — with guidance the UI can show.

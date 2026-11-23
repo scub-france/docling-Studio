@@ -6,7 +6,7 @@ defaults. Reads are tolerant — an unparseable row falls back to env and keeps
 `source: env` — writes are strict (`domain.app_config.validate_reasoning_config`).
 
 The service must not import `infra/` (architecture test). Everything
-infra-flavored is constructor-injected by `main.py`: the env defaults as a
+infra-flavored is constructor-injected by the bootstrap: the env defaults as a
 domain VO, the Ollama probe behind the `LLMHostProbe` port, the hot rebuild of
 `app.state.reasoning_runner` / `reasoning_service` as the `apply_config`
 callback, and the diagnostics snapshot as a callable — same binding pattern as
@@ -30,10 +30,10 @@ from services.config_overrides import (
     AppConfigError,
     AppConfigReadOnlyError,
     AppConfigValidationError,
+    NamespaceOverrides,
     parse_bool,
     parse_int_between,
     parse_text,
-    pick,
     require_writable,
 )
 
@@ -87,7 +87,7 @@ class AppConfigService:
     async def get_reasoning(self) -> ReasoningConfigView:
         """Effective config (db over env) + per-field sources + diagnostics."""
         config, sources = await self._resolve()
-        return self._view(config, sources)
+        return self._build_view(config, sources)
 
     async def update_reasoning(self, config: ReasoningConfig) -> ReasoningConfigView:
         """Validate, persist the full override set, rebuild the runner in place.
@@ -154,18 +154,15 @@ class AppConfigService:
             config.model_id,
             config.max_iterations,
         )
-        return self._view(config, sources)
+        return self._build_view(config, sources)
 
     async def _resolve(self) -> tuple[ReasoningConfig, dict[str, ConfigSource]]:
-        rows = await self._repo.get_namespace(_NAMESPACE)
+        stored = NamespaceOverrides(_NAMESPACE, await self._repo.get_namespace(_NAMESPACE))
         env = self._env_defaults
-        ns = _NAMESPACE
-        enabled, enabled_src = pick(rows, _KEY_ENABLED, env.enabled, parse_bool, namespace=ns)
-        host, host_src = pick(rows, _KEY_HOST, env.ollama_host, parse_text, namespace=ns)
-        model, model_src = pick(rows, _KEY_MODEL, env.model_id, parse_text, namespace=ns)
-        iters, iters_src = pick(
-            rows, _KEY_MAX_ITERATIONS, env.max_iterations, _parse_iterations, namespace=ns
-        )
+        enabled, enabled_src = stored.pick(_KEY_ENABLED, env.enabled, parse_bool)
+        host, host_src = stored.pick(_KEY_HOST, env.ollama_host, parse_text)
+        model, model_src = stored.pick(_KEY_MODEL, env.model_id, parse_text)
+        iters, iters_src = stored.pick(_KEY_MAX_ITERATIONS, env.max_iterations, _parse_iterations)
         config = ReasoningConfig(
             enabled=enabled, ollama_host=host, model_id=model, max_iterations=iters
         )
@@ -177,7 +174,7 @@ class AppConfigService:
         }
         return config, sources
 
-    def _view(
+    def _build_view(
         self, config: ReasoningConfig, sources: dict[str, ConfigSource]
     ) -> ReasoningConfigView:
         return ReasoningConfigView(

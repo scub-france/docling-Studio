@@ -16,7 +16,10 @@ import type { DocTreeNode } from '../../shared/types'
  * excluded — it doesn't need to open to be revealed). Returns an empty set when
  * `targetRef` is null or absent from the tree.
  */
-export function ancestorRefs(nodes: readonly DocTreeNode[], targetRef: string | null): Set<string> {
+export function collectAncestorRefs(
+  nodes: readonly DocTreeNode[],
+  targetRef: string | null,
+): Set<string> {
   const out = new Set<string>()
   if (!targetRef) return out
 

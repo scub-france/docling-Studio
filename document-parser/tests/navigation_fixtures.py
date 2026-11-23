@@ -401,16 +401,19 @@ class FakeAnalysisRepository:
     def __init__(self, jobs) -> None:
         self._jobs = jobs
 
-    async def latest_parsed_ids(self, document_ids):
+    async def find_latest_parsed_ids(self, document_ids):
         latest = {}
         for job in self._jobs:
             if job.document_id in document_ids and job.document_json:
                 latest[job.document_id] = job.id
         return latest
 
-    async def parsed_document_id(self, job_id):
+    async def find_parsed_document_id(self, job_id):
         job = self._job(job_id)
         return job.document_id if job and job.document_json else None
+
+    async def find_parsed_ids(self, job_ids):
+        return {j.id for j in self._jobs if j.id in job_ids and j.document_json}
 
     async def parse_json(self, job_id):
         job = self._job(job_id)
@@ -420,11 +423,33 @@ class FakeAnalysisRepository:
         return next((j for j in self._jobs if j.id == job_id), None)
 
 
+class FakeAnalysisStateRepository:
+    """The state rows the current-analysis rule reads, over a dict read live.
+
+    Empty by default: no document has a row, so the current analysis falls
+    back to the latest parse, the rule a test without a selection relies on.
+    """
+
+    def __init__(self, active=None) -> None:
+        # document id -> active analysis id (None: a row with no selection).
+        self._active = active if active is not None else {}
+
+    async def find_states(self, document_ids):
+        from domain.models import DocumentAnalysisState
+
+        return {
+            doc_id: DocumentAnalysisState(doc_id, self._active[doc_id])
+            for doc_id in document_ids
+            if doc_id in self._active
+        }
+
+
 def make_document_tools(
     *,
     documents=None,
     job=_UNSET,
     jobs=None,
+    active=None,
     config=None,
     rasterizer=None,
     page_text=None,
@@ -435,10 +460,15 @@ def make_document_tools(
     latest completed parse, the others are only reachable by pinning their id,
     which is what the anchor grammar exists for. A list is read live, so a test
     re-parses the document by appending to it.
+
+    `active` maps a document id to its active analysis, as a restore in Studio
+    leaves it: such a document reads that analysis by default, whatever the
+    latest parse. A dict is read live too.
     """
     from infra.docling_tree import DoclingTreeReader
     from services.citation_image_service import CitationImageService
     from services.citation_service import CitationService
+    from services.current_analysis import CurrentAnalysisResolver
     from services.document_tools import DocumentTools
     from services.navigation_config import NavigationConfig
     from services.navigation_service import NavigationService
@@ -456,9 +486,14 @@ def make_document_tools(
         analyses = [job]
 
     settings = config or NavigationConfig(studio_base_url="http://localhost:3000")
+    analysis_repo = FakeAnalysisRepository(analyses)
     parses = ParseLoader(
         document_repo=FakeDocumentRepository(docs),
-        analysis_repo=FakeAnalysisRepository(analyses),
+        analysis_repo=analysis_repo,
+        current_analysis=CurrentAnalysisResolver(
+            state_repo=FakeAnalysisStateRepository(active),
+            analysis_repo=analysis_repo,
+        ),
         tree_reader=DoclingTreeReader(),
         config=settings,
     )

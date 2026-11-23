@@ -18,30 +18,34 @@ the layer packages, and a composition root is by definition outside them.
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from api.state import AppState
 from bootstrap.factories import (
+    Repositories,
     build_analysis_service,
     build_backend_resolver,
-    build_chunk_service,
+    build_chunker,
+    build_document_file_store,
     build_document_service,
     build_document_tools,
+    build_env_mcp_config,
+    build_env_reasoning_config,
     build_ingestion_service,
     build_parse_loader,
     build_reasoning_runner,
     check_store_secret_key,
-    env_mcp_config,
-    env_reasoning_config,
     init_neo4j,
 )
 from bootstrap.mcp_mount import describe_mcp_server
 from domain.app_config import ReasoningConfig, ReasoningDiagnostics
-from infra.docling_agent_reasoning import deps_present, deps_provenance
-from infra.docling_editor import DoclingDocumentEditor
-from infra.docling_projector import DoclingAnalysisProjector
+from infra.docling_agent_reasoning import describe_deps_provenance, has_usable_deps
+from infra.docling_analysis_engine import DoclingAnalysisEngine
+from infra.docling_tree import DoclingTreeReader
 from infra.llm.ollama_probe import OllamaProbe
+from infra.page_raster import PdfPageRasterizer
+from infra.pdf_inspector import PdfiumInspector
 from infra.preview_cache import PreviewCache
 from infra.settings import settings
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
@@ -57,6 +61,10 @@ from persistence.document_version_repo import SqliteDocumentVersionRepository
 from persistence.store_repo import SqliteStoreRepository
 from services.analysis_edit_service import AnalysisEditService
 from services.app_config_service import AppConfigService
+from services.chunk_push_service import ChunkPushService
+from services.chunk_service import ChunkService
+from services.current_analysis import CurrentAnalysisResolver
+from services.document_tree_service import DocumentTreeService
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.mcp_config_service import McpConfigService
@@ -70,6 +78,9 @@ if TYPE_CHECKING:
 
     from bootstrap.mcp_mount import MountedMcpServer
     from domain.mcp_config import McpRuntimeConfig, McpServerStatus
+    from services.analysis_service import AnalysisService
+    from services.document_service import DocumentService
+    from services.ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
 
@@ -105,95 +116,32 @@ class AppStateBuilder:
     async def build(self) -> AppState:
         await init_db()
         await check_store_secret_key()
-
-        document_repo = SqliteDocumentRepository()
-        document_analysis_repo = SqliteDocumentAnalysisRepository()
-        analysis_repo = SqliteAnalysisRepository()
-        store_repo = SqliteStoreRepository()
-        link_repo = SqliteDocumentStoreLinkRepository()
-        chunk_repo = SqliteChunkRepository()
-        chunk_push_repo = SqliteChunkPushRepository()
-
+        repos = _build_repositories()
         graph_writer, graph_reader = await self._build_graph_adapters()
         ingestion_service = build_ingestion_service(graph_writer)
-        backend_resolver = build_backend_resolver(store_repo)
-
-        analysis_service = build_analysis_service(
-            document_repo,
-            analysis_repo,
-            graph_writer,
-        )
-        analysis_edit_service = AnalysisEditService(
-            analysis_repo=analysis_repo,
-            document_repo=document_repo,
-            selection_repo=document_analysis_repo,
-            chunk_source_repo=document_analysis_repo,
-            edit_repo=SqliteAnalysisEditRepository(),
-            editor=DoclingDocumentEditor(),
-            projector=DoclingAnalysisProjector(),
-            graph_writer=graph_writer,
-        )
-        chunk_service = build_chunk_service(
-            document_repo=document_repo,
-            chunk_source_repo=document_analysis_repo,
-            analysis_repo=analysis_repo,
-            chunk_repo=chunk_repo,
-            chunk_push_repo=chunk_push_repo,
-            store_repo=store_repo,
-            link_repo=link_repo,
-            ingestion_service=ingestion_service,
-            backend_resolver=backend_resolver,
-            active_result_service=analysis_edit_service,
-        )
-        version_service = VersionService(
-            version_repo=SqliteDocumentVersionRepository(),
-            chunk_repo=chunk_repo,
-            document_repo=document_repo,
-            analysis_repo=analysis_repo,
-            selection_repo=document_analysis_repo,
-            chunk_source_repo=document_analysis_repo,
-        )
-
-        # The analysis service still carries the chunk promoter wiring for
-        # legacy callers / tests, but the analysis flow no longer invokes it
-        # (decoupling from #266). Chunks are explicit — produced via the
-        # `+ Generate chunks` action on the Chunk view.
-        analysis_service.set_chunk_promoter(chunk_service)
-        # 0.6.1 — Document versions (#267): frozen (analysis, chunks)
-        # snapshots written on each version-creating trigger.
-        analysis_service.set_version_recorder(version_service)
-        chunk_service.set_version_recorder(version_service)
-
-        document_service = build_document_service(document_repo, analysis_repo)
+        backend_resolver = build_backend_resolver(repos.store_repo)
+        current_analysis = _build_current_analysis(repos)
+        core = _build_analysis_services(repos, current_analysis, graph_writer)
+        files = _build_file_services(repos, core.analysis_edit_service)
+        stores = _build_store_services(repos, backend_resolver, ingestion_service)
+        structure = _build_structure_services(repos, core.analysis_edit_service, graph_reader)
         self._update(
-            analysis_repo=analysis_repo,
-            store_repo=store_repo,
-            document_store_link_repo=link_repo,
-            document_service=document_service,
-            preview_service=PreviewService(document_service, PreviewCache()),
-            analysis_service=analysis_service,
-            analysis_edit_service=analysis_edit_service,
-            export_service=ExportService(
-                document_repo=document_repo,
-                analysis_repo=analysis_repo,
-                active_result_service=analysis_edit_service,
-            ),
-            store_service=StoreService(
-                store_repo=store_repo,
-                link_repo=link_repo,
-                document_repo=document_repo,
-                backend_resolver=backend_resolver,
-            ),
-            chunk_service=chunk_service,
-            # 0.6.1 (#audit-01) — GraphService serves /graph so api/graph.py
-            # stops reaching into infra. Reader is None without Neo4j (503).
-            graph_service=GraphService(graph_reader=graph_reader),
-            version_service=version_service,
+            current_analysis=current_analysis,
+            document_service=files.document_service,
+            preview_service=files.preview_service,
+            analysis_service=core.analysis_service,
+            analysis_edit_service=core.analysis_edit_service,
+            export_service=files.export_service,
+            store_service=stores.store_service,
+            chunk_service=core.chunk_service,
+            chunk_push_service=stores.chunk_push_service,
+            document_tree_service=structure.document_tree_service,
+            graph_service=structure.graph_service,
+            version_service=core.version_service,
             ingestion_service=ingestion_service,
         )
-
-        await self._wire_reasoning(analysis_repo)
-        await self._wire_mcp(document_repo, analysis_repo)
+        await self._wire_reasoning(current_analysis)
+        await self._wire_mcp(repos.document_repo, repos.analysis_repo, current_analysis)
         logger.info("Docling Studio backend ready (engine=%s)", settings.conversion_engine)
         return self._state
 
@@ -213,7 +161,7 @@ class AppStateBuilder:
         logger.info("Neo4j ready (uri=%s)", settings.neo4j_uri)
         return Neo4jGraphWriter(driver), Neo4jGraphReader(driver)
 
-    async def _wire_reasoning(self, analysis_repo) -> None:
+    async def _wire_reasoning(self, current_analysis) -> None:
         """Reasoning runtime config (#317) + reasoning service (#303).
 
         Env vars are bootstrap defaults; `app_settings` rows override them and
@@ -228,35 +176,36 @@ class AppStateBuilder:
                 reasoning_runner=runner,
                 reasoning_service=ReasoningService(
                     runner=runner,
-                    analysis_repo=analysis_repo,
+                    current_analysis=current_analysis,
                     default_model_id=config.model_id,
                 ),
-            )
-
-        def diagnostics() -> ReasoningDiagnostics:
-            runner = self._state.reasoning_runner
-            return ReasoningDiagnostics(
-                deps_present=deps_present(),
-                provenance=deps_provenance(),
-                available=runner is not None and runner.is_available,
             )
 
         self._update(
             app_config_service=AppConfigService(
                 repo=SqliteAppSettingsRepository(),
-                env_defaults=env_reasoning_config(),
+                env_defaults=build_env_reasoning_config(),
                 provider_type=settings.llm_provider_type,
                 read_only=settings.deployment_mode == "huggingface",
                 probe=OllamaProbe(),
                 apply_config=apply_config,
-                diagnostics_provider=diagnostics,
+                diagnostics_provider=self._read_reasoning_diagnostics,
             )
         )
         # Applies persisted overrides on top of the env defaults — this is what
         # actually builds the runner and the ReasoningService.
         await self._state.app_config_service.apply_effective()
 
-    async def _wire_mcp(self, document_repo, analysis_repo) -> None:
+    def _read_reasoning_diagnostics(self) -> ReasoningDiagnostics:
+        """What the admin panel shows about the reasoning runner now in place."""
+        runner = self._state.reasoning_runner
+        return ReasoningDiagnostics(
+            deps_present=has_usable_deps(),
+            provenance=describe_deps_provenance(),
+            available=runner is not None and runner.is_available,
+        )
+
+    async def _wire_mcp(self, document_repo, analysis_repo, current_analysis) -> None:
         """MCP runtime config (#364) + the document-agent services it budgets.
 
         Same shape as `_wire_reasoning`: env vars are bootstrap defaults,
@@ -265,7 +214,7 @@ class AppStateBuilder:
         next call runs on the new budgets. The parse index is built once, here,
         and survives every rebuild.
         """
-        parses = build_parse_loader(document_repo, analysis_repo)
+        parses = build_parse_loader(document_repo, analysis_repo, current_analysis)
         mounted = self._mcp_server
 
         def apply_config(config: McpRuntimeConfig) -> None:
@@ -276,18 +225,197 @@ class AppStateBuilder:
                 mcp_serving=config.enabled,
             )
 
-        async def server_status() -> McpServerStatus:
+        async def get_server_status() -> McpServerStatus:
             return await describe_mcp_server(mounted)
 
         self._update(
             mcp_config_service=McpConfigService(
                 repo=SqliteAppSettingsRepository(),
-                env_defaults=env_mcp_config(),
+                env_defaults=build_env_mcp_config(),
                 read_only=settings.deployment_mode == "huggingface",
                 apply_config=apply_config,
-                status_provider=server_status,
+                status_provider=get_server_status,
                 mounted=mounted is not None,
             )
         )
         # Builds the first DocumentTools, with persisted overrides applied.
         await self._state.mcp_config_service.apply_effective()
+
+
+# ----------------------------------------------------------------------
+# Boot steps, in dependency order
+# ----------------------------------------------------------------------
+
+
+def _build_repositories() -> Repositories:
+    return Repositories(
+        document_repo=SqliteDocumentRepository(),
+        document_analysis_repo=SqliteDocumentAnalysisRepository(),
+        analysis_repo=SqliteAnalysisRepository(),
+        store_repo=SqliteStoreRepository(),
+        link_repo=SqliteDocumentStoreLinkRepository(),
+        chunk_repo=SqliteChunkRepository(),
+    )
+
+
+def _build_current_analysis(repos: Repositories) -> CurrentAnalysisResolver:
+    # One rule for "the document's current analysis", shared by every
+    # reader below (02-2.3.1).
+    return CurrentAnalysisResolver(
+        state_repo=repos.document_analysis_repo,
+        analysis_repo=repos.analysis_repo,
+    )
+
+
+@dataclass(frozen=True)
+class _AnalysisServices:
+    """The services over a document's analysis: run it, edit it, chunk it, version it."""
+
+    analysis_service: AnalysisService
+    analysis_edit_service: AnalysisEditService
+    chunk_service: ChunkService
+    version_service: VersionService
+
+
+def _build_analysis_services(
+    repos: Repositories, current_analysis: CurrentAnalysisResolver, graph_writer
+) -> _AnalysisServices:
+    analysis_service = build_analysis_service(
+        repos.document_repo,
+        repos.analysis_repo,
+        graph_writer,
+    )
+    analysis_edit_service = _build_analysis_edit_service(repos, current_analysis, graph_writer)
+    # Doc-centric chunks (#256).
+    chunk_service = ChunkService(
+        chunk_repo=repos.chunk_repo,
+        document_repo=repos.document_repo,
+        active_result_service=analysis_edit_service,
+        chunker=build_chunker(),
+    )
+    version_service = _build_version_service(repos, current_analysis)
+
+    # 0.6.1 — Document versions (#267): frozen (analysis, chunks)
+    # snapshots written on each version-creating trigger.
+    analysis_service.set_version_recorder(version_service)
+    chunk_service.set_version_recorder(version_service)
+    return _AnalysisServices(
+        analysis_service=analysis_service,
+        analysis_edit_service=analysis_edit_service,
+        chunk_service=chunk_service,
+        version_service=version_service,
+    )
+
+
+def _build_analysis_edit_service(
+    repos: Repositories, current_analysis: CurrentAnalysisResolver, graph_writer
+) -> AnalysisEditService:
+    return AnalysisEditService(
+        analysis_repo=repos.analysis_repo,
+        document_repo=repos.document_repo,
+        analysis_state_repo=repos.document_analysis_repo,
+        current_analysis=current_analysis,
+        edit_repo=SqliteAnalysisEditRepository(),
+        engine=DoclingAnalysisEngine(),
+        graph_writer=graph_writer,
+        chunk_repo=repos.chunk_repo,
+    )
+
+
+def _build_version_service(
+    repos: Repositories, current_analysis: CurrentAnalysisResolver
+) -> VersionService:
+    return VersionService(
+        version_repo=SqliteDocumentVersionRepository(),
+        chunk_repo=repos.chunk_repo,
+        document_repo=repos.document_repo,
+        analysis_repo=repos.analysis_repo,
+        analysis_state_repo=repos.document_analysis_repo,
+        current_analysis=current_analysis,
+    )
+
+
+@dataclass(frozen=True)
+class _FileServices:
+    """The services that touch an uploaded file, over one shared file store."""
+
+    document_service: DocumentService
+    preview_service: PreviewService
+    export_service: ExportService
+
+
+def _build_file_services(
+    repos: Repositories, active_result_service: AnalysisEditService
+) -> _FileServices:
+    # One file store for every service that touches an uploaded file.
+    file_store = build_document_file_store()
+    return _FileServices(
+        document_service=build_document_service(repos, file_store=file_store),
+        preview_service=PreviewService(
+            documents=repos.document_repo,
+            files=file_store,
+            rasterizer=PdfPageRasterizer(),
+            inspector=PdfiumInspector(),
+            cache=PreviewCache(),
+        ),
+        export_service=ExportService(
+            document_repo=repos.document_repo,
+            analysis_repo=repos.analysis_repo,
+            active_result_service=active_result_service,
+            file_store=file_store,
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class _StoreServices:
+    """The services over the vector and graph stores a document is pushed to."""
+
+    store_service: StoreService
+    chunk_push_service: ChunkPushService
+
+
+def _build_store_services(
+    repos: Repositories, backend_resolver, ingestion_service: IngestionService | None
+) -> _StoreServices:
+    return _StoreServices(
+        store_service=StoreService(
+            store_repo=repos.store_repo,
+            link_repo=repos.link_repo,
+            document_repo=repos.document_repo,
+            backend_resolver=backend_resolver,
+        ),
+        chunk_push_service=ChunkPushService(
+            chunk_repo=repos.chunk_repo,
+            chunk_push_repo=SqliteChunkPushRepository(),
+            document_repo=repos.document_repo,
+            ingestion_service=ingestion_service,
+            store_repo=repos.store_repo,
+            link_repo=repos.link_repo,
+            backend_resolver=backend_resolver,
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class _StructureServices:
+    """The document's structure: its element tree, and its graph when Neo4j is wired."""
+
+    document_tree_service: DocumentTreeService
+    graph_service: GraphService
+
+
+def _build_structure_services(
+    repos: Repositories, active_result_service: AnalysisEditService, graph_reader
+) -> _StructureServices:
+    return _StructureServices(
+        document_tree_service=DocumentTreeService(
+            document_repo=repos.document_repo,
+            analysis_repo=repos.analysis_repo,
+            tree_reader=DoclingTreeReader(),
+            active_result_service=active_result_service,
+        ),
+        # 0.6.1 (#audit-01) — GraphService serves /graph so api/graph.py
+        # stops reaching into infra. Reader is None without Neo4j (503).
+        graph_service=GraphService(graph_reader=graph_reader),
+    )

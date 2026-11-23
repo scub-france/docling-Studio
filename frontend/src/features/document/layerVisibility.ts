@@ -6,7 +6,7 @@
  */
 
 /** True when every type listed in the bar is hidden. */
-export function allLayersHidden(types: readonly string[], hidden: ReadonlySet<string>): boolean {
+export function areAllLayersHidden(types: readonly string[], hidden: ReadonlySet<string>): boolean {
   return types.length > 0 && types.every((type) => hidden.has(type))
 }
 
@@ -19,5 +19,5 @@ export function toggleAllLayers(
   types: readonly string[],
   hidden: ReadonlySet<string>,
 ): Set<string> {
-  return allLayersHidden(types, hidden) ? new Set() : new Set(types)
+  return areAllLayersHidden(types, hidden) ? new Set() : new Set(types)
 }

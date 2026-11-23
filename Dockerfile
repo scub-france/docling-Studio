@@ -8,7 +8,7 @@
 # =============================================================================
 
 # --- Stage 1: Build frontend assets ---
-FROM node:20-alpine AS frontend-build
+FROM node:22-alpine AS frontend-build
 
 ARG APP_VERSION=dev
 

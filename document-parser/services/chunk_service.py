@@ -1,132 +1,45 @@
 """Chunk service — canonical chunk lifecycle for a document (#256).
 
-Sits between the API layer and the chunk / chunk_push
-repositories. Owns the invariants of the canonical chunkset:
+Sits between the API layer and the chunk repository. Owns the invariants
+of the canonical chunkset:
 
 - ordering by `sequence` (dense ascending, gaps allowed after split)
 - soft-delete (removed chunks remain available for history inspection)
-- promotion from the first completed analysis (idempotent)
 
 Re-uses `DocumentChunker` for rechunk (same port that
 `AnalysisService.rechunk` uses), so chunking strategy logic is not
-duplicated.
+duplicated. Pushes to stores and the document tree have their own services
+(`ChunkPushService`, `DocumentTreeService`).
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
-import uuid
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain.analysis_editing import AnalysisEditUnavailableError
-from domain.models import (
-    AnalysisStatus,
-    Chunk,
-    ChunkPush,
-    DocumentChunkSource,
-    DocumentStoreLink,
-)
-from domain.value_objects import (
-    ChunkBbox,
-    ChunkDocItem,
-    ChunkingOptions,
+from domain import chunk_editing
+from domain.analysis_editing import AnalysisEditUnavailableError, EditorSnapshot, hash_result
+from domain.chunk_editing import ChunkEditingError, ChunkMergeGapError
+from domain.exceptions import AnalysisNotSelectableError
+from domain.models import Chunk, ChunkReplacement, DocumentChunkSource, get_utc_now
+from domain.value_objects import ChunkingOptions, ChunkResult
+from services.chunk_errors import (
+    ChunkConflictError,
+    ChunkNotFoundError,
+    ChunkServiceError,
+    ChunkValidationError,
+    require_document,
 )
 
 if TYPE_CHECKING:
     from domain.ports import (
-        AnalysisRepository,
-        ChunkPushRepository,
+        ActiveAnalysisResultReader,
         ChunkRepository,
-        ChunkSourceRepository,
         DocumentChunker,
         DocumentRepository,
-        DocumentTreeReader,
     )
-    from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
-    from persistence.store_repo import SqliteStoreRepository
-    from services.ingestion_service import IngestionService
-    from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
-
-# Sentinel for "not yet probed" in `list_pushes`'s store-name cache.
-# Distinct from None (which means "store row deleted after the push").
-_UNSET = object()
-
-
-# ---------------------------------------------------------------------------
-# Errors — carry an http_status hint, mirrors store_service.py convention.
-# ---------------------------------------------------------------------------
-
-
-class ChunkServiceError(Exception):
-    http_status: int = 400
-
-    def __init__(self, message: str, *, http_status: int | None = None):
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
-
-
-class ChunkNotFoundError(ChunkServiceError):
-    http_status = 404
-
-
-class DocumentNotFoundError(ChunkServiceError):
-    http_status = 404
-
-
-class ChunkConflictError(ChunkServiceError):
-    http_status = 409
-
-
-class ChunkValidationError(ChunkServiceError):
-    http_status = 400
-
-
-# ---------------------------------------------------------------------------
-# Helpers — chunk ↔ dict conversions for analysis chunks_json.
-# ---------------------------------------------------------------------------
-
-
-def _utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
-def _new_id() -> str:
-    return str(uuid.uuid4())
-
-
-def _bbox_from_dict(d: dict) -> ChunkBbox:
-    return ChunkBbox(page=d["page"], bbox=list(d["bbox"]))
-
-
-def _doc_item_from_dict(d: dict) -> ChunkDocItem:
-    return ChunkDocItem(
-        self_ref=d.get("selfRef") or d.get("self_ref", ""), label=d.get("label", "")
-    )
-
-
-def _analysis_chunk_to_canonical(
-    document_id: str,
-    sequence: int,
-    raw: dict,
-) -> Chunk:
-    """Convert an entry from `AnalysisJob.chunks_json` (camelCase) into a
-    canonical `Chunk`. Used by `_promote_from_analysis`."""
-    return Chunk(
-        document_id=document_id,
-        sequence=sequence,
-        text=raw.get("text", ""),
-        headings=list(raw.get("headings", [])),
-        source_page=raw.get("sourcePage"),
-        bboxes=[_bbox_from_dict(b) for b in raw.get("bboxes", [])],
-        doc_items=[_doc_item_from_dict(d) for d in raw.get("docItems", [])],
-        token_count=raw.get("tokenCount"),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -140,88 +53,22 @@ class ChunkService:
     def __init__(
         self,
         chunk_repo: ChunkRepository,
-        chunk_push_repo: ChunkPushRepository,
         document_repo: DocumentRepository,
-        chunk_source_repo: ChunkSourceRepository,
-        analysis_repo: AnalysisRepository,
-        tree_reader: DocumentTreeReader,
+        active_result_service: ActiveAnalysisResultReader,
         chunker: DocumentChunker | None = None,
-        ingestion_service: IngestionService | None = None,
-        store_repo: SqliteStoreRepository | None = None,
-        link_repo: SqliteDocumentStoreLinkRepository | None = None,
-        backend_resolver: StoreBackendResolver | None = None,
-        active_result_service=None,
     ) -> None:
         self._chunks = chunk_repo
-        self._pushes = chunk_push_repo
         self._documents = document_repo
-        self._chunk_sources = chunk_source_repo
-        self._analyses = analysis_repo
-        # `DocumentTreeReader` port (#audit-01) — replaces the local
-        # `from infra.docling_tree import ...` smell hiding inside two
-        # tree-walking helpers. Required so the tree views stay rendable.
-        self._tree = tree_reader
         self._chunker = chunker
-        self._ingestion = ingestion_service
-        # Optional — used by `push_to_store` to resolve the slug coming
-        # from the API to the actual `stores.id` (the chunk_pushes FK).
-        # When None, push_to_store falls back to using the passed value
-        # verbatim (legacy callers may already pass an id).
-        self._stores = store_repo
-        # Optional — used by `push_to_store` to upsert the live
-        # `document_store_links` row that drives the per-store state
-        # badges in the UI (Ingested / Stale / Failed). Without it the
-        # audit row in `chunk_pushes` still lands but the user-visible
-        # state stays NotPushed forever.
-        self._links = link_repo
-        # Optional — resolves a Store to its concrete backend pair
-        # (#279). When wired, `push_to_store` uses it to pick the per-
-        # store driver from the pool; when None, the IngestionService
-        # falls back to its service-level defaults (env-based, pre-#279
-        # behaviour).
-        self._backend_resolver = backend_resolver
         self._active_result_service = active_result_service
-        # Duck-typed recorder for document versions (#267). Wired in
-        # main.py to `VersionService.record_on_rechunk` so each
-        # `+ Generate chunks` call appends a frozen pair to History.
+        # Document-version recorder (#267), wired at boot to `VersionService`
+        # so each `+ Generate chunks` call appends a frozen pair to History.
         self._version_recorder = None
 
     def set_version_recorder(self, version_service) -> None:
-        """Inject the document-version recorder (#267). Contract: a
-        coroutine `(document_id: str, analysis_id: str | None) -> DocumentVersion`."""
+        """Inject the document-version recorder (#267): an object with a coroutine
+        `record_on_rechunk(document_id, analysis_id, result_hash)`."""
         self._version_recorder = version_service
-
-    # -- promotion (called by AnalysisService after first successful analysis)
-
-    async def promote_from_analysis_if_empty(self, document_id: str, chunks_json: str) -> int:
-        """Populate the canonical chunkset from an analysis result, ONLY if
-        the document has no canonical chunks yet. Idempotent.
-
-        Returns the number of chunks promoted (0 if skipped).
-        """
-        if await self._chunks.count_for_document(document_id) > 0:
-            return 0
-        try:
-            raw_chunks = json.loads(chunks_json)
-        except json.JSONDecodeError:
-            logger.exception("Invalid chunks_json for doc %s — skipping promotion", document_id)
-            return 0
-        if not isinstance(raw_chunks, list) or not raw_chunks:
-            return 0
-
-        canonical = [
-            _analysis_chunk_to_canonical(document_id, seq, raw)
-            for seq, raw in enumerate(raw_chunks)
-            if not raw.get("deleted")
-        ]
-        if not canonical:
-            return 0
-
-        await self._chunks.insert_many(canonical)
-        logger.info(
-            "chunk.promote docId=%s count=%d (initial-analysis)", document_id, len(canonical)
-        )
-        return len(canonical)
 
     # -- read
 
@@ -234,15 +81,15 @@ class ChunkService:
     async def add_chunk(self, document_id: str, *, text: str, after_id: str | None = None) -> Chunk:
         await self._require_doc(document_id)
         existing = await self._chunks.find_for_document(document_id)
-        sequence = self._sequence_after(existing, after_id)
-        await self._shift_sequences(existing, from_sequence=sequence)
+        sequence = self._compute_sequence_after(existing, after_id)
+        await self._shift_sequences(document_id, from_sequence=sequence)
 
         new_chunk = Chunk(
             document_id=document_id,
             sequence=sequence,
             text=text,
-            created_at=_utcnow(),
-            updated_at=_utcnow(),
+            created_at=get_utc_now(),
+            updated_at=get_utc_now(),
         )
         await self._chunks.insert(new_chunk)
         logger.info(
@@ -263,52 +110,30 @@ class ChunkService:
             chunk.text = text
         if headings is not None:
             chunk.headings = list(headings)
-        chunk.updated_at = _utcnow()
+        chunk.updated_at = get_utc_now()
         await self._chunks.update(chunk)
         logger.info("chunk.update docId=%s chunkId=%s", document_id, chunk.id)
         return chunk
 
     async def delete_chunk(self, document_id: str, chunk_id: str) -> None:
         chunk = await self._require_chunk(document_id, chunk_id)
-        deleted = await self._chunks.soft_delete(chunk_id, at=_utcnow())
+        deleted = await self._chunks.soft_delete(chunk_id, at=get_utc_now())
         if not deleted:
             raise ChunkNotFoundError(f"Chunk not found: {chunk_id}")
         logger.info("chunk.delete docId=%s chunkId=%s", document_id, chunk.id)
 
     async def split_chunk(self, document_id: str, chunk_id: str, cursor_offset: int) -> list[Chunk]:
         source = await self._require_chunk(document_id, chunk_id)
-        if cursor_offset <= 0 or cursor_offset >= len(source.text):
-            raise ChunkValidationError(
-                f"cursorOffset {cursor_offset} out of range for chunk of length {len(source.text)}"
+        try:
+            head, tail = chunk_editing.split(
+                source, at_offset=cursor_offset, document_id=document_id
             )
-        existing = await self._chunks.find_for_document(document_id)
-
-        # Both halves inherit headings, source_page, bboxes, doc_items.
-        # Token counts are unknown post-split; leave as None.
-        head_text = source.text[:cursor_offset]
-        tail_text = source.text[cursor_offset:]
-        head = Chunk(
-            document_id=document_id,
-            sequence=source.sequence,
-            text=head_text,
-            headings=list(source.headings),
-            source_page=source.source_page,
-            bboxes=list(source.bboxes),
-            doc_items=list(source.doc_items),
-        )
-        tail = Chunk(
-            document_id=document_id,
-            sequence=source.sequence + 1,
-            text=tail_text,
-            headings=list(source.headings),
-            source_page=source.source_page,
-            bboxes=list(source.bboxes),
-            doc_items=list(source.doc_items),
-        )
+        except ChunkEditingError as exc:
+            raise ChunkValidationError(str(exc)) from exc
 
         # Push subsequent sequences by 1 to make room for `tail`.
-        await self._shift_sequences(existing, from_sequence=source.sequence + 1)
-        await self._chunks.soft_delete(source.id, at=_utcnow())
+        await self._shift_sequences(document_id, from_sequence=source.sequence + 1)
+        await self._chunks.soft_delete(source.id, at=get_utc_now())
         await self._chunks.insert_many([head, tail])
 
         logger.info(
@@ -321,8 +146,10 @@ class ChunkService:
         return [head, tail]
 
     async def merge_chunks(self, document_id: str, ids: list[str]) -> Chunk:
-        if len(ids) < 2:
-            raise ChunkValidationError("merge requires at least 2 chunk ids")
+        try:
+            chunk_editing.check_merge_count(ids)
+        except ChunkEditingError as exc:
+            raise ChunkValidationError(str(exc)) from exc
         existing = await self._chunks.find_for_document(document_id)
         by_id = {c.id: c for c in existing}
         targets = [by_id.get(i) for i in ids]
@@ -330,32 +157,14 @@ class ChunkService:
             missing = [i for i, t in zip(ids, targets, strict=True) if t is None]
             raise ChunkNotFoundError(f"Chunks not found: {missing}")
 
-        ordered = sorted(targets, key=lambda c: c.sequence)
-        sequences = [c.sequence for c in ordered]
-        if sequences != list(range(sequences[0], sequences[0] + len(sequences))):
-            raise ChunkConflictError("merge requires contiguous chunks (by sequence)")
+        try:
+            ordered, merged = chunk_editing.merge(targets, document_id=document_id)
+        except ChunkMergeGapError as exc:
+            raise ChunkConflictError(str(exc)) from exc
+        except ChunkEditingError as exc:
+            raise ChunkValidationError(str(exc)) from exc
 
-        merged_text = "\n".join(c.text for c in ordered)
-        bboxes: list[ChunkBbox] = []
-        doc_items: list[ChunkDocItem] = []
-        for c in ordered:
-            bboxes.extend(c.bboxes)
-            doc_items.extend(c.doc_items)
-        token_total = sum((c.token_count or 0) for c in ordered) or None
-
-        merged = Chunk(
-            document_id=document_id,
-            sequence=ordered[0].sequence,
-            text=merged_text,
-            headings=list(ordered[0].headings),
-            source_page=ordered[0].source_page,
-            bboxes=bboxes,
-            doc_items=doc_items,
-            token_count=token_total,
-        )
-
-        for c in ordered:
-            await self._chunks.soft_delete(c.id, at=_utcnow())
+        await self._chunks.soft_delete_many([c.id for c in ordered], at=get_utc_now())
         await self._chunks.insert(merged)
 
         logger.info(
@@ -367,370 +176,84 @@ class ChunkService:
         return merged
 
     async def rechunk_document(self, document_id: str, options: dict | None = None) -> list[Chunk]:
-        """Re-run the chunker on the active analysis JSON and replace the chunkset."""
+        """Re-run the chunker on the current analysis result and replace the chunkset.
+
+        The current analysis is read with its saved edits. The new chunks and
+        the record of their source are written in one transaction (02-2.4.3);
+        an existing selection is kept (`ChunkRepository.replace_keeping_selection`). The History
+        version that follows is a separate, best-effort write: when it fails
+        the chunks stand without a matching History entry, as before.
+        """
         await self._require_doc(document_id)
         if not self._chunker:
             raise ChunkServiceError("Chunker not configured", http_status=503)
 
-        active = None
-        if self._active_result_service is not None:
-            try:
-                active = await self._active_result_service.active_result(document_id)
-            except AnalysisEditUnavailableError as exc:
-                raise ChunkServiceError(str(exc), http_status=409) from exc
-        job = (
-            active.job
-            if active is not None
-            else await self._analyses.find_latest_completed_by_document(document_id)
+        current = await self._load_chunkable_result(document_id)
+        job = current.job
+        chunk_opts = ChunkingOptions(**options) if options else ChunkingOptions()
+        new_results = await self._chunker.chunk(job.document_json, chunk_opts)
+        new_chunks = _build_chunks(document_id, new_results)
+
+        chunk_source = DocumentChunkSource(
+            document_id, current.base_analysis_id, hash_result(job.document_json)
         )
-        if not job or not job.document_json:
+        old_count = await self._replace_chunks(new_chunks, chunk_source)
+        logger.info(
+            "chunk.rechunk docId=%s oldCount=%d newCount=%d",
+            document_id,
+            old_count,
+            len(new_chunks),
+        )
+        await self._record_rechunk_version(chunk_source)
+        return new_chunks
+
+    async def _load_chunkable_result(self, document_id: str) -> EditorSnapshot:
+        """The current edited analysis result, refused (409) when it has no document."""
+        try:
+            current = await self._active_result_service.load_current_edited(document_id)
+        except AnalysisEditUnavailableError as exc:
+            raise ChunkServiceError(str(exc), http_status=409) from exc
+        if not current.job.document_json:
             raise ChunkServiceError(
                 "No completed analysis with document_json available for rechunk",
                 http_status=409,
             )
+        return current
 
-        chunk_opts = ChunkingOptions(**options) if options else ChunkingOptions()
-        new_results = await self._chunker.chunk(job.document_json, chunk_opts)
-
-        existing = await self._chunks.find_for_document(document_id)
-        now = _utcnow()
-        for c in existing:
-            await self._chunks.soft_delete(c.id, at=now)
-
-        new_chunks = [
-            Chunk(
-                document_id=document_id,
-                sequence=seq,
-                text=r.text,
-                headings=list(r.headings),
-                source_page=r.source_page,
-                bboxes=list(r.bboxes),
-                doc_items=list(r.doc_items),
-                token_count=r.token_count or None,
-            )
-            for seq, r in enumerate(new_results)
-        ]
-        if new_chunks:
-            await self._chunks.insert_many(new_chunks)
-        logger.info(
-            "chunk.rechunk docId=%s oldCount=%d newCount=%d",
-            document_id,
-            len(existing),
-            len(new_chunks),
+    async def _replace_chunks(self, chunks: list[Chunk], chunk_source: DocumentChunkSource) -> int:
+        """Swap the live chunkset and record its source in one write; returns the old count."""
+        replacement = ChunkReplacement(
+            chunk_source.document_id, chunks, get_utc_now(), chunk_source, chunk_source.analysis_id
         )
+        try:
+            return await self._chunks.replace_keeping_selection(replacement)
+        except AnalysisNotSelectableError as exc:
+            raise ChunkConflictError(
+                "The analysis being chunked is no longer available; reload and try again"
+            ) from exc
 
-        source_analysis_id = job.id
-        if active is not None:
-            source_analysis_id = active.base_analysis_id
-        source_result_hash = hashlib.sha256(job.document_json.encode("utf-8")).hexdigest()
-        await self._chunk_sources.set_chunk_source(
-            DocumentChunkSource(document_id, source_analysis_id, source_result_hash)
-        )
-
+    async def _record_rechunk_version(self, chunk_source: DocumentChunkSource) -> None:
         # Record a frozen (analysis, chunks_snapshot) pair in the
         # workspace History timeline (#267). Snapshots the chunks we
         # just wrote, paired with the analysis they came from.
-        if self._version_recorder is not None:
-            try:
-                await self._version_recorder.record_on_rechunk(
-                    document_id, source_analysis_id, source_result_hash
-                )
-            except Exception:
-                # Best-effort hook — never fail the rechunk if the
-                # version snapshot write hits a snag.
-                logger.exception(
-                    "Version snapshot failed for doc %s after rechunk",
-                    document_id,
-                )
-
-        return new_chunks
-
-    # -- diff (against last push to a store)
-
-    async def diff_against_store(self, document_id: str, store_id: str) -> list[dict]:
-        """Compare the canonical chunkset to the last push for `store_id`.
-
-        Returns a list of `ChunkDiff`-shaped dicts (camelCase) covering:
-          - canonical chunks not in the last push → status "added"
-          - canonical chunks updated since last push → status "modified"
-          - canonical chunks unchanged since push → status "unchanged"
-          - chunk ids in last push absent from canonical → status "removed"
-
-        Coarse-grained — does not produce a textDiff today (follow-up).
-        """
-        await self._require_doc(document_id)
-        canonical = await self._chunks.find_for_document(document_id)
-        last_push = await self._pushes.find_latest(document_id, store_id)
-        if last_push is None:
-            return [{"chunkId": c.id, "status": "added", "textDiff": None} for c in canonical]
-
-        pushed_ids = set(last_push.chunk_ids)
-        diffs: list[dict] = []
-        for c in canonical:
-            if c.id not in pushed_ids:
-                diffs.append({"chunkId": c.id, "status": "added", "textDiff": None})
-                continue
-            if c.updated_at > last_push.pushed_at:
-                diffs.append({"chunkId": c.id, "status": "modified", "textDiff": None})
-            else:
-                diffs.append({"chunkId": c.id, "status": "unchanged", "textDiff": None})
-        canonical_ids = {c.id for c in canonical}
-        for cid in pushed_ids - canonical_ids:
-            diffs.append({"chunkId": cid, "status": "removed", "textDiff": None})
-        return diffs
-
-    # -- push (delegates to IngestionService; per-store dispatch is a follow-up)
-
-    async def push_to_store(self, document_id: str, store_id: str) -> dict:
-        """Push the canonical chunkset to a store and record a `ChunkPush`.
-
-        The `store_id` argument is the value the API caller passed —
-        the frontend currently passes the **slug** (`POST /chunks/push`
-        body), but the `chunk_pushes` FK targets `stores.id`. We
-        resolve the slug to the real id when a `store_repo` is wired;
-        otherwise we assume the caller already passed an id.
-
-        Today the ingestion itself still delegates to the globally-
-        configured `IngestionService` (one bucket). Per-store dispatch
-        by `store.kind` is a follow-up issue — recording the right
-        store id on the `ChunkPush` row is the prerequisite, and lands
-        here.
-        """
-        await self._require_doc(document_id)
-        if self._ingestion is None:
-            raise ChunkServiceError(
-                "Ingestion not available — set EMBEDDING_URL and at least one of "
-                "OPENSEARCH_URL or NEO4J_URI on the backend",
-                http_status=503,
-            )
-        # Resolve slug → store row. Refuses to push to an unknown store
-        # (catches typos before the FK insert fails with a generic
-        # IntegrityError 500).
-        resolved_store_id = store_id
-        if self._stores is not None:
-            store = await self._stores.find_by_slug(store_id)
-            if store is None:
-                # Maybe the caller already passed an id — accept that
-                # too for backwards compat with older callers.
-                store = await self._stores.find_by_id(store_id)
-            if store is None:
-                raise ChunkServiceError(
-                    f"Store not found: {store_id}",
-                    http_status=404,
-                )
-            resolved_store_id = store.id
-
-        doc = await self._documents.find_by_id(document_id)
-        canonical = await self._chunks.find_for_document(document_id)
-        if not canonical:
-            raise ChunkServiceError(
-                "No canonical chunks to push — run analysis or rechunk first",
-                http_status=409,
-            )
-
-        chunks_payload = [_chunk_to_ingestion_dict(c) for c in canonical]
-        chunks_json_payload = json.dumps(chunks_payload)
-        chunkset_hash = _compute_chunkset_hash(canonical)
-        # Resolve the per-store backends through the pool (#279). When
-        # the resolver is not wired the call falls back to the
-        # IngestionService's service-level defaults — preserves
-        # behaviour for existing tests and for installs that still
-        # rely on env-var fallbacks.
-        targets = None
-        if self._backend_resolver is not None and store is not None:
-            try:
-                targets = await self._backend_resolver.resolve(store)
-            except Exception as exc:
-                await self._mark_link_failed(document_id, resolved_store_id, error=str(exc))
-                raise ChunkServiceError(
-                    f"Cannot resolve backend for store {store.slug!r}: {exc}",
-                    http_status=503,
-                ) from exc
-        try:
-            ingestion_result = await self._ingestion.ingest(
-                doc_id=document_id,
-                filename=(doc.filename if doc else document_id),
-                chunks_json=chunks_json_payload,
-                targets=targets,
-            )
-        except Exception as exc:
-            # Push failed mid-flight — record the failure on the link
-            # so the UI can show "Failed" instead of an indefinite
-            # "Pushing…" or the previous state. Then re-raise.
-            await self._mark_link_failed(document_id, resolved_store_id, error=str(exc))
-            raise
-
-        chunk_ids = [c.id for c in canonical]
-        pushed_at = _utcnow()
-        push = ChunkPush(
-            id=_new_id(),
-            document_id=document_id,
-            store_id=resolved_store_id,
-            chunkset_hash=chunkset_hash,
-            chunk_ids=chunk_ids,
-            pushed_at=pushed_at,
-        )
-        await self._pushes.insert(push)
-
-        # Upsert the live link row that the UI reads from. Without
-        # this, `Document.storeLinks` (the source of truth for the
-        # Ingest view badges) stays NotPushed indefinitely even
-        # though the audit log records the push.
-        await self._upsert_link_ingested(
-            document_id,
-            resolved_store_id,
-            chunkset_hash=chunkset_hash,
-            at=pushed_at,
-            run_id=push.id,
-        )
-
-        token_total = sum((c.token_count or 0) for c in canonical)
-        logger.info(
-            "chunk.push docId=%s store=%s count=%d tokens=%d",
-            document_id,
-            store_id,
-            ingestion_result.chunks_indexed,
-            token_total,
-        )
-        return {
-            "pushId": push.id,
-            "summary": {
-                "embeds": ingestion_result.chunks_indexed,
-                "tokens": token_total,
-            },
-        }
-
-    async def list_pushes(
-        self,
-        document_id: str,
-        *,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> dict:
-        """List the document's push history, newest first (#283).
-
-        Joined view: each row carries the store slug + kind (via the
-        store_repo) so the UI does not need a second round-trip to
-        render the history list. When the store row was deleted
-        after the push, slug and kind are returned as None — the
-        push remains an immutable audit row.
-
-        Returns a paginated envelope `{items, total, limit, offset}`.
-        """
-        await self._require_doc(document_id)
-        total = await self._pushes.count_for_document(document_id)
-        if total == 0:
-            return {"items": [], "total": 0, "limit": limit, "offset": offset}
-        pushes = await self._pushes.find_for_document(document_id, limit=limit, offset=offset)
-        # Resolve store names in one repo round per unique store_id
-        # (typically 1-3 stores for a given doc).
-        store_cache: dict[str, object | None] = {}
-        items: list[dict] = []
-        for push in pushes:
-            store = store_cache.get(push.store_id, _UNSET)
-            if store is _UNSET:
-                store = (
-                    await self._stores.find_by_id(push.store_id)
-                    if self._stores is not None
-                    else None
-                )
-                store_cache[push.store_id] = store
-            items.append(
-                {
-                    "id": push.id,
-                    "documentId": push.document_id,
-                    "storeId": push.store_id,
-                    "storeSlug": getattr(store, "slug", None),
-                    "storeName": getattr(store, "name", None),
-                    "storeKind": getattr(store.kind, "value", None) if store else None,
-                    "chunksetHash": push.chunkset_hash,
-                    "chunkCount": len(push.chunk_ids),
-                    "pushedAt": push.pushed_at.isoformat() if push.pushed_at else None,
-                }
-            )
-        return {"items": items, "total": total, "limit": limit, "offset": offset}
-
-    async def _upsert_link_ingested(
-        self,
-        document_id: str,
-        store_id: str,
-        *,
-        chunkset_hash: str,
-        at: datetime,
-        run_id: str,
-    ) -> None:
-        """Mark the (doc, store) link as Ingested. No-op if no link repo
-        is wired (legacy ChunkService instances without store wiring).
-        """
-        if self._links is None:
-            return
-        existing = await self._links.find_one(document_id, store_id)
-        link = existing or DocumentStoreLink(
-            document_id=document_id,
-            store_id=store_id,
-        )
-        link.mark_ingested(hash_=chunkset_hash, at=at, run_id=run_id)
-        await self._links.upsert(link)
-
-    async def _mark_link_failed(self, document_id: str, store_id: str, *, error: str) -> None:
-        """Best-effort failure marker — never raises (we're already
-        in an error path; the original push exception must bubble up
-        unchanged).
-        """
-        if self._links is None:
+        if self._version_recorder is None:
             return
         try:
-            existing = await self._links.find_one(document_id, store_id)
-            link = existing or DocumentStoreLink(
-                document_id=document_id,
-                store_id=store_id,
+            await self._version_recorder.record_on_rechunk(
+                chunk_source.document_id, chunk_source.analysis_id, chunk_source.result_hash
             )
-            link.mark_failed(error=error[:500])
-            await self._links.upsert(link)
         except Exception:
+            # Best-effort hook — never fail the rechunk if the
+            # version snapshot write hits a snag.
             logger.exception(
-                "Failed to record push failure on document_store_links for doc=%s store=%s",
-                document_id,
-                store_id,
+                "Version snapshot failed for doc %s after rechunk",
+                chunk_source.document_id,
             )
-
-    # -- tree (read from an analysis document_json)
-
-    async def get_tree(self, document_id: str, analysis_id: str | None = None) -> list[dict]:
-        """Build a doc tree from the requested or active analysis.
-
-        Returns a list of `DocTreeNode`-shaped dicts (camelCase). Empty
-        list if no analysis is available yet — caller decides if that is
-        an error or just "not parsed yet".
-        """
-        await self._require_doc(document_id)
-        if analysis_id:
-            job = await self._analyses.find_by_id(analysis_id)
-            if not job or job.document_id != document_id or job.status != AnalysisStatus.COMPLETED:
-                raise ChunkNotFoundError(f"Analysis not found: {analysis_id}")
-        else:
-            if self._active_result_service is not None:
-                try:
-                    job = (await self._active_result_service.active_result(document_id)).job
-                except AnalysisEditUnavailableError:
-                    return []
-            else:
-                job = await self._analyses.find_latest_completed_by_document(document_id)
-        if not job or not job.document_json:
-            return []
-        try:
-            doc_data = json.loads(job.document_json)
-        except json.JSONDecodeError:
-            logger.exception("Invalid document_json for analysis %s", job.id)
-            return []
-        return _build_tree_nodes(doc_data, self._tree)
 
     # -- guards
 
     async def _require_doc(self, document_id: str) -> None:
-        doc = await self._documents.find_by_id(document_id)
-        if not doc:
-            raise DocumentNotFoundError(f"Document not found: {document_id}")
+        await require_document(self._documents, document_id)
 
     async def _require_chunk(self, document_id: str, chunk_id: str) -> Chunk:
         chunk = await self._chunks.find_by_id(chunk_id)
@@ -741,7 +264,7 @@ class ChunkService:
     # -- sequence helpers
 
     @staticmethod
-    def _sequence_after(existing: list[Chunk], after_id: str | None) -> int:
+    def _compute_sequence_after(existing: list[Chunk], after_id: str | None) -> int:
         if after_id is None:
             return (max((c.sequence for c in existing), default=-1)) + 1
         anchor = next((c for c in existing if c.id == after_id), None)
@@ -749,187 +272,25 @@ class ChunkService:
             raise ChunkNotFoundError(f"Anchor chunk not found: {after_id}")
         return anchor.sequence + 1
 
-    async def _shift_sequences(self, existing: list[Chunk], *, from_sequence: int) -> None:
-        """Push chunks at >= from_sequence one slot up to make room."""
-        affected = [c for c in existing if c.sequence >= from_sequence]
-        for c in affected:
-            c.sequence += 1
-            c.updated_at = _utcnow()
-            await self._chunks.update(c)
+    async def _shift_sequences(self, document_id: str, *, from_sequence: int) -> None:
+        """Push live chunks at >= from_sequence one slot up to make room, in one UPDATE."""
+        await self._chunks.shift_sequences(
+            document_id, from_sequence=from_sequence, at=get_utc_now()
+        )
 
 
-# ---------------------------------------------------------------------------
-# Tree projection — extract a hierarchical outline from a DoclingDocument.
-# Kept module-level so it stays cheap to test in isolation.
-# ---------------------------------------------------------------------------
-
-
-def _chunk_to_ingestion_dict(c: Chunk) -> dict:
-    """Convert a canonical `Chunk` into the legacy chunks_json shape that
-    `IngestionService.ingest` consumes (camelCase, modeled after
-    `analysis_service._chunk_to_dict`)."""
-    return {
-        "text": c.text,
-        "headings": list(c.headings),
-        "sourcePage": c.source_page,
-        "tokenCount": c.token_count or 0,
-        "bboxes": [{"page": b.page, "bbox": list(b.bbox)} for b in c.bboxes],
-        "docItems": [{"selfRef": d.self_ref, "label": d.label} for d in c.doc_items],
-    }
-
-
-def _compute_chunkset_hash(chunks: list[Chunk]) -> str:
-    """Stable hash of the canonical chunkset content.
-
-    Used by `ChunkPush` snapshots so we can answer 'is the store in sync
-    with the current canonical state' without listing chunks from the
-    vector store.
-    """
-    import hashlib
-
-    h = hashlib.sha256()
-    for c in chunks:
-        h.update(c.id.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(c.text.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(str(c.updated_at).encode("utf-8"))
-        h.update(b"\x01")
-    return h.hexdigest()
-
-
-def _build_tree_nodes(doc_data: dict, tree_reader: DocumentTreeReader) -> list[dict]:
-    """Project a Docling document JSON into a hierarchical `[DocTreeNode]` outline.
-
-    Two stacking rules combine to follow the document's natural structure:
-
-    1. **Headings nest by level.** `title` opens a level-0 container; each
-       `section_header` opens a container at its declared `level` (default 1).
-       A new heading pops the stack until the top has a strictly lower level,
-       so siblings stay siblings and sub-sections nest inside their parent.
-    2. **Docling parent/child is preserved for containers.** `list` keeps its
-       `list_item` descendants under it; everything else (paragraph, table,
-       picture) is a leaf under the current section.
-
-    Inline-group style runs and picture sub-elements are skipped via the
-    shared `build_collapse_index` helper — keeps the projection in sync
-    with the Neo4j tree writer and the in-memory graph payload.
-    """
-    skip_refs, inline_meta = tree_reader.build_collapse_index(doc_data)
-    by_ref: dict[str, dict] = {}
-    for _, item in tree_reader.iter_items(doc_data):
-        ref = item.get("self_ref")
-        if ref:
-            by_ref[ref] = item
-
-    body = doc_data.get("body") or {}
-    root: list[dict] = []
-    # Stack entries: (heading_level, children_list). The sentinel level -1
-    # represents the document root so any heading nests inside it.
-    stack: list[tuple[int, list[dict]]] = [(-1, root)]
-
-    def walk(children: list[dict] | None) -> None:
-        if not children:
-            return
-        for ch in children:
-            ref = ch.get("$ref") or ch.get("cref")
-            if not ref or ref in skip_refs:
-                continue
-            item = by_ref.get(ref)
-            if item is None:
-                continue
-            label_type = (item.get("label") or "").lower() or "text"
-
-            if label_type in {"title", "section_header"}:
-                level = 0 if label_type == "title" else max(int(item.get("level") or 1), 1)
-                while len(stack) > 1 and stack[-1][0] >= level:
-                    stack.pop()
-                node = _make_node(ref, label_type, item, inline_meta, tree_reader)
-                stack[-1][1].append(node)
-                stack.append((level, node["children"]))
-            else:
-                node = _build_item_subtree(ref, item, by_ref, skip_refs, inline_meta, tree_reader)
-                stack[-1][1].append(node)
-
-    walk(body.get("children"))
-    return root
-
-
-def _build_item_subtree(
-    ref: str,
-    item: dict,
-    by_ref: dict[str, dict],
-    skip_refs: set[str],
-    inline_meta: dict[str, dict],
-    tree_reader: DocumentTreeReader,
-) -> dict:
-    """Build a leaf or nested subtree for a non-heading item.
-
-    Containers (list, group, form_area, key_value_area) keep their explicit
-    Docling children so the outline mirrors structures like `list` → `list_item`.
-    Other items are emitted as leaves — pictures and inline groups had their
-    descendants pruned upstream by `build_collapse_index`.
-    """
-    label_type = (item.get("label") or "").lower() or "text"
-    node = _make_node(ref, label_type, item, inline_meta, tree_reader)
-    if label_type in {"list", "group", "form_area", "key_value_area"}:
-        for ch in item.get("children") or []:
-            child_ref = ch.get("$ref") or ch.get("cref")
-            if not child_ref or child_ref in skip_refs:
-                continue
-            child_item = by_ref.get(child_ref)
-            if child_item is None:
-                continue
-            node["children"].append(
-                _build_item_subtree(
-                    child_ref, child_item, by_ref, skip_refs, inline_meta, tree_reader
-                )
-            )
-    return node
-
-
-def _make_node(
-    ref: str,
-    label_type: str,
-    item: dict,
-    inline_meta: dict[str, dict],
-    tree_reader: DocumentTreeReader,
-) -> dict:
-    return {
-        "ref": ref,
-        "type": label_type,
-        "label": _display_label(item, inline_meta, tree_reader),
-        "children": [],
-    }
-
-
-def _display_label(item: dict, inline_meta: dict[str, dict], tree_reader) -> str:
-    """Pick the most human-readable label for the tree node."""
-    ref = item.get("self_ref") or ""
-    label_type = (item.get("label") or "").lower()
-
-    if tree_reader.is_inline_group(item):
-        meta = inline_meta.get(ref)
-        if meta and meta.get("text"):
-            return _truncate(meta["text"])
-
-    text = (item.get("text") or "").strip()
-    if text:
-        return _truncate(text)
-
-    if label_type == "table":
-        return "Table"
-    if label_type == "picture":
-        return "Figure"
-    if label_type == "list":
-        return "List"
-    if label_type == "group":
-        return (item.get("name") or "Group").strip()
-    return label_type or "node"
-
-
-def _truncate(text: str, max_len: int = 80) -> str:
-    text = text.strip()
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 1].rstrip() + "…"
+def _build_chunks(document_id: str, results: list[ChunkResult]) -> list[Chunk]:
+    """Number the chunker's results into fresh chunks for the document."""
+    return [
+        Chunk(
+            document_id=document_id,
+            sequence=seq,
+            text=r.text,
+            headings=list(r.headings),
+            source_page=r.source_page,
+            bboxes=list(r.bboxes),
+            doc_items=list(r.doc_items),
+            token_count=r.token_count or None,
+        )
+        for seq, r in enumerate(results)
+    ]

@@ -40,7 +40,7 @@ export const useMcpConfigStore = defineStore('mcp-config', () => {
     form.studioBaseUrl = next.studioBaseUrl
   }
 
-  function message(e: unknown, fallback: string): string {
+  function toErrorMessage(e: unknown, fallback: string): string {
     return e instanceof Error ? e.message : fallback
   }
 
@@ -52,7 +52,7 @@ export const useMcpConfigStore = defineStore('mcp-config', () => {
       applyView(config)
       server.value = status
     } catch (e) {
-      loadError.value = message(e, 'Failed to load MCP config')
+      loadError.value = toErrorMessage(e, 'Failed to load MCP config')
     } finally {
       loading.value = false
     }
@@ -65,7 +65,7 @@ export const useMcpConfigStore = defineStore('mcp-config', () => {
       applyView(await run())
       return true
     } catch (e) {
-      saveError.value = message(e, fallback)
+      saveError.value = toErrorMessage(e, fallback)
       return false
     } finally {
       saving.value = false
@@ -104,7 +104,7 @@ export const useMcpConfigStore = defineStore('mcp-config', () => {
       })
       return true
     } catch (e) {
-      switchError.value = message(e, 'Failed to switch the MCP server')
+      switchError.value = toErrorMessage(e, 'Failed to switch the MCP server')
       return false
     } finally {
       saving.value = false

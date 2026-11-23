@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  centeredScrollPosition,
+  computeCenteredScrollPosition,
   isFocusScrollRequest,
   isRectVisible,
-  mostVisiblePage,
-  pageFrameGeometry,
-  pageTopScrollPosition,
+  findMostVisiblePage,
+  computePageFrameGeometry,
+  computePageTopScrollPosition,
 } from './previewScroll'
 
-describe('mostVisiblePage', () => {
+describe('findMostVisiblePage', () => {
   it('selects the highest ratio from the complete visibility snapshot', () => {
     expect(
-      mostVisiblePage(
+      findMostVisiblePage(
         new Map([
           [1, 0.25],
           [2, 0.75],
@@ -24,14 +24,14 @@ describe('mostVisiblePage', () => {
 
   it('ignores pages whose stored ratio is zero', () => {
     expect(
-      mostVisiblePage(
+      findMostVisiblePage(
         new Map([
           [1, 0],
           [2, 0.4],
         ]),
       ),
     ).toBe(2)
-    expect(mostVisiblePage(new Map([[1, 0]]))).toBeNull()
+    expect(findMostVisiblePage(new Map([[1, 0]]))).toBeNull()
   })
 })
 
@@ -47,10 +47,10 @@ describe('isRectVisible', () => {
   })
 })
 
-describe('centeredScrollPosition', () => {
+describe('computeCenteredScrollPosition', () => {
   it('centers viewport-relative element geometry in scroll space', () => {
     expect(
-      centeredScrollPosition(
+      computeCenteredScrollPosition(
         { scrollTop: 300, scrollLeft: 100, clientWidth: 400, clientHeight: 600 },
         { top: 50, left: 20 },
         { x: 220, y: 450, w: 40, h: 100 },
@@ -60,7 +60,7 @@ describe('centeredScrollPosition', () => {
 
   it('clamps positions at the scroll origin', () => {
     expect(
-      centeredScrollPosition(
+      computeCenteredScrollPosition(
         { scrollTop: 0, scrollLeft: 0, clientWidth: 400, clientHeight: 600 },
         { top: 0, left: 0 },
         { x: 10, y: 10, w: 20, h: 20 },
@@ -69,36 +69,36 @@ describe('centeredScrollPosition', () => {
   })
 })
 
-describe('pageFrameGeometry', () => {
+describe('computePageFrameGeometry', () => {
   it('reserves the page box from its point dimensions and the raster density', () => {
     // A4 at 150 dpi: 595pt / 72 * 150 ≈ 1240px of natural raster width.
-    expect(pageFrameGeometry({ width: 595, height: 842 }, 150)).toEqual({
+    expect(computePageFrameGeometry({ width: 595, height: 842 }, 150)).toEqual({
       aspectRatio: '595 / 842',
       maxWidth: '1240px',
     })
   })
 
   it('caps a narrow page at its own raster width rather than the column', () => {
-    expect(pageFrameGeometry({ width: 144, height: 144 }, 72)).toEqual({
+    expect(computePageFrameGeometry({ width: 144, height: 144 }, 72)).toEqual({
       aspectRatio: '144 / 144',
       maxWidth: '144px',
     })
   })
 
   it('declines to reserve a box for a degenerate page or density', () => {
-    expect(pageFrameGeometry({ width: 0, height: 842 }, 150)).toBeNull()
-    expect(pageFrameGeometry({ width: 595, height: -1 }, 150)).toBeNull()
-    expect(pageFrameGeometry({ width: 595, height: 842 }, 0)).toBeNull()
+    expect(computePageFrameGeometry({ width: 0, height: 842 }, 150)).toBeNull()
+    expect(computePageFrameGeometry({ width: 595, height: -1 }, 150)).toBeNull()
+    expect(computePageFrameGeometry({ width: 595, height: 842 }, 0)).toBeNull()
   })
 })
 
-describe('pageTopScrollPosition', () => {
+describe('computePageTopScrollPosition', () => {
   it('brings a card below the fold up to the top of the viewport', () => {
-    expect(pageTopScrollPosition(300, 50, 420)).toBe(670)
+    expect(computePageTopScrollPosition(300, 50, 420)).toBe(670)
   })
 
   it('clamps at the scroll origin for a card above the viewport', () => {
-    expect(pageTopScrollPosition(0, 80, 20)).toBe(0)
+    expect(computePageTopScrollPosition(0, 80, 20)).toBe(0)
   })
 })
 

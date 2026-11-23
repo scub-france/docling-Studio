@@ -2,12 +2,12 @@
   <div
     class="editor-node"
     :class="{ 'editor-node--root': depth === 0 }"
-    :data-e2e="`analysis-editor-item-${itemToken(node.label)}`"
+    :data-e2e="`analysis-editor-item-${slugifyLabel(node.label)}`"
   >
     <div
       class="editor-node-row"
       role="treeitem"
-      :data-e2e="`analysis-editor-tree-item-${itemToken(node.label)}`"
+      :data-e2e="`analysis-editor-tree-item-${slugifyLabel(node.label)}`"
       :aria-label="
         orderIndexById?.has(node.elementId)
           ? t('analysisEditor.orderItem', {
@@ -29,9 +29,9 @@
         next: nextId === node.elementId,
       }"
       :draggable="isMovable(node.elementId)"
-      @click="$emit('select', node.elementId, $event.metaKey || $event.ctrlKey)"
-      @keydown.enter.prevent="$emit('select', node.elementId, $event.metaKey || $event.ctrlKey)"
-      @keydown.space.prevent="$emit('select', node.elementId, $event.metaKey || $event.ctrlKey)"
+      @click="activate"
+      @keydown.enter.prevent="activate"
+      @keydown.space.prevent="activate"
       @keydown.right.prevent="open = true"
       @keydown.left.prevent="open = false"
       @dragstart="$emit('drag-start', node.elementId)"
@@ -42,7 +42,7 @@
         v-if="node.children.length"
         class="disclosure"
         type="button"
-        :aria-label="open ? 'Collapse section' : 'Expand section'"
+        :aria-label="open ? t('analysisEditor.collapseSection') : t('analysisEditor.expandSection')"
         :aria-expanded="open"
         @click.stop="open = !open"
       >
@@ -58,7 +58,12 @@
         @click.stop
         @change="$emit('toggle-merge', node.elementId)"
       />
-      <span v-if="isMovable(node.elementId)" class="drag-handle" title="Reorder">::</span>
+      <span
+        v-if="isMovable(node.elementId)"
+        class="drag-handle"
+        :title="t('analysisEditor.reorder')"
+        >::</span
+      >
       <span
         v-if="orderIndexById?.has(node.elementId)"
         class="order-number"
@@ -79,7 +84,7 @@
             !descendantIds.every((id) => checkedIds.includes(id)),
           )
         "
-        aria-label="Select section children"
+        :aria-label="t('analysisEditor.selectChildren')"
         @click.stop
         @change="$emit('toggle-subtree', descendantIds)"
       />
@@ -128,7 +133,8 @@
         :order-index-by-id="orderIndexById"
         :next-id="nextId"
         :depth="depth + 1"
-        @select="(id, additive) => $emit('select', id, additive)"
+        @select="$emit('select', $event)"
+        @extend-selection="$emit('extend-selection', $event)"
         @toggle-merge="$emit('toggle-merge', $event)"
         @toggle-subtree="$emit('toggle-subtree', $event)"
         @drag-start="$emit('drag-start', $event)"
@@ -158,7 +164,7 @@ const props = defineProps<{
 
 const open = ref(props.defaultOpen ?? true)
 const { t } = useI18n()
-function itemToken(label: string): string {
+function slugifyLabel(label: string): string {
   return (
     label
       .toLowerCase()
@@ -180,13 +186,20 @@ const descendantIds = computed(() => {
   return ids
 })
 
-defineEmits<{
-  select: [id: string, additive: boolean]
+const emit = defineEmits<{
+  select: [id: string]
+  'extend-selection': [id: string]
   'toggle-merge': [id: string]
   'toggle-subtree': [ids: string[]]
   'drag-start': [id: string]
   drop: [targetId: string, placement: 'before' | 'after' | 'inside']
 }>()
+
+/** Click, Enter or Space selects the row; with Cmd/Ctrl it extends the merge selection. */
+function activate(event: MouseEvent | KeyboardEvent): void {
+  if (event.metaKey || event.ctrlKey) emit('extend-selection', props.node.elementId)
+  else emit('select', props.node.elementId)
+}
 </script>
 
 <style scoped>

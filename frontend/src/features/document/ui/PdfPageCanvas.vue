@@ -2,6 +2,7 @@
   <canvas
     ref="canvasRef"
     class="pdf-page-canvas"
+    data-e2e="pdf-page-canvas"
     :class="{ 'fill-frame': fillFrame !== false }"
     :aria-label="`Page ${pageNumber}`"
   />
@@ -9,7 +10,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist'
 
 const props = defineProps<{
   document: PDFDocumentProxy | null
@@ -27,6 +28,26 @@ let resizeObserver: ResizeObserver | null = null
 let generation = 0
 let renderedWidth = 0
 
+async function cancelRenderTask(previous: RenderTask): Promise<void> {
+  previous.cancel()
+  // PDF.js cannot render twice into the same canvas until cancellation has
+  // settled, even when the first render was interrupted by a resize.
+  try {
+    await previous.promise
+  } catch {
+    // RenderingCancelledException is expected here.
+  }
+}
+
+function sizeCanvasToPage(canvas: HTMLCanvasElement, page: PDFPageProxy, width: number) {
+  const viewport = page.getViewport({ scale: 1 })
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+  const scaled = page.getViewport({ scale: (width / viewport.width) * pixelRatio })
+  canvas.width = Math.round(scaled.width)
+  canvas.height = Math.round(scaled.height)
+  return scaled
+}
+
 async function render(): Promise<void> {
   const canvas = canvasRef.value
   const document = props.document
@@ -36,25 +57,12 @@ async function render(): Promise<void> {
   const current = ++generation
   const previous = renderTask
   renderTask = null
-  if (previous) {
-    previous.cancel()
-    // PDF.js cannot render twice into the same canvas until cancellation has
-    // settled, even when the first render was interrupted by a resize.
-    try {
-      await previous.promise
-    } catch {
-      // RenderingCancelledException is expected here.
-    }
-  }
+  if (previous) await cancelRenderTask(previous)
   if (current !== generation) return
   try {
     const page = await document.getPage(props.pageNumber)
     if (current !== generation) return
-    const viewport = page.getViewport({ scale: 1 })
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
-    const scaled = page.getViewport({ scale: (width / viewport.width) * pixelRatio })
-    canvas.width = Math.round(scaled.width)
-    canvas.height = Math.round(scaled.height)
+    const scaled = sizeCanvasToPage(canvas, page, width)
     renderTask = page.render({ canvas, viewport: scaled })
     await renderTask.promise
     if (current !== generation) return

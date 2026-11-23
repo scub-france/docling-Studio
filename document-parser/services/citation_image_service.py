@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from domain.anchors import DocumentAnchor
@@ -69,22 +70,17 @@ class CitationImageService:
         target = element.page if page is None else max(1, min(page, page_count or page))
         width_pt = (element.bbox.page_width if element.bbox else None) or DEFAULT_PAGE_WIDTH
         dpi = max(24, min(int(max_width / (width_pt / 72.0)), self._config.image_dpi))
-        return await asyncio.to_thread(
-            self._page_thumbnail,
-            parse.document.storage_path,
-            element,
-            target,
-            dpi,
-            page_count,
+        image = await asyncio.to_thread(
+            self._render_page_thumbnail, parse.document.storage_path, element, target, dpi
         )
+        return replace(image, page_count=page_count)
 
-    def _page_thumbnail(
+    def _render_page_thumbnail(
         self,
         storage_path: str,
         element: ResolvedElement,
         page: int,
         dpi: int,
-        page_count: int | None,
     ) -> CitationImage:
         def render(at: int):
             page_png = self._raster.render_page(storage_path, page=page, dpi=at)
@@ -97,17 +93,21 @@ class CitationImageService:
         # only on the passage's own page: on any other, there is no passage
         # to mark.
         highlight = (
-            element.bbox.pixel_box(dpi=at, padding=0)
+            element.bbox.to_pixel_box(dpi=at, padding=0)
             if element.bbox and page == element.page
             else None
         )
-        return self._image(
-            crop,
+        media_type = "image/webp"
+        encoded = base64.b64encode(crop.png).decode("ascii")
+        return CitationImage(
+            png=crop.png,
+            data_uri=f"data:{media_type};base64,{encoded}",
+            width=crop.width,
+            height=crop.height,
             page=page,
             dpi=at,
-            media_type="image/webp",
+            media_type=media_type,
             highlight=highlight,
-            page_count=page_count,
         )
 
     def _shrink_to_budget(self, render, *, dpi: int, budget: int):
@@ -128,26 +128,3 @@ class CitationImageService:
             if len(crop.png) <= budget or current <= self._config.image_min_dpi:
                 return crop, current
             current = max(self._config.image_min_dpi, current // 2)
-
-    @staticmethod
-    def _image(
-        crop,
-        *,
-        page: int,
-        dpi: int,
-        media_type: str,
-        highlight: tuple[int, int, int, int] | None = None,
-        page_count: int | None = None,
-    ) -> CitationImage:
-        encoded = base64.b64encode(crop.png).decode("ascii")
-        return CitationImage(
-            png=crop.png,
-            data_uri=f"data:{media_type};base64,{encoded}",
-            width=crop.width,
-            height=crop.height,
-            page=page,
-            dpi=dpi,
-            media_type=media_type,
-            highlight=highlight,
-            page_count=page_count,
-        )

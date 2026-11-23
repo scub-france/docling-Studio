@@ -67,7 +67,7 @@
                   :data-status="analysis.status"
                   :title="analysis.errorMessage ?? undefined"
                 >
-                  {{ statusLabel(analysis) }}
+                  {{ getStatusLabel(analysis) }}
                 </span>
               </td>
               <td class="actions-column" @click.stop>
@@ -107,7 +107,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { analysisProgress } from '../features/analysis/progress'
+import { computeAnalysisProgress } from '../features/analysis/progress'
 import { useAnalysisStore } from '../features/analysis/store'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
@@ -139,9 +139,9 @@ async function load(): Promise<void> {
 }
 
 // A batched analysis reports its pages done: show the share next to RUNNING.
-function statusLabel(analysis: AnalysisSummary): string {
+function getStatusLabel(analysis: AnalysisSummary): string {
   if (analysis.status !== 'RUNNING') return analysis.status
-  const progress = analysisProgress(analysis, Date.now())
+  const progress = computeAnalysisProgress(analysis, Date.now())
   if (progress.kind !== 'pages') return analysis.status
   return `${analysis.status} · ${t('analyses.statusPercent', { percent: progress.percent })}`
 }

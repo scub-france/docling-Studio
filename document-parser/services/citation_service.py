@@ -18,8 +18,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
-from domain.anchors import DocumentAnchor, normalise_quote, quote_hash
-from domain.element_reader import element_text, resolve, section_refs
+from domain.anchors import DocumentAnchor, hash_quote, normalise_quote
+from domain.element_reader import resolve
 from domain.navigation import (
     Citation,
     CitationCheck,
@@ -28,7 +28,8 @@ from domain.navigation import (
     estimate_tokens,
 )
 from domain.parse_index import parse_page_ref
-from domain.spans import is_span, span_ref, span_start
+from domain.quote_location import locate_quote
+from domain.spans import get_span_start, is_span
 from services.navigation_errors import (
     InvalidArgumentError,
     NavigationServiceError,
@@ -40,9 +41,8 @@ MIN_QUOTE_CHARS = 10
 
 if TYPE_CHECKING:
     from domain.navigation import ResolvedElement
-    from domain.parse_index import DocumentIndex
     from services.navigation_config import NavigationConfig
-    from services.parse_loader import ParseLoader
+    from services.parse_loader import LoadedParse, ParseLoader
 
 
 class CitationService:
@@ -91,8 +91,19 @@ class CitationService:
                 "read returns. Quote the passage that carries the claim."
             )
 
-    async def verify_citation(self, uri: str, quote: str) -> CitationCheck:
-        """Re-resolve an anchor server-side and check the claimed quote."""
+    async def verify_citation(
+        self,
+        uri: str,
+        quote: str,
+        *,
+        current_parse_ids: dict[str, str] | None = None,
+    ) -> CitationCheck:
+        """Re-resolve an anchor server-side and check the claimed quote.
+
+        `current_parse_ids` (document id to current parse id) lets a caller
+        checking many citations resolve the current parses once; without it
+        they are resolved here.
+        """
         self.check_quote(quote)
         anchor = DocumentAnchor.parse(uri)
         try:
@@ -110,50 +121,61 @@ class CitationService:
                 detail=f"Ref {anchor.ref!r} does not exist in version {parse.version_id}.",
             )
 
-        citation = self.build(parse.document.id, parse.version_id, element)
         claimed = normalise_quote(quote)
         if not claimed:
-            return CitationCheck(
-                valid=False,
-                status=CitationStatus.QUOTE_DRIFT,
-                detail="No quote supplied to verify.",
-                citation=citation,
-                actual_quote=self._clipped(element.text),
-            )
-
-        match = self._locate_quote(parse.index, anchor.ref, element, claimed)
+            return self._build_drift_check(parse, element, "No quote supplied to verify.")
+        match = locate_quote(parse.index, anchor.ref, element, claimed)
         if match is None:
-            return CitationCheck(
-                valid=False,
-                status=CitationStatus.QUOTE_DRIFT,
-                detail=(
-                    "The quote does not appear at this anchor. Use `actual_quote` as the "
-                    "verbatim, or re-read the element."
-                ),
-                citation=citation,
-                actual_quote=self._clipped(element.text),
+            return self._build_drift_check(
+                parse,
+                element,
+                "The quote does not appear at this anchor. Use `actual_quote` as the "
+                "verbatim, or re-read the element.",
             )
+        return await self._build_match_check(anchor, parse, match, current_parse_ids)
 
+    def _build_drift_check(
+        self, parse: LoadedParse, element: ResolvedElement, detail: str
+    ) -> CitationCheck:
+        """The failed check, with the anchor's own citation and its verbatim text."""
+        return CitationCheck(
+            valid=False,
+            status=CitationStatus.QUOTE_DRIFT,
+            detail=detail,
+            citation=self.build(parse.document.id, parse.version_id, element),
+            actual_quote=self._clip(element.text),
+        )
+
+    async def _build_match_check(
+        self,
+        anchor: DocumentAnchor,
+        parse: LoadedParse,
+        match: ResolvedElement,
+        current_parse_ids: dict[str, str] | None,
+    ) -> CitationCheck:
+        """The passed check, flagged stale when the anchor pins a superseded parse."""
         matched = self.build(parse.document.id, parse.version_id, match)
-        current = await self._superseding_parse(parse.document.id, parse.version_id)
+        current = await self._find_superseding_parse(
+            parse.document.id, parse.version_id, current_parse_ids
+        )
         if current is not None:
             return CitationCheck(
                 valid=True,
                 status=CitationStatus.STALE_VERSION,
                 detail=(
-                    "The quote appears verbatim at this anchor, but the anchor pins an "
-                    f"earlier parse: {current} is now the current one. Re-read the "
+                    "The quote appears verbatim at this anchor, but the anchor pins a "
+                    f"parse that is no longer current: {current} is. Re-read the "
                     "document to cite the current parse."
                 ),
                 citation=matched,
-                actual_quote=self._clipped(match.text),
+                actual_quote=self._clip(match.text),
             )
         return CitationCheck(
             valid=True,
             status=CitationStatus.VERIFIED,
-            detail=_found_detail(anchor.ref, match.ref),
+            detail=_describe_found(anchor.ref, match.ref),
             citation=matched,
-            actual_quote=self._clipped(match.text),
+            actual_quote=self._clip(match.text),
         )
 
     # ------------------------------------------------------------------
@@ -179,104 +201,30 @@ class CitationService:
             ref=element.ref,
             label=element.label,
             quote=quote,
-            quote_hash=quote_hash(quote),
+            quote_hash=hash_quote(quote),
             page=element.page,
             bbox=element.bbox,
             headings=list(element.headings),
-            deep_link=self.deep_link(version_id, element),
+            deep_link=self.build_deep_link(version_id, element),
         )
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
-    def _clipped(self, text: str) -> str:
+    def _clip(self, text: str) -> str:
         return clip_to_tokens(text, self._config.max_read_tokens)
 
-    async def _superseding_parse(self, document_id: str, version_id: str) -> str | None:
-        """The id of the current parse when the anchor pins an older one."""
-        latest = (await self._parses.analyses.latest_parsed_ids([document_id])).get(document_id)
-        return latest if latest is not None and latest != version_id else None
+    async def _find_superseding_parse(
+        self, document_id: str, version_id: str, current_parse_ids: dict[str, str] | None
+    ) -> str | None:
+        """The id of the current parse when the anchor pins another one."""
+        if current_parse_ids is None:
+            current_parse_ids = await self._parses.find_current_parse_ids([document_id])
+        current = current_parse_ids.get(document_id)
+        return current if current is not None and current != version_id else None
 
-    @staticmethod
-    def _locate_quote(
-        index: DocumentIndex,
-        ref: str,
-        element: ResolvedElement,
-        claimed: str,
-    ) -> ResolvedElement | None:
-        """Return the element carrying `claimed`, or None.
-
-        Three passes, narrowest first: the anchor itself, then each element it
-        covers, then runs of consecutive elements. The third is what makes a
-        quote that finishes in the next paragraph verifiable instead of
-        drifted — and it answers with a span anchor, so the citation the agent
-        publishes covers the whole passage it quoted.
-        """
-        # A span's own text is all of its members: answering with it would
-        # hand back the range as sent, however wide. Look inside it instead.
-        if not is_span(ref) and claimed in normalise_quote(element.text):
-            return element
-        covered = section_refs(index, ref)
-        for candidate in covered:
-            if candidate == ref:
-                continue
-            found = resolve(index, candidate)
-            if found is not None and claimed in normalise_quote(found.text):
-                return found
-        return CitationService._locate_across(index, covered, claimed)
-
-    @staticmethod
-    def _locate_across(
-        index: DocumentIndex,
-        refs: list[str],
-        claimed: str,
-    ) -> ResolvedElement | None:
-        """The smallest run of consecutive elements containing `claimed`.
-
-        Windows grow from each starting element and stop as soon as the text
-        *before* the window's last addition is already longer than the claim:
-        past that point no match could still involve the element the window
-        starts at, so extending it only re-tests what the next start will.
-        That bound is what keeps this linear-ish over a long section instead
-        of quadratic.
-        """
-        texts = [(ref, normalise_quote(element_text(index, ref))) for ref in refs]
-        texts = [(ref, text) for ref, text in texts if text]
-        # Longer than everything the anchor covers, joined: no window can hold it.
-        if len(claimed) > sum(len(text) + 1 for _, text in texts):
-            return None
-        for start, (_, head) in enumerate(texts):
-            joined = head
-            for end in range(start + 1, len(texts)):
-                if len(joined) > len(claimed) + len(head):
-                    break
-                joined = f"{joined} {texts[end][1]}"
-                if claimed in joined:
-                    first = CitationService._trim_left(texts, start, end, claimed)
-                    return resolve(index, span_ref(texts[first][0], texts[end][0]))
-        return None
-
-    @staticmethod
-    def _trim_left(
-        texts: list[tuple[str, str]],
-        start: int,
-        end: int,
-        claimed: str,
-    ) -> int:
-        """Drop leading elements the quote does not actually reach into.
-
-        The scan finds the leftmost start that works, and the section's own
-        heading works for every quote inside it — so without this, quoting one
-        paragraph of Article 12 would come back as a span opening on the title
-        of Article 12. The end needs no such trim: the scan already stops at
-        the first one that matches.
-        """
-        while start < end and claimed in " ".join(text for _, text in texts[start + 1 : end + 1]):
-            start += 1
-        return start
-
-    def deep_link(self, version_id: str, element: ResolvedElement) -> str | None:
+    def build_deep_link(self, version_id: str, element: ResolvedElement) -> str | None:
         """The Studio URL that opens the cited parse on this element — None
         without a configured base: a bare path is no link for a reader."""
         base = self._config.studio_base_url.rstrip("/")
@@ -286,13 +234,13 @@ class CitationService:
         # The viewer focuses one element: a span opens on its first, and a
         # virtual page has none — its page is the whole target.
         if parse_page_ref(element.ref) is None:
-            query["ref"] = span_start(element.ref)
+            query["ref"] = get_span_start(element.ref)
         if element.page is not None:
             query["page"] = element.page
         return f"{base}/analyses/{version_id}" + (f"?{urlencode(query)}" if query else "")
 
 
-def _found_detail(asked: str, found: str) -> str:
+def _describe_found(asked: str, found: str) -> str:
     """What to tell an agent about where its quote actually turned up."""
     if found == asked:
         return "The quote appears verbatim in the cited element."

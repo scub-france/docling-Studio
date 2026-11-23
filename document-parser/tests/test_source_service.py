@@ -150,6 +150,26 @@ class TestQuotes:
         [passage] = report.sources.passages
         assert passage.status is None
 
+    async def test_the_current_parse_is_resolved_once_for_all_citations(self, monkeypatch):
+        tools = make_document_tools()
+        parses = tools.sources._parses
+        resolve = parses.find_current_parse_ids
+        calls = []
+
+        async def count(document_ids):
+            calls.append(list(document_ids))
+            return await resolve(document_ids)
+
+        monkeypatch.setattr(parses, "find_current_parse_ids", count)
+        report = await tools.sources.show(
+            "Quel est le préavis ?",
+            [(anchor_uri(PREAVIS_SECTION), "", "")],
+            [(anchor_uri(PREAVIS_REF), "trois mois à compter")] * 3,
+        )
+
+        assert calls == [[DOC_ID]]
+        assert {p.status for p in report.sources.passages} == {"verified"}
+
     async def test_the_report_carries_the_page_count(self):
         report = await show(reads=[(anchor_uri(PREAVIS_SECTION), "", "")])
         assert report.page_count == 2
@@ -176,7 +196,7 @@ class TestMarks:
             self.fails = fails
             self.asked: list[tuple[str, int]] = []
 
-        def glyphs(self, storage_path, *, page):
+        def read_glyphs(self, storage_path, *, page):
             from domain.quote_marks import Glyph
 
             self.asked.append((storage_path, page))
@@ -256,7 +276,7 @@ class TestTitle:
     def title_of(*items):
         from domain.parse_index import build_index
         from infra.docling_tree import DoclingTreeReader
-        from services.source_service import _title
+        from services.source_service import _find_document_title
 
         texts = [
             {
@@ -283,7 +303,7 @@ class TestTitle:
             "body": {"self_ref": "#/body", "children": [{"$ref": t["self_ref"]} for t in texts]},
             "texts": texts,
         }
-        return _title(build_index(doc, DoclingTreeReader()))
+        return _find_document_title(build_index(doc, DoclingTreeReader()))
 
     def test_a_title_element_is_the_title(self):
         assert self.title_of(("text", "Intro", 1), ("title", "Le contrat", 1)) == "Le contrat"

@@ -27,18 +27,15 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, Request
 
 if TYPE_CHECKING:
-    from domain.ports import (
-        AnalysisRepository,
-        DocumentStoreLinkRepository,
-        ReasoningRunner,
-        StoreRepository,
-    )
+    from domain.ports import CurrentAnalysisReader, ReasoningRunner
     from services.analysis_edit_service import AnalysisEditService
     from services.analysis_service import AnalysisService
     from services.app_config_service import AppConfigService
+    from services.chunk_push_service import ChunkPushService
     from services.chunk_service import ChunkService
     from services.document_service import DocumentService
     from services.document_tools import DocumentTools
+    from services.document_tree_service import DocumentTreeService
     from services.export_service import ExportService
     from services.graph_service import GraphService
     from services.ingestion_service import IngestionService
@@ -58,10 +55,8 @@ class AppState:
     backend resolver) stay locals of the builder.
     """
 
-    # Repositories reached directly by the API layer.
-    analysis_repo: AnalysisRepository | None = None
-    store_repo: StoreRepository | None = None
-    document_store_link_repo: DocumentStoreLinkRepository | None = None
+    # The rule naming a document's current analysis, read by the document route.
+    current_analysis: CurrentAnalysisReader | None = None
 
     # Use-case services.
     document_service: DocumentService | None = None
@@ -73,6 +68,8 @@ class AppState:
     export_service: ExportService | None = None
     store_service: StoreService | None = None
     chunk_service: ChunkService | None = None
+    chunk_push_service: ChunkPushService | None = None
+    document_tree_service: DocumentTreeService | None = None
     graph_service: GraphService | None = None
     version_service: VersionService | None = None
     ingestion_service: IngestionService | None = None

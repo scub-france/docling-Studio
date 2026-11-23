@@ -13,7 +13,7 @@ import json
 import pytest
 from mcp import Client
 
-from mcp_adapter import build_mcp_server
+from mcp_adapter.server import McpSurface, build_mcp_server
 from tests.navigation_fixtures import make_document_tools
 from tests.test_mcp_apps import APPS_CLIENT
 
@@ -42,7 +42,7 @@ RULES = {
 
 async def _visible(*, apps: bool = True):
     tools = make_document_tools()
-    server = build_mcp_server(lambda: tools, version="test", apps=apps)
+    server = build_mcp_server(lambda: tools, surface=McpSurface(version="test", apps=apps))
     async with Client(server, extensions=[APPS_CLIENT] if apps else None) as client:
         listed = (await client.list_tools()).tools
         instructions = client.instructions or ""

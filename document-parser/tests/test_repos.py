@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from domain.models import AnalysisJob, AnalysisStatus, Document
+from domain.models import AnalysisJob, AnalysisOutput, AnalysisStatus, Document
 from domain.value_objects import DocumentLifecycleState
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.database import init_db
@@ -148,7 +148,9 @@ class TestParseLookups:
         job = AnalysisJob(id=job_id, document_id=doc_id)
         await analysis_repo.insert(job)
         job.mark_running()
-        job.mark_completed(markdown="", html="", pages_json="[]", document_json=json)
+        job.mark_completed(
+            AnalysisOutput(markdown="", html="", pages_json="[]", document_json=json)
+        )
         await analysis_repo.update_status(job)
 
     async def _docs(self, document_repo, *ids: str):
@@ -165,16 +167,25 @@ class TestParseLookups:
         await self._parsed(analysis_repo, "a-new", "doc-1", json="{}")
         await self._parsed(analysis_repo, "b-only", "doc-2", json="{}")
         await self._parsed(analysis_repo, "c-empty", "doc-3", json=None)
-        latest = await analysis_repo.latest_parsed_ids(["doc-1", "doc-2", "doc-3"])
+        latest = await analysis_repo.find_latest_parsed_ids(["doc-1", "doc-2", "doc-3"])
         assert latest == {"doc-1": "a-new", "doc-2": "b-only"}
 
     async def test_parsed_document_id_is_none_without_a_parse(self, document_repo, analysis_repo):
         await self._docs(document_repo, "doc-1")
         await self._parsed(analysis_repo, "parsed", "doc-1", json="{}")
         await self._parsed(analysis_repo, "empty", "doc-1", json=None)
-        assert await analysis_repo.parsed_document_id("parsed") == "doc-1"
-        assert await analysis_repo.parsed_document_id("empty") is None
-        assert await analysis_repo.parsed_document_id("missing") is None
+        assert await analysis_repo.find_parsed_document_id("parsed") == "doc-1"
+        assert await analysis_repo.find_parsed_document_id("empty") is None
+        assert await analysis_repo.find_parsed_document_id("missing") is None
+
+    async def test_parsed_ids_keeps_the_analyses_with_a_parse(self, document_repo, analysis_repo):
+        await self._docs(document_repo, "doc-1", "doc-2")
+        await self._parsed(analysis_repo, "parsed", "doc-1", json="{}")
+        await self._parsed(analysis_repo, "empty", "doc-1", json=None)
+        await self._parsed(analysis_repo, "other", "doc-2", json="{}")
+        found = await analysis_repo.find_parsed_ids(["parsed", "empty", "other", "missing"])
+        assert found == {"parsed", "other"}
+        assert await analysis_repo.find_parsed_ids([]) == set()
 
     async def test_parse_json_reads_the_stored_parse(self, document_repo, analysis_repo):
         await self._docs(document_repo, "doc-1")
@@ -220,7 +231,7 @@ class TestAnalysisRepo:
         job = AnalysisJob(id="job-1", document_id="doc-1")
         await analysis_repo.insert(job)
         job.mark_running()
-        job.mark_completed(markdown="# Test", html="<h1>Test</h1>", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="# Test", html="<h1>Test</h1>", pages_json="[]"))
         await analysis_repo.update_status(job)
         await analysis_repo.insert(AnalysisJob(id="job-2", document_id="doc-1"))
 
@@ -236,6 +247,24 @@ class TestAnalysisRepo:
         assert completed.content_html is None
         assert completed.pages_json is None
         assert by_id["job-2"].status == AnalysisStatus.PENDING
+
+    async def test_find_summaries_by_document_keeps_to_that_document(
+        self, document_repo, analysis_repo
+    ):
+        # 12 INFO — counted before a delete, so no cap may cut it short.
+        await self._insert_doc(document_repo)
+        await document_repo.insert(
+            Document(id="doc-2", filename="other.pdf", storage_path="/tmp/other.pdf")
+        )
+        for i in range(3):
+            await analysis_repo.insert(AnalysisJob(id=f"job-{i}", document_id="doc-1"))
+        await analysis_repo.insert(AnalysisJob(id="job-other", document_id="doc-2"))
+
+        summaries = await analysis_repo.find_summaries_by_document("doc-1")
+
+        assert {s.id for s in summaries} == {"job-0", "job-1", "job-2"}
+        assert all(s.content_markdown is None for s in summaries)
+        assert await analysis_repo.find_summaries_by_document("missing") == []
 
     async def test_update_status(self, document_repo, analysis_repo):
         await self._insert_doc(document_repo)
@@ -255,7 +284,7 @@ class TestAnalysisRepo:
         await analysis_repo.insert(job)
 
         job.mark_running()
-        job.mark_completed(markdown="# Test", html="<h1>Test</h1>", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="# Test", html="<h1>Test</h1>", pages_json="[]"))
         await analysis_repo.update_status(job)
 
         found = await analysis_repo.find_by_id("job-1")
@@ -278,81 +307,6 @@ class TestAnalysisRepo:
     async def test_delete_nonexistent(self, analysis_repo):
         deleted = await analysis_repo.delete("nonexistent")
         assert deleted is False
-
-    async def test_find_latest_completed_by_document(self, document_repo, analysis_repo):
-        """Reasoning tunnel helper: latest COMPLETED analysis with document_json."""
-        await self._insert_doc(document_repo)
-
-        # Each job must be insert()'d before update_status can touch it.
-        # Scenarios: pending (excluded — not COMPLETED), old completed without
-        # document_json (excluded — NULL json), recent completed with
-        # document_json (the one we want), running (excluded).
-        pending = AnalysisJob(id="job-pending", document_id="doc-1")
-        await analysis_repo.insert(pending)
-
-        old_completed = AnalysisJob(id="job-old", document_id="doc-1")
-        await analysis_repo.insert(old_completed)
-        old_completed.mark_running()
-        old_completed.mark_completed(markdown="", html="", pages_json="[]")
-        await analysis_repo.update_status(old_completed)
-
-        latest = AnalysisJob(id="job-latest", document_id="doc-1")
-        await analysis_repo.insert(latest)
-        latest.mark_running()
-        latest.mark_completed(
-            markdown="md",
-            html="<p/>",
-            pages_json="[]",
-            document_json='{"body":{"children":[]},"texts":[]}',
-        )
-        await analysis_repo.update_status(latest)
-
-        running = AnalysisJob(id="job-running", document_id="doc-1")
-        await analysis_repo.insert(running)
-        running.mark_running()
-        await analysis_repo.update_status(running)
-
-        found = await analysis_repo.find_latest_completed_by_document("doc-1")
-        assert found is not None
-        assert found.id == "job-latest"
-        assert found.document_json == '{"body":{"children":[]},"texts":[]}'
-
-    async def test_find_latest_completed_by_document_none(self, document_repo, analysis_repo):
-        await self._insert_doc(document_repo)
-        found = await analysis_repo.find_latest_completed_by_document("doc-1")
-        assert found is None
-
-    async def test_find_latest_completed_prefers_newest_completed_even_without_json(
-        self, document_repo, analysis_repo
-    ):
-        await self._insert_doc(document_repo)
-
-        older_with_json = AnalysisJob(id="job-json", document_id="doc-1")
-        await analysis_repo.insert(older_with_json)
-        older_with_json.mark_running()
-        older_with_json.mark_completed(
-            markdown="old",
-            html="<p>old</p>",
-            pages_json="[]",
-            document_json='{"v":1}',
-        )
-        await analysis_repo.update_status(older_with_json)
-
-        latest_no_json = AnalysisJob(id="job-latest", document_id="doc-1")
-        await analysis_repo.insert(latest_no_json)
-        latest_no_json.mark_running()
-        latest_no_json.mark_completed(
-            markdown="latest",
-            html="<p>latest</p>",
-            pages_json="[]",
-        )
-        await analysis_repo.update_status(latest_no_json)
-
-        found = await analysis_repo.find_latest_completed("doc-1")
-
-        assert found is not None
-        assert found.id == "job-latest"
-        assert found.content_markdown == "latest"
 
     async def test_delete_by_document(self, document_repo, analysis_repo):
         await self._insert_doc(document_repo)

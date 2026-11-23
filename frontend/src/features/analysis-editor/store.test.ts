@@ -31,6 +31,38 @@ describe('analysis editor selection state', () => {
     store.discard()
   })
 
+  it('merges the selection in reading order whatever the click order (#392)', () => {
+    const store = useAnalysisEditorStore()
+    const element = (id: string) => ({
+      id,
+      selfRef: `#/texts/${id}`,
+      parentId: 'body',
+      type: 'text',
+      text: id,
+      headingLevel: null,
+      children: [],
+      provenance: [],
+      editable: true,
+      supportedOperations: ['mergeText'],
+      nonEditableReason: null,
+    })
+    store.saved = {
+      model: { baseAnalysisId: 'analysis-1', elements: [element('a'), element('b')] },
+      readingOrder: ['a', 'b'],
+    } as never
+    store.toggleMergeSelection('b')
+    store.toggleMergeSelection('a')
+
+    store.mergeSelected()
+
+    expect(JSON.parse(store.conflictDetails)).toEqual([
+      { type: 'mergeText', elementIds: ['a', 'b'], separator: ' ' },
+    ])
+    expect(store.selectedElementId).toBe('a')
+    expect(store.mergeSelection).toEqual(['a'])
+    store.discard()
+  })
+
   it('clears focus when a selected element is deleted as part of a range', () => {
     const store = useAnalysisEditorStore()
     store.selectedElementId = 'selected'
@@ -153,6 +185,30 @@ describe('analysis editor selection state', () => {
     store.discard()
   })
 
+  it('keeps pending edits and reports a rejected save apart from load errors', async () => {
+    const store = useAnalysisEditorStore()
+    store.documentId = 'doc-1'
+    store.baseAnalysisId = 'analysis-1'
+    store.saved = { appliedThroughSequence: 3 } as never
+    store.moveElement('moved', 'target', 'after')
+    vi.mocked(saveAnalysisEdits).mockRejectedValue(new Error('422: Too many commands'))
+
+    await store.save()
+
+    expect(store.saveError).toBe('422: Too many commands')
+    expect(store.error).toBeNull()
+    expect(store.conflict).toBeNull()
+    expect(store.hasUnsavedChanges).toBe(true)
+
+    store.queueReplaceText('moved', 'Shorter')
+    expect(store.saveError).toBeNull()
+
+    await store.save()
+    expect(store.saveError).not.toBeNull()
+    store.discard()
+    expect(store.saveError).toBeNull()
+  })
+
   it('ignores an in-flight preview after discarding edits', async () => {
     let resolvePreview!: (value: never) => void
     vi.mocked(previewAnalysisEdits).mockImplementation(
@@ -172,6 +228,46 @@ describe('analysis editor selection state', () => {
     expect(store.preview).toBeNull()
     expect(store.effective).toBe(store.saved)
     expect(store.previewing).toBe(false)
+  })
+
+  it('cancels the debounced preview when the editor closes', () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(previewAnalysisEdits).mockClear()
+      const store = useAnalysisEditorStore()
+      store.documentId = 'doc-1'
+      store.saved = { appliedThroughSequence: 0 } as never
+      store.queueReplaceText('element-1', 'Pending')
+
+      store.cancelPreview()
+      vi.advanceTimersByTime(1000)
+
+      expect(previewAnalysisEdits).not.toHaveBeenCalled()
+      expect(store.hasUnsavedChanges).toBe(true)
+      expect(store.previewing).toBe(false)
+      store.discard()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('aborts an in-flight preview when the editor closes', async () => {
+    let signal!: AbortSignal
+    vi.mocked(previewAnalysisEdits).mockImplementation((_doc, _body, s) => {
+      signal = s as AbortSignal
+      return new Promise(() => {})
+    })
+    const store = useAnalysisEditorStore()
+    store.documentId = 'doc-1'
+    store.saved = { appliedThroughSequence: 0 } as never
+    store.queueReplaceText('element-1', 'Pending')
+    void store.previewNow()
+
+    store.cancelPreview()
+
+    expect(signal.aborted).toBe(true)
+    expect(store.previewing).toBe(false)
+    store.discard()
   })
 
   it('undoes and redoes saved edits through the history endpoint', async () => {
@@ -201,7 +297,11 @@ describe('analysis editor selection state', () => {
 
     await store.undo()
 
-    expect(setAnalysisEditActive).toHaveBeenCalledWith('doc-1', 1, false, 1, 'analysis-1')
+    expect(setAnalysisEditActive).toHaveBeenCalledWith(
+      'doc-1',
+      { sequence: 1, active: false, expectedAppliedThroughSequence: 1 },
+      'analysis-1',
+    )
     expect(store.history[0]?.active).toBe(false)
     expect(store.canRedo).toBe(true)
 
@@ -213,7 +313,11 @@ describe('analysis editor selection state', () => {
 
     await store.redo()
 
-    expect(setAnalysisEditActive).toHaveBeenLastCalledWith('doc-1', 1, true, 2, 'analysis-1')
+    expect(setAnalysisEditActive).toHaveBeenLastCalledWith(
+      'doc-1',
+      { sequence: 1, active: true, expectedAppliedThroughSequence: 2 },
+      'analysis-1',
+    )
     expect(store.history[0]?.active).toBe(true)
   })
 })

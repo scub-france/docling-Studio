@@ -68,12 +68,16 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fetchAnalysis, fetchAnalysisSummaries } from '../features/analysis'
 import { fetchDocumentPages } from '../features/document'
-import type { Analysis, Page } from '../shared/types'
+import type { Analysis, AnalysisSummary, Page } from '../shared/types'
 import { useI18n } from '../shared/i18n'
 import { ROUTES } from '../shared/routing/names'
 import DocParseTab from './DocParseTab.vue'
 import DownloadDropdown from '../features/document/ui/DownloadDropdown.vue'
-import { AnalysisEditor, useAnalysisEditorStore } from '../features/analysis-editor'
+import {
+  AnalysisEditor,
+  parseAnalysisPages,
+  useAnalysisEditorStore,
+} from '../features/analysis-editor'
 import { useFeatureFlagStore } from '../features/feature-flags/store'
 
 const props = defineProps<{ id: string; focusRef?: string; page?: number }>()
@@ -85,13 +89,7 @@ const editMode = ref(false)
 const editorStore = useAnalysisEditorStore()
 const featureFlags = useFeatureFlagStore()
 const editorEnabled = computed(() => featureFlags.isEnabled('analysisEditor'))
-const previewPages = computed<Page[]>(() => {
-  try {
-    return JSON.parse(analysis.value?.pagesJson ?? '[]') as Page[]
-  } catch {
-    return []
-  }
-})
+const previewPages = computed<Page[]>(() => parseAnalysisPages(analysis.value))
 
 function closeEditor(): void {
   if (editorStore.hasUnsavedChanges && !window.confirm(t('analysisEditor.leaveConfirm'))) return
@@ -104,41 +102,53 @@ function formatDate(value: string): string {
   )
 }
 
-onMounted(async () => {
-  try {
-    const summary = (await fetchAnalysisSummaries()).find((item) => item.id === props.id)
-    if (summary) {
-      const pages = await fetchDocumentPages(summary.documentId)
-      analysis.value = {
-        ...summary,
-        contentMarkdown: null,
-        contentHtml: null,
-        pagesJson: JSON.stringify(pages),
-        chunksJson: null,
-        hasDocumentJson: false,
-      }
-      loading.value = false
-      await nextTick()
-    }
-    analysis.value = await fetchAnalysis(props.id)
-  } catch {
-    // A missing summary or unavailable page manifest should still allow the
-    // existing full analysis path to open the document.
-    if (!analysis.value) {
-      try {
-        analysis.value = await fetchAnalysis(props.id)
-      } catch {
-        error.value = true
-      }
-    } else {
-      // The manifest is only a temporary preview. A failed full request must
-      // not present it as a completed saved analysis.
-      analysis.value = null
-      error.value = true
-    }
-  } finally {
-    loading.value = false
+/** Frame-only analysis built from the light summary and page sizes, shown
+ * while the full payload is still downloading. */
+function buildAnalysisFrame(summary: AnalysisSummary, pages: Page[]): Analysis {
+  return {
+    ...summary,
+    contentMarkdown: null,
+    contentHtml: null,
+    pagesJson: JSON.stringify(pages),
+    chunksJson: null,
+    // Keeps editing disabled until the full analysis arrives.
+    hasDocumentJson: false,
   }
+}
+
+/** The frame, or null when the summary or page manifest is unavailable:
+ * the full analysis request still opens the page in that case. */
+async function loadAnalysisFrame(id: string): Promise<Analysis | null> {
+  try {
+    const summary = (await fetchAnalysisSummaries()).find((item) => item.id === id)
+    if (!summary) return null
+    return buildAnalysisFrame(summary, await fetchDocumentPages(summary.documentId))
+  } catch {
+    return null
+  }
+}
+
+async function loadFullAnalysis(id: string): Promise<Analysis | null> {
+  try {
+    return await fetchAnalysis(id)
+  } catch {
+    return null
+  }
+}
+
+async function showFrame(id: string): Promise<void> {
+  analysis.value = await loadAnalysisFrame(id)
+  if (!analysis.value) return
+  loading.value = false
+  await nextTick()
+}
+
+onMounted(async () => {
+  await showFrame(props.id)
+  // A failed full request must not leave the frame posing as a saved analysis.
+  analysis.value = await loadFullAnalysis(props.id)
+  error.value = analysis.value === null
+  loading.value = false
 })
 
 watch(editorEnabled, (enabled) => {

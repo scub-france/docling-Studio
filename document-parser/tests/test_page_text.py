@@ -12,7 +12,7 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 import pytest
 
-from domain.quote_marks import quote_marks
+from domain.quote_marks import find_quote_marks
 from infra.page_text import PdfPageTextReader
 
 
@@ -44,7 +44,7 @@ def notice(tmp_path):
 
 class TestGlyphs:
     def test_every_character_with_its_box_from_the_top_left(self, notice):
-        glyphs = PdfPageTextReader().glyphs(notice, page=1)
+        glyphs = PdfPageTextReader().read_glyphs(notice, page=1)
         text = "".join(g.char for g in glyphs)
         assert "The notice period is three months" in text
         first = glyphs[0]
@@ -55,18 +55,18 @@ class TestGlyphs:
         assert 0.1 < top < bottom < 0.14
 
     def test_found_quotes_land_on_their_lines(self, notice):
-        glyphs = PdfPageTextReader().glyphs(notice, page=1)
-        marks = quote_marks(glyphs, "three months from the", page=1)
+        glyphs = PdfPageTextReader().read_glyphs(notice, page=1)
+        marks = find_quote_marks(glyphs, "three months from the", page=1)
         assert len(marks) == 2
         assert marks[0].top < marks[1].top
         assert marks[1].left == pytest.approx(100 / 600, abs=0.002)
 
     def test_a_page_past_the_end_has_no_glyphs(self, notice):
-        assert PdfPageTextReader().glyphs(notice, page=2) == []
+        assert PdfPageTextReader().read_glyphs(notice, page=2) == []
 
     def test_a_rotated_page_has_none_rather_than_wrong_ones(self, tmp_path):
         path = text_pdf(tmp_path / "turned.pdf", [(100, 700, "Turned page")], rotation=90)
-        assert PdfPageTextReader().glyphs(path, page=1) == []
+        assert PdfPageTextReader().read_glyphs(path, page=1) == []
 
     def test_a_page_without_text_has_none(self, tmp_path):
         pdf = pdfium.PdfDocument.new()
@@ -74,4 +74,4 @@ class TestGlyphs:
         path = tmp_path / "blank.pdf"
         pdf.save(str(path))
         pdf.close()
-        assert PdfPageTextReader().glyphs(str(path), page=1) == []
+        assert PdfPageTextReader().read_glyphs(str(path), page=1) == []

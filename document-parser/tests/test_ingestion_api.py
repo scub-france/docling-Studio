@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.ingestion import router
-from domain.models import AnalysisJob
+from domain.models import AnalysisJob, AnalysisOutput
 from services.ingestion_service import IngestionResult
 from tests.app_state import wire_state
 
@@ -31,11 +31,13 @@ def mock_analysis_service() -> AsyncMock:
     job.document_filename = "test.pdf"
     job.mark_running()
     job.mark_completed(
-        markdown="# Test",
-        html="<h1>Test</h1>",
-        pages_json="[]",
-        document_json='{"doc": true}',
-        chunks_json='[{"text": "hello"}]',
+        AnalysisOutput(
+            markdown="# Test",
+            html="<h1>Test</h1>",
+            pages_json="[]",
+            document_json='{"doc": true}',
+            chunks_json='[{"text": "hello"}]',
+        )
     )
     svc.find_by_id.return_value = job
     return svc
@@ -76,7 +78,7 @@ class TestIngestAnalysis:
     def test_ingest_no_chunks(self, client: TestClient, mock_analysis_service: AsyncMock) -> None:
         job = AnalysisJob(document_id="doc-1")
         job.mark_running()
-        job.mark_completed(markdown="x", html="x", pages_json="[]")
+        job.mark_completed(AnalysisOutput(markdown="x", html="x", pages_json="[]"))
         mock_analysis_service.find_by_id.return_value = job
         resp = client.post("/api/ingestion/job-1")
         assert resp.status_code == 400

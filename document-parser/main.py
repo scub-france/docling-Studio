@@ -36,6 +36,8 @@ from api.state import AppState
 from api.stores import router as stores_router
 from bootstrap import AppStateBuilder
 from bootstrap.mcp_mount import mount_mcp_server
+from infra.body_limit import BodySizeLimitMiddleware
+from infra.host_guard import ApiHostGuardMiddleware, log_host_check
 from infra.rate_limiter import RateLimiterMiddleware
 from infra.settings import settings
 from persistence.database import get_connection
@@ -45,6 +47,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Body ceiling of `POST /api/analyses/import`. Page images embedded as base64
+# make a Docling JSON large; nginx bounds every `/api` body before this.
+MAX_IMPORT_SIZE_MB = 200
 
 
 @asynccontextmanager
@@ -87,6 +93,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Middlewares run outermost-last-added: the Host check, then the rate limiter,
+# then CORS, then the import body limit (inside CORS, so its 413 carries the
+# CORS headers the browser needs to read it).
+app.add_middleware(
+    BodySizeLimitMiddleware,
+    path="/api/analyses/import",  # `import_analysis` in api/analyses.py
+    max_bytes=MAX_IMPORT_SIZE_MB * 1024 * 1024,
+    detail=f"Docling JSON too large (max {MAX_IMPORT_SIZE_MB} MB)",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -100,6 +115,11 @@ if settings.rate_limit_rpm > 0:
         requests_per_window=settings.rate_limit_rpm,
         window_seconds=60,
     )
+# Outermost: a request for a foreign Host is refused before it counts
+# against the rate limit or reaches a route.
+if settings.api_allowed_hosts:
+    app.add_middleware(ApiHostGuardMiddleware, allowed_hosts=settings.api_allowed_hosts)
+log_host_check(settings.api_allowed_hosts)
 
 app.include_router(documents_router)
 app.include_router(document_chunks_router)
@@ -130,18 +150,11 @@ _mcp = mount_mcp_server(app)
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     """Health check endpoint — verifies database connectivity."""
-    db_status = "ok"
-    try:
-        async with get_connection() as db:
-            await db.execute("SELECT 1")
-    except Exception:
-        db_status = "error"
-        logger.warning("Health check: database unreachable", exc_info=True)
+    db_status = await _probe_database()
 
     # Tolerates a missing container: the app is importable (and this endpoint
     # answerable) before lifespan has run, which is how the API tests mount it.
     state: AppState = getattr(app.state, "container", None) or AppState()
-    runner = state.reasoning_runner
     return HealthResponse(
         status="ok" if db_status == "ok" else "degraded",
         version=settings.app_version,
@@ -155,10 +168,7 @@ async def health() -> HealthResponse:
         ),
         paste_allowed_image_types=settings.paste_allowed_image_types,
         ingestion_available=state.ingestion_service is not None,
-        # True when the runner is wired and reports itself available. Actual
-        # Ollama reachability is checked lazily at call time so health checks
-        # never block on the LLM host. Follows #317 runtime rebuilds.
-        reasoning_available=runner is not None and runner.is_available,
+        reasoning_available=_is_reasoning_available(state),
         ask_mode=settings.ask_mode,
         # 0.6.1 — Surface flags (#257).
         studio_mode_enabled=settings.studio_mode_enabled,
@@ -168,3 +178,23 @@ async def health() -> HealthResponse:
         linked_mode_enabled=settings.linked_mode_enabled,
         analysis_editor_enabled=settings.analysis_editor_enabled,
     )
+
+
+async def _probe_database() -> str:
+    """`"ok"` when the database answers a trivial query, else `"error"`."""
+    db_status = "ok"
+    try:
+        async with get_connection() as db:
+            await db.execute("SELECT 1")
+    except Exception:
+        db_status = "error"
+        logger.warning("Health check: database unreachable", exc_info=True)
+    return db_status
+
+
+def _is_reasoning_available(state: AppState) -> bool:
+    # True when the runner is wired and reports itself available. Actual
+    # Ollama reachability is checked lazily at call time so health checks
+    # never block on the LLM host. Follows #317 runtime rebuilds.
+    runner = state.reasoning_runner
+    return runner is not None and runner.is_available

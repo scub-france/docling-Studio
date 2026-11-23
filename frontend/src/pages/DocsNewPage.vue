@@ -56,7 +56,7 @@
           />
         </svg>
         <span class="upload-item-name" :title="item.file.name">{{ item.file.name }}</span>
-        <span class="upload-item-status">{{ statusLabel(item.status) }}</span>
+        <span class="upload-item-status">{{ getStatusLabel(item.status) }}</span>
         <span v-if="item.status === 'uploading'" class="upload-spinner" />
         <RouterLink
           v-if="item.status === 'done' && item.docId"
@@ -110,7 +110,7 @@ const allDone = computed(
     uploads.value.every((u) => u.status === 'done' || u.status === 'failed'),
 )
 
-function statusLabel(status: UploadStatus): string {
+function getStatusLabel(status: UploadStatus): string {
   return t(`docsNew.${status}`)
 }
 
@@ -376,7 +376,7 @@ async function uploadOne(item: UploadItem): Promise<void> {
   padding: 7px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: white;
+  color: var(--on-accent);
   background: var(--accent);
   border: none;
   border-radius: var(--radius-sm);

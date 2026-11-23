@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Citation</title>
@@ -392,7 +392,7 @@
 </style>
 </head>
 <body>
-<main id="root"><p class="status">En attente d'une citation…</p></main>
+<main id="root"><p class="status">Waiting for a citation…</p></main>
 <script>
   "use strict";
   const root = document.getElementById("root");
@@ -402,6 +402,102 @@
   const esc = (value) =>
     String(value ?? "").replace(/[&<>"']/g, (ch) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+
+  // ---- the card's own words -------------------------------------------
+  // English by default; a browser set to French gets French. Only the card's
+  // labels are translated — the quote is the document's text and stays as is.
+  const MESSAGES = {
+    en: {
+      waiting: "Waiting for a citation…",
+      exactText: "Exact text from the document",
+      readMore: "Read more",
+      showLess: "Show less",
+      note: "Text and page supplied by the server, from the Docling analysis, at the place cited.",
+      copyCitation: "Copy citation",
+      openInStudio: "Open in Docling Studio",
+      copied: "Citation copied",
+      clipboardBlocked: "Clipboard blocked — select the text below",
+      hostSilent: "the host did not answer",
+      callFailed: "call failed",
+      serverRefused: "the server refused",
+      noServerTools: "This host does not relay tool calls: no page preview.",
+      previewFailed: (detail) => `Page preview unavailable — ${detail}.`,
+      previewNoImage: "Page preview unavailable: the response carried no image.",
+      enlargePage: "Enlarge page",
+      pageAlt: (page) => `Page ${page}, the cited passage highlighted`,
+      enlargedPage: "Enlarged page",
+      close: "Close",
+      enlarging: "enlarging…",
+      cancelled: "The call was cancelled.",
+      failed: (detail) => `The call failed: ${detail}`,
+      noDetail: "no detail",
+      noCitation: "The result contains no citation to show.",
+      // What the pill says. Only where docling's own word would mislead a
+      // reader: "span" is the server's name for a range of elements,
+      // "passage" is the reader's.
+      kinds: {
+        span: "passage",
+        element: "element",
+        section_header: "section heading",
+        title: "title",
+        text: "paragraph",
+        paragraph: "paragraph",
+        list_item: "list item",
+        table: "table",
+        picture: "figure",
+        caption: "caption",
+        footnote: "footnote",
+        formula: "formula",
+        code: "code",
+      },
+    },
+    fr: {
+      waiting: "En attente d'une citation…",
+      exactText: "Texte exact du document",
+      readMore: "Lire la suite",
+      showLess: "Réduire",
+      note: "Texte et page fournis par le serveur, depuis l’analyse Docling, à l’endroit cité.",
+      copyCitation: "Copier la citation",
+      openInStudio: "Ouvrir dans Docling Studio",
+      copied: "Citation copiée",
+      clipboardBlocked: "Presse-papiers bloqué — sélectionnez le texte ci-dessous",
+      hostSilent: "l’hôte n’a pas répondu",
+      callFailed: "l’appel a échoué",
+      serverRefused: "le serveur a refusé",
+      noServerTools: "Cet hôte ne relaie pas les appels d'outils : pas d'aperçu de page.",
+      previewFailed: (detail) => `Aperçu de la page indisponible — ${detail}.`,
+      previewNoImage: "Aperçu de la page indisponible : la réponse ne portait pas d'image.",
+      enlargePage: "Agrandir la page",
+      pageAlt: (page) => `Page ${page}, le passage cité surligné`,
+      enlargedPage: "Page agrandie",
+      close: "Fermer",
+      enlarging: "agrandissement en cours…",
+      cancelled: "L'appel a été annulé.",
+      failed: (detail) => `L'appel a échoué : ${detail}`,
+      noDetail: "sans détail",
+      noCitation: "Le résultat ne contient aucune citation à afficher.",
+      kinds: {
+        span: "passage",
+        element: "élément",
+        section_header: "titre de section",
+        title: "titre",
+        text: "paragraphe",
+        paragraph: "paragraphe",
+        list_item: "élément de liste",
+        table: "tableau",
+        picture: "figure",
+        caption: "légende",
+        footnote: "note",
+        formula: "formule",
+        code: "code",
+      },
+    },
+  };
+  // `fr`, `fr-FR`, `fr-CA`… read French; every other language reads English.
+  const LOCALE = String(navigator.language || "").toLowerCase().startsWith("fr") ? "fr" : "en";
+  const L = MESSAGES[LOCALE];
+  document.documentElement.lang = LOCALE;
+  root.innerHTML = `<p class="status">${esc(L.waiting)}</p>`;
 
   // Element-type palette, kept byte-identical to the Studio one
   // (frontend/src/shared/elementColors.ts) so the same element carries the
@@ -420,23 +516,6 @@
   // `list_item`, a heading a `section_header`. Fold them onto the swatch a
   // reader already associates with that kind of block.
   const LABEL_ALIASES = { list_item: "list", page_header: "text", page_footer: "text", footnote: "text" };
-  // What the pill says. Only where docling's own word would mislead a reader:
-  // "span" is the server's name for a range of elements, "passage" is the
-  // reader's.
-  const KIND_LABELS = {
-    span: "passage",
-    section_header: "titre de section",
-    title: "titre",
-    text: "paragraphe",
-    paragraph: "paragraphe",
-    list_item: "élément de liste",
-    table: "tableau",
-    picture: "figure",
-    caption: "légende",
-    footnote: "note",
-    formula: "formule",
-    code: "code",
-  };
   const colorFor = (label) => {
     const key = LABEL_ALIASES[label] || label;
     return ELEMENT_COLORS[key] || UNKNOWN_ELEMENT_COLOR;
@@ -574,7 +653,7 @@
     const { html, stats } = renderMarkdown(view.quote);
     const color = colorFor(view.label);
     const label = String(view.label || "element");
-    const kind = KIND_LABELS[label] || label.replace(/_/g, " ");
+    const kind = L.kinds[label] || label.replace(/_/g, " ");
     // A span always covers at least two elements, so it is a passage however
     // short it reads — never the card's title.
     const asTitle =
@@ -603,16 +682,16 @@
           <div class="proof">
             <span class="badge-ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-              aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Texte exact du document</span>
+              aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>${esc(L.exactText)}</span>
             <span class="pageno"><span class="dot" style="background:${esc(color)}"></span>${esc(kind)} · page ${esc(view.page ?? "—")}</span>
           </div>
           ${crumbs}
           <div class="quote${asTitle ? " as-title" : ""}${longText ? " clamped" : ""}" id="quote">${html}</div>
-          ${longText ? '<button type="button" class="more" data-act="more">Lire la suite</button>' : ""}
-          <p class="note">Texte et page fournis par le serveur, depuis l’analyse Docling, à l’endroit cité.</p>
+          ${longText ? `<button type="button" class="more" data-act="more">${esc(L.readMore)}</button>` : ""}
+          <p class="note">${esc(L.note)}</p>
           <div class="row">
-            <button data-act="copy">Copier la citation</button>
-            ${isAbsolute(view.deep_link) ? '<button class="primary" data-act="open">Ouvrir dans Docling Studio</button>' : ""}
+            <button data-act="copy">${esc(L.copyCitation)}</button>
+            ${isAbsolute(view.deep_link) ? `<button class="primary" data-act="open">${esc(L.openInStudio)}</button>` : ""}
             <span class="said" id="said"></span>
           </div>
         </div>
@@ -641,13 +720,13 @@
       const quote = document.getElementById("quote");
       const folded = quote?.classList.toggle("clamped");
       const button = root.querySelector('[data-act="more"]');
-      if (button) button.textContent = folded ? "Lire la suite" : "Réduire";
+      if (button) button.textContent = folded ? L.readMore : L.showLess;
       fitToFrame(true);
       reportSize();
       return;
     }
     if (kind === "copy") {
-      copy(`"${view.quote}" — ${view.uri}`, "Citation copiée");
+      copy(`"${view.quote}" — ${view.uri}`, L.copied);
       return;
     }
     if (kind === "open") {
@@ -677,7 +756,7 @@
       let copied = false;
       try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
       document.body.removeChild(area);
-      say(copied ? confirmation : "Clipboard blocked — select the text below");
+      say(copied ? confirmation : L.clipboardBlocked);
     };
     let promise = null;
     try {
@@ -703,7 +782,7 @@
       const id = `app-${nextRequestId++}`;
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new Error("the host did not answer"));
+        reject(new Error(L.hostSilent));
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer });
       post({ jsonrpc: "2.0", id, method, params });
@@ -715,7 +794,7 @@
     if (!entry) return false;
     pending.delete(data.id);
     clearTimeout(entry.timer);
-    if (data.error) entry.reject(new Error(data.error.message || "call failed"));
+    if (data.error) entry.reject(new Error(data.error.message || L.callFailed));
     else entry.resolve(data.result);
     return true;
   }
@@ -811,7 +890,7 @@
 
     const negotiated = await handshake();
     if (negotiated && host.capabilities && !host.capabilities.serverTools) {
-      failLocator(sheet, "Cet hôte ne relaie pas les appels d'outils : pas d'aperçu de page.");
+      failLocator(sheet, L.noServerTools);
       return;
     }
 
@@ -822,18 +901,18 @@
         arguments: { uri: view.uri },
       });
       if (result && (result.isError || result.is_error)) {
-        throw new Error(result?.content?.[0]?.text || "the server refused");
+        throw new Error(result?.content?.[0]?.text || L.serverRefused);
       }
       img =
         result?.structuredContent ??
         result?.structured_content ??
         JSON.parse(result?.content?.[0]?.text ?? "{}");
     } catch (error) {
-      failLocator(sheet, `Aperçu de la page indisponible — ${error.message}.`);
+      failLocator(sheet, L.previewFailed(error.message));
       return;
     }
     if (!img || !img.data_uri || !img.width || !img.height) {
-      failLocator(sheet, "Aperçu de la page indisponible : la réponse ne portait pas d'image.");
+      failLocator(sheet, L.previewNoImage);
       return;
     }
 
@@ -852,9 +931,9 @@
     sheet.classList.remove("pending");
     sheet.classList.add("ready");
     sheet.disabled = false;
-    sheet.title = "Agrandir la page";
+    sheet.title = L.enlargePage;
     sheet.innerHTML =
-      `<img alt="Page ${esc(img.page)}, le passage cité surligné" src="${esc(
+      `<img alt="${esc(L.pageAlt(img.page))}" src="${esc(
         img.data_uri
       )}">` + mark + `<span class="glass" aria-hidden="true">⤢</span>`;
 
@@ -911,10 +990,10 @@
   lens.hidden = true;
   lens.setAttribute("role", "dialog");
   lens.setAttribute("aria-modal", "true");
-  lens.setAttribute("aria-label", "Page agrandie");
+  lens.setAttribute("aria-label", L.enlargedPage);
   lens.innerHTML =
     '<div class="lens-bar"><span class="lens-title" id="lens-title"></span>' +
-    '<button type="button" id="lens-close">Fermer</button></div>' +
+    `<button type="button" id="lens-close">${esc(L.close)}</button></div>` +
     '<div class="lens-stage" id="lens-stage"></div>';
   document.body.appendChild(lens);
   lens.querySelector("#lens-close").addEventListener("click", closeLens);
@@ -954,7 +1033,7 @@
         20000
       );
       if (result && (result.isError || result.is_error)) {
-        throw new Error(result?.content?.[0]?.text || "the server refused");
+        throw new Error(result?.content?.[0]?.text || L.serverRefused);
       }
       const img =
         result?.structuredContent ??
@@ -988,13 +1067,13 @@
     const width = enlarged ? `${Number(img.width) || 860}px` : "860px";
     lens.querySelector("#lens-stage").innerHTML =
       `<div class="lens-page${provisional}" style="width:${width};max-width:100%">` +
-      `<img alt="Page ${esc(img.page)}, le passage cité surligné" src="${esc(
+      `<img alt="${esc(L.pageAlt(img.page))}" src="${esc(
         img.data_uri
       )}">${mark}</div>`;
     const pages = img.page_count ? ` / ${esc(img.page_count)}` : "";
     lens.querySelector("#lens-title").innerHTML =
       `page <b>${esc(img.page)}</b>${pages} · ${esc(current ? current.ref : "")}` +
-      (enlarged ? "" : " · agrandissement en cours…");
+      (enlarged ? "" : ` · ${esc(L.enlarging)}`);
   }
 
   // ---- fitting a fixed frame ------------------------------------------
@@ -1150,11 +1229,11 @@
     // A refused or cancelled call has nothing to show: say so rather than
     // leave the card waiting.
     if (data?.method === "ui/notifications/tool-cancelled") {
-      showState("L'appel a été annulé.");
+      showState(L.cancelled);
       return;
     }
     if (data?.method === "ui/notifications/tool-result" && data.params?.isError) {
-      showState(`L'appel a échoué : ${data.params.content?.[0]?.text || "sans détail"}`);
+      showState(L.failed(data.params.content?.[0]?.text || L.noDetail));
       return;
     }
     const view = extract(data);
@@ -1162,7 +1241,7 @@
       render(view);
       hydrateLocator(view);
     } else if (data?.method === "ui/notifications/tool-result") {
-      showState("Le résultat ne contient aucune citation à afficher.");
+      showState(L.noCitation);
     }
   });
 

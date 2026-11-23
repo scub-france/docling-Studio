@@ -9,7 +9,7 @@
 export type SelectionState = 'none' | 'some' | 'all'
 
 /** How much of the listed documents the selection covers. */
-export function selectionState(
+export function getSelectionState(
   selected: ReadonlySet<string>,
   listed: readonly string[],
 ): SelectionState {
@@ -23,7 +23,7 @@ export function toggleListed(
   selected: ReadonlySet<string>,
   listed: readonly string[],
 ): Set<string> {
-  return selectionState(selected, listed) === 'all' ? new Set() : new Set(listed)
+  return getSelectionState(selected, listed) === 'all' ? new Set() : new Set(listed)
 }
 
 export function toggleOne(selected: ReadonlySet<string>, id: string): Set<string> {

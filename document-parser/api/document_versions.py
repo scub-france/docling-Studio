@@ -2,8 +2,8 @@
 
 Exposes the History timeline for a document — frozen (analysis_id,
 chunks_snapshot) pairs created on `+ New analysis` runs and on
-`+ Generate chunks` invocations. The drawer in the doc workspace reads
-this list and can restore any version to overwrite the live chunkset.
+`+ Generate chunks` invocations. A client reads this list and can restore
+any version to overwrite the live chunkset.
 
 Routes mount under `/api/documents/{doc_id}/...`. Read-mostly + a single
 write endpoint (`restore`) — the version-creation triggers fire from
@@ -16,9 +16,10 @@ import json
 import logging
 from typing import NoReturn
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from api import deps  # noqa: TC001
+from api.errors import to_http_error
 from api.schemas import DocumentVersionResponse
 from services.version_service import VersionServiceError
 
@@ -47,7 +48,7 @@ def _to_response(version) -> DocumentVersionResponse:
 
 
 def _raise_for(error: VersionServiceError) -> NoReturn:
-    raise HTTPException(status_code=error.http_status, detail=str(error))
+    raise to_http_error(error)
 
 
 @router.get("/{doc_id}/versions", response_model=list[DocumentVersionResponse])

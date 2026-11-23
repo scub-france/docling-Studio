@@ -12,6 +12,7 @@ Rules enforced:
 - persistence -> no import from api, services, infra
 - domain   -> no import of fastapi, sqlalchemy, httpx, opensearchpy
 - services -> no import of API or infrastructure adapter packages
+- services -> no filesystem access (`os`, `shutil`, `pathlib.Path`, `open()`)
 """
 
 from __future__ import annotations
@@ -64,16 +65,6 @@ _LAYER_RULES = {
 # Pre-existing violations, recorded as exact source and target modules. They
 # remain migration debt; a new import or a different target cannot use this list.
 _LEGACY_LAYER_IMPORTS = {
-    ("services/store_service.py", "persistence.document_repo"),
-    ("services/store_service.py", "persistence.document_store_link_repo"),
-    ("services/store_service.py", "persistence.store_repo"),
-    ("services/chunk_service.py", "persistence.document_store_link_repo"),
-    ("services/chunk_service.py", "persistence.store_repo"),
-    ("services/store_backend_resolver.py", "infra.neo4j.driver_pool"),
-    ("services/store_backend_resolver.py", "infra.opensearch_pool"),
-    ("services/store_backend_resolver.py", "infra.opensearch_store"),
-    ("services/store_backend_resolver.py", "persistence.store_repo"),
-    ("services/version_service.py", "persistence.document_version_repo"),
     ("persistence/store_repo.py", "infra.secrets"),
 }
 
@@ -121,9 +112,8 @@ class TestDocumentAgentServicesAreFrameworkFree:
     Rasterising a page was inlined in `NavigationService` — PIL, a filesystem
     read and an import of another service, in the middle of a use case. The
     `PageRasterizer` port moved all three behind `infra/page_raster.py`; this
-    is what stops them coming back. Scoped to these four modules rather than
-    all of `services/` because `document_service.py` rasterises directly and
-    predates the port.
+    is what stops them coming back. PIL is checked on these modules only; the
+    PDF libraries are forbidden in all of `services/` further down.
     """
 
     MODULES = (
@@ -201,13 +191,15 @@ _SERVICES_FORBIDDEN_EXTERNALS = {
     "httpx",
     "neo4j",
     "opensearchpy",
+    "pdf2image",
+    "pypdfium2",
     "starlette",
 }
 
 # Service imports that should move behind ports before joining the denylist.
 # Keep this list explicit: deleting a candidate means its migration must also
 # add the package to `_SERVICES_FORBIDDEN_EXTERNALS`.
-_SERVICES_EXTERNAL_MIGRATION_CANDIDATES = {"pdf2image", "pypdfium2"}
+_SERVICES_EXTERNAL_MIGRATION_CANDIDATES: set[str] = set()
 
 
 class TestDomainExternalDependencies:
@@ -234,6 +226,80 @@ class TestServicesExternalDependencies:
             "A service adapter candidate was removed; add it to "
             "_SERVICES_FORBIDDEN_EXTERNALS or update the inventory."
         )
+
+
+# ---------------------------------------------------------------------------
+# Services never touch the filesystem (ast-based)
+# ---------------------------------------------------------------------------
+
+# Stored files are reached through ports (`DocumentFileStore`, `PdfInspector`,
+# `PageRasterizer`, ...): a service handles the path strings, never the disk.
+_SERVICES_FORBIDDEN_FILESYSTEM_MODULES = {"glob", "os", "shutil", "tempfile"}
+# `PurePath` only splits strings; `Path` and the module itself reach the disk.
+_PURE_PATHLIB_NAMES = {"PurePath", "PurePosixPath", "PureWindowsPath"}
+
+
+def _filesystem_access(tree: ast.AST) -> set[str]:
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                if root in _SERVICES_FORBIDDEN_FILESYSTEM_MODULES or root == "pathlib":
+                    found.add(f"import {alias.name}")
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            root = node.module.split(".")[0]
+            if root in _SERVICES_FORBIDDEN_FILESYSTEM_MODULES:
+                found.add(f"from {node.module} import")
+            elif root == "pathlib":
+                found.update(
+                    f"from pathlib import {alias.name}"
+                    for alias in node.names
+                    if alias.name not in _PURE_PATHLIB_NAMES
+                )
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "open"
+        ):
+            found.add("open()")
+    return found
+
+
+def _services_filesystem_access() -> set[tuple[str, str]]:
+    accesses: set[tuple[str, str]] = set()
+    for py_file in (_PROJECT_ROOT / "services").rglob("*.py"):
+        if any(part in _SKIP_PATH_PARTS for part in py_file.parts):
+            continue
+        source = str(py_file.relative_to(_PROJECT_ROOT))
+        tree = ast.parse(py_file.read_text(), filename=source)
+        accesses.update((source, access) for access in _filesystem_access(tree))
+    return accesses
+
+
+def test_services_do_not_touch_the_filesystem():
+    accesses = _services_filesystem_access()
+    assert not accesses, f"Filesystem access in services, add a port: {sorted(accesses)}"
+
+
+def test_filesystem_scanner_detects_each_access(tmp_path, monkeypatch):
+    """Guard against a green suite when the scanner sees nothing."""
+    source = tmp_path / "services" / "probe.py"
+    source.parent.mkdir()
+    source.write_text(
+        "import os.path\n"
+        "from shutil import rmtree\n"
+        "from pathlib import Path, PurePath\n"
+        "open('x')\n"
+        "PurePath('a.pdf').stem\n"
+    )
+    monkeypatch.setattr(sys.modules[__name__], "_PROJECT_ROOT", tmp_path)
+    assert _services_filesystem_access() == {
+        ("services/probe.py", "import os.path"),
+        ("services/probe.py", "from shutil import"),
+        ("services/probe.py", "from pathlib import Path"),
+        ("services/probe.py", "open()"),
+    }
 
 
 # ---------------------------------------------------------------------------

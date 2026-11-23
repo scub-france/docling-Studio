@@ -6,10 +6,16 @@ persistence/infra). Mirrors `GraphService` conventions: typed errors carry an
 `http_status` hint the router translates into a response.
 
 The service owns the use-case sequencing — validate the query, resolve the
-latest completed analysis, time the run, project the raw `ReasoningResult`
+document's current analysis, time the run, project the raw `ReasoningResult`
 onto a `ReasoningTrace` via the pure `domain.trace_builder`. It must not
 import `infra/` (architecture test): the default model id is constructor-
-injected from settings by `main.py`, like every other service.
+injected from settings by the bootstrap, like every other service.
+
+Ask reads the current analysis as stored, without its saved edits: the
+Parse view's structure tree is built from the original result of that
+analysis (`GET /tree?analysisId=`), the editor renumbers element refs, and
+the cited refs must land on that tree. Switching to the edited result is a
+separate decision, for when every Parse-view surface reads the same result.
 """
 
 from __future__ import annotations
@@ -18,21 +24,17 @@ import time
 from typing import TYPE_CHECKING
 
 from domain.trace_builder import build_trace
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
-    from domain.ports import AnalysisRepository, ReasoningRunner
+    from domain.ports import CurrentAnalysisReader, ReasoningRunner
     from domain.value_objects import ReasoningTrace
 
 
-class ReasoningServiceError(Exception):
+class ReasoningServiceError(ServiceError):
     """Base error for reasoning-service rejections, carrying an HTTP-status hint."""
 
     http_status: int = 500
-
-    def __init__(self, message: str, *, http_status: int | None = None) -> None:
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
 
 
 class ReasoningUnavailableError(ReasoningServiceError):
@@ -54,7 +56,7 @@ class ReasoningEmptyQueryError(ReasoningServiceError):
 
 
 class ReasoningNoAnalysisError(ReasoningServiceError):
-    """Raised when the document has no completed analysis carrying
+    """Raised when the document has no current analysis carrying
     `document_json` to reason over."""
 
     http_status = 404
@@ -67,11 +69,11 @@ class ReasoningService:
         self,
         *,
         runner: ReasoningRunner | None,
-        analysis_repo: AnalysisRepository,
+        current_analysis: CurrentAnalysisReader,
         default_model_id: str,
     ) -> None:
         self._runner = runner
-        self._analyses = analysis_repo
+        self._current = current_analysis
         self._default_model_id = default_model_id
 
     async def run(
@@ -80,13 +82,13 @@ class ReasoningService:
         query: str,
         model_id: str | None = None,
     ) -> ReasoningTrace:
-        """Run reasoning over the document's latest completed analysis.
+        """Run reasoning over the document's current analysis, as stored.
 
         Raises:
             ReasoningUnavailableError: runner unwired / unavailable (503).
             ReasoningEmptyQueryError: empty or whitespace-only query (400).
-            ReasoningNoAnalysisError: no completed analysis with
-                `document_json` for this document (404).
+            ReasoningNoAnalysisError: no current analysis, or one without
+                `document_json` (404).
             ReasoningParseError: the model produced no parseable answer
                 (propagates from the runner; router maps it to 502).
         """
@@ -98,8 +100,8 @@ class ReasoningService:
         if not query.strip():
             raise ReasoningEmptyQueryError("Query must not be empty")
 
-        latest = await self._analyses.find_latest_completed_by_document(doc_id)
-        if latest is None or not latest.document_json:
+        current = await self._current.load_current_original(doc_id)
+        if current is None or not current.document_json:
             raise ReasoningNoAnalysisError(f"No completed analysis with document_json for {doc_id}")
 
         # Fallback only — `build_trace` prefers the model id the runner reports
@@ -107,7 +109,7 @@ class ReasoningService:
         fallback_model_id = model_id or self._default_model_id
         t0 = time.perf_counter()
         result = await self._runner.run(
-            document_json=latest.document_json,
+            document_json=current.document_json,
             query=query,
             model_id=model_id,
         )

@@ -7,45 +7,39 @@ between snapshots are NOT recorded as versions; they mutate the live
 chunkset and only land in History when the next explicit trigger fires.
 
 `restore(document_id, version_id)` writes the version's chunks_snapshot
-back into the live `chunks` table and updates the active analysis selection.
+back into the live `chunks` table and updates the document's analysis state
+(active analysis and chunk source), in one transaction.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import uuid
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from domain.exceptions import AnalysisNotSelectableError
 from domain.models import (
-    AnalysisStatus,
     Chunk,
-    DocumentAnalysisSelection,
-    DocumentChunkSource,
+    ChunkReplacement,
     DocumentVersion,
     DocumentVersionKind,
+    generate_compact_id,
+    get_utc_now,
+    resolve_selection_after_restore,
 )
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from domain.ports import (
         AnalysisRepository,
-        AnalysisSelectionRepository,
         ChunkRepository,
-        ChunkSourceRepository,
+        CurrentAnalysisReader,
+        DocumentAnalysisStateRepository,
         DocumentRepository,
+        DocumentVersionRepository,
     )
-    from persistence.document_version_repo import SqliteDocumentVersionRepository
 
 logger = logging.getLogger(__name__)
-
-
-def _new_id() -> str:
-    return uuid.uuid4().hex
-
-
-def _utcnow() -> datetime:
-    return datetime.now(UTC)
 
 
 def _serialize_chunks(chunks: list[Chunk]) -> str:
@@ -72,17 +66,16 @@ def _serialize_chunks(chunks: list[Chunk]) -> str:
     )
 
 
-class VersionServiceError(Exception):
+class VersionServiceError(ServiceError):
     http_status: int = 400
-
-    def __init__(self, message: str, *, http_status: int | None = None):
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
 
 
 class VersionNotFoundError(VersionServiceError):
     http_status = 404
+
+
+def _build_version_analysis_gone_error() -> VersionServiceError:
+    return VersionServiceError("Version analysis is no longer available", http_status=409)
 
 
 class VersionService:
@@ -90,19 +83,19 @@ class VersionService:
 
     def __init__(
         self,
-        version_repo: SqliteDocumentVersionRepository,
+        version_repo: DocumentVersionRepository,
         chunk_repo: ChunkRepository,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
-        selection_repo: AnalysisSelectionRepository,
-        chunk_source_repo: ChunkSourceRepository,
+        analysis_state_repo: DocumentAnalysisStateRepository,
+        current_analysis: CurrentAnalysisReader,
     ):
         self._versions = version_repo
+        self._current = current_analysis
         self._chunks = chunk_repo
         self._documents = document_repo
         self._analyses = analysis_repo
-        self._selection = selection_repo
-        self._chunk_sources = chunk_source_repo
+        self._states = analysis_state_repo
 
     async def list_for_document(self, document_id: str) -> list[DocumentVersion]:
         await self._require_doc(document_id)
@@ -122,9 +115,10 @@ class VersionService:
         JSON array.
         """
         chunks = await self._chunks.find_for_document(document_id)
-        source = await self._chunk_sources.get_chunk_source(document_id)
+        state = await self._states.find_state(document_id)
+        source = state.chunk_source if state else None
         version = DocumentVersion(
-            id=_new_id(),
+            id=generate_compact_id(),
             document_id=document_id,
             kind=DocumentVersionKind.ANALYSIS,
             analysis_id=analysis_id,
@@ -132,7 +126,7 @@ class VersionService:
             chunks_source_result_hash=source.result_hash if source else None,
             chunks_snapshot=_serialize_chunks(chunks),
             summary="Analysis run",
-            created_at=_utcnow(),
+            created_at=get_utc_now(),
         )
         await self._versions.insert(version)
         return version
@@ -148,7 +142,7 @@ class VersionService:
         analysis pointer is the one rechunk just consumed."""
         chunks = await self._chunks.find_for_document(document_id)
         version = DocumentVersion(
-            id=_new_id(),
+            id=generate_compact_id(),
             document_id=document_id,
             kind=DocumentVersionKind.CHUNKS,
             analysis_id=analysis_id,
@@ -156,61 +150,43 @@ class VersionService:
             chunks_source_result_hash=source_result_hash,
             chunks_snapshot=_serialize_chunks(chunks),
             summary="Chunks generated",
-            created_at=_utcnow(),
+            created_at=get_utc_now(),
         )
         await self._versions.insert(version)
         return version
 
     async def restore(self, document_id: str, version_id: str) -> DocumentVersion:
-        """Replace the live chunkset and select its source analysis."""
+        """Replace the live chunkset and select its source analysis.
+
+        The chunk replacement and the analysis state (active analysis, chunk
+        source) are one transaction (02-2.4.3): a failure leaves both as they
+        were, never restored chunks recorded against the previous analysis.
+        The checks before it read separately: an analysis deleted between the
+        check and the write is refused by the state trigger, the transaction
+        rolls back and the caller gets the same 409 as the check gives.
+        """
         await self._require_doc(document_id)
-        version = await self._versions.find_by_id(version_id)
-        if not version or version.document_id != document_id:
-            raise VersionNotFoundError(f"Version not found: {version_id}")
-        if version.analysis_id is not None:
-            analysis = await self._analyses.find_by_id(version.analysis_id)
-            if (
-                analysis is None
-                or analysis.document_id != document_id
-                or analysis.status != AnalysisStatus.COMPLETED
-            ):
-                raise VersionServiceError(
-                    "Version analysis is no longer available", http_status=409
-                )
+        version = await self._load_restorable_version(document_id, version_id)
 
-        # Wipe live chunks (soft-delete), then re-insert the
-        # snapshot's chunks under fresh ids.
-        now = _utcnow()
-        existing = await self._chunks.find_for_document(document_id)
-        for c in existing:
-            await self._chunks.soft_delete(c.id, at=now)
-
+        # The snapshot's chunks come back under fresh ids.
         raw_chunks = json.loads(version.chunks_snapshot or "[]")
         new_chunks: list[Chunk] = []
         for raw in raw_chunks:
             new_chunks.append(_chunk_from_snapshot(document_id, raw))
 
-        if new_chunks:
-            await self._chunks.insert_many(new_chunks)
-
-        # History restore is an aggregate operation: the backend, rather
-        # than the frontend, owns which immutable analysis is active.
-        if version.analysis_id is None:
-            await self._selection.clear_selection(document_id)
-        else:
-            await self._selection.select(
-                DocumentAnalysisSelection(document_id, version.analysis_id)
-            )
-        if version.chunks_source_analysis_id is None:
-            await self._chunk_sources.clear_chunk_source(document_id)
-        else:
-            await self._chunk_sources.set_chunk_source(
-                DocumentChunkSource(
+        active_analysis_id = await self._resolve_restored_selection(document_id, version)
+        try:
+            await self._chunks.replace_and_select(
+                ChunkReplacement(
                     document_id,
-                    version.chunks_source_analysis_id,
-                    version.chunks_source_result_hash,
+                    new_chunks,
+                    at=get_utc_now(),
+                    chunk_source=version.chunk_source,
+                    active_analysis_id=active_analysis_id,
                 )
             )
+        except AnalysisNotSelectableError as exc:
+            raise _build_version_analysis_gone_error() from exc
 
         logger.info(
             "Restored doc %s to version %s (%d chunks)",
@@ -219,6 +195,29 @@ class VersionService:
             len(new_chunks),
         )
         return version
+
+    async def _load_restorable_version(self, document_id: str, version_id: str) -> DocumentVersion:
+        """The document's version, refused when its analysis can no longer be selected."""
+        version = await self._versions.find_by_id(version_id)
+        if not version or version.document_id != document_id:
+            raise VersionNotFoundError(f"Version not found: {version_id}")
+        if version.analysis_id is not None:
+            analysis = await self._analyses.find_by_id(version.analysis_id)
+            if analysis is None or not analysis.can_be_current_of(document_id):
+                raise _build_version_analysis_gone_error()
+        return version
+
+    async def _resolve_restored_selection(
+        self, document_id: str, version: DocumentVersion
+    ) -> str | None:
+        # History restore is an aggregate operation: the backend, rather
+        # than the frontend, owns which immutable analysis is active.
+        state = await self._states.find_state(document_id)
+        # The fallback is only read when the rule can pick it.
+        fallback_id = None
+        if version.analysis_id is None and state is None:
+            fallback_id = await self._current.find_current_analysis_id(document_id)
+        return resolve_selection_after_restore(state, version.analysis_id, fallback_id)
 
     async def _require_doc(self, document_id: str) -> None:
         doc = await self._documents.find_by_id(document_id)
@@ -233,7 +232,7 @@ def _chunk_from_snapshot(document_id: str, raw: dict) -> Chunk:
     from domain.value_objects import ChunkBbox, ChunkDocItem
 
     return Chunk(
-        id=_new_id(),
+        id=generate_compact_id(),
         document_id=document_id,
         sequence=raw.get("sequence", 0),
         text=raw.get("text", ""),

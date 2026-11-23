@@ -35,9 +35,9 @@ from domain.mcp_config import (
 )
 from services.config_overrides import (
     AppConfigValidationError,
+    NamespaceOverrides,
     parse_bool,
     parse_int_between,
-    pick,
     require_writable,
 )
 
@@ -66,7 +66,7 @@ def _parse_base_url(raw: str) -> str | None:
     return None if validate_base_url(stripped) else stripped
 
 
-def _stored(value: object) -> str:
+def _to_stored_value(value: object) -> str:
     """A value as its `app_settings` row: booleans as `true`/`false`."""
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -77,14 +77,11 @@ async def resolve_mcp_config(
     repo: AppSettingsRepository, env: McpRuntimeConfig
 ) -> tuple[McpRuntimeConfig, dict[str, ConfigSource]]:
     """The effective config (db over env) and where each value came from."""
-    rows = await repo.get_namespace(_NAMESPACE)
-    ns = _NAMESPACE
-    rounds, rounds_src = pick(rows, _KEY_MAX_ROUNDS, env.max_rounds, _parse_rounds, namespace=ns)
-    tokens, tokens_src = pick(
-        rows, _KEY_MAX_READ_TOKENS, env.max_read_tokens, _parse_read_tokens, namespace=ns
-    )
-    base, base_src = pick(rows, _KEY_BASE_URL, env.studio_base_url, _parse_base_url, namespace=ns)
-    enabled, enabled_src = pick(rows, _KEY_ENABLED, env.enabled, parse_bool, namespace=ns)
+    stored = NamespaceOverrides(_NAMESPACE, await repo.get_namespace(_NAMESPACE))
+    rounds, rounds_src = stored.pick(_KEY_MAX_ROUNDS, env.max_rounds, _parse_rounds)
+    tokens, tokens_src = stored.pick(_KEY_MAX_READ_TOKENS, env.max_read_tokens, _parse_read_tokens)
+    base, base_src = stored.pick(_KEY_BASE_URL, env.studio_base_url, _parse_base_url)
+    enabled, enabled_src = stored.pick(_KEY_ENABLED, env.enabled, parse_bool)
     config = McpRuntimeConfig(
         max_rounds=rounds, max_read_tokens=tokens, studio_base_url=base, enabled=enabled
     )
@@ -130,7 +127,7 @@ class McpConfigService:
     async def get_config(self) -> McpRuntimeConfigView:
         """Effective config (db over env) + per-field sources."""
         config, sources = await resolve_mcp_config(self._repo, self._env_defaults)
-        return self._view(config, sources)
+        return self._build_view(config, sources)
 
     async def update_config(self, config: McpRuntimeConfig) -> McpRuntimeConfigView:
         """Validate, persist what differs from env, rebuild the services in place.
@@ -153,10 +150,10 @@ class McpConfigService:
             )
         if errors:
             raise AppConfigValidationError("; ".join(errors))
-        await self._repo.replace_namespace(_NAMESPACE, self._overrides(config))
+        await self._repo.replace_namespace(_NAMESPACE, self._compute_overrides(config))
         return await self._apply_and_view()
 
-    def _overrides(self, config: McpRuntimeConfig) -> dict[str, str]:
+    def _compute_overrides(self, config: McpRuntimeConfig) -> dict[str, str]:
         """The rows `config` needs: one per value that differs from env."""
         env = self._env_defaults
         base_url = config.studio_base_url.strip()
@@ -167,7 +164,9 @@ class McpConfigService:
             _KEY_ENABLED: (config.enabled, env.enabled),
         }
         return {
-            key: _stored(value) for key, (value, default) in candidates.items() if value != default
+            key: _to_stored_value(value)
+            for key, (value, default) in candidates.items()
+            if value != default
         }
 
     async def reset_config(self) -> McpRuntimeConfigView:
@@ -183,7 +182,7 @@ class McpConfigService:
         config, _ = await resolve_mcp_config(self._repo, self._env_defaults)
         self._apply_config(config)
 
-    async def server_status(self) -> McpServerStatus:
+    async def get_server_status(self) -> McpServerStatus:
         """What the running server publishes — fixed until the next start."""
         return await self._status_provider()
 
@@ -197,9 +196,9 @@ class McpConfigService:
             config.max_read_tokens,
             config.studio_base_url,
         )
-        return self._view(config, sources)
+        return self._build_view(config, sources)
 
-    def _view(
+    def _build_view(
         self, config: McpRuntimeConfig, sources: dict[str, ConfigSource]
     ) -> McpRuntimeConfigView:
         return McpRuntimeConfigView(

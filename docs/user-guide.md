@@ -46,7 +46,7 @@ To look at the pages first, open the document from **Docs**. It shows in the sam
 ## Run an analysis
 
 1. In **Docs**, click **Open visualization** on the document.
-2. Click **New analysis**. While Docling works, a bar under the title shows how far it is: the percentage and the pages done for a long PDF, the time elapsed otherwise. When the analysis completes, its result opens by itself. If it fails, the reason shows next to the button.
+2. Open the **Document actions** menu (`⋯`) and click **New analysis**. While Docling works, a bar under the title shows how far it is: the percentage and the pages done for a long PDF, the time elapsed otherwise. When the analysis completes, its result opens by itself. If it fails, the reason shows next to the button.
 
 There are no options to choose here. The server settings apply: OCR on, table structure on, and the table mode set by the admin ("accurate" by default).
 
@@ -101,7 +101,7 @@ How it behaves:
 
 - One question at a time. The answer arrives in one piece.
 - Questions and answers live in your browser tab. They are not saved.
-- Ask always reads the latest completed analysis of the document, even when you opened an older one.
+- Ask reads the document's active analysis, which is not always the one on screen: the analysis that completed last. Opening an older analysis from **Analyses** does not change it, and Ask still answers from the active one. Ask reads that analysis as Docling produced it, without the changes saved in **Edit analysis**.
 - To use another model, type its name in **model override**. It applies to your next questions until you clear the field.
 
 ## Download
@@ -116,13 +116,13 @@ On a result page, the Markdown and JSON download follows the current mode: the s
 ## Delete
 
 - A document: in **Docs**, click **Delete** on its row. Its analyses are deleted with it.
-- An analysis: in **Analyses**, click **Delete analysis** on its row.
+- An analysis: in **Analyses**, click **Delete analysis** on its row. If it was the document's active analysis, the last remaining completed analysis that has a Docling document becomes the active one. If none remains, the document has no active analysis: Ask and the MCP tools have nothing to read until a new analysis completes.
 
 There is no undo.
 
 ## Not in the default screens
 
-These features are in the code but no default screen reaches them in 0.7.3:
+These features are in the code but no default screen reaches them:
 
 - chunking (splitting the text into pieces for a RAG pipeline),
 - sending chunks to OpenSearch or Neo4j (deprecated, removed in 0.8.0),

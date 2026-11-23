@@ -31,7 +31,7 @@ async def read_document_json(neo: Neo4jDriver, doc_id: str) -> str | None:
     return record["json"]
 
 
-async def document_exists(neo: Neo4jDriver, doc_id: str) -> bool:
+async def has_document(neo: Neo4jDriver, doc_id: str) -> bool:
     async with neo.driver.session(database=neo.database) as session:
         result = await session.run(
             "MATCH (d:Document {id: $doc_id}) RETURN count(d) AS n",

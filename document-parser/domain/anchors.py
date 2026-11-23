@@ -86,7 +86,7 @@ class DocumentAnchor:
         )
 
 
-def quote_hash(text: str) -> str:
+def hash_quote(text: str) -> str:
     """Return the `sha256:…` digest that binds a quote to a version.
 
     Computed on the *normalised* text (see `normalise_quote`) so that a quote

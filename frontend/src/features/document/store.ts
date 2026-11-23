@@ -1,10 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { Analysis, Document, DocumentVersion, Page } from '../../shared/types'
+import type { Analysis, Document, Page } from '../../shared/types'
 import { appMaxFileSizeMb } from '../../shared/appConfig'
-import { fetchAnalysis } from '@/features/analysis'
-import { pushChunksToStore } from '@/features/chunks'
-import { useFeatureFlagStore } from '@/features/feature-flags'
+import { parseAnalysisPages } from '../../shared/analysisPages'
 import * as api from './api'
 
 export const useDocumentStore = defineStore('document', () => {
@@ -13,26 +11,8 @@ export const useDocumentStore = defineStore('document', () => {
   const loading = ref(false)
   const uploading = ref(false)
   const error = ref<string | null>(null)
-  // 0.6.1 (#264, refactored #267) — Doc workspace orchestration.
-  const workspaceDoc = ref<Document | null>(null)
-  const workspaceVersions = ref<DocumentVersion[]>([])
-  const workspaceCurrentVersionId = ref<string | null>(null)
-  // Cached analysis row for the active version (analysisId resolution).
+  // The analysis the Parse view shows, set by the page that loaded it.
   const workspaceActiveAnalysis = ref<Analysis | null>(null)
-  const workspaceLoading = ref(false)
-  const workspaceError = ref<string | null>(null)
-
-  async function fetchWorkspaceAnalysis(docId: string, analysisId: string): Promise<Analysis> {
-    const base = await fetchAnalysis(analysisId)
-    if (!useFeatureFlagStore().isEnabled('analysisEditor') || !base.hasDocumentJson) return base
-    const result = await api.fetchDocumentEditedAnalysisResult(docId, analysisId)
-    return {
-      ...base,
-      contentMarkdown: result.contentMarkdown,
-      contentHtml: result.contentHtml,
-      pagesJson: result.pagesJson,
-    }
-  }
 
   // #303 — Citation focus, shared across the Parse-view surfaces. The
   // reasoning feature writes it (clicking a trace step); the PDF preview,
@@ -48,24 +28,8 @@ export const useDocumentStore = defineStore('document', () => {
     focusTick.value += 1
   }
 
-  const workspaceCurrentVersion = computed<DocumentVersion | null>(() => {
-    if (!workspaceCurrentVersionId.value) return null
-    return workspaceVersions.value.find((v) => v.id === workspaceCurrentVersionId.value) ?? null
-  })
-
-  /** Analysis row that powers the workspace right now. */
-  const workspaceLatestAnalysis = computed<Analysis | null>(() => workspaceActiveAnalysis.value)
-
   /** Pages parsed lazily from the active analysis's `pagesJson`. */
-  const workspacePages = computed<Page[]>(() => {
-    const raw = workspaceActiveAnalysis.value?.pagesJson
-    if (!raw) return []
-    try {
-      return JSON.parse(raw) as Page[]
-    } catch {
-      return []
-    }
-  })
+  const workspacePages = computed<Page[]>(() => parseAnalysisPages(workspaceActiveAnalysis.value))
 
   function clearError(): void {
     error.value = null
@@ -121,132 +85,13 @@ export const useDocumentStore = defineStore('document', () => {
     selectedId.value = id
   }
 
-  async function rechunk(id: string): Promise<number | null> {
-    try {
-      const chunks = await api.rechunkDocument(id)
-      return chunks.length
-    } catch (e) {
-      error.value = (e as Error).message || 'Failed to rechunk'
-      console.error('Rechunk failed', e)
-      return null
-    }
-  }
-
-  /**
-   * Workspace orchestration (#267). Loads the doc + the versions
-   * timeline, auto-pins the most recent version, and resolves its
-   * analysis row so Parse / Chunk render the right OCR side.
-   *
-   * Idempotent across view switches: if the workspace is already loaded
-   * for `docId`, returns immediately. This preserves a user-pinned
-   * version when the user switches between Parse and Chunk tabs.
-   */
-  async function loadWorkspace(docId: string): Promise<void> {
-    if (workspaceDoc.value?.id === docId) return
-    workspaceLoading.value = true
-    workspaceError.value = null
-    workspaceDoc.value = null
-    workspaceVersions.value = []
-    workspaceCurrentVersionId.value = null
-    workspaceActiveAnalysis.value = null
-    try {
-      const [doc, versions] = await Promise.all([
-        api.fetchDocument(docId),
-        api.fetchDocumentVersions(docId),
-      ])
-      workspaceDoc.value = doc
-      workspaceVersions.value = versions
-      const latest = versions[0] ?? null
-      workspaceCurrentVersionId.value = latest?.id ?? null
-      if (latest?.analysisId) {
-        workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, latest.analysisId)
-      }
-    } catch (e) {
-      workspaceError.value = (e as Error).message || 'Failed to load workspace'
-    } finally {
-      workspaceLoading.value = false
-    }
-  }
-
-  /** Force the workspace to resolve the latest saved active result. */
-  async function refreshWorkspace(docId: string): Promise<void> {
-    if (workspaceDoc.value?.id === docId) workspaceDoc.value = null
-    await loadWorkspace(docId)
-  }
-
-  /**
-   * Refresh the versions list without resetting the doc (#266 / #267).
-   * Called after a `+ New analysis` or `+ Generate chunks` completes —
-   * the backend appended a fresh version, we pin it as active.
-   */
-  async function reloadWorkspaceVersions(docId: string): Promise<void> {
-    if (workspaceDoc.value?.id !== docId) return
-    try {
-      const versions = await api.fetchDocumentVersions(docId)
-      workspaceVersions.value = versions
-      const latest = versions[0] ?? null
-      if (latest) {
-        workspaceCurrentVersionId.value = latest.id
-        if (latest.analysisId) {
-          workspaceActiveAnalysis.value = await fetchWorkspaceAnalysis(docId, latest.analysisId)
-        }
-      }
-    } catch (e) {
-      workspaceError.value = (e as Error).message || 'Failed to reload versions'
-    }
-  }
-
-  /**
-   * Pin a different version as the active one — calls the backend
-   * restore endpoint (which rewrites the live chunkset from the
-   * version's snapshot) and refreshes the active analysis row.
-   * Returns `true` on success so callers can update sibling state
-   * (e.g. reload the chunks store, scroll, close the drawer).
-   */
-  async function setWorkspaceVersion(versionId: string): Promise<boolean> {
-    const docId = workspaceDoc.value?.id
-    if (!docId) return false
-    const version = workspaceVersions.value.find((v) => v.id === versionId)
-    if (!version) return false
-    try {
-      await api.restoreDocumentVersion(docId, versionId)
-      workspaceCurrentVersionId.value = versionId
-      workspaceActiveAnalysis.value = version.analysisId
-        ? await fetchWorkspaceAnalysis(docId, version.analysisId)
-        : null
-      return true
-    } catch (e) {
-      workspaceError.value = (e as Error).message || 'Failed to restore version'
-      return false
-    }
-  }
-
-  async function pushToStore(id: string, store: string): Promise<string | null> {
-    try {
-      const res = await pushChunksToStore(id, store)
-      return res.pushId
-    } catch (e) {
-      error.value = (e as Error).message || 'Failed to push to store'
-      console.error('Push to store failed', e)
-      return null
-    }
-  }
-
   return {
     documents,
     selectedId,
     loading,
     uploading,
     error,
-    workspaceDoc,
-    workspaceVersions,
-    workspaceCurrentVersionId,
-    workspaceCurrentVersion,
-    workspaceActiveAnalysis,
-    workspaceLatestAnalysis,
     workspacePages,
-    workspaceLoading,
-    workspaceError,
     setWorkspaceAnalysis(analysis: Analysis | null): void {
       workspaceActiveAnalysis.value = analysis
     },
@@ -255,14 +100,8 @@ export const useDocumentStore = defineStore('document', () => {
     focusElement,
     clearError,
     load,
-    loadWorkspace,
-    refreshWorkspace,
-    reloadWorkspaceVersions,
-    setWorkspaceVersion,
     upload,
     remove,
     select,
-    rechunk,
-    pushToStore,
   }
 })

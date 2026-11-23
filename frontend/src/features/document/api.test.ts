@@ -2,12 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   fetchDocuments,
   fetchDocument,
-  fetchDocumentEditedAnalysisResult,
   uploadDocument,
   deleteDocument,
   getPreviewUrl,
   getExportUrl,
-  rechunkDocument,
   fetchDocumentTree,
   fetchDocumentPages,
 } from './api'
@@ -41,16 +39,6 @@ describe('document API', () => {
 
     expect(apiFetch).toHaveBeenCalledWith('/api/documents/42')
     expect(result).toEqual(doc)
-  })
-
-  it('fetchDocumentEditedAnalysisResult reads the saved result for one analysis', async () => {
-    const result = { id: 'working:42', contentMarkdown: 'Edited' }
-    apiFetch.mockResolvedValue({ result })
-
-    expect(await fetchDocumentEditedAnalysisResult('42', 'analysis 1')).toEqual(result)
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/api/documents/42/analysis-editor?analysisId=analysis%201',
-    )
   })
 
   it('fetchDocumentPages maps the page sizes to pages without elements (#352)', async () => {
@@ -115,19 +103,6 @@ describe('document API', () => {
     expect(getExportUrl('abc', 'md', 'analysis 1', true)).toBe(
       '/api/documents/abc/export?format=md&analysisId=analysis%201&edited=true',
     )
-  })
-
-  it('rechunkDocument calls POST /api/documents/:id/rechunk and returns chunks', async () => {
-    const chunks = [{ id: 'c1' }, { id: 'c2' }]
-    apiFetch.mockResolvedValue(chunks)
-
-    const result = await rechunkDocument('42')
-
-    expect(apiFetch).toHaveBeenCalledWith('/api/documents/42/rechunk', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
-    expect(result).toEqual(chunks)
   })
 
   it('fetchDocumentTree calls GET /api/documents/:id/tree', async () => {

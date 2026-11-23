@@ -91,13 +91,15 @@
           class="chunk-card"
           data-e2e="chunk-card"
           v-for="(chunk, localIdx) in pagination.paginatedItems.value"
-          :key="globalIndex(localIdx)"
-          :class="{ highlighted: hoveredChunkIdx === globalIndex(localIdx) }"
+          :key="toGlobalIndex(localIdx)"
+          :class="{ highlighted: hoveredChunkIdx === toGlobalIndex(localIdx) }"
           @mouseenter="onChunkHover(chunk, localIdx)"
           @mouseleave="onChunkLeave"
         >
           <div class="chunk-header">
-            <span class="chunk-index" data-e2e="chunk-index">#{{ globalIndex(localIdx) + 1 }}</span>
+            <span class="chunk-index" data-e2e="chunk-index"
+              >#{{ toGlobalIndex(localIdx) + 1 }}</span
+            >
             <span class="chunk-tokens" data-e2e="chunk-tokens" v-if="chunk.tokenCount">
               {{ chunk.tokenCount }} tokens
             </span>
@@ -106,11 +108,11 @@
               {{ t('chunking.modified') }}
             </span>
             <button
-              v-if="editingIdx !== globalIndex(localIdx)"
+              v-if="editingIdx !== toGlobalIndex(localIdx)"
               class="chunk-edit-icon"
               data-e2e="chunk-edit-btn"
               :title="t('chunking.edit')"
-              @click.stop="startEdit(globalIndex(localIdx), chunk.text)"
+              @click.stop="startEdit(toGlobalIndex(localIdx), chunk.text)"
             >
               <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
                 <path
@@ -122,7 +124,7 @@
               class="chunk-delete-icon"
               data-e2e="chunk-delete-btn"
               :title="t('chunking.delete')"
-              @click.stop="confirmDelete(globalIndex(localIdx))"
+              @click.stop="confirmDelete(toGlobalIndex(localIdx))"
             >
               <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
                 <path
@@ -138,7 +140,7 @@
           </div>
 
           <!-- Edit mode -->
-          <div v-if="editingIdx === globalIndex(localIdx)" class="chunk-edit">
+          <div v-if="editingIdx === toGlobalIndex(localIdx)" class="chunk-edit">
             <textarea
               ref="editTextarea"
               class="chunk-edit-textarea"
@@ -151,7 +153,7 @@
                 class="chunk-edit-btn save"
                 data-e2e="chunk-edit-save"
                 :disabled="chunkingStore.saving"
-                @click="saveEdit(globalIndex(localIdx))"
+                @click="saveEdit(toGlobalIndex(localIdx))"
               >
                 {{ chunkingStore.saving ? t('chunking.saving') : t('chunking.save') }}
               </button>
@@ -170,7 +172,7 @@
             v-else
             class="chunk-text"
             data-e2e="chunk-text"
-            @dblclick="startEdit(globalIndex(localIdx), chunk.text)"
+            @dblclick="startEdit(toGlobalIndex(localIdx), chunk.text)"
           >
             {{ chunk.text }}
           </div>
@@ -271,7 +273,7 @@ const pageChunks = computed(() =>
 )
 const pagination = usePagination(pageChunks, { pageSize: 20 })
 
-function globalIndex(localIdx: number): number {
+function toGlobalIndex(localIdx: number): number {
   const pageLocalIdx = (pagination.page.value - 1) * pagination.pageSize.value + localIdx
   const pageChunk = pageChunks.value[pageLocalIdx]
   return props.chunks.indexOf(pageChunk)
@@ -319,7 +321,7 @@ async function saveEdit(chunkIndex: number) {
 const hoveredChunkIdx = ref(-1)
 
 function onChunkHover(chunk: Chunk, localIdx: number) {
-  hoveredChunkIdx.value = globalIndex(localIdx)
+  hoveredChunkIdx.value = toGlobalIndex(localIdx)
   const pageBboxes = chunk.bboxes.filter((b) => b.page === props.currentPage)
   emit('highlight-bboxes', pageBboxes)
 }
@@ -404,7 +406,7 @@ async function doRechunk() {
 
 .config-select,
 .config-input {
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px 10px;
@@ -435,7 +437,7 @@ async function doRechunk() {
 .toggle-switch {
   width: 32px;
   height: 18px;
-  background: var(--bg-tertiary);
+  background: var(--border-light);
   border-radius: 9px;
   position: relative;
   transition: background 0.2s;
@@ -449,7 +451,7 @@ async function doRechunk() {
   left: 2px;
   width: 14px;
   height: 14px;
-  background: white;
+  background: var(--on-accent);
   border-radius: 50%;
   transition: transform 0.2s;
 }
@@ -478,7 +480,7 @@ async function doRechunk() {
 
 .chunk-btn.primary {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .chunk-btn.primary:disabled {
@@ -509,7 +511,7 @@ async function doRechunk() {
 }
 
 .chunk-card {
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -520,11 +522,11 @@ async function doRechunk() {
 }
 
 .chunk-card:hover {
-  border-color: #f59e0b;
+  border-color: var(--chunk-highlight);
 }
 
 .chunk-card.highlighted {
-  border-color: #f59e0b;
+  border-color: var(--chunk-highlight);
   background: rgba(245, 158, 11, 0.08);
 }
 
@@ -545,7 +547,7 @@ async function doRechunk() {
 .chunk-page {
   font-size: 11px;
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -560,7 +562,7 @@ async function doRechunk() {
 .chunk-heading {
   font-size: 11px;
   color: var(--accent);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+  background: var(--accent-muted);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -568,7 +570,7 @@ async function doRechunk() {
 .chunk-modified {
   font-size: 10px;
   font-weight: 600;
-  color: #f59e0b;
+  color: var(--chunk-highlight);
   background: rgba(245, 158, 11, 0.12);
   padding: 1px 6px;
   border-radius: 4px;
@@ -609,7 +611,7 @@ async function doRechunk() {
 
 .chunk-edit-icon:hover {
   color: var(--accent);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
 }
 
 .chunk-card:hover .chunk-delete-icon {
@@ -617,7 +619,7 @@ async function doRechunk() {
 }
 
 .chunk-delete-icon:hover {
-  color: #ef4444;
+  color: var(--error);
   background: rgba(239, 68, 68, 0.1);
 }
 
@@ -635,7 +637,7 @@ async function doRechunk() {
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   padding: 8px;
   resize: vertical;
   box-sizing: border-box;
@@ -656,7 +658,7 @@ async function doRechunk() {
 .chunk-edit-btn {
   padding: 4px 12px;
   border: none;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -664,7 +666,7 @@ async function doRechunk() {
 
 .chunk-edit-btn.save {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .chunk-edit-btn.save:disabled {
@@ -673,7 +675,7 @@ async function doRechunk() {
 }
 
 .chunk-edit-btn.cancel {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   color: var(--text-secondary);
 }
 
@@ -698,7 +700,7 @@ async function doRechunk() {
   padding: 20px;
   max-width: 300px;
   width: 90%;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-lg);
 }
 
 .chunk-confirm-text {
@@ -717,15 +719,15 @@ async function doRechunk() {
 .chunk-confirm-btn {
   padding: 6px 14px;
   border: none;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
 }
 
 .chunk-confirm-btn.danger {
-  background: #ef4444;
-  color: white;
+  background: var(--error);
+  color: var(--on-accent);
 }
 
 .chunk-confirm-btn.danger:disabled {
@@ -734,7 +736,7 @@ async function doRechunk() {
 }
 
 .chunk-confirm-btn.cancel {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   color: var(--text-secondary);
 }
 
@@ -788,7 +790,7 @@ async function doRechunk() {
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-top-color: var(--on-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }

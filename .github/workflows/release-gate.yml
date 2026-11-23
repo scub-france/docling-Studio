@@ -9,6 +9,11 @@ concurrency:
   group: release-gate-${{ github.ref }}
   cancel-in-progress: true
 
+# Jobs only read the repository unless they say otherwise: the third-party
+# code they install must not get a token that can write to it.
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REGISTRY: ghcr.io
@@ -81,12 +86,16 @@ jobs:
 
       - name: Backend tests
         run: |
+          set -o pipefail
           cd document-parser
           uv sync --frozen --group dev
           uv run pytest tests/ -v --tb=short 2>&1 | tee /tmp/backend-tests.txt
 
       - name: Frontend tests
+        # Still run when the backend tests fail: the report needs both results.
+        if: ${{ !cancelled() }}
         run: |
+          set -o pipefail
           cd frontend
           npm ci
           npm run test:run 2>&1 | tee /tmp/frontend-tests.txt
@@ -120,8 +129,11 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install deps
+        # The `local` and `reasoning` groups are what the published `local`
+        # image installs (Dockerfile, WITH_REASONING=true in release.yml):
+        # audit them too, not only the base dependencies.
         run: |
-          cd document-parser && uv sync --frozen && uv pip install --python .venv/bin/python pip-audit
+          cd document-parser && uv sync --frozen --group local --group reasoning && uv pip install --python .venv/bin/python pip-audit
           cd ../frontend && npm ci
 
       - name: Python audit
@@ -180,43 +192,10 @@ jobs:
           echo "::error::Critical vulnerabilities found in npm dependencies"
           exit 1
 
-  audit-checks:
-    name: Audit checks (commands.sh)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4.3.1
-
-      - name: Run automated audit checks
-        id: audit
-        run: |
-          bash profiles/fastapi-vue/commands.sh 2>&1 | tee /tmp/audit-checks.txt
-        continue-on-error: true
-
-      - name: Parse audit results
-        id: results
-        if: always()
-        run: |
-          # Strip ANSI codes before counting
-          CLEAN=$(sed 's/\x1b\[[0-9;]*m//g' /tmp/audit-checks.txt)
-          PASS=$(echo "$CLEAN" | grep -c "PASS" || true)
-          WARN=$(echo "$CLEAN" | grep -c "WARN" || true)
-          FAIL=$(echo "$CLEAN" | grep -c "FAIL" || true)
-          echo "pass=${PASS:-0}" >> "$GITHUB_OUTPUT"
-          echo "warn=${WARN:-0}" >> "$GITHUB_OUTPUT"
-          echo "fail=${FAIL:-0}" >> "$GITHUB_OUTPUT"
-
-      - name: Upload audit results
-        if: always()
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: audit-checks-results
-          path: /tmp/audit-checks.txt
-
-      - name: Fail on audit failures
-        if: steps.audit.outcome == 'failure'
-        run: |
-          echo "::error::Audit checks failed — review profiles/fastapi-vue/commands.sh output"
-          exit 1
+  # The former `audit-checks` job ran profiles/fastapi-vue/commands.sh. That
+  # script was removed from the repository in 5f8b355 (internal tooling, now
+  # in .gitignore), so the job failed on every run and continue-on-error hid
+  # it. Removed rather than kept as a false green.
 
   # ──────────────────────────────────────────────────────────────────────────
   # Phase 2 — Docker build & validation
@@ -226,11 +205,23 @@ jobs:
     name: Docker build — ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
+      # Build both images even when one fails, as the scan below does.
+      fail-fast: false
       matrix:
         target: [remote, local]
 
     steps:
       - uses: actions/checkout@v4.3.1
+
+      - name: Free disk space
+        # The `local` image (docling, torch, reasoning stack) plus its
+        # gzipped tarball do not fit in the runner's default free space.
+        if: matrix.target == 'local'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+          df -h /
 
       - uses: docker/setup-buildx-action@v3
 
@@ -249,7 +240,16 @@ jobs:
           target: ${{ matrix.target }}
           load: true
           tags: docling-studio:${{ matrix.target }}
-          build-args: APP_VERSION=${{ steps.version.outputs.value }}
+          # Same arguments as release.yml, so the gate builds and scans the
+          # `local` image users pull (reasoning stack included), amd64 only.
+          # One exception: BAKE_MODELS stays false. Baking only adds model
+          # checkpoints (no package for Trivy), and it would make the gate
+          # depend on HuggingFace Hub, whose rate limits broke it before
+          # (docs/architecture/huggingface-dependency-map.md).
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
+            BAKE_MODELS=false
+            WITH_REASONING=${{ matrix.target == 'local' && 'true' || 'false' }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
@@ -263,6 +263,8 @@ jobs:
           name: docker-image-${{ matrix.target }}
           path: /tmp/docling-studio-${{ matrix.target }}.tar.gz
           retention-days: 1
+          # Already gzipped: compressing it again only costs time.
+          compression-level: 0
 
       - name: Record image size
         run: |
@@ -329,7 +331,56 @@ jobs:
           fi
           echo "Remote smoke test passed"
 
+          # nginx headers (nginx.conf.template): hashed files under /assets/
+          # are cached for a year and keep the security headers; index.html
+          # is not cached for a year; JavaScript is sent gzipped on request.
+          HEADER_FAILURES=0
+          expect_header() {
+            # $1 = label, $2 = headers, $3 = extended regex that must match
+            if ! printf '%s\n' "$2" | grep -qiE "$3"; then
+              echo "::error::$1: no header matching '$3'"
+              HEADER_FAILURES=$((HEADER_FAILURES + 1))
+            fi
+          }
+
+          INDEX_HEADERS=$(curl -sI http://localhost:3000/)
+          echo "=== / (index.html) ==="
+          echo "$INDEX_HEADERS"
+          if printf '%s\n' "$INDEX_HEADERS" | grep -qiE '^cache-control:.*(max-age=31536000|immutable)'; then
+            echo "::error::index.html is sent with the one-year cache of /assets/"
+            HEADER_FAILURES=$((HEADER_FAILURES + 1))
+          fi
+          expect_header "index.html" "$INDEX_HEADERS" '^x-content-type-options: *nosniff'
+
+          ASSET=$(curl -s http://localhost:3000/ | grep -oE '/assets/[^"]+\.js' | head -1)
+          if [ -z "$ASSET" ]; then
+            echo "::error::No /assets/*.js file referenced by index.html"
+            HEADER_FAILURES=$((HEADER_FAILURES + 1))
+          else
+            ASSET_HEADERS=$(curl -sI "http://localhost:3000${ASSET}")
+            echo "=== ${ASSET} ==="
+            echo "$ASSET_HEADERS"
+            expect_header "$ASSET status" "$ASSET_HEADERS" '^HTTP/[0-9.]+ 200'
+            expect_header "$ASSET" "$ASSET_HEADERS" '^cache-control:.*max-age=31536000'
+            expect_header "$ASSET" "$ASSET_HEADERS" '^cache-control:.*immutable'
+            expect_header "$ASSET" "$ASSET_HEADERS" '^x-content-type-options: *nosniff'
+            expect_header "$ASSET" "$ASSET_HEADERS" '^x-frame-options: *sameorigin'
+            expect_header "$ASSET" "$ASSET_HEADERS" '^referrer-policy: *strict-origin-when-cross-origin'
+
+            # A GET, not -I: nginx's gzip filter skips HEAD responses.
+            GZIP_HEADERS=$(curl -s -o /dev/null -D - -H 'Accept-Encoding: gzip' "http://localhost:3000${ASSET}")
+            echo "=== ${ASSET} (Accept-Encoding: gzip) ==="
+            echo "$GZIP_HEADERS"
+            expect_header "$ASSET gzip" "$GZIP_HEADERS" '^content-encoding: *gzip'
+          fi
+
           docker stop smoke-remote && docker rm smoke-remote
+
+          if [ "$HEADER_FAILURES" -gt 0 ]; then
+            echo "::error::$HEADER_FAILURES nginx header check(s) failed"
+            exit 1
+          fi
+          echo "nginx header checks passed"
 
   image-scan:
     name: Security scan — ${{ matrix.target }}
@@ -344,6 +395,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4.3.1
+
+      - name: Free disk space
+        # The tarball, the loaded `local` image and the Trivy database must
+        # fit together on the runner.
+        if: matrix.target == 'local'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+          df -h /
 
       - name: Download image
         uses: actions/download-artifact@v4.3.0
@@ -406,6 +467,7 @@ jobs:
     needs: [docker-build]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: read
     steps:
       - uses: actions/checkout@v4.3.1
@@ -651,8 +713,11 @@ jobs:
         run: bash .github/scripts/warmup-docling-serve.sh
 
       - name: Run critical UI tests
+        # -Dtest: --tags replaces the tags of every runner method, so without
+        # it each critical scenario ran once per UIRunner method.
         run: >
           mvn test -f e2e/ui/pom.xml
+          -Dtest='UIRunner#testCritical'
           -DbaseUrl=http://localhost:3000
           -DuiBaseUrl=http://localhost:3000
           -Dkarate.options="--tags @critical"
@@ -678,12 +743,12 @@ jobs:
 
   release-summary:
     name: Release summary
-    if: always() && github.event_name == 'pull_request'
+    # Not on a cancelled run: a superseded gate must not publish a verdict.
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs:
       - lint-typecheck
       - unit-tests
       - dep-audit
-      - audit-checks
       - docker-build
       - docker-smoke
       - image-scan
@@ -692,6 +757,7 @@ jobs:
       - e2e-ui
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
       actions: read
 
@@ -704,12 +770,6 @@ jobs:
           pattern: image-size-*
           path: /tmp/artifacts
 
-      - name: Download audit-checks artifact
-        uses: actions/download-artifact@v4.3.0
-        with:
-          name: audit-checks-results
-          path: /tmp/artifacts/audit-checks-results
-
       - name: Build summary comment
         id: summary
         env:
@@ -719,7 +779,9 @@ jobs:
           LINT="${{ needs.lint-typecheck.result }}"
           TESTS="${{ needs.unit-tests.result }}"
           DEP="${{ needs.dep-audit.result }}"
-          AUDIT="${{ needs.audit-checks.result }}"
+          # docker-build and image-scan are matrices over remote and local: a
+          # failed leg, the local image with the reasoning stack included,
+          # makes the whole job `failure`.
           BUILD="${{ needs.docker-build.result }}"
           SMOKE="${{ needs.docker-smoke.result }}"
           SCAN="${{ needs.image-scan.result }}"
@@ -730,7 +792,9 @@ jobs:
           # Determine verdict
           BLOCKING_FAILED="false"
           for result in "$LINT" "$TESTS" "$BUILD" "$SMOKE" "$SCAN" "$E2E_API" "$E2E_UI"; do
-            if [ "$result" = "failure" ]; then
+            # Anything but success blocks: a job skipped because the one it
+            # needs failed, or cancelled, proves nothing.
+            if [ "$result" != "success" ]; then
               BLOCKING_FAILED="true"
             fi
           done
@@ -738,7 +802,7 @@ jobs:
           if [ "$BLOCKING_FAILED" = "true" ]; then
             VERDICT="NO-GO"
             VERDICT_ICON="🔴"
-          elif [ "$DEP" = "failure" ] || [ "$AUDIT" = "failure" ]; then
+          elif [ "$DEP" = "failure" ]; then
             VERDICT="GO CONDITIONAL"
             VERDICT_ICON="🟡"
           else
@@ -764,11 +828,6 @@ jobs:
           # Read size report
           SIZE_REPORT=$(cat /tmp/artifacts/image-size-report/image-size-report.txt 2>/dev/null || echo "No size data available")
 
-          # Read audit summary
-          AUDIT_PASS=$(grep -c "PASS" /tmp/artifacts/audit-checks-results/audit-checks.txt 2>/dev/null || echo "?")
-          AUDIT_WARN=$(grep -c "WARN" /tmp/artifacts/audit-checks-results/audit-checks.txt 2>/dev/null || echo "?")
-          AUDIT_FAIL=$(grep -c "FAIL" /tmp/artifacts/audit-checks-results/audit-checks.txt 2>/dev/null || echo "?")
-
           # Build the comment
           cat > /tmp/summary.md << ENDOFCOMMENT
           ## ${VERDICT_ICON} Release Gate — ${VERDICT}
@@ -779,20 +838,13 @@ jobs:
           |-------|--------|----------|
           | Lint & type-check | $(status_icon "$LINT") | Yes |
           | Unit tests | $(status_icon "$TESTS") | Yes |
-          | Dependency audit | $(status_icon "$DEP") | npm CRITICAL only |
-          | Audit checks | $(status_icon "$AUDIT") | Yes |
-          | Docker build | $(status_icon "$BUILD") | Yes |
-          | Docker smoke test | $(status_icon "$SMOKE") | Yes |
-          | Image security scan | $(status_icon "$SCAN") | Yes (CRITICAL) |
+          | Dependency audit (incl. local + reasoning groups) | $(status_icon "$DEP") | npm CRITICAL only |
+          | Docker build (remote, local + reasoning) | $(status_icon "$BUILD") | Yes |
+          | Docker smoke test (health + nginx headers) | $(status_icon "$SMOKE") | Yes |
+          | Image security scan (remote, local + reasoning) | $(status_icon "$SCAN") | Yes (CRITICAL) |
           | Image size check | $(status_icon "$SIZE") | No |
           | E2E API (full scope) | $(status_icon "$E2E_API") | Yes |
           | E2E UI (@critical) | $(status_icon "$E2E_UI") | Yes |
-
-          ### Audit Checks Summary
-
-          | PASS | WARN | FAIL |
-          |------|------|------|
-          | ${AUDIT_PASS} | ${AUDIT_WARN} | ${AUDIT_FAIL} |
 
           ### Docker Image Sizes
 

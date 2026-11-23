@@ -14,10 +14,8 @@ import math
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
-import pypdfium2 as pdfium
-
 from domain.exceptions import InvalidLifecycleTransitionError
-from domain.models import AnalysisJob, AnalysisStatus
+from domain.models import AnalysisJob, AnalysisOutput, AnalysisStatus
 from domain.services import classify_error
 from domain.value_objects import (
     ChunkingOptions,
@@ -26,6 +24,7 @@ from domain.value_objects import (
     ConversionResult,
     DocumentLifecycleState,
 )
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
     from domain.ports import (
@@ -35,6 +34,7 @@ if TYPE_CHECKING:
         DocumentConverter,
         DocumentRepository,
         GraphWriter,
+        PdfInspector,
     )
 
 logger = logging.getLogger(__name__)
@@ -56,25 +56,53 @@ def _chunk_to_dict(c: ChunkResult) -> dict:
 _DEFAULT_MAX_CONCURRENT = 3
 
 
-def _count_pdf_pages(file_path: str) -> int:
-    """Count pages in a PDF. Returns 0 if the file is not a valid PDF."""
-    try:
-        pdf = pdfium.PdfDocument(file_path)
-        count = len(pdf)
-        pdf.close()
-        return count
-    except Exception:
-        logger.debug("Cannot open %s as PDF, batching disabled", file_path)
-        return 0
+class ImportDocumentNotFoundError(ServiceError):
+    """The document an analysis is imported into does not exist."""
+
+    http_status = 404
 
 
-@dataclass
+class InvalidDoclingDocumentError(ServiceError):
+    """The imported payload is not a valid Docling document."""
+
+    http_status = 400
+
+
+@dataclass(frozen=True)
+class AnalysisRun:
+    """An analysis to run: the job, the file and its options."""
+
+    job_id: str
+    file_path: str
+    filename: str
+    pipeline_options: dict | None = None
+    chunking_options: dict | None = None
+
+
+@dataclass(frozen=True)
+class PageBatching:
+    """How a document's pages are split into conversion batches."""
+
+    total_pages: int
+    batch_size: int
+
+
+@dataclass(frozen=True)
 class AnalysisConfig:
     """Configuration values needed by AnalysisService, extracted from settings."""
 
     default_table_mode: str = "accurate"
     batch_page_size: int = 0
     neo4j_required: bool = False  # if True, ingestion fails when Neo4j write fails
+    conversion_timeout: int = 600  # seconds, for one conversion or one batch
+    max_concurrent: int = _DEFAULT_MAX_CONCURRENT  # analyses converting at once
+
+
+def _plan_batches(batching: PageBatching) -> list[tuple[int, int]]:
+    """The 1-based page range of each batch, in order."""
+    num_batches = math.ceil(batching.total_pages / batching.batch_size)
+    starts = [index * batching.batch_size + 1 for index in range(num_batches)]
+    return [(start, min(start + batching.batch_size - 1, batching.total_pages)) for start in starts]
 
 
 class AnalysisService:
@@ -85,45 +113,29 @@ class AnalysisService:
         converter: DocumentConverter,
         analysis_repo: AnalysisRepository,
         document_repo: DocumentRepository,
+        *,
         chunker: DocumentChunker | None = None,
-        conversion_timeout: int = 600,
-        max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
-        config: AnalysisConfig | None = None,
+        config: AnalysisConfig = AnalysisConfig(),
         graph_writer: GraphWriter | None = None,
         docling_importer: DoclingDocumentImporter | None = None,
+        pdf_inspector: PdfInspector | None = None,
     ):
         self._converter = converter
         self._chunker = chunker
         self._analysis_repo = analysis_repo
         self._document_repo = document_repo
-        self._conversion_timeout = conversion_timeout
-        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._semaphore = asyncio.Semaphore(config.max_concurrent)
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._background_tasks: set[asyncio.Task] = set()
-        self._config = config or AnalysisConfig()
-        # `GraphWriter` port (#audit-01) — was a raw `Neo4jDriver` until
-        # the hex-arch fix. None when no graph store is wired in.
+        self._config = config
+        # None when no graph store is wired in.
         self._graph_writer = graph_writer
         self._docling_importer = docling_importer
-        # Duck-typed callable injected at startup. Wired in main.py to
-        # `ChunkService.promote_from_analysis_if_empty` so the canonical
-        # chunkset (#205) is populated on the first successful analysis,
-        # making the Doc workspace tab functional immediately (#256).
-        # Optional: when None, analysis behaviour is unchanged.
-        self._chunk_promoter = None
-        # Duck-typed recorder for document versions (#267). Wired in
-        # main.py to `VersionService.record_on_analysis` so each
+        self._pdf_inspector = pdf_inspector
+        # Duck-typed recorder for document versions (#267). Wired at boot
+        # to `VersionService.record_on_analysis` so each
         # successful analysis appends a frozen pair to History.
         self._version_recorder = None
-
-    def set_chunk_promoter(self, chunk_service) -> None:
-        """Inject the canonical-chunk promoter (post-construction wiring).
-
-        Kept loosely typed to avoid an import cycle between
-        `analysis_service` and `chunk_service`. The contract is a
-        coroutine `(document_id: str, chunks_json: str) -> int`.
-        """
-        self._chunk_promoter = chunk_service
 
     def set_version_recorder(self, version_service) -> None:
         """Inject the document-version recorder (#267, post-construction
@@ -150,11 +162,13 @@ class AnalysisService:
 
         task = asyncio.create_task(
             self._run_analysis(
-                job.id,
-                doc.storage_path,
-                doc.filename,
-                pipeline_options,
-                chunking_options,
+                AnalysisRun(
+                    job.id,
+                    doc.storage_path,
+                    doc.filename,
+                    pipeline_options,
+                    chunking_options,
+                )
             )
         )
         self._running_tasks[job.id] = task
@@ -170,14 +184,17 @@ class AnalysisService:
         """
         doc = await self._document_repo.find_by_id(document_id)
         if not doc:
-            raise ValueError(f"Document not found: {document_id}")
+            raise ImportDocumentNotFoundError(f"Document not found: {document_id}")
 
         if not self._docling_importer:
             raise RuntimeError("Docling document importer is not configured")
         # Validation and the three exports are CPU-bound and grow with the
         # document: run them in a worker thread so one import does not stall
         # every other request on the event loop.
-        result = await asyncio.to_thread(self._docling_importer.deserialize, document)
+        try:
+            result = await asyncio.to_thread(self._docling_importer.deserialize, document)
+        except ValueError as exc:
+            raise InvalidDoclingDocumentError(str(exc)) from exc
 
         job = AnalysisJob(document_id=document_id)
         job.document_filename = doc.filename
@@ -198,6 +215,10 @@ class AnalysisService:
     async def find_all_summaries(self) -> list[AnalysisJob]:
         """Return all analysis jobs without their content, newest first (#354)."""
         return await self._analysis_repo.find_all_summaries()
+
+    async def find_summaries_by_document(self, document_id: str) -> list[AnalysisJob]:
+        """Every analysis of one document without its content, newest first."""
+        return await self._analysis_repo.find_summaries_by_document(document_id)
 
     async def find_by_document(self, document_id: str) -> list[AnalysisJob]:
         """Return analysis jobs for a given document, newest first."""
@@ -287,60 +308,53 @@ class AnalysisService:
         job_id: str,
         file_path: str,
         options: ConversionOptions,
-        total_pages: int,
-        batch_size: int,
+        batching: PageBatching,
     ) -> ConversionResult | None:
         """Convert a document in batches using page_range.
 
         Returns None if the job was deleted mid-batch (caller should abort).
         Raises on batch failure (fail-fast: entire job fails).
         """
-        num_batches = math.ceil(total_pages / batch_size)
-        await self._analysis_repo.update_progress(job_id, 0, total_pages)
+        page_ranges = _plan_batches(batching)
+        num_batches = len(page_ranges)
+        await self._analysis_repo.update_progress(job_id, 0, batching.total_pages)
         logger.info(
             "Batched conversion: %d pages in %d batches of %d for job %s",
-            total_pages,
+            batching.total_pages,
             num_batches,
-            batch_size,
+            batching.batch_size,
             job_id,
         )
-
         results: list[ConversionResult] = []
-        for batch_idx in range(num_batches):
-            start = batch_idx * batch_size + 1
-            end = min(start + batch_size - 1, total_pages)
-
+        for number, page_range in enumerate(page_ranges, start=1):
+            batch_label = f"{number}/{num_batches}"
             if not await self._analysis_repo.find_by_id(job_id):
-                logger.info(
-                    "Job %s deleted during batch %d/%d, aborting",
-                    job_id,
-                    batch_idx + 1,
-                    num_batches,
-                )
+                logger.info("Job %s deleted during batch %s, aborting", job_id, batch_label)
                 return None
 
-            try:
-                batch_result = await asyncio.wait_for(
-                    self._converter.convert(file_path, options, page_range=(start, end)),
-                    timeout=self._conversion_timeout,
-                )
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Batch {batch_idx + 1}/{num_batches} (pages {start}-{end}) failed: {exc}"
-                ) from exc
-
-            results.append(batch_result)
-            await self._analysis_repo.update_progress(job_id, end, total_pages)
-            logger.info(
-                "Batch %d/%d done (pages %d-%d) for job %s",
-                batch_idx + 1,
-                num_batches,
-                start,
-                end,
-                job_id,
-            )
+            results.append(await self._convert_batch(file_path, options, page_range, batch_label))
+            start, end = page_range
+            await self._analysis_repo.update_progress(job_id, end, batching.total_pages)
+            logger.info("Batch %s done (pages %d-%d) for job %s", batch_label, start, end, job_id)
 
         return await self._converter.merge_batches(results)
+
+    async def _convert_batch(
+        self,
+        file_path: str,
+        options: ConversionOptions,
+        page_range: tuple[int, int],
+        batch_label: str,
+    ) -> ConversionResult:
+        """Convert one page range; a failure fails the whole job (fail-fast)."""
+        start, end = page_range
+        try:
+            return await asyncio.wait_for(
+                self._converter.convert(file_path, options, page_range=(start, end)),
+                timeout=self._config.conversion_timeout,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Batch {batch_label} (pages {start}-{end}) failed: {exc}") from exc
 
     def _on_task_done(self, task: asyncio.Task, *, job_id: str) -> None:
         """Cleanup running tasks and handle failures."""
@@ -408,23 +422,14 @@ class AnalysisService:
             event.current.value,
         )
 
-    async def _run_analysis(
-        self,
-        job_id: str,
-        file_path: str,
-        filename: str,
-        pipeline_options: dict | None = None,
-        chunking_options: dict | None = None,
-    ) -> None:
+    async def _run_analysis(self, run: AnalysisRun) -> None:
         """Background task: run conversion and optionally chunk.
 
         Acquires the concurrency semaphore to limit parallel conversions
         and prevent CPU/memory exhaustion on modest hardware.
         """
         async with self._semaphore:
-            await self._run_analysis_inner(
-                job_id, file_path, filename, pipeline_options, chunking_options
-            )
+            await self._run_analysis_inner(run)
 
     def _build_conversion_options(self, pipeline_options: dict | None) -> ConversionOptions:
         """Build ConversionOptions, applying default table_mode if not specified."""
@@ -432,6 +437,21 @@ class AnalysisService:
         if "table_mode" not in opts_dict:
             opts_dict = {**opts_dict, "table_mode": self._config.default_table_mode}
         return ConversionOptions(**opts_dict)
+
+    async def _count_pages(self, file_path: str) -> int:
+        """Page count for batching, 0 when the file is not a readable PDF.
+
+        Through the inspector: it holds the pdfium lock shared with Docling's
+        own threads, and runs off the event loop. Without one (some tests),
+        batching is disabled.
+        """
+        if self._pdf_inspector is None:
+            return 0
+        try:
+            return await asyncio.to_thread(self._pdf_inspector.count_pages, file_path)
+        except Exception:
+            logger.debug("Cannot open %s as PDF, batching disabled", file_path)
+            return 0
 
     async def _run_conversion(
         self,
@@ -446,15 +466,15 @@ class AnalysisService:
         converter merges the batches back into one document (#344). In remote
         mode the Serve instance manages its own resources.
         """
-        total_pages = _count_pdf_pages(file_path)
+        total_pages = await self._count_pages(file_path)
         batch_size = self._config.batch_page_size
         if batch_size > 0 and total_pages > batch_size and self._converter.supports_page_batching:
             return await self._run_batched_conversion(
-                job_id, file_path, options, total_pages, batch_size
+                job_id, file_path, options, PageBatching(total_pages, batch_size)
             )
         return await asyncio.wait_for(
             self._converter.convert(file_path, options),
-            timeout=self._conversion_timeout,
+            timeout=self._config.conversion_timeout,
         )
 
     async def _finalize_analysis(
@@ -465,13 +485,7 @@ class AnalysisService:
     ) -> None:
         """Serialize results, optionally chunk, mark job completed, update page count."""
         pages_json = json.dumps([asdict(p) for p in result.pages])
-
-        chunks_json = None
-        if chunking_options and self._chunker and result.document_json:
-            chunk_opts = ChunkingOptions(**chunking_options)
-            chunks = await self._chunker.chunk(result.document_json, chunk_opts)
-            chunks_json = json.dumps([_chunk_to_dict(c) for c in chunks])
-            logger.info("Chunking produced %d chunks for job %s", len(chunks), job_id)
+        chunks_json = await self._chunk_result(job_id, result, chunking_options)
 
         # Re-read the job so we don't lose progress_current/progress_total
         # written to the DB during batched conversion.
@@ -479,45 +493,35 @@ class AnalysisService:
         if not job:
             return
         job.mark_completed(
-            markdown=result.content_markdown,
-            html=result.content_html,
-            pages_json=pages_json,
-            document_json=result.document_json,
-            chunks_json=chunks_json,
+            AnalysisOutput(
+                markdown=result.content_markdown,
+                html=result.content_html,
+                pages_json=pages_json,
+                document_json=result.document_json,
+                chunks_json=chunks_json,
+            )
         )
 
         # Record a frozen (analysis, chunks_snapshot) pair in the
         # workspace History timeline (#267). Done BEFORE the status flip
         # to COMPLETED so the frontend polling never observes a
         # completed analysis without its version row in the DB.
-        # Snapshots the LIVE chunks at this moment so user edits since
-        # the previous version are preserved alongside the new analysis
-        # pointer.
-        if self._version_recorder is not None:
-            try:
-                await self._version_recorder.record_on_analysis(job.document_id, job_id)
-            except Exception:
-                # Versioning is a best-effort side hook — never fail the
-                # analysis itself if the snapshot write hits a snag.
-                logger.exception(
-                    "Version snapshot failed for doc %s after analysis %s",
-                    job.document_id,
-                    job_id,
-                )
+        await self._record_analysis_version(job.document_id, job_id)
 
-        await self._analysis_repo.update_status(job, select_analysis=True)
+        await self._analysis_repo.complete_and_select(job)
+        await self._update_document_after_analysis(job, result, chunks_json)
+        logger.info("Analysis completed: %s (%d pages)", job_id, result.page_count)
 
+    async def _update_document_after_analysis(
+        self, job: AnalysisJob, result: ConversionResult, chunks_json: str | None
+    ) -> None:
+        """Bring the document in line with its completed analysis: page count,
+        lifecycle state and graph tree."""
         if result.page_count:
             await self._document_repo.update_page_count(job.document_id, result.page_count)
 
-        # Canonical chunk promotion was previously called here (#256), but
-        # the 0.6.1 doc workspace (#266) requires the analysis and chunk
-        # actions to be independent — running an analysis must NOT
-        # implicitly create chunks. Chunks are now produced explicitly via
-        # `POST /api/documents/{id}/rechunk` (driven from the Strategy
-        # popover, #268). The promoter hook stays wired in main.py so
-        # legacy callers / tests can still trigger it directly, but it is
-        # no longer invoked as part of the analysis flow.
+        # Running an analysis does not create canonical chunks (#266): they
+        # are produced explicitly by `POST /api/documents/{id}/rechunk`.
 
         # Drive the document lifecycle (#202): chunks present → Chunked,
         # otherwise → Parsed.
@@ -530,7 +534,40 @@ class AnalysisService:
 
         await self._write_tree_to_graph(job, result.document_json)
 
-        logger.info("Analysis completed: %s (%d pages)", job_id, result.page_count)
+    async def _chunk_result(
+        self,
+        job_id: str,
+        result: ConversionResult,
+        chunking_options: dict | None,
+    ) -> str | None:
+        """The result's chunks as `chunks_json`, None when chunking was not asked for
+        or cannot run."""
+        if not (chunking_options and self._chunker and result.document_json):
+            return None
+        chunk_opts = ChunkingOptions(**chunking_options)
+        chunks = await self._chunker.chunk(result.document_json, chunk_opts)
+        chunks_json = json.dumps([_chunk_to_dict(c) for c in chunks])
+        logger.info("Chunking produced %d chunks for job %s", len(chunks), job_id)
+        return chunks_json
+
+    async def _record_analysis_version(self, document_id: str, job_id: str) -> None:
+        """Snapshot the LIVE chunks with the new analysis in History (#267).
+
+        Snapshots the chunks at this moment so user edits since the previous
+        version are preserved alongside the new analysis pointer.
+        """
+        if self._version_recorder is None:
+            return
+        try:
+            await self._version_recorder.record_on_analysis(document_id, job_id)
+        except Exception:
+            # Versioning is a best-effort side hook — never fail the
+            # analysis itself if the snapshot write hits a snag.
+            logger.exception(
+                "Version snapshot failed for doc %s after analysis %s",
+                document_id,
+                job_id,
+            )
 
     async def _write_tree_to_graph(self, job, document_json: str | None) -> None:
         """Mirror the DoclingDocument tree into the graph store if configured.
@@ -552,15 +589,9 @@ class AnalysisService:
             if self._config.neo4j_required:
                 raise
 
-    async def _run_analysis_inner(
-        self,
-        job_id: str,
-        file_path: str,
-        filename: str,
-        pipeline_options: dict | None = None,
-        chunking_options: dict | None = None,
-    ) -> None:
+    async def _run_analysis_inner(self, run: AnalysisRun) -> None:
         """Inner analysis logic — called under the concurrency semaphore."""
+        job_id = run.job_id
         try:
             job = await self._analysis_repo.find_by_id(job_id)
             if not job:
@@ -569,19 +600,21 @@ class AnalysisService:
 
             job.mark_running()
             await self._analysis_repo.update_status(job)
-            logger.info("Analysis started: %s (file: %s)", job_id, filename)
+            logger.info("Analysis started: %s (file: %s)", job_id, run.filename)
 
-            options = self._build_conversion_options(pipeline_options)
-            result = await self._run_conversion(job_id, file_path, options)
+            options = self._build_conversion_options(run.pipeline_options)
+            result = await self._run_conversion(job_id, run.file_path, options)
             if result is None:
                 return  # job was deleted mid-batch
 
-            await self._finalize_analysis(job_id, result, chunking_options)
+            await self._finalize_analysis(job_id, result, run.chunking_options)
 
         except TimeoutError:
-            logger.error("Analysis timed out after %ds: %s", self._conversion_timeout, job_id)
+            logger.error(
+                "Analysis timed out after %ds: %s", self._config.conversion_timeout, job_id
+            )
             await self._mark_failed(
-                job_id, f"Conversion timed out after {self._conversion_timeout}s"
+                job_id, f"Conversion timed out after {self._config.conversion_timeout}s"
             )
 
         except Exception as e:

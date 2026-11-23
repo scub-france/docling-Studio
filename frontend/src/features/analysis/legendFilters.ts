@@ -80,29 +80,3 @@ export const LEGEND_CHIPS: LegendChip[] = [
 export function findChip(key: string): LegendChip | undefined {
   return LEGEND_CHIPS.find((c) => c.key === key)
 }
-
-/**
- * Partition an iterable of nodes into `{ hide, show }` based on a set of
- * chip keys to hide. A node is hidden if it matches any chip in the set.
- * Nodes matching no chip at all (e.g. a future new kind we haven't added
- * to the legend) are always shown — no silent disappearance.
- */
-export function partitionByHiddenChips(
-  nodes: Iterable<GraphNode>,
-  hiddenChipKeys: ReadonlySet<string>,
-): { hide: GraphNode[]; show: GraphNode[] } {
-  const hide: GraphNode[] = []
-  const show: GraphNode[] = []
-  for (const n of nodes) {
-    let matchedHidden = false
-    for (const key of hiddenChipKeys) {
-      const chip = findChip(key)
-      if (chip && chip.match(n)) {
-        matchedHidden = true
-        break
-      }
-    }
-    ;(matchedHidden ? hide : show).push(n)
-  }
-  return { hide, show }
-}

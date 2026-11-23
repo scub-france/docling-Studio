@@ -10,7 +10,6 @@ different basic-auth credentials) without sharing state.
 Key shape: `(url, username | None)`. Two stores on the same cluster
 but different users get distinct pool entries. Two stores on the
 same cluster with the same username (or both unauthenticated) share.
-`default_limit` is not part of the key — it is a per-call concern.
 
 Concurrency: the pool reuses the same coarse-pool-lock + per-entry-lock
 pattern from the Neo4j pool. See `infra/neo4j/driver_pool.py` for the
@@ -47,7 +46,6 @@ class OpenSearchClientPool:
         username: str | None = None,
         password: str | None = None,
         verify_certs: bool = False,
-        default_limit: int = 1000,
     ) -> OpenSearchStore:
         """Return (or build) the client for `(url, username)`.
 
@@ -69,7 +67,6 @@ class OpenSearchClientPool:
             client = OpenSearchStore(
                 url,
                 verify_certs=verify_certs,
-                default_limit=default_limit,
                 username=username,
                 password=password,
             )
@@ -120,7 +117,7 @@ class OpenSearchClientPool:
         if clients:
             logger.info("OpenSearch pool: closed %d client(s) at shutdown", len(clients))
 
-    def keys(self) -> list[tuple[str, str | None]]:
+    def list_keys(self) -> list[tuple[str, str | None]]:
         """Snapshot of currently-open `(url, user)` keys."""
         return list(self._clients.keys())
 

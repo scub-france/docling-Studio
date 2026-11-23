@@ -154,20 +154,6 @@ class TestProtocolConformance:
         assert isinstance(runner, ReasoningRunner)
 
 
-class TestProviderRejection:
-    def test_rejects_non_ollama_provider(self) -> None:
-        class _FakeProvider:
-            type = "openai"
-            host = "x"
-            default_model_id = "y"
-
-            def health_check(self) -> bool:
-                return True
-
-        with pytest.raises(NotImplementedError, match="Ollama"):
-            mod.DoclingAgentReasoningRunner(provider=_FakeProvider())  # type: ignore[arg-type]
-
-
 class TestRunHappyPath:
     @pytest.mark.asyncio
     async def test_returns_domain_reasoning_result(self, stub_fork) -> None:
@@ -341,11 +327,11 @@ class TestDepsPresent:
         monkeypatch.setitem(sys.modules, "docling_agent.agents", None)
         monkeypatch.setitem(sys.modules, "mellea", None)
 
-        assert mod.deps_present() is False
+        assert mod.has_usable_deps() is False
 
     def test_deps_present_returns_true_when_whole_surface_is_importable(self, stub_fork) -> None:
 
-        assert mod.deps_present() is True
+        assert mod.has_usable_deps() is True
 
     def test_deps_present_returns_false_when_backends_missing(
         self, stub_fork, monkeypatch: pytest.MonkeyPatch
@@ -355,7 +341,7 @@ class TestDepsPresent:
         at call time — cf. the 500 that motivated the 0.6.0 pin."""
         monkeypatch.setitem(sys.modules, "docling_agent.backends", None)
 
-        assert mod.deps_present() is False
+        assert mod.has_usable_deps() is False
 
     def test_deps_present_returns_false_when_agent_lacks_run_with_trace(self, stub_fork) -> None:
         """Releases before docling-project/docling-agent#39 import cleanly but
@@ -368,7 +354,7 @@ class TestDepsPresent:
 
         sys.modules["docling_agent.agents"].DoclingRAGAgent = _PreTraceAgent
 
-        assert mod.deps_present() is False
+        assert mod.has_usable_deps() is False
 
 
 class TestDepsProvenance:
@@ -381,7 +367,7 @@ class TestDepsProvenance:
         sys.modules["docling_agent"].__file__ = "/somewhere/docling_agent/__init__.py"
         monkeypatch.setattr(md, "version", lambda name: "0.6.0")
 
-        assert mod.deps_provenance() == (
+        assert mod.describe_deps_provenance() == (
             "docling-agent 0.6.0 from /somewhere/docling_agent/__init__.py"
         )
 
@@ -390,4 +376,4 @@ class TestDepsProvenance:
     ) -> None:
         monkeypatch.setitem(sys.modules, "docling_agent", None)
 
-        assert mod.deps_provenance() == "docling-agent not importable"
+        assert mod.describe_deps_provenance() == "docling-agent not importable"

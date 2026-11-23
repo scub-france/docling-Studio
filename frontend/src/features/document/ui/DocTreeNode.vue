@@ -52,7 +52,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { DocTreeNode } from '../../../shared/types'
-import { colorFor } from '@/shared/elementColors'
+import { getElementColor } from '@/shared/elementColors'
 
 const props = withDefaults(
   defineProps<{
@@ -83,7 +83,7 @@ const isOpen = computed(() => open.value || (props.revealedRefs?.has(props.node.
 
 const hasChildren = computed(() => props.node.children.length > 0)
 
-const nodeColor = computed(() => colorFor(props.node.type))
+const nodeColor = computed(() => getElementColor(props.node.type))
 
 function onRowClick(): void {
   emit('select', props.node.ref)
@@ -130,7 +130,7 @@ function toggle(): void {
 }
 
 .tree-node-row--highlight {
-  background: var(--warning-muted, rgba(234, 179, 8, 0.1));
+  background: var(--warning-muted);
   color: var(--text);
 }
 

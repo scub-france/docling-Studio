@@ -25,12 +25,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
-from domain.element_reader import element_text, section_refs
+from domain.element_reader import list_section_refs, read_element_text
 from domain.navigation import read_cost
-from domain.outline_locate import containing_chain, flatten, heading_ranges
-from domain.page_regions import regions_of
+from domain.outline_locate import find_containing_chain, flatten, list_heading_ranges
+from domain.page_regions import collect_regions
 from domain.source_bar import SourceSegment, build_segments
-from domain.spans import span_start
+from domain.spans import get_span_start
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -184,58 +184,66 @@ def build_source_map(
     """Project the reads and the cited anchors onto `outline`."""
     flat = flatten(outline.nodes)
     published = {node.ref: node for node, _ in flat}
-    ranges = heading_ranges(index) if outline.mode == "sections" else []
-
-    def locate(ref: str) -> str | None:
-        for candidate in containing_chain(ref, index, ranges, mode=outline.mode):
-            if candidate in published:
-                return candidate
-        return None
-
-    hops, covered = _hops(reads, index, published, locate)
+    locate = _build_locator(outline, index, published)
+    hops, covered = _build_hops(reads, index, published, locate)
     trail = _Trail()
     for hop in hops:
         trail.mark(hop.node_ref, STATUS_READ, hop.hop_id)
     passages: dict[tuple[str, str], SourcePassage] = {}
     for anchor in cited:
-        hop = _hop_covering(span_start(anchor.ref), hops, covered)
+        hop = _find_covering_hop(get_span_start(anchor.ref), hops, covered)
         if hop is not None and anchor.uri not in hop.cited:
             hop.cited.append(anchor.uri)
         node_ref = locate(anchor.ref)
         trail.mark(node_ref, STATUS_CITED, hop.hop_id if hop else None)
         node = published.get(node_ref) if node_ref else None
         passages.setdefault(
-            (anchor.uri, anchor.quote), _passage(anchor, index, hop, node.title if node else "")
+            (anchor.uri, anchor.quote),
+            _build_passage(anchor, index, hop, node.title if node else ""),
         )
 
     return SourceMap(
-        nodes=trail.nodes(flat),
+        nodes=trail.build_nodes(flat),
         hops=hops,
-        totals=_totals(outline, len(flat), hops, covered, index),
+        totals=_compute_totals(outline, hops, covered, index),
         segments=build_segments(flat, trail.status, trail.reached),
         passages=list(passages.values()),
     )
 
 
-def _passage(
+def _build_locator(
+    outline: DocumentOutline, index: DocumentIndex, published: dict[str, OutlineNode]
+) -> Callable[[str], str | None]:
+    """The function giving the deepest published node that holds a ref."""
+    ranges = list_heading_ranges(index) if outline.mode == "sections" else []
+
+    def locate(ref: str) -> str | None:
+        for candidate in find_containing_chain(ref, index, ranges, mode=outline.mode):
+            if candidate in published:
+                return candidate
+        return None
+
+    return locate
+
+
+def _build_passage(
     anchor: SourceCited, index: DocumentIndex, hop: SourceHop | None, section: str
 ) -> SourcePassage:
-    start = span_start(anchor.ref)
+    start = get_span_start(anchor.ref)
     return SourcePassage(
         uri=anchor.uri,
         ref=anchor.ref,
         quote=anchor.quote,
         status=anchor.status,
-        regions=regions_of(index, section_refs(index, anchor.ref) or [start]),
+        regions=collect_regions(index, list_section_refs(index, anchor.ref) or [start]),
         hop_id=hop.hop_id if hop else None,
         page=index.page_of.get(start),
         section=section,
     )
 
 
-def _totals(
+def _compute_totals(
     outline: DocumentOutline,
-    sections_total: int,
     hops: list[SourceHop],
     covered: dict[str, set[str]],
     index: DocumentIndex,
@@ -245,8 +253,8 @@ def _totals(
         mode=outline.mode,
         rounds=len(hops),
         sections_read=len({hop.node_ref for hop in hops if hop.node_ref}),
-        sections_total=sections_total,
-        tokens_read=_cost(index, every),
+        sections_total=len(flatten(outline.nodes)),
+        tokens_read=_compute_cost(index, every),
         tokens_total=outline.total_est_tokens,
     )
 
@@ -262,12 +270,12 @@ class _Trail:
     def mark(self, node_ref: str | None, state: str, hop_id: str | None) -> None:
         if node_ref is None:
             return
-        self.status[node_ref] = _stronger(self.status.get(node_ref), state)
+        self.status[node_ref] = _pick_stronger(self.status.get(node_ref), state)
         ids = self.reached.setdefault(node_ref, [])
         if hop_id and hop_id not in ids:
             ids.append(hop_id)
 
-    def nodes(self, flat: list[tuple[OutlineNode, list[str]]]) -> list[SourceNode]:
+    def build_nodes(self, flat: list[tuple[OutlineNode, list[str]]]) -> list[SourceNode]:
         keep = set(self.status)
         for node, ancestors in flat:
             if node.ref in self.status:
@@ -289,7 +297,7 @@ class _Trail:
         ]
 
 
-def _hops(
+def _build_hops(
     reads: list[SourceRead],
     index: DocumentIndex,
     published: dict[str, OutlineNode],
@@ -310,31 +318,37 @@ def _hops(
                 hops[at] = replace(hops[at], found=read.found)
             continue
         seen[read.ref] = len(hops)
-        hop_id = f"h{len(hops) + 1}"
-        ordered = section_refs(index, read.ref) or [read.ref]
-        refs = set(ordered)
-        covered[hop_id] = refs
         node_ref = locate(read.ref)
         node = published.get(node_ref) if node_ref else None
-        hops.append(
-            SourceHop(
-                hop_id=hop_id,
-                ordinal=len(hops) + 1,
-                ref=read.ref,
-                uri=read.uri,
-                title=node.title if node else read.ref,
-                why=read.why,
-                found=read.found,
-                est_tokens=_cost(index, refs),
-                node_ref=node_ref,
-                page=index.page_of.get(span_start(read.ref)) or (node.page if node else None),
-                regions=regions_of(index, ordered),
-            )
-        )
+        hop, refs = _build_hop(read, len(hops) + 1, index, node)
+        covered[hop.hop_id] = refs
+        hops.append(hop)
     return hops, covered
 
 
-def _hop_covering(
+def _build_hop(
+    read: SourceRead, ordinal: int, index: DocumentIndex, node: OutlineNode | None
+) -> tuple[SourceHop, set[str]]:
+    """The hop for one read, landing on `node`, with the refs its read covered."""
+    ordered = list_section_refs(index, read.ref) or [read.ref]
+    refs = set(ordered)
+    hop = SourceHop(
+        hop_id=f"h{ordinal}",
+        ordinal=ordinal,
+        ref=read.ref,
+        uri=read.uri,
+        title=node.title if node else read.ref,
+        why=read.why,
+        found=read.found,
+        est_tokens=_compute_cost(index, refs),
+        node_ref=node.ref if node else None,
+        page=index.page_of.get(get_span_start(read.ref)) or (node.page if node else None),
+        regions=collect_regions(index, ordered),
+    )
+    return hop, refs
+
+
+def _find_covering_hop(
     ref: str, hops: list[SourceHop], covered: dict[str, set[str]]
 ) -> SourceHop | None:
     """The first hop whose read covered `ref` — where the quote was read."""
@@ -344,11 +358,11 @@ def _hop_covering(
     return None
 
 
-def _cost(index: DocumentIndex, refs: set[str]) -> int:
-    return sum(read_cost(element_text(index, ref)) for ref in refs)
+def _compute_cost(index: DocumentIndex, refs: set[str]) -> int:
+    return sum(read_cost(read_element_text(index, ref)) for ref in refs)
 
 
-def _stronger(current: str | None, candidate: str) -> str:
+def _pick_stronger(current: str | None, candidate: str) -> str:
     if current is None:
         return candidate
     return candidate if _RANK[candidate] > _RANK[current] else current

@@ -164,16 +164,16 @@ Never `waitFor()` an element that might not appear, such as a spinner that shows
 | Tag | Used on | Run by |
 | --- | --- | --- |
 | `@smoke` | API `health/` | `ci.yml` on every run, and `release-gate.yml` |
-| `@regression` | API `documents/` and `analyses/`, and some UI features | API: `ci.yml` on pull requests to `release/*`, and `release-gate.yml`. UI: no CI job. |
+| `@regression` | API `documents/` and `analyses/`, and some UI features | API: `ci.yml` on pull requests to and pushes on `release/*`, and `release-gate.yml`. UI: no CI job. |
 | `@e2e` | API `workflows/` and `ingestion/` | Same as API `@regression`, except `ingestion/`, which no runner scans |
 | `@ingestion` | API `ingestion/`, which needs OpenSearch and the embedding service. Deprecated, removed in 0.8.0 | No CI job |
-| `@critical` | A few core UI journeys | `ci.yml` on pushes to `main`, and `release-gate.yml` on pull requests to `main` |
+| `@critical` | A few core UI journeys | `ci.yml` on pushes to `main` and to `release/*`, and `release-gate.yml` on pull requests to `main`, both through `UIRunner#testCritical` |
 | `@ui` | Every UI feature | No CI job. Run them by hand with `UIRunner#testLocal`. |
 | `@reasoning-off` | UI scenarios that expect Ask to be off (the default) | Nothing selects it. It records the assumption. |
 | `@demo` | `demo/ask-demo.feature`, a video script | `DemoRunner` only |
 | `@ignore` | Helpers | Never on their own: Karate skips them, and features call them. |
 
-Tag every UI feature `@ui`. Add `@critical` only to a core journey, since it runs on every pull request to `main`.
+Tag every UI feature `@ui`. Add `@critical` only to a core journey, since it runs on every pull request to `main` and every push to `main` or `release/*`. A feature can carry it on one scenario only, as `analyses/analysis-editor.feature` does.
 
 ## Driver config (karate-config.js)
 

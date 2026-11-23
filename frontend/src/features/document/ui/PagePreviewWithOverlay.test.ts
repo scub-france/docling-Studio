@@ -36,6 +36,8 @@ describe('PagePreviewWithOverlay PDF scheduling', () => {
         hiddenTypes: new Set<string>(),
         showLabels: true,
       },
+      // Render the raster wrapper so its PdfPageCanvas is the stub counted below.
+      global: { stubs: { PageRaster: false } },
     })
     await flushPromises()
     await nextTick()

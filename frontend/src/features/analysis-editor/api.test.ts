@@ -26,13 +26,17 @@ describe('analysis editor API', () => {
   it('saves commands without using the legacy analysis endpoint', async () => {
     vi.mocked(apiFetch).mockResolvedValue({} as never)
     await saveAnalysisEdits('doc-1', {
-      commands: [{ type: 'moveElement', elementId: 'e1', beforeElementId: null }],
+      commands: [
+        { type: 'moveElement', elementId: 'e1', targetElementId: 'e2', placement: 'before' },
+      ],
       expectedAppliedThroughSequence: 0,
     })
     expect(apiFetch).toHaveBeenCalledWith('/api/documents/doc-1/analysis-edits', {
       method: 'POST',
       body: JSON.stringify({
-        commands: [{ type: 'moveElement', elementId: 'e1', beforeElementId: null }],
+        commands: [
+          { type: 'moveElement', elementId: 'e1', targetElementId: 'e2', placement: 'before' },
+        ],
         expectedAppliedThroughSequence: 0,
       }),
     })
@@ -40,7 +44,11 @@ describe('analysis editor API', () => {
 
   it('changes a saved edit with the expected stream sequence', async () => {
     vi.mocked(apiFetch).mockResolvedValue({} as never)
-    await setAnalysisEditActive('doc-1', 2, false, 5, 'analysis-1')
+    await setAnalysisEditActive(
+      'doc-1',
+      { sequence: 2, active: false, expectedAppliedThroughSequence: 5 },
+      'analysis-1',
+    )
     expect(apiFetch).toHaveBeenCalledWith(
       '/api/documents/doc-1/analysis-edits/history/2?analysisId=analysis-1',
       {

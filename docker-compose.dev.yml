@@ -143,6 +143,8 @@ services:
       DOCLING_SERVE_API_KEY: ${DOCLING_SERVE_API_KEY:-}
       RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-100}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      # Host check on /api (docs/configuration.md): empty = no check.
+      API_ALLOWED_HOSTS: ${API_ALLOWED_HOSTS:-}
       BATCH_PAGE_SIZE: ${BATCH_PAGE_SIZE:-10}
       OPENSEARCH_URL: ${OPENSEARCH_URL:-}
       EMBEDDING_URL: ${EMBEDDING_URL:-}
@@ -171,7 +173,7 @@ services:
   # --- Frontend (Vite dev server with HMR) ---
   frontend:
     profiles: ["default", "graph", "ingestion", "remote"]
-    image: node:20-alpine
+    image: node:22-alpine
     working_dir: /app
     ports:
       - "${FRONTEND_HOST_PORT:-3000}:3000"

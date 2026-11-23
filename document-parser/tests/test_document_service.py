@@ -1,27 +1,38 @@
-"""Tests for DocumentService — upload, preview, page counting, and deletion."""
+"""Tests for DocumentService — upload, page counting, and deletion."""
 
 from __future__ import annotations
 
 import io
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+import shutil
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pypdfium2 as pdfium
 import pytest
-from PIL import Image
 
-from domain.models import Document
-from services.document_service import DocumentConfig, DocumentService, _count_pages
+from domain.models import Document, DocumentStoreLink, Store
+from domain.value_objects import DocumentStoreLinkState
+from infra.document_file_store import LocalDocumentFileStore
+from infra.pdf_inspector import PdfiumInspector
+from services.document_service import DocumentConfig, DocumentService, DocumentStoreLinkView
+
+
+def _counting(pages: int | None) -> MagicMock:
+    """A `PdfInspector` double whose upload count is `pages`."""
+    inspector = MagicMock()
+    inspector.count_pages_in_bytes.return_value = pages
+    return inspector
 
 
 def _make_service(
     upload_dir: str = "/tmp/uploads",
     max_file_size_mb: int = 50,
     max_page_count: int = 0,
+    pdf_inspector=None,
 ) -> DocumentService:
-    """Create a DocumentService with mock repos for testing."""
+    """Create a DocumentService with mock repos and a file store rooted at `upload_dir`."""
     config = DocumentConfig(
-        upload_dir=upload_dir,
         max_file_size_mb=max_file_size_mb,
         max_page_count=max_page_count,
     )
@@ -29,6 +40,11 @@ def _make_service(
         document_repo=AsyncMock(),
         analysis_repo=AsyncMock(),
         config=config,
+        link_repo=AsyncMock(),
+        store_repo=AsyncMock(),
+        pdf_inspector=pdf_inspector or _counting(None),
+        # The real store: these tests check what lands on, and leaves, the disk.
+        file_store=LocalDocumentFileStore(upload_dir),
     )
 
 
@@ -49,44 +65,46 @@ class TestUploadValidation:
 
     @pytest.mark.asyncio
     async def test_rejects_too_many_pages(self, tmp_path):
-        service = _make_service(upload_dir=str(tmp_path), max_page_count=20)
+        service = _make_service(
+            upload_dir=str(tmp_path), max_page_count=20, pdf_inspector=_counting(40)
+        )
 
-        with patch("services.document_service._count_pages", return_value=40):
-            content = b"%PDF-1.4 fake pdf content"
-            with pytest.raises(ValueError, match="Too many pages"):
-                await service.upload("big.pdf", "application/pdf", content)
+        content = b"%PDF-1.4 fake pdf content"
+        with pytest.raises(ValueError, match="Too many pages"):
+            await service.upload("big.pdf", "application/pdf", content)
 
         # Verify temp file was cleaned up
         assert len(os.listdir(tmp_path)) == 0
 
     @pytest.mark.asyncio
     async def test_allows_pdf_under_page_limit(self, tmp_path):
-        service = _make_service(upload_dir=str(tmp_path), max_page_count=20)
+        service = _make_service(
+            upload_dir=str(tmp_path), max_page_count=20, pdf_inspector=_counting(15)
+        )
 
-        with patch("services.document_service._count_pages", return_value=15):
-            content = b"%PDF-1.4 fake pdf content"
-            doc = await service.upload("ok.pdf", "application/pdf", content)
+        content = b"%PDF-1.4 fake pdf content"
+        doc = await service.upload("ok.pdf", "application/pdf", content)
 
         assert doc.page_count == 15
         service._document_repo.insert.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_unlimited_pages_when_zero(self, tmp_path):
-        service = _make_service(upload_dir=str(tmp_path), max_page_count=0)
+        service = _make_service(
+            upload_dir=str(tmp_path), max_page_count=0, pdf_inspector=_counting(100)
+        )
 
-        with patch("services.document_service._count_pages", return_value=100):
-            content = b"%PDF-1.4 fake pdf content"
-            doc = await service.upload("big.pdf", "application/pdf", content)
+        content = b"%PDF-1.4 fake pdf content"
+        doc = await service.upload("big.pdf", "application/pdf", content)
 
         assert doc.page_count == 100
 
     @pytest.mark.asyncio
     async def test_accepts_valid_pdf(self, tmp_path):
-        service = _make_service(upload_dir=str(tmp_path))
+        service = _make_service(upload_dir=str(tmp_path), pdf_inspector=_counting(5))
 
-        with patch("services.document_service._count_pages", return_value=5):
-            content = b"%PDF-1.4 fake pdf content"
-            doc = await service.upload("test.pdf", "application/pdf", content)
+        content = b"%PDF-1.4 fake pdf content"
+        doc = await service.upload("test.pdf", "application/pdf", content)
 
         assert doc.filename == "test.pdf"
         assert doc.file_size == len(content)
@@ -110,75 +128,106 @@ def pdf_with_pages(*sizes: tuple[float, float]) -> bytes:
     return buffer.getvalue()
 
 
-class TestPageSizes:
-    def test_resolves_docker_upload_path_from_local_worktree(self, tmp_path):
-        service = _make_service(upload_dir=str(tmp_path))
-        local_file = tmp_path / "stored.pdf"
-        local_file.write_bytes(b"%PDF-1.4")
-
-        assert service.resolve_storage_path("/app/uploads/stored.pdf") == local_file
-
-    def test_reads_the_size_of_every_page(self):
-        pages = DocumentService.page_sizes(pdf_with_pages((612, 792), (842, 595)))
-
-        assert [(p.page_number, p.width, p.height) for p in pages] == [
-            (1, 612, 792),
-            (2, 842, 595),
-        ]
-        assert all(p.elements == [] for p in pages)
-
-    def test_raises_on_a_file_that_is_not_a_pdf(self):
-        with pytest.raises(pdfium.PdfiumError):
-            DocumentService.page_sizes(b"%PDF-not really")
+_NO_PDFINFO = shutil.which("pdfinfo") is None
 
 
-class TestGeneratePreview:
-    def test_raises_on_invalid_page(self):
-        """generate_preview should raise ValueError when page is out of range."""
-        with (
-            patch("services.document_service.convert_from_bytes", return_value=[]),
-            pytest.raises(ValueError, match="Page 1 not found"),
-        ):
-            DocumentService.generate_preview(b"%PDF-fake", page=1)
+@pytest.mark.skipif(_NO_PDFINFO, reason="poppler's pdfinfo is not installed")
+class TestUploadThroughTheRealInspector:
+    """The upload's page count and page limit on a real PDF, through poppler."""
 
-    def test_returns_png_bytes(self):
-        """generate_preview should return PNG bytes from pdf2image."""
-        mock_image = MagicMock()
-        mock_image.save = MagicMock(side_effect=lambda buf, format: buf.write(b"PNG-DATA"))
+    async def test_counts_the_pages_of_a_real_pdf(self, tmp_path):
+        service = _make_service(upload_dir=str(tmp_path), pdf_inspector=PdfiumInspector())
 
-        with patch("services.document_service.convert_from_bytes", return_value=[mock_image]):
-            result = DocumentService.generate_preview(b"%PDF-fake", page=1, dpi=72)
+        doc = await service.upload(
+            "three.pdf", "application/pdf", pdf_with_pages((612, 792), (612, 792), (842, 595))
+        )
 
-        assert result == b"PNG-DATA"
+        assert doc.page_count == 3
+        service._document_repo.insert.assert_called_once()
 
-    def test_returns_webp_bytes_at_the_same_page_size(self):
-        image = Image.new("RGB", (32, 48), "white")
-        with patch("services.document_service.convert_from_bytes", return_value=[image]):
-            result = DocumentService.generate_preview(
-                b"%PDF-fake", page=1, dpi=150, image_format="WEBP"
-            )
+    async def test_rejects_a_real_pdf_over_the_page_limit(self, tmp_path):
+        service = _make_service(
+            upload_dir=str(tmp_path), max_page_count=2, pdf_inspector=PdfiumInspector()
+        )
 
-        assert result[:4] == b"RIFF"
-        assert result[8:12] == b"WEBP"
-        with Image.open(io.BytesIO(result)) as decoded:
-            assert decoded.size == (32, 48)
-            assert decoded.convert("RGB").tobytes() == image.tobytes()
+        with pytest.raises(ValueError, match=r"^Too many pages \(3\)\. Maximum allowed: 2$"):
+            await service.upload("three.pdf", "application/pdf", pdf_with_pages(*[(612, 792)] * 3))
+
+        assert os.listdir(tmp_path) == []
+        service._document_repo.insert.assert_not_called()
+
+    async def test_accepts_a_damaged_pdf_without_a_page_count(self, tmp_path):
+        """An unreadable PDF has never been rejected at upload: it is stored
+        without a page count, and the page limit cannot apply."""
+        service = _make_service(
+            upload_dir=str(tmp_path), max_page_count=2, pdf_inspector=PdfiumInspector()
+        )
+
+        doc = await service.upload("broken.pdf", "application/pdf", b"%PDF-1.4 truncated")
+
+        assert doc.page_count is None
 
 
-class TestCountPages:
-    def test_returns_page_count(self):
-        with patch(
-            "services.document_service.pdfinfo_from_bytes",
-            return_value={"Pages": 42},
-        ):
-            assert _count_pages(b"pdf") == 42
+class TestUploadCountsThroughTheInspector:
+    async def test_counts_the_uploaded_bytes(self, tmp_path):
+        inspector = _counting(2)
+        service = _make_service(upload_dir=str(tmp_path), pdf_inspector=inspector)
+        content = b"%PDF-1.4 fake pdf content"
 
-    def test_returns_none_on_error(self):
-        with patch(
-            "services.document_service.pdfinfo_from_bytes",
-            side_effect=FileNotFoundError("poppler not found"),
-        ):
-            assert _count_pages(b"pdf") is None
+        await service.upload("ok.pdf", "application/pdf", content)
+
+        inspector.count_pages_in_bytes.assert_called_once_with(content)
+
+    async def test_no_count_skips_the_page_limit(self, tmp_path):
+        service = _make_service(
+            upload_dir=str(tmp_path), max_page_count=1, pdf_inspector=_counting(None)
+        )
+
+        doc = await service.upload("ok.pdf", "application/pdf", b"%PDF-1.4 fake pdf content")
+
+        assert doc.page_count is None
+
+
+class TestFindWithStoreLinks:
+    async def test_missing_document_returns_none(self):
+        service = _make_service()
+        service._document_repo.find_by_id = AsyncMock(return_value=None)
+
+        assert await service.find_with_store_links("missing") is None
+        service._link_repo.find_for_document.assert_not_called()
+
+    async def test_no_links_skips_the_store_lookup(self):
+        doc = Document(id="d1", filename="a.pdf", storage_path="/tmp/a.pdf")
+        service = _make_service()
+        service._document_repo.find_by_id = AsyncMock(return_value=doc)
+        service._link_repo.find_for_document = AsyncMock(return_value=[])
+
+        assert await service.find_with_store_links("d1") == (doc, [])
+        service._store_repo.find_all.assert_not_called()
+
+    async def test_names_each_link_by_its_store_slug(self):
+        doc = Document(id="d1", filename="a.pdf", storage_path="/tmp/a.pdf")
+        pushed = datetime(2026, 11, 1, 12, 0, 0)
+        service = _make_service()
+        service._document_repo.find_by_id = AsyncMock(return_value=doc)
+        service._link_repo.find_for_document = AsyncMock(
+            return_value=[
+                DocumentStoreLink(document_id="d1", store_id="s-1", last_push_at=pushed),
+                DocumentStoreLink(
+                    document_id="d1", store_id="s-gone", state=DocumentStoreLinkState.STALE
+                ),
+            ]
+        )
+        service._store_repo.find_all = AsyncMock(return_value=[Store(id="s-1", slug="legal-v1")])
+
+        assert await service.find_with_store_links("d1") == (
+            doc,
+            [
+                DocumentStoreLinkView("legal-v1", DocumentStoreLinkState.INGESTED, pushed),
+                # An unknown store keeps its id, as before.
+                DocumentStoreLinkView("s-gone", DocumentStoreLinkState.STALE, None),
+            ],
+        )
 
 
 class TestDelete:
@@ -233,3 +282,62 @@ class TestDelete:
 
         result = await service.delete("missing")
         assert result is False
+
+
+class TestFilesGoThroughTheStore:
+    """The service hands every file operation to its `DocumentFileStore`."""
+
+    def _service(self, *, pages: int | None, max_page_count: int = 0):
+        store = MagicMock()
+        store.save.return_value = "/srv/uploads/stored.pdf"
+        service = DocumentService(
+            document_repo=AsyncMock(),
+            analysis_repo=AsyncMock(),
+            config=DocumentConfig(max_page_count=max_page_count),
+            link_repo=AsyncMock(),
+            store_repo=AsyncMock(),
+            pdf_inspector=_counting(pages),
+            file_store=store,
+        )
+        return service, store
+
+    async def test_upload_saves_under_a_fresh_pdf_name_and_keeps_the_stored_path(self):
+        service, store = self._service(pages=3)
+        content = b"%PDF-1.4 fake pdf content"
+
+        doc = await service.upload("report.pdf", "application/pdf", content)
+
+        file_name, saved = store.save.call_args.args
+        assert file_name.endswith(".pdf")
+        assert file_name != "report.pdf"
+        assert saved == content
+        assert doc.storage_path == "/srv/uploads/stored.pdf"
+        store.discard.assert_not_called()
+
+    async def test_page_limit_discards_the_saved_file_before_the_insert(self):
+        service, store = self._service(pages=5, max_page_count=2)
+
+        with pytest.raises(ValueError, match="Too many pages"):
+            await service.upload("big.pdf", "application/pdf", b"%PDF-1.4 fake pdf content")
+
+        store.discard.assert_called_once_with("/srv/uploads/stored.pdf")
+        service._document_repo.insert.assert_not_called()
+
+    async def test_rejected_content_never_reaches_the_store(self):
+        service, store = self._service(pages=1)
+
+        with pytest.raises(ValueError, match="not a PDF"):
+            await service.upload("fake.pdf", "application/pdf", b"NOT-A-PDF-FILE")
+
+        store.save.assert_not_called()
+
+    async def test_delete_removes_the_analyses_and_asks_the_store(self):
+        service, store = self._service(pages=None)
+        doc = Document(id="doc-1", filename="x.pdf", storage_path="/srv/uploads/x.pdf")
+        service._document_repo.find_by_id = AsyncMock(return_value=doc)
+        service._document_repo.delete = AsyncMock(return_value=True)
+
+        assert await service.delete("doc-1") is True
+
+        service._analysis_repo.delete_by_document.assert_awaited_once_with("doc-1")
+        store.delete.assert_called_once_with("/srv/uploads/x.pdf")

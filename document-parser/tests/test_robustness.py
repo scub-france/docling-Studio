@@ -14,7 +14,7 @@ from domain.models import AnalysisJob
 from domain.services import classify_error
 from domain.value_objects import ConversionOptions, ConversionResult, PageDetail
 from infra.settings import Settings
-from services.analysis_service import AnalysisConfig, AnalysisService
+from services.analysis_service import AnalysisConfig, AnalysisRun, AnalysisService
 
 # ---------------------------------------------------------------------------
 # M1 — _classify_error: user-friendly error messages
@@ -88,6 +88,7 @@ class TestDefaultTableMode:
         mock_analysis_repo = MagicMock()
         mock_analysis_repo.find_by_id = AsyncMock()
         mock_analysis_repo.update_status = AsyncMock()
+        mock_analysis_repo.complete_and_select = AsyncMock()
         mock_document_repo = MagicMock()
         mock_document_repo.update_page_count = AsyncMock()
         config = AnalysisConfig(default_table_mode=default_table_mode)
@@ -105,7 +106,7 @@ class TestDefaultTableMode:
         svc = self._make_service(mock_converter)
         svc._analysis_repo.find_by_id = AsyncMock(return_value=mock_job)
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", {})
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", {}))
 
         opts = mock_converter.convert.call_args[0][1]
         assert opts.table_mode == "accurate"
@@ -117,7 +118,7 @@ class TestDefaultTableMode:
         svc = self._make_service(mock_converter)
         svc._analysis_repo.find_by_id = AsyncMock(return_value=mock_job)
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", None)
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", None))
 
         opts = mock_converter.convert.call_args[0][1]
         assert opts.table_mode == "accurate"
@@ -129,7 +130,9 @@ class TestDefaultTableMode:
         svc = self._make_service(mock_converter)
         svc._analysis_repo.find_by_id = AsyncMock(return_value=mock_job)
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", {"table_mode": "fast"})
+        await svc._run_analysis(
+            AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", {"table_mode": "fast"})
+        )
 
         opts = mock_converter.convert.call_args[0][1]
         assert opts.table_mode == "fast"
@@ -141,7 +144,7 @@ class TestDefaultTableMode:
         svc = self._make_service(mock_converter, default_table_mode="fast")
         svc._analysis_repo.find_by_id = AsyncMock(return_value=mock_job)
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", {})
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", {}))
 
         opts = mock_converter.convert.call_args[0][1]
         assert opts.table_mode == "fast"

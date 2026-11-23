@@ -6,7 +6,7 @@ import type { ConversationTurn, ReasoningTrace } from './types'
 
 let turnSeq = 0
 
-function nowHHMM(): string {
+function formatNowHHMM(): string {
   const d = new Date()
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
@@ -72,12 +72,8 @@ export const useReasoningStore = defineStore('reasoning', () => {
     if (step) selectedStepId.value = step.id
   }
 
-  /** Run a question: append a running turn, await the trace, finalize, and
-   * auto-select the first step so the PDF/tree/properties light up. */
-  async function run(id: string, query: string, modelOverride?: string): Promise<void> {
-    const q = query.trim()
-    if (!q || running.value) return
-    docId.value = id
+  /** Append a running turn for `q` and make it the selected one. */
+  function startTurn(q: string): ConversationTurn {
     // `reactive` is load-bearing: the turn is mutated post-await (`turn.trace`,
     // `turn.status`). A raw object pushed into the reactive array is proxied
     // only on access — mutating the raw reference bypasses the proxy's set trap,
@@ -85,7 +81,7 @@ export const useReasoningStore = defineStore('reasoning', () => {
     // 'running'). Wrapping here makes `turn` the proxy, so every mutation fires.
     const turn: ConversationTurn = reactive({
       id: `turn-${++turnSeq}`,
-      time: nowHHMM(),
+      time: formatNowHHMM(),
       status: 'running',
       question: q,
       trace: null,
@@ -93,6 +89,16 @@ export const useReasoningStore = defineStore('reasoning', () => {
     turns.value.push(turn)
     selectedTurnId.value = turn.id
     selectedStepId.value = null
+    return turn
+  }
+
+  /** Run a question: append a running turn, await the trace, finalize, and
+   * auto-select the first step so the PDF/tree/properties light up. */
+  async function run(id: string, query: string, modelOverride?: string): Promise<void> {
+    const q = query.trim()
+    if (!q || running.value) return
+    docId.value = id
+    const turn = startTurn(q)
     running.value = true
     try {
       const trace = await runReasoning(id, q, modelOverride)

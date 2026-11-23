@@ -507,11 +507,11 @@ class TestLabelMapping:
 class TestServeConverter:
     def test_headers_with_api_key(self):
         conv = ServeConverter(base_url="http://localhost:5001", api_key="secret")
-        assert conv._headers() == {"X-Api-Key": "secret"}
+        assert conv._build_headers() == {"X-Api-Key": "secret"}
 
     def test_headers_without_api_key(self):
         conv = ServeConverter(base_url="http://localhost:5001")
-        assert conv._headers() == {}
+        assert conv._build_headers() == {}
 
     def test_base_url_trailing_slash_stripped(self):
         conv = ServeConverter(base_url="http://localhost:5001/")
@@ -629,33 +629,6 @@ class TestServeConverterConvert:
             pytest.raises(httpx.HTTPStatusError),
         ):
             await conv.convert(str(test_file), ConversionOptions())
-
-    @pytest.mark.asyncio
-    async def test_health_check_success(self):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        conv = ServeConverter(base_url="http://localhost:5001")
-
-        with patch("infra.serve_converter.httpx.AsyncClient", return_value=mock_client):
-            assert await conv.health_check() is True
-
-    @pytest.mark.asyncio
-    async def test_health_check_failure(self):
-        mock_client = AsyncMock()
-        mock_client.get.side_effect = httpx.ConnectError("Connection refused")
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        conv = ServeConverter(base_url="http://localhost:5001")
-
-        with patch("infra.serve_converter.httpx.AsyncClient", return_value=mock_client):
-            assert await conv.health_check() is False
 
 
 # ---------------------------------------------------------------------------

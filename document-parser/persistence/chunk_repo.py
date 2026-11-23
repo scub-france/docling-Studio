@@ -3,21 +3,28 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import asdict
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
+from domain.exceptions import AnalysisNotSelectableError
 from domain.models import Chunk
 from domain.value_objects import ChunkBbox, ChunkDocItem
 from persistence.database import get_connection
+from persistence.document_analysis_repo import (
+    adopt_selection,
+    write_chunk_source,
+    write_selection,
+)
+from persistence.iso_datetime import parse_iso
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
-def _parse_iso(value: str | None) -> datetime | None:
-    if value is None or value == "":
-        return None
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
+    import aiosqlite
+
+    from domain.models import ChunkReplacement
 
 
 def _row_to_chunk(row) -> Chunk:
@@ -34,9 +41,9 @@ def _row_to_chunk(row) -> Chunk:
         bboxes=[ChunkBbox(page=b["page"], bbox=b["bbox"]) for b in bboxes_raw],
         doc_items=[ChunkDocItem(self_ref=d["self_ref"], label=d["label"]) for d in doc_items_raw],
         token_count=row["token_count"],
-        created_at=_parse_iso(row["created_at"]) or datetime.now(UTC),
-        updated_at=_parse_iso(row["updated_at"]) or datetime.now(UTC),
-        deleted_at=_parse_iso(row["deleted_at"]),
+        created_at=parse_iso(row["created_at"]) or datetime.now(UTC),
+        updated_at=parse_iso(row["updated_at"]) or datetime.now(UTC),
+        deleted_at=parse_iso(row["deleted_at"]),
     )
 
 
@@ -61,6 +68,9 @@ _INSERT_SQL = """INSERT INTO chunks
     (id, document_id, sequence, text, headings, source_page,
      bboxes, doc_items, token_count, created_at, updated_at, deleted_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+
+_SOFT_DELETE_FOR_DOCUMENT_SQL = """UPDATE chunks SET deleted_at = ?, updated_at = ?
+    WHERE document_id = ? AND deleted_at IS NULL"""
 
 
 class SqliteChunkRepository:
@@ -109,6 +119,85 @@ class SqliteChunkRepository:
             )
             await db.commit()
             return cursor.rowcount > 0
+
+    async def soft_delete_many(self, chunk_ids: list[str], *, at: datetime) -> int:
+        """Soft-delete the given chunks in one statement; returns how many were hit."""
+        if not chunk_ids:
+            return 0
+        placeholders = ", ".join("?" for _ in chunk_ids)
+        async with get_connection() as db:
+            cursor = await db.execute(
+                f"UPDATE chunks SET deleted_at = ?, updated_at = ? WHERE id IN ({placeholders})",
+                (str(at), str(at), *chunk_ids),
+            )
+            await db.commit()
+            return cursor.rowcount
+
+    async def replace_and_select(self, replacement: ChunkReplacement) -> int:
+        """Replace a document's live chunks and write its selection, atomically (restore)."""
+        return await self._replace(replacement, write_selection)
+
+    async def replace_keeping_selection(self, replacement: ChunkReplacement) -> int:
+        """Replace a document's live chunks, keeping its selection, atomically (rechunk).
+
+        `replacement.active_analysis_id` is only adopted by a state row this write creates.
+        """
+        return await self._replace(replacement, adopt_selection)
+
+    async def _replace(
+        self,
+        replacement: ChunkReplacement,
+        write_state_selection: Callable[[aiosqlite.Connection, str, str | None], Awaitable[None]],
+    ) -> int:
+        """Replace a document's live chunks and write its analysis state, atomically.
+
+        Soft-deletes every live chunk, inserts `replacement.chunks`, writes the
+        selection (with `write_state_selection`) and the chunk source in one
+        transaction (02-2.4.3): the live chunks and the record of where they
+        came from never disagree after a failure. Returns how many chunks were
+        soft-deleted.
+        """
+        document_id = replacement.document_id
+        chunk_source = replacement.chunk_source
+        if chunk_source is not None and chunk_source.document_id != document_id:
+            raise ValueError("The chunk source must belong to the document")
+        at = str(replacement.at)
+        async with get_connection() as db:
+            cursor = await db.execute(_SOFT_DELETE_FOR_DOCUMENT_SQL, (at, at, document_id))
+            deleted = cursor.rowcount
+            if replacement.chunks:
+                await db.executemany(_INSERT_SQL, [_chunk_to_params(c) for c in replacement.chunks])
+            try:
+                await write_state_selection(db, document_id, replacement.active_analysis_id)
+            except sqlite3.IntegrityError as exc:
+                raise AnalysisNotSelectableError(
+                    f"Analysis {replacement.active_analysis_id} is no longer available"
+                ) from exc
+            await write_chunk_source(db, document_id, chunk_source)
+            await db.commit()
+        return deleted
+
+    async def shift_sequences(
+        self,
+        document_id: str,
+        *,
+        from_sequence: int,
+        at: datetime,
+        by: int = 1,
+    ) -> int:
+        """Move every live chunk at `sequence >= from_sequence` up by `by`, in one statement.
+
+        `chunks` has no UNIQUE constraint on (document_id, sequence), so the
+        rows can be shifted in place without a temporary offset.
+        """
+        async with get_connection() as db:
+            cursor = await db.execute(
+                """UPDATE chunks SET sequence = sequence + ?, updated_at = ?
+                   WHERE document_id = ? AND sequence >= ? AND deleted_at IS NULL""",
+                (by, str(at), document_id, from_sequence),
+            )
+            await db.commit()
+            return cursor.rowcount
 
     async def find_for_document(
         self,

@@ -60,7 +60,8 @@ Feature: UI — Saved analysis detail page
     # UI — the detail page is read-only and links back to its document.
     * driver uiBaseUrl + '/analyses/' + analysisOldId
     * waitFor('[data-e2e=parse-tab]')
-    * assert !exists('[data-e2e=parse-new-analysis]')
+    # Read-only: the action that starts an analysis lives on the document page.
+    * assert !exists('[data-e2e=document-actions-trigger]')
     * click('[data-e2e=analysis-open-document]')
     * waitForUrl('/docs/' + docId)
     * waitFor('[data-e2e=document-viewer]')

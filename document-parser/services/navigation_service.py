@@ -13,26 +13,27 @@ HTTP route would be the same call.
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from domain.anchors import DocumentAnchor
-from domain.element_reader import render_markdown, resolve, section_refs
+from domain.element_reader import (
+    list_section_refs,
+    pick_within_budget,
+    render_markdown,
+    resolve,
+)
 from domain.navigation import (
-    ANCHOR_TOKENS,
     DocumentOutline,
     DocumentSearch,
     DocumentSummary,
     Excerpt,
     OutlineNode,
-    clip_point,
-    clip_to_tokens,
     is_heading,
-    read_cost,
 )
 from domain.outline_builder import build_outline
 from domain.parse_index import parse_page_ref
-from domain.spans import span_members, span_ref
+from domain.spans import build_span_ref, list_span_members
 from services.navigation_config import NavigationConfig
 from services.navigation_errors import InvalidArgumentError, RefNotFoundError
 
@@ -45,6 +46,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 READ_MODES = ("self", "section")
+
+
+@dataclass(frozen=True)
+class ReadScope:
+    """How to read an element: the scope, the token budget, where to resume."""
+
+    include: str = "section"
+    max_tokens: int | None = None
+    cursor: str | None = None
 
 
 class NavigationService:
@@ -75,8 +85,9 @@ class NavigationService:
     ) -> DocumentSearch:
         """List documents, newest first, optionally filtered by a filename substring.
 
-        Two queries whatever the count: the documents, then the latest parse
-        id of each — never a whole analysis row.
+        A fixed number of queries whatever the count: the documents, then the
+        current parse id of each (`ParseLoader.find_current_parse_ids`) —
+        never a whole analysis row.
         """
         limit = max(1, min(limit, self._config.max_documents))
         docs = await self._parses.documents.find_all(
@@ -84,14 +95,14 @@ class NavigationService:
         )
         truncated = len(docs) > limit
         docs = docs[:limit]
-        latest = await self._parses.analyses.latest_parsed_ids([doc.id for doc in docs])
+        current = await self._parses.find_current_parse_ids([doc.id for doc in docs])
         summaries = [
             DocumentSummary(
                 document_id=doc.id,
                 filename=doc.filename,
                 lifecycle_state=str(doc.lifecycle_state),
                 page_count=doc.page_count,
-                version_id=latest.get(doc.id),
+                version_id=current.get(doc.id),
                 created_at=doc.created_at.isoformat() if doc.created_at else None,
             )
             for doc in docs
@@ -116,7 +127,9 @@ class NavigationService:
             page_count=parse.document.page_count or parse.index.page_count or None,
             total_est_tokens=draft.total_est_tokens,
             mode=draft.mode,
-            nodes=[self._stamp(node, parse.document.id, parse.version_id) for node in draft.nodes],
+            nodes=[
+                self._attach_uris(node, parse.document.id, parse.version_id) for node in draft.nodes
+            ],
             depth_limited=draft.depth_limited,
             node_limited=draft.node_limited,
         )
@@ -127,25 +140,19 @@ class NavigationService:
         ref: str,
         *,
         version_id: str | None = None,
-        include: str = "section",
-        max_tokens: int | None = None,
-        cursor: str | None = None,
+        scope: ReadScope = ReadScope(),
     ) -> Excerpt:
         """Read one element — or the whole section it opens — under a budget."""
-        if include not in READ_MODES:
-            raise InvalidArgumentError(f"include must be one of {READ_MODES}, got {include!r}")
-
-        parse = await self._parses.load(document_id, version_id)
-        target = resolve(parse.index, ref)
-        if target is None:
-            raise RefNotFoundError(
-                f"Ref {ref!r} does not exist in version {parse.version_id} of document "
-                f"{document_id}. Call get_outline to obtain valid refs."
+        if scope.include not in READ_MODES:
+            raise InvalidArgumentError(
+                f"include must be one of {READ_MODES}, got {scope.include!r}"
             )
 
-        refs, start = self._refs_to_read(parse, ref, include=include, cursor=cursor)
-        picked, spent, truncated, next_cursor = self._pick(
-            parse, refs, self._budget(max_tokens), start
+        parse = await self._parses.load(document_id, version_id)
+        target = _require_target(parse, document_id, ref)
+        refs, start = self._list_refs_to_read(parse, ref, scope)
+        picked, spent, truncated, next_cursor = pick_within_budget(
+            parse.index, refs, self._compute_budget(scope.max_tokens), start
         )
 
         pages = [element.page for element in picked if element.page is not None]
@@ -154,7 +161,7 @@ class NavigationService:
             version_id=parse.version_id,
             ref=ref,
             uri=DocumentAnchor(parse.document.id, parse.version_id, ref).uri,
-            title=self._excerpt_title(target, parse.document),
+            title=self._build_excerpt_title(target, parse.document),
             markdown=render_markdown(picked),
             citations=[
                 self._citations.build(parse.document.id, parse.version_id, element)
@@ -164,14 +171,14 @@ class NavigationService:
             truncated=truncated,
             next_cursor=next_cursor,
             page_range=(min(pages), max(pages)) if pages else None,
-            span_uri=self._span_uri(parse, refs, picked),
+            span_uri=self._build_span_uri(parse, refs, picked),
         )
 
     # ------------------------------------------------------------------
     # Reading internals
     # ------------------------------------------------------------------
 
-    def _span_uri(
+    def _build_span_uri(
         self,
         parse: LoadedParse,
         refs: list[str],
@@ -192,30 +199,29 @@ class NavigationService:
         if len(picked) < 2:
             return None
         read = set(refs)
-        members = span_members(parse.index, picked[0].ref, picked[-1].ref)
+        members = list_span_members(parse.index, picked[0].ref, picked[-1].ref)
         if not members or any(member not in read for member in members):
             return None
-        ref = span_ref(picked[0].ref, picked[-1].ref)
+        ref = build_span_ref(picked[0].ref, picked[-1].ref)
         return DocumentAnchor(parse.document.id, parse.version_id, ref).uri
 
-    def _refs_to_read(
+    def _list_refs_to_read(
         self,
         parse: LoadedParse,
         ref: str,
-        *,
-        include: str,
-        cursor: str | None,
+        scope: ReadScope,
     ) -> tuple[list[str], int]:
         """The refs this read covers from the cursor on, and the character of
         the first to start at — past 0 when the cursor is `ref@offset`."""
+        cursor = scope.cursor
         # A page ref carries no text of its own, so `self` would read nothing
         # at all — for it, both modes mean "everything on this page".
-        read_whole = include == "section" or parse_page_ref(ref) is not None
-        # `section_refs` is empty for a ref that resolves but sits outside
+        read_whole = scope.include == "section" or parse_page_ref(ref) is not None
+        # `list_section_refs` is empty for a ref that resolves but sits outside
         # reading order — a caption, or text pruned from inside a picture.
         # Those refs carry text and `include="self"` returns it, so the
         # default mode must not answer "this element is empty" for them.
-        refs = (section_refs(parse.index, ref) or [ref]) if read_whole else [ref]
+        refs = (list_section_refs(parse.index, ref) or [ref]) if read_whole else [ref]
         if not cursor:
             return refs, 0
         resume, at, offset = cursor.partition("@")
@@ -228,55 +234,20 @@ class NavigationService:
             )
         return refs[refs.index(resume) :], start
 
-    def _pick(
-        self,
-        parse: LoadedParse,
-        refs: list[str],
-        budget: int,
-        start: int = 0,
-    ) -> tuple[list[ResolvedElement], int, bool, str | None]:
-        """Take elements in reading order until the budget is spent — the
-        first from character `start`, where a previous read cut it."""
-        picked: list[ResolvedElement] = []
-        spent = 0
-
-        for position, candidate in enumerate(refs):
-            element = resolve(parse.index, candidate)
-            if element is None or not element.text.strip():
-                continue
-            offset = start if position == 0 else 0
-            if offset:
-                element = replace(element, text=element.text[offset:])
-            cost = read_cost(element.text)
-            if picked and spent + cost > budget:
-                return picked, spent, True, candidate
-            if not picked and cost > budget:
-                # Larger than the whole budget: cut at a word boundary, and
-                # the cursor resumes inside the element where the cut fell.
-                room = budget - ANCHOR_TOKENS
-                cut = clip_point(element.text, room)
-                if cut < len(element.text):
-                    clipped = replace(element, text=clip_to_tokens(element.text, room))
-                    return [clipped], read_cost(clipped.text), True, f"{candidate}@{offset + cut}"
-            picked.append(element)
-            spent += cost
-
-        return picked, spent, False, None
-
-    def _budget(self, max_tokens: int | None) -> int:
+    def _compute_budget(self, max_tokens: int | None) -> int:
         requested = max_tokens or self._config.default_read_tokens
         return max(1, min(requested, self._config.max_read_tokens))
 
-    def _stamp(self, node: OutlineNode, document_id: str, version_id: str) -> OutlineNode:
+    def _attach_uris(self, node: OutlineNode, document_id: str, version_id: str) -> OutlineNode:
         """Attach the anchor URI to an outline node and its subtree."""
         return replace(
             node,
             uri=DocumentAnchor(document_id, version_id, node.ref).uri,
-            children=[self._stamp(child, document_id, version_id) for child in node.children],
+            children=[self._attach_uris(child, document_id, version_id) for child in node.children],
         )
 
     @staticmethod
-    def _excerpt_title(target: ResolvedElement, doc: Document) -> str:
+    def _build_excerpt_title(target: ResolvedElement, doc: Document) -> str:
         if is_heading(target.label) and target.text.strip():
             return " ".join(target.text.split())[:96]
         if target.label == "page" and target.page is not None:
@@ -284,3 +255,13 @@ class NavigationService:
         if target.headings:
             return target.headings[-1]
         return doc.filename or target.ref
+
+
+def _require_target(parse: LoadedParse, document_id: str, ref: str) -> ResolvedElement:
+    target = resolve(parse.index, ref)
+    if target is None:
+        raise RefNotFoundError(
+            f"Ref {ref!r} does not exist in version {parse.version_id} of document "
+            f"{document_id}. Call get_outline to obtain valid refs."
+        )
+    return target

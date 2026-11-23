@@ -23,9 +23,16 @@
 |---|------|-------|
 | 3.2.1 | Chaque fonction fait une seule chose (Single Responsibility) | 2 |
 | 3.2.2 | Aucune fonction ne depasse 30 lignes (hors boilerplate inevitable) | 1 |
-| 3.2.3 | Aucune fonction n'a plus de 4 parametres | 1 |
+| 3.2.3 | Aucune fonction n'a plus de 4 parametres (hors constructeurs d'injection et signatures imposees par un framework, voir la precision ci-dessous) | 1 |
 | 3.2.4 | Pas de flag arguments (booleen qui change le comportement) | 1 |
 | 3.2.5 | Une fonction `get_*` ne modifie pas d'etat (pas de side-effects caches) | 2 |
+
+**Precision sur 3.2.3** (2026-11-20, decision du mainteneur). Deux familles de signatures ne sont pas comptees, comme le « boilerplate inevitable » du 3.2.2 :
+
+- les constructeurs qui ne font que recevoir leurs collaborateurs par injection (`__init__` des services et des adaptateurs) : les regrouper dans un objet ne retire aucune dependance et ajoute une indirection que l'audit 04 releverait ;
+- les signatures dont les parametres sont le contrat public impose par un framework : fonctions de route FastAPI (parametres de chemin, de requete, corps, dependances `Depends`) et outils MCP (chaque parametre est un argument de l'outil).
+
+Toute autre fonction reste soumise au seuil. Un constructeur qui depasse 7 collaborateurs reste a signaler en `[INFO]` : c'est un indice de service trop large (audit 06). Les rapports anterieurs a cette date comptaient ces signatures : leurs mesures de 3.2.3 ne sont pas comparables.
 
 ### 3.3 Fichiers et structure
 

@@ -90,27 +90,22 @@
         </header>
         <div
           class="preview-frame"
-          :style="frameStyle(page)"
+          :style="getFrameStyle(page)"
           :ref="(el) => registerFrame(page.page_number, el as HTMLElement | null)"
         >
-          <PdfPageCanvas
-            v-if="shouldRenderPage(page.page_number) && pdfDocument && !pdfFailed"
+          <!-- Keyed on the render path so a PDF failure remounts the raster and
+               `registerRaster` sees the canvas leave and the image arrive. -->
+          <PageRaster
+            v-if="shouldRenderPage(page.page_number) && (pdfDocument || pdfFailed)"
+            :key="pdfFailed ? 'image' : 'pdf'"
+            :document-id="documentId"
             :document="pdfDocument"
+            :failed="pdfFailed"
             :page-number="page.page_number"
-            :ref="(el) => registerPdf(page.page_number, el)"
-            @ready="(canvas) => onPdfReady(page.page_number, canvas)"
-            @error="onPdfError(page.page_number)"
-          />
-          <img
-            v-else-if="shouldRenderPage(page.page_number) && pdfFailed"
-            :src="getPreviewUrl(documentId, page.page_number)"
-            :alt="`Page ${page.page_number}`"
-            class="preview-image"
-            :fetchpriority="page.page_number === currentPage ? 'high' : 'low'"
-            decoding="async"
-            :ref="(el) => registerImage(page.page_number, el as HTMLImageElement | null)"
-            @load="onImageLoad(page.page_number)"
-            @error="onImageError(page.page_number)"
+            :priority="page.page_number === currentPage ? 'high' : 'low'"
+            :ref="(el) => registerRaster(page.page_number, el)"
+            @ready="(raster, source) => onRasterReady(page.page_number, raster, source)"
+            @error="(source) => onRasterError(page.page_number, source)"
           />
           <BboxCanvas
             v-if="loadedImages[page.page_number]"
@@ -146,22 +141,23 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRef, w
 import type { Page, PageElement } from '../../../shared/types'
 import { useI18n } from '../../../shared/i18n'
 import { bboxToRect, computeScale } from '@/shared/bboxScaling'
-import { getPreviewUrl, PREVIEW_DPI } from '../api'
+import { PREVIEW_DPI } from '../api'
 import BboxCanvas from './BboxCanvas.vue'
-import PdfPageCanvas from './PdfPageCanvas.vue'
+import PageRaster from './PageRaster.vue'
 import { usePdfDocument } from './usePdfDocument'
 import {
   clampPageInput,
-  pageInRenderWindow,
-  pageInputWidthCh,
+  isPageInRenderWindow,
+  computePageInputWidthCh,
+  type PreviewViewState,
 } from './PagePreviewWithOverlay.logic'
 import {
-  centeredScrollPosition,
+  computeCenteredScrollPosition,
   isFocusScrollRequest,
   isRectVisible,
-  mostVisiblePage,
-  pageFrameGeometry,
-  pageTopScrollPosition,
+  findMostVisiblePage,
+  computePageFrameGeometry,
+  computePageTopScrollPosition,
 } from '../previewScroll'
 
 const { t } = useI18n()
@@ -191,7 +187,6 @@ const emit = defineEmits<{
 }>()
 
 const stageRef = ref<HTMLDivElement | null>(null)
-const imageRefs = reactive<Record<number, HTMLImageElement | null>>({})
 const loadedImages = reactive<Record<number, HTMLElement | null>>({})
 const { document: pdfDocument, failed: pdfFailed } = usePdfDocument(toRef(props, 'documentId'))
 const loadedPageNumbers = reactive(new Set<number>())
@@ -211,7 +206,7 @@ let pageObserver: IntersectionObserver | null = null
 const visibilityRatios = new Map<number, number>()
 
 const totalPages = computed(() => props.pages.length)
-const pageInputSize = computed(() => pageInputWidthCh(totalPages.value))
+const pageInputSize = computed(() => computePageInputWidthCh(totalPages.value))
 
 /**
  * One scroll per user action (#336).
@@ -235,17 +230,8 @@ const renderedPages = computed<Page[]>(() => {
   return currentPageData.value ? [currentPageData.value] : []
 })
 
-function registerImage(pageNumber: number, el: HTMLImageElement | null): void {
-  imageRefs[pageNumber] = el
-  if (el) {
-    if (!settledPageNumbers.has(pageNumber)) pendingPageNumbers.add(pageNumber)
-  } else {
-    pendingPageNumbers.delete(pageNumber)
-    loadedImages[pageNumber] = null
-  }
-}
-
-function registerPdf(pageNumber: number, el: unknown): void {
+/** A raster mounting asks for its page; unmounting drops the request and the overlay. */
+function registerRaster(pageNumber: number, el: unknown): void {
   if (el) {
     if (!settledPageNumbers.has(pageNumber)) pendingPageNumbers.add(pageNumber)
   } else {
@@ -259,8 +245,8 @@ function registerFrame(pageNumber: number, el: HTMLElement | null): void {
 }
 
 /** Inline geometry that makes a card hold its height with no image mounted. */
-function frameStyle(page: Page): Record<string, string> {
-  return pageFrameGeometry(page, PREVIEW_DPI) ?? {}
+function getFrameStyle(page: Page): Record<string, string> {
+  return computePageFrameGeometry(page, PREVIEW_DPI) ?? {}
 }
 
 function resetPageInput(): void {
@@ -286,33 +272,33 @@ function registerPageCard(pageNumber: number, el: HTMLElement | null): void {
   pageCardRefs[pageNumber] = el
 }
 
-function onImageLoad(pageNumber: number): void {
+function onRasterReady(pageNumber: number, raster: HTMLElement, source: 'pdf' | 'image'): void {
   pendingPageNumbers.delete(pageNumber)
   loadedPageNumbers.add(pageNumber)
   settledPageNumbers.add(pageNumber)
-  loadedImages[pageNumber] = imageRefs[pageNumber] ?? null
-  // With the box reserved, decoding shifts no layout and the focus scroll has
-  // already run against the final geometry. Only a page we could *not* reserve
-  // (degenerate dimensions) still grows on load and needs a second pass.
+  loadedImages[pageNumber] = raster
+  if (source === 'image') refocusUnreservedPage(pageNumber)
+}
+
+/**
+ * With the box reserved, decoding shifts no layout and the focus scroll has
+ * already run against the final geometry. Only a page we could *not* reserve
+ * (degenerate dimensions) still grows on load and needs a second pass.
+ */
+function refocusUnreservedPage(pageNumber: number): void {
   const page = props.pages.find((p) => p.page_number === pageNumber)
-  if (!page || pageFrameGeometry(page, PREVIEW_DPI)) return
+  if (!page || computePageFrameGeometry(page, PREVIEW_DPI)) return
   if (highlightTarget()?.page.page_number === pageNumber) requestScroll('focus')
 }
 
-function onImageError(pageNumber: number): void {
+function onRasterError(pageNumber: number, source: 'pdf' | 'image'): void {
   pendingPageNumbers.delete(pageNumber)
-  settledPageNumbers.add(pageNumber)
-}
-
-function onPdfReady(pageNumber: number, canvas: HTMLCanvasElement): void {
-  pendingPageNumbers.delete(pageNumber)
-  loadedPageNumbers.add(pageNumber)
-  settledPageNumbers.add(pageNumber)
-  loadedImages[pageNumber] = canvas
-}
-
-function onPdfError(pageNumber: number): void {
-  pendingPageNumbers.delete(pageNumber)
+  if (source === 'image') {
+    // The PNG was the last resort: the page is settled, with no overlay.
+    settledPageNumbers.add(pageNumber)
+    return
+  }
+  // The PDF cannot render this page: fall back to the PNGs for every page.
   loadedImages[pageNumber] = null
   pdfFailed.value = true
 }
@@ -324,12 +310,15 @@ function onClickElement(el: PageElement, pageNumber: number, event: MouseEvent):
 }
 
 function shouldRenderPage(pageNumber: number): boolean {
-  return pageInRenderWindow(
+  const view: PreviewViewState = {
+    currentPage: props.currentPage,
+    viewMode: viewMode.value,
+    focusedPage: focusedPage.value,
+    currentPageSettled: settledPageNumbers.has(props.currentPage),
+  }
+  return isPageInRenderWindow(
     pageNumber,
-    props.currentPage,
-    viewMode.value,
-    focusedPage.value,
-    settledPageNumbers.has(props.currentPage),
+    view,
     loadedPageNumbers.has(pageNumber) || pendingPageNumbers.has(pageNumber),
   )
 }
@@ -384,9 +373,31 @@ function scrollToPage(pageNumber: number): void {
 
   if (isVisible) return
   stage.scrollTo({
-    top: pageTopScrollPosition(stage.scrollTop, stageRect.top, cardRect.top),
+    top: computePageTopScrollPosition(stage.scrollTop, stageRect.top, cardRect.top),
     behavior: 'smooth',
   })
+}
+
+function trackPageVisibility(entries: IntersectionObserverEntry[]): void {
+  for (const entry of entries) {
+    const page = Number((entry.target as HTMLElement).dataset.pageNumber)
+    if (!page) continue
+    visibilityRatios.set(page, entry.isIntersecting ? entry.intersectionRatio : 0)
+  }
+  const bestPage = findMostVisiblePage(visibilityRatios)
+  if (!bestPage || bestPage === visiblePage.value) return
+  visiblePage.value = bestPage
+  emit('update:currentPage', bestPage)
+}
+
+function observePageCards(observer: IntersectionObserver): void {
+  for (const page of props.pages) {
+    if (viewMode.value !== 'scroll' && page.page_number !== props.currentPage) continue
+    const card = pageCardRefs[page.page_number]
+    if (!card) continue
+    card.dataset.pageNumber = String(page.page_number)
+    observer.observe(card)
+  }
 }
 
 function setupObserver(): void {
@@ -400,31 +411,12 @@ function setupObserver(): void {
   const stage = stageRef.value
   if (!stage) return
 
-  pageObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        const page = Number((entry.target as HTMLElement).dataset.pageNumber)
-        if (!page) continue
-        visibilityRatios.set(page, entry.isIntersecting ? entry.intersectionRatio : 0)
-      }
-      const bestPage = mostVisiblePage(visibilityRatios)
-      if (!bestPage || bestPage === visiblePage.value) return
-      visiblePage.value = bestPage
-      emit('update:currentPage', bestPage)
-    },
-    {
-      root: stage,
-      threshold: [0, 0.25, 0.5, 0.75],
-    },
-  )
+  pageObserver = new IntersectionObserver(trackPageVisibility, {
+    root: stage,
+    threshold: [0, 0.25, 0.5, 0.75],
+  })
 
-  for (const page of props.pages) {
-    if (viewMode.value !== 'scroll' && page.page_number !== props.currentPage) continue
-    const card = pageCardRefs[page.page_number]
-    if (!card) continue
-    card.dataset.pageNumber = String(page.page_number)
-    pageObserver.observe(card)
-  }
+  observePageCards(pageObserver)
 }
 
 function highlightTarget(): { page: Page; element: PageElement } | null {
@@ -440,6 +432,33 @@ function highlightTarget(): { page: Page; element: PageElement } | null {
 
 /** Page the highlight sits on — the one page the render window may not evict. */
 const focusedPage = computed<number | null>(() => highlightTarget()?.page.page_number ?? null)
+
+/**
+ * The highlighted bbox in viewport coordinates, or `null` when the frame has
+ * no size yet or the bbox is empty.
+ */
+function resolveViewportBbox(
+  frame: HTMLElement,
+  target: { page: Page; element: PageElement },
+): { x: number; y: number; w: number; h: number } | null {
+  if (!frame.clientWidth || !frame.clientHeight) return null
+
+  const scale = computeScale(
+    frame.clientWidth,
+    frame.clientHeight,
+    target.page.width,
+    target.page.height,
+  )
+  const rect = bboxToRect(target.element.bbox, scale)
+  if (rect.w <= 0 || rect.h <= 0) return null
+
+  // `getBoundingClientRect` measures the border box; `clientLeft`/`clientTop`
+  // are the border widths, so adding them lands on the raster's own origin.
+  const frameRect = frame.getBoundingClientRect()
+  const bboxLeft = frameRect.left + frame.clientLeft + rect.x
+  const bboxTop = frameRect.top + frame.clientTop + rect.y
+  return { x: bboxLeft, y: bboxTop, w: rect.w, h: rect.h }
+}
 
 /**
  * Scroll the preview stage so the first highlighted element sits near the
@@ -459,38 +478,20 @@ function centerHighlighted(): boolean {
   if (!target || !stage) return false
 
   const frame = frameRefs[target.page.page_number]
-  if (!frame || !frame.clientWidth || !frame.clientHeight) return false
+  if (!frame) return false
+  const bbox = resolveViewportBbox(frame, target)
+  if (!bbox) return false
 
-  const scale = computeScale(
-    frame.clientWidth,
-    frame.clientHeight,
-    target.page.width,
-    target.page.height,
-  )
-  const rect = bboxToRect(target.element.bbox, scale)
-  if (rect.w <= 0 || rect.h <= 0) return false
-
-  // `getBoundingClientRect` measures the border box; `clientLeft`/`clientTop`
-  // are the border widths, so adding them lands on the raster's own origin.
-  const frameRect = frame.getBoundingClientRect()
   const stageRect = stage.getBoundingClientRect()
-  const bboxLeft = frameRect.left + frame.clientLeft + rect.x
-  const bboxTop = frameRect.top + frame.clientTop + rect.y
-
   const bboxViewportRect = {
-    top: bboxTop,
-    right: bboxLeft + rect.w,
-    bottom: bboxTop + rect.h,
-    left: bboxLeft,
+    top: bbox.y,
+    right: bbox.x + bbox.w,
+    bottom: bbox.y + bbox.h,
+    left: bbox.x,
   }
   if (isRectVisible(bboxViewportRect, stageRect)) return true
 
-  const position = centeredScrollPosition(stage, stageRect, {
-    x: bboxLeft,
-    y: bboxTop,
-    w: rect.w,
-    h: rect.h,
-  })
+  const position = computeCenteredScrollPosition(stage, stageRect, bbox)
 
   stage.scrollTo({
     left: position.left,
@@ -735,7 +736,7 @@ onBeforeUnmount(() => {
 }
 
 /* Sized from the page's own dimensions via the inline `aspect-ratio` /
- * `max-width` set by `frameStyle` (#336) — the box is therefore correct before
+ * `max-width` set by `getFrameStyle` (#336) — the box is therefore correct before
  * the raster mounts, and stays put when it is evicted. `max-width` reproduces
  * the raster's natural width, so a page narrower than the column is not
  * upscaled; `width: 100%` is what the old `fit-content` resolved to for every
@@ -749,13 +750,5 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--bg-surface);
-}
-
-/* Fills the reserved box exactly, so the bbox scale derived from the frame
- * maps onto the raster one-to-one. */
-.preview-image {
-  display: block;
-  width: 100%;
-  height: 100%;
 }
 </style>

@@ -49,3 +49,11 @@ The fix is prepared in the private fork attached to the advisory, so nothing is 
 - Loopback and private LAN addresses are allowed on purpose: that is where Ollama usually runs.
 
 The app has no login. A self-hosted instance open to untrusted networks must be protected in front of it, for example by a reverse proxy with authentication.
+
+## DNS rebinding on a local install
+
+With no login, an instance on your own machine relies on the browser keeping other sites away from it. DNS rebinding gets around that: a page you visit points its own domain name at `127.0.0.1` and then calls the API as if it were same-origin. The only trace left is the `Host` header, which still carries the attacker's domain.
+
+- `/mcp` checks `Host` against `MCP_ALLOWED_HOSTS`, on by default.
+- `/api` checks it only when `API_ALLOWED_HOSTS` is set; it is off by default so that installs reached by a LAN name or behind a proxy keep working. On a workstation, set `API_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]`. See [Host check on the API](docs/configuration.md#host-check-on-the-api).
+- Neither check is access control: a client that is not a browser sets any `Host` it likes.

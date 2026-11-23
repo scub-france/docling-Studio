@@ -287,13 +287,13 @@ onBeforeUnmount(() => {
 }
 
 .status-dot.connected {
-  background: var(--success, #22c55e);
-  box-shadow: 0 0 4px var(--success, #22c55e);
+  background: var(--success);
+  box-shadow: 0 0 4px var(--success);
 }
 
 .status-dot.disconnected {
-  background: var(--error, #ef4444);
-  box-shadow: 0 0 4px var(--error, #ef4444);
+  background: var(--error);
+  box-shadow: 0 0 4px var(--error);
 }
 
 .status-label {

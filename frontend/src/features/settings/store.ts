@@ -4,7 +4,7 @@ import type { Locale, Theme } from '../../shared/types'
 import { appLocale } from '../../shared/appConfig'
 import { STORAGE_KEYS } from '../../shared/storage/keys'
 
-function safeGetItem(key: string): string | null {
+function readStorageItem(key: string): string | null {
   try {
     return localStorage.getItem(key)
   } catch {
@@ -12,7 +12,7 @@ function safeGetItem(key: string): string | null {
   }
 }
 
-function safeSetItem(key: string, value: string): void {
+function writeStorageItem(key: string, value: string): void {
   try {
     localStorage.setItem(key, value)
   } catch {
@@ -21,14 +21,14 @@ function safeSetItem(key: string, value: string): void {
 }
 
 export const useSettingsStore = defineStore('settings', () => {
-  const theme = ref<Theme>((safeGetItem(STORAGE_KEYS.theme) as Theme) || 'dark')
-  const locale = ref<Locale>((safeGetItem(STORAGE_KEYS.locale) as Locale) || 'fr')
+  const theme = ref<Theme>((readStorageItem(STORAGE_KEYS.theme) as Theme) || 'dark')
+  const locale = ref<Locale>((readStorageItem(STORAGE_KEYS.locale) as Locale) || 'fr')
 
-  watch(theme, (v) => safeSetItem(STORAGE_KEYS.theme, v))
+  watch(theme, (v) => writeStorageItem(STORAGE_KEYS.theme, v))
   watch(
     locale,
     (v) => {
-      safeSetItem(STORAGE_KEYS.locale, v)
+      writeStorageItem(STORAGE_KEYS.locale, v)
       appLocale.value = v
     },
     { immediate: true },

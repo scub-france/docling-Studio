@@ -18,11 +18,10 @@ from typing import TYPE_CHECKING
 
 from domain.models import Store
 from domain.value_objects import StoreKind
+from services.errors import ServiceError
 
 if TYPE_CHECKING:
-    from persistence.document_repo import SqliteDocumentRepository
-    from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
-    from persistence.store_repo import SqliteStoreRepository
+    from domain.ports import DocumentRepository, DocumentStoreLinkRepository, StoreRepository
     from services.store_backend_resolver import StoreBackendResolver
 
 logger = logging.getLogger(__name__)
@@ -31,15 +30,10 @@ logger = logging.getLogger(__name__)
 _SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 
 
-class StoreServiceError(Exception):
+class StoreServiceError(ServiceError):
     """Base service error. Carries an `http_status` hint for the API layer."""
 
     http_status: int = 400
-
-    def __init__(self, message: str, *, http_status: int | None = None):
-        super().__init__(message)
-        if http_status is not None:
-            self.http_status = http_status
 
 
 class StoreNotFoundError(StoreServiceError):
@@ -80,11 +74,48 @@ class StoreDocEntryView:
     pushed_at: str | None
 
 
+@dataclass(frozen=True)
+class StoreDraft:
+    """A store to create, as the caller described it."""
+
+    name: str
+    slug: str
+    kind: StoreKind
+    embedder: str
+    config: dict
+    is_default: bool = False
+    connection_uri: str | None = None
+    connection_username: str | None = None
+    connection_password: str | None = None
+
+
+@dataclass(frozen=True)
+class StoreChanges:
+    """The edits to apply to an existing store; a field left to None stays as it is."""
+
+    name: str | None = None
+    new_slug: str | None = None
+    kind: StoreKind | None = None
+    embedder: str | None = None
+    config: dict | None = None
+    is_default: bool | None = None
+    connection_uri: str | None = None
+    connection_username: str | None = None
+    connection_password: str | None = None
+
+
 def _validate_slug(slug: str) -> None:
     if not slug or not _SLUG_PATTERN.match(slug):
         raise StoreValidationError(
             "slug must be lowercase alphanumeric with optional dashes (e.g. 'rh-corpus-v3')"
         )
+
+
+def _validate_required_fields(name: str, embedder: str) -> None:
+    if not name:
+        raise StoreValidationError("name is required")
+    if not embedder:
+        raise StoreValidationError("embedder is required")
 
 
 _NEO4J_URI_SCHEMES = (
@@ -140,14 +171,31 @@ def _validate_config_for_kind(kind: StoreKind, config: dict) -> None:
             raise StoreValidationError("Neo4j config requires a non-empty 'index_name'")
 
 
+def _apply_embedder(store: Store, embedder: str | None) -> None:
+    if embedder is None:
+        return
+    embedder = embedder.strip()
+    if not embedder:
+        raise StoreValidationError("embedder cannot be empty")
+    store.embedder = embedder
+
+
+def _apply_connection(store: Store, uri: str | None, username: str | None) -> None:
+    """Set the connection fields the caller sent; the URI is checked against the store kind."""
+    if uri is not None:
+        store.connection_uri = _normalise_uri_for_kind(store.kind, uri)
+    if username is not None:
+        store.connection_username = _normalise_optional(username)
+
+
 class StoreService:
     """Orchestrates store CRUD on top of SQLite repositories."""
 
     def __init__(
         self,
-        store_repo: SqliteStoreRepository,
-        link_repo: SqliteDocumentStoreLinkRepository,
-        document_repo: SqliteDocumentRepository | None = None,
+        store_repo: StoreRepository,
+        link_repo: DocumentStoreLinkRepository,
+        document_repo: DocumentRepository | None = None,
         backend_resolver: StoreBackendResolver | None = None,
     ):
         self._stores = store_repo
@@ -183,129 +231,99 @@ class StoreService:
             raise StoreNotFoundError(f"Store '{slug}' not found")
         return store
 
-    async def create_store(
-        self,
-        *,
-        name: str,
-        slug: str,
-        kind: StoreKind,
-        embedder: str,
-        config: dict,
-        is_default: bool = False,
-        connection_uri: str | None = None,
-        connection_username: str | None = None,
-        connection_password: str | None = None,
-    ) -> Store:
-        name = (name or "").strip()
-        slug = (slug or "").strip().lower()
-        embedder = (embedder or "").strip()
+    async def create_store(self, draft: StoreDraft) -> Store:
+        name = (draft.name or "").strip()
+        slug = (draft.slug or "").strip().lower()
+        embedder = (draft.embedder or "").strip()
 
-        if not name:
-            raise StoreValidationError("name is required")
-        if not embedder:
-            raise StoreValidationError("embedder is required")
+        _validate_required_fields(name, embedder)
         _validate_slug(slug)
-        _validate_config_for_kind(kind, config)
-        connection_uri = _normalise_uri_for_kind(kind, connection_uri)
-        connection_username = _normalise_optional(connection_username)
-
-        if await self._stores.find_by_slug(slug) is not None:
-            raise StoreConflictError(f"slug '{slug}' is already in use")
-        if await self._stores.find_by_name(name) is not None:
-            raise StoreConflictError(f"name '{name}' is already in use")
+        _validate_config_for_kind(draft.kind, draft.config)
+        connection_uri = _normalise_uri_for_kind(draft.kind, draft.connection_uri)
+        connection_username = _normalise_optional(draft.connection_username)
+        await self._check_identity_free(name, slug)
 
         store = Store(
             id=str(uuid.uuid4()),
             name=name,
             slug=slug,
-            kind=kind,
+            kind=draft.kind,
             embedder=embedder,
-            config=config,
+            config=draft.config,
             connection_uri=connection_uri,
             connection_username=connection_username,
-            is_default=is_default,
+            is_default=draft.is_default,
         )
+        await self._insert_store(store, draft.connection_password)
+        # Re-read so `has_connection_password` reflects what landed.
+        return await self._stores.find_by_id(store.id) or store
+
+    async def _check_identity_free(self, name: str, slug: str) -> None:
+        if await self._stores.find_by_slug(slug) is not None:
+            raise StoreConflictError(f"slug '{slug}' is already in use")
+        if await self._stores.find_by_name(name) is not None:
+            raise StoreConflictError(f"name '{name}' is already in use")
+
+    async def _insert_store(self, store: Store, connection_password: str | None) -> None:
         # Empty-string password → no seal at create-time (the column
         # stays NULL). Only a non-empty value triggers Fernet.
         seal_password = connection_password if connection_password else None
         await self._stores.insert(store, password=seal_password)
-        if is_default:
+        if store.is_default:
             await self._stores.clear_default_except(store.id)
-        # Re-read so `has_connection_password` reflects what landed.
-        return await self._stores.find_by_id(store.id) or store
 
-    async def update_store(
-        self,
-        slug: str,
-        *,
-        name: str | None = None,
-        new_slug: str | None = None,
-        kind: StoreKind | None = None,
-        embedder: str | None = None,
-        config: dict | None = None,
-        is_default: bool | None = None,
-        connection_uri: str | None = None,
-        connection_username: str | None = None,
-        connection_password: str | None = None,
-    ) -> Store:
+    async def update_store(self, slug: str, changes: StoreChanges) -> Store:
         store = await self.get_by_slug(slug)
-
-        if name is not None:
-            name = name.strip()
-            if not name:
-                raise StoreValidationError("name cannot be empty")
-            other = await self._stores.find_by_name(name)
-            if other is not None and other.id != store.id:
-                raise StoreConflictError(f"name '{name}' is already in use")
-            store.name = name
-
-        if new_slug is not None:
-            new_slug = new_slug.strip().lower()
-            _validate_slug(new_slug)
-            if new_slug != store.slug:
-                other = await self._stores.find_by_slug(new_slug)
-                if other is not None and other.id != store.id:
-                    raise StoreConflictError(f"slug '{new_slug}' is already in use")
-                store.slug = new_slug
-
-        if kind is not None:
-            store.kind = kind
-
-        if embedder is not None:
-            embedder = embedder.strip()
-            if not embedder:
-                raise StoreValidationError("embedder cannot be empty")
-            store.embedder = embedder
-
-        if config is not None:
-            store.config = config
+        await self._apply_name(store, changes.name)
+        await self._apply_slug(store, changes.new_slug)
+        if changes.kind is not None:
+            store.kind = changes.kind
+        _apply_embedder(store, changes.embedder)
+        if changes.config is not None:
+            store.config = changes.config
 
         # Validate the (kind, config) pair as a whole — even when only one of
         # the two changed, the combination must still satisfy the schema.
         _validate_config_for_kind(store.kind, store.config)
-
-        if connection_uri is not None:
-            store.connection_uri = _normalise_uri_for_kind(store.kind, connection_uri)
-        if connection_username is not None:
-            store.connection_username = _normalise_optional(connection_username)
-
-        promote_default = False
-        if is_default is not None:
-            store.is_default = is_default
-            promote_default = is_default
+        _apply_connection(store, changes.connection_uri, changes.connection_username)
+        if changes.is_default is not None:
+            store.is_default = changes.is_default
 
         await self._stores.update(store)
-
-        # Password write is separate (#279). Three behaviours per the
-        # DTO contract: None=untouched, ""=clear, other=replace.
-        if connection_password is not None:
-            cleared_or_replaced = connection_password if connection_password else None
-            await self._stores.set_connection_password(store.id, cleared_or_replaced)
-
-        if promote_default:
+        await self._write_connection_password(store.id, changes.connection_password)
+        if changes.is_default:
             await self._stores.clear_default_except(store.id)
         # Re-read so the response reflects the new sealed-flag state.
         return await self._stores.find_by_id(store.id) or store
+
+    async def _apply_name(self, store: Store, name: str | None) -> None:
+        if name is None:
+            return
+        name = name.strip()
+        if not name:
+            raise StoreValidationError("name cannot be empty")
+        other = await self._stores.find_by_name(name)
+        if other is not None and other.id != store.id:
+            raise StoreConflictError(f"name '{name}' is already in use")
+        store.name = name
+
+    async def _apply_slug(self, store: Store, new_slug: str | None) -> None:
+        if new_slug is None:
+            return
+        new_slug = new_slug.strip().lower()
+        _validate_slug(new_slug)
+        if new_slug != store.slug:
+            other = await self._stores.find_by_slug(new_slug)
+            if other is not None and other.id != store.id:
+                raise StoreConflictError(f"slug '{new_slug}' is already in use")
+            store.slug = new_slug
+
+    async def _write_connection_password(self, store_id: str, password: str | None) -> None:
+        # Password write is separate (#279). Three behaviours per the
+        # DTO contract: None=untouched, ""=clear, other=replace.
+        if password is not None:
+            cleared_or_replaced = password if password else None
+            await self._stores.set_connection_password(store_id, cleared_or_replaced)
 
     async def test_connection(self, slug: str) -> tuple[bool, str | None]:
         """Open a probe connection to the store's backend.

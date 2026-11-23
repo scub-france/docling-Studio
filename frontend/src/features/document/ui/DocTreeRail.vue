@@ -57,7 +57,7 @@ const { t } = useI18n()
 
 const railEl = ref<HTMLDivElement | null>(null)
 
-// #303 (design §337) — ref-map of ref → row element (the ChunksPanel pattern),
+// #303 (design §337) — ref-map of ref → row element,
 // populated by each DocTreeNode's function ref. The rail (not the node) owns
 // the scroll so it can center the focused row in *its* viewport via offset math
 // — deliberately not `scrollIntoView`, which jumps ancestor scroll containers.

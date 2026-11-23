@@ -2,7 +2,7 @@
 
 Second composition entrypoint of the backend, beside `main.py`. Claude Code
 and Claude Desktop launch a stdio server as a subprocess, so this module
-builds only what the tools actually need — the three repositories and the
+builds only what the tools actually need — the repositories and the
 document services over them — instead of the full `AppStateBuilder` sequence. No
 Docling import, no Neo4j dial-out, no converter: startup stays instant, which
 matters when the client spawns the process on every session.
@@ -33,13 +33,18 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from domain.mcp_config import McpRuntimeConfig
+    from services.document_tools import DocumentTools
 
 logger = logging.getLogger("mcp_stdio")
 
 BACKEND_DIR = Path(__file__).resolve().parent
 
 
-def db_path() -> Path:
+def resolve_db_path() -> Path:
     """`DB_PATH`, resolved against the backend directory when relative."""
     raw = Path(os.environ.get("DB_PATH") or "./data/docling_studio.db")
     return raw if raw.is_absolute() else BACKEND_DIR / raw
@@ -48,25 +53,19 @@ def db_path() -> Path:
 async def _serve() -> None:
     # Imported once DB_PATH is pinned: `persistence` and `settings` read it at
     # import time.
-    from bootstrap.factories import build_document_tools, build_parse_loader, env_mcp_config
+    from bootstrap.factories import build_env_mcp_config
     from infra.settings import settings
-    from mcp_adapter import build_mcp_server
-    from persistence.analysis_repo import SqliteAnalysisRepository
+    from mcp_adapter.server import McpSurface, build_mcp_server
     from persistence.app_settings_repo import SqliteAppSettingsRepository
     from persistence.database import init_db
-    from persistence.document_repo import SqliteDocumentRepository
     from services.mcp_config_service import load_effective_mcp_config
 
     # Applies pending migrations; idempotent against an up-to-date database.
     await init_db()
 
-    config = await load_effective_mcp_config(SqliteAppSettingsRepository(), env_mcp_config())
-    tools = build_document_tools(
-        build_parse_loader(SqliteDocumentRepository(), SqliteAnalysisRepository()),
-        config,
-    )
-    server = build_mcp_server(
-        lambda: tools,
+    config = await load_effective_mcp_config(SqliteAppSettingsRepository(), build_env_mcp_config())
+    tools = _build_document_tools(config)
+    surface = McpSurface(
         version=settings.app_version,
         apps=settings.mcp_apps_enabled,
         citation_card=settings.mcp_citation_card,
@@ -74,8 +73,29 @@ async def _serve() -> None:
         # instructions state the effective cap, not the env one.
         max_rounds=config.max_rounds,
     )
+    server = build_mcp_server(lambda: tools, surface=surface)
     logger.info("Docling Studio MCP (stdio) ready — db=%s", settings.db_path)
     await server.run_stdio_async()
+
+
+def _build_document_tools(config: McpRuntimeConfig) -> DocumentTools:
+    """The document services over Studio's repositories, at `config`'s budgets."""
+    from bootstrap.factories import build_document_tools, build_parse_loader
+    from persistence.analysis_repo import SqliteAnalysisRepository
+    from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
+    from persistence.document_repo import SqliteDocumentRepository
+    from services.current_analysis import CurrentAnalysisResolver
+
+    analyses = SqliteAnalysisRepository()
+    # The same "current analysis" as Studio: the document's active selection.
+    current_analysis = CurrentAnalysisResolver(
+        state_repo=SqliteDocumentAnalysisRepository(),
+        analysis_repo=analyses,
+    )
+    return build_document_tools(
+        build_parse_loader(SqliteDocumentRepository(), analyses, current_analysis),
+        config,
+    )
 
 
 def main() -> int:
@@ -84,7 +104,7 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
         stream=sys.stderr,
     )
-    db = db_path()
+    db = resolve_db_path()
     if not db.is_file():
         logger.error(
             "No Docling Studio database at %s. Start Docling Studio once to create it, "

@@ -5,7 +5,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import axe from 'axe-core'
 import AnalysisEditor from './AnalysisEditor.vue'
 import PagePreviewWithOverlay from '../../document/ui/PagePreviewWithOverlay.vue'
-import { fetchAnalysisEditHistory, fetchAnalysisEditor, setAnalysisEditActive } from '../api'
+import {
+  fetchAnalysisEditHistory,
+  fetchAnalysisEditor,
+  saveAnalysisEdits,
+  setAnalysisEditActive,
+} from '../api'
 import { useAnalysisEditorStore } from '../store'
 
 vi.mock('../api', () => ({
@@ -47,8 +52,6 @@ const editorResponse = {
   result: { contentMarkdown: 'Accessible paragraph', pagesJson: '[]' },
   appliedThroughSequence: 0,
   chunksStale: false,
-  warnings: [],
-  referenceChanges: {},
 }
 
 describe('AnalysisEditor accessibility', () => {
@@ -107,8 +110,41 @@ describe('AnalysisEditor accessibility', () => {
     await wrapper.get('[data-e2e="analysis-editor-history-toggle-1"]').trigger('click')
     await flushPromises()
 
-    expect(setAnalysisEditActive).toHaveBeenCalledWith('doc-1', 1, false, 1, 'analysis-1')
+    expect(setAnalysisEditActive).toHaveBeenCalledWith(
+      'doc-1',
+      { sequence: 1, active: false, expectedAppliedThroughSequence: 1 },
+      'analysis-1',
+    )
     expect(wrapper.get('[data-e2e="analysis-editor-history-toggle-1"]').text()).toBe('Réappliquer')
+    wrapper.unmount()
+  })
+
+  it('keeps the editor and the pending edits on screen when a save is rejected', async () => {
+    vi.mocked(fetchAnalysisEditor).mockResolvedValue(editorResponse as never)
+    vi.mocked(fetchAnalysisEditHistory).mockResolvedValue([])
+    vi.mocked(saveAnalysisEdits).mockRejectedValue(new Error('422: text is too long'))
+    const pinia = createPinia()
+    const wrapper = mount(AnalysisEditor, {
+      props: { documentId: 'doc-1', analysisId: 'analysis-1' },
+      global: { plugins: [pinia], stubs: { PagePreviewWithOverlay: true } },
+    })
+    await flushPromises()
+    const store = useAnalysisEditorStore(pinia)
+    store.queueReplaceText(editorResponse.model.elements[0].id, 'Edited')
+    await flushPromises()
+
+    await wrapper.get('[data-e2e="analysis-editor-save"]').trigger('click')
+    await flushPromises()
+
+    const banner = wrapper.get('[data-e2e="analysis-editor-save-error"]')
+    expect(banner.text()).toContain("Le serveur a refusé l'enregistrement.")
+    expect(banner.text()).toContain('422: text is too long')
+    expect(wrapper.find('[role="tree"]').exists()).toBe(true)
+    expect(wrapper.find('[data-e2e="analysis-editor-unsaved"]').exists()).toBe(true)
+    expect(wrapper.find('[data-e2e="analysis-editor-saved"]').exists()).toBe(false)
+
+    await wrapper.get('[data-e2e="analysis-editor-discard"]').trigger('click')
+    expect(wrapper.find('[data-e2e="analysis-editor-save-error"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

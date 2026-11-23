@@ -19,6 +19,7 @@ cite, verify — and the two cards that show its result.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from mcp.server.mcpserver import MCPServer
@@ -26,7 +27,7 @@ from mcp.types import CallToolResult, ToolAnnotations
 
 from mcp_adapter.apps import build_apps_extension
 from mcp_adapter.prompts import register_prompts
-from mcp_adapter.results import compact
+from mcp_adapter.results import to_compact_result
 from mcp_adapter.tool_errors import ToolErrors, parse_anchor
 from mcp_adapter.wire import (
     UNTRUSTED_NOTE,
@@ -36,13 +37,14 @@ from mcp_adapter.wire import (
     VerificationResult,
 )
 from mcp_adapter.wire_mapping import (
-    excerpt_result,
-    outline_result,
-    search_result,
-    verification_result,
+    to_excerpt_result,
+    to_outline_result,
+    to_search_result,
+    to_verification_result,
 )
 from services.navigation_config import MAX_ROUNDS
 from services.navigation_errors import NavigationUnavailableError
+from services.navigation_service import ReadScope
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -78,7 +80,7 @@ or edit one.
 """
 
 
-def instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
+def build_instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
     """The server instructions, read by the client on every connection.
 
     Fixed when the server is built: a client reads them once, at `initialize`,
@@ -87,19 +89,22 @@ def instructions(*, apps: bool, max_rounds: int = MAX_ROUNDS) -> str:
     return _LOOP.format(max_rounds=max_rounds) + (_CARDS if apps else "") + _RULES
 
 
-INSTRUCTIONS = instructions(apps=False)
-
 _READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
 
+@dataclass(frozen=True)
+class McpSurface:
+    """What the server exposes: its name, its version, the cards, the stated round cap."""
+
+    name: str = SERVER_NAME
+    version: str = ""
+    apps: bool = True
+    citation_card: bool = False
+    max_rounds: int = MAX_ROUNDS
+
+
 def build_mcp_server(
-    tools: Callable[[], DocumentTools],
-    *,
-    name: str = SERVER_NAME,
-    version: str = "",
-    apps: bool = True,
-    citation_card: bool = False,
-    max_rounds: int = MAX_ROUNDS,
+    tools: Callable[[], DocumentTools], surface: McpSurface = McpSurface()
 ) -> MCPServer:
     """Build the MCP server over a *lazily resolved* navigation service.
 
@@ -109,20 +114,34 @@ def build_mcp_server(
     for the container on each tool call. `tools` raises when the app is not
     wired yet, which surfaces as a tool error rather than an import crash.
 
-    `max_rounds` is the cap the instructions state. The prompt reads the
-    effective cap from the resolved services on every render, falling back to
-    this one while the app is still starting.
+    `surface.max_rounds` is the cap the instructions state. The prompt reads
+    the effective cap from the resolved services on every render, falling back
+    to this one while the app is still starting.
     """
     server = MCPServer(
-        name=name,
-        version=version,
-        instructions=instructions(apps=apps, max_rounds=max_rounds),
-        extensions=[build_apps_extension(tools, citation_card=citation_card)] if apps else None,
+        name=surface.name,
+        version=surface.version,
+        instructions=build_instructions(apps=surface.apps, max_rounds=surface.max_rounds),
+        extensions=(
+            [build_apps_extension(tools, citation_card=surface.citation_card)]
+            if surface.apps
+            else None
+        ),
     )
     # The slash command: the whole loop, invoked by the user rather than
     # inflicted on every call (see mcp_adapter/prompts.py).
-    register_prompts(server, apps=apps, rounds=_effective_rounds(tools, max_rounds))
+    register_prompts(
+        server, apps=surface.apps, rounds=_bind_effective_rounds(tools, surface.max_rounds)
+    )
 
+    _register_find_documents(server, tools)
+    _register_get_outline(server, tools)
+    _register_read_element(server, tools)
+    _register_verify_citation(server, tools)
+    return server
+
+
+def _register_find_documents(server: MCPServer, tools: Callable[[], DocumentTools]) -> None:
     @server.tool(
         annotations=_READ_ONLY,
         description=(
@@ -136,8 +155,10 @@ def build_mcp_server(
     ) -> Annotated[CallToolResult, DocumentSearchResult]:
         async with ToolErrors():
             search = await tools().navigation.find_documents(query=query, limit=limit)
-        return compact(search_result(search))
+        return to_compact_result(to_search_result(search))
 
+
+def _register_get_outline(server: MCPServer, tools: Callable[[], DocumentTools]) -> None:
     @server.tool(
         annotations=_READ_ONLY,
         description=(
@@ -155,8 +176,10 @@ def build_mcp_server(
             outline = await tools().navigation.get_outline(
                 document_id, version_id=version_id, depth=depth
             )
-        return compact(outline_result(outline))
+        return to_compact_result(to_outline_result(outline))
 
+
+def _register_read_element(server: MCPServer, tools: Callable[[], DocumentTools]) -> None:
     @server.tool(
         annotations=_READ_ONLY,
         description=(
@@ -178,12 +201,12 @@ def build_mcp_server(
                 document_id,
                 ref,
                 version_id=version_id,
-                include=include,
-                max_tokens=max_tokens,
-                cursor=cursor,
+                scope=ReadScope(include=include, max_tokens=max_tokens, cursor=cursor),
             )
-        return compact(excerpt_result(excerpt))
+        return to_compact_result(to_excerpt_result(excerpt))
 
+
+def _register_verify_citation(server: MCPServer, tools: Callable[[], DocumentTools]) -> None:
     @server.tool(
         annotations=_READ_ONLY,
         description=(
@@ -197,18 +220,16 @@ def build_mcp_server(
         parse_anchor(uri)
         async with ToolErrors():
             check = await tools().citations.verify_citation(uri, quote)
-        return compact(verification_result(check))
-
-    return server
+        return to_compact_result(to_verification_result(check))
 
 
-def _effective_rounds(tools: Callable[[], DocumentTools], fallback: int) -> Callable[[], int]:
+def _bind_effective_rounds(tools: Callable[[], DocumentTools], fallback: int) -> Callable[[], int]:
     """The round cap of the services a call would use now (#364)."""
 
-    def rounds() -> int:
+    def read_rounds() -> int:
         try:
             return tools().config.max_rounds
         except NavigationUnavailableError:
             return fallback
 
-    return rounds
+    return read_rounds

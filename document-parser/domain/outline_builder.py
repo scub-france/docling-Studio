@@ -11,18 +11,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from domain.element_reader import element_text, section_refs
+from domain.element_reader import list_section_refs, read_element_text
+from domain.heading_tree import nest_by_heading
 from domain.navigation import OutlineNode, is_heading, read_cost
 from domain.parse_index import (
-    heading_level,
-    label_of,
-    page_ref,
-    title_of,
+    build_page_ref,
+    get_heading_level,
+    get_label,
+    get_title,
     truncate_title,
 )
-from domain.spans import span_ref
+from domain.spans import build_span_ref
 
 if TYPE_CHECKING:
+    from domain.heading_tree import HeadingNesting
     from domain.parse_index import DocumentIndex
 
 
@@ -48,21 +50,21 @@ def build_outline(
     `mode` is `"sections"` from two headings up, `"pages"` below — a scanned
     PDF still gets a usable map.
     """
-    total = sum(read_cost(element_text(index, ref)) for ref in index.order)
-    headings = [ref for ref in index.order if is_heading(label_of(index.by_ref[ref]))]
+    total = sum(read_cost(read_element_text(index, ref)) for ref in index.order)
+    headings = [ref for ref in index.order if is_heading(get_label(index.by_ref[ref]))]
     # One heading makes a one-node map that says nothing; pages say more.
     if len(headings) < 2:
-        nodes, node_limited = _page_nodes(index, max_nodes=max_nodes)
+        nodes, node_limited = _build_page_nodes(index, max_nodes=max_nodes)
         return OutlineDraft(
             nodes=nodes, mode="pages", total_est_tokens=total, node_limited=node_limited
         )
 
-    nodes, depth_limited, node_limited = _section_nodes(
+    nodes, depth_limited, node_limited = _build_section_nodes(
         index, headings, depth=depth, max_nodes=max_nodes
     )
-    preamble = preamble_range(index)
+    preamble = find_preamble_range(index)
     if preamble is not None:
-        nodes.insert(0, _preamble_node(index, preamble[0]))
+        nodes.insert(0, _build_preamble_node(index, preamble[0]))
     return OutlineDraft(
         nodes=nodes,
         mode="sections",
@@ -72,7 +74,7 @@ def build_outline(
     )
 
 
-def _section_nodes(
+def _build_section_nodes(
     index: DocumentIndex,
     headings: list[str],
     *,
@@ -80,24 +82,13 @@ def _section_nodes(
     max_nodes: int,
 ) -> tuple[list[OutlineNode], bool, bool]:
     roots: list[OutlineNode] = []
-    # Stack of (level, mutable children list) — the root sentinel is level -1
-    # so any heading nests inside it, mirroring `ChunkService`'s doc tree.
-    stack: list[tuple[int, list[OutlineNode]]] = [(-1, roots)]
     emitted = 0
     depth_limited = False
     node_limited = False
-    child_counts = _child_counts(index, headings)
-
-    for ref in headings:
-        item = index.by_ref[ref]
-        level = heading_level(item)
-        while len(stack) > 1 and stack[-1][0] >= level:
-            stack.pop()
-        # A document `title` wraps everything without being a level a reader
-        # thinks about, so it does not consume depth budget: `depth=2` means
-        # chapters and their subsections, title or no title.
-        nesting = sum(1 for open_level, _ in stack[1:] if open_level > 0)
-        if nesting >= depth:
+    child_counts = _count_children(index, headings)
+    nodes: dict[int, OutlineNode] = {}
+    for step in _nest_headings(index, headings, depth).steps:
+        if not step.opened:
             # Deeper than requested: its tokens still count towards the
             # nearest emitted ancestor, so nothing is hidden from the budget.
             depth_limited = True
@@ -105,36 +96,59 @@ def _section_nodes(
         if emitted >= max_nodes:
             node_limited = True
             break
-        children: list[OutlineNode] = []
-        node = OutlineNode(
-            ref=ref,
-            uri="",  # stamped by the service, which owns the version token
-            title=title_of(item, index.inline_meta),
-            kind="section",
-            level=level,
-            page=index.page_of.get(ref),
-            est_tokens=section_est_tokens(index, ref),
-            child_count=child_counts.get(ref, 0),
-            children=children,
-        )
-        stack[-1][1].append(node)
-        stack.append((level, children))
+        ref = headings[step.position]
+        node = _build_section_node(index, ref, step.level, child_counts)
+        siblings = roots if step.parent is None else nodes[step.parent].children
+        siblings.append(node)
+        nodes[step.position] = node
         emitted += 1
 
     return roots, depth_limited, node_limited
 
 
-def _page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNode], bool]:
+def _nest_headings(index: DocumentIndex, headings: list[str], depth: int) -> HeadingNesting:
+    """Nest the headings, opening no section deeper than `depth`."""
+
+    def is_within_depth(open_levels: tuple[int, ...]) -> bool:
+        # A document `title` wraps everything without being a level a reader
+        # thinks about, so it does not consume depth budget: `depth=2` means
+        # chapters and their subsections, title or no title.
+        return sum(1 for open_level in open_levels if open_level > 0) < depth
+
+    return nest_by_heading(
+        [index.by_ref[ref] for ref in headings],
+        level_of=get_heading_level,
+        may_open=is_within_depth,
+    )
+
+
+def _build_section_node(
+    index: DocumentIndex, ref: str, level: int | None, child_counts: dict[str, int]
+) -> OutlineNode:
+    return OutlineNode(
+        ref=ref,
+        uri="",  # stamped by the service, which owns the version token
+        title=get_title(index.by_ref[ref], index.inline_meta),
+        kind="section",
+        level=level,
+        page=index.page_of.get(ref),
+        est_tokens=estimate_section_tokens(index, ref),
+        child_count=child_counts.get(ref, 0),
+        children=[],
+    )
+
+
+def _build_page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNode], bool]:
     pages = index.page_numbers or sorted({p for pages in index.pages_of.values() for p in pages})
     truncated = len(pages) > max_nodes
     nodes: list[OutlineNode] = []
     for page in pages[:max_nodes]:
         refs = [ref for ref in index.order if page in index.pages_of.get(ref, frozenset())]
-        texts = [element_text(index, ref) for ref in refs]
+        texts = [read_element_text(index, ref) for ref in refs]
         text = " ".join(texts).strip()
         nodes.append(
             OutlineNode(
-                ref=page_ref(page),
+                ref=build_page_ref(page),
                 uri="",
                 title=truncate_title(text) if text else f"Page {page}",
                 kind="page",
@@ -147,28 +161,24 @@ def _page_nodes(index: DocumentIndex, *, max_nodes: int) -> tuple[list[OutlineNo
     return nodes, truncated
 
 
-def section_est_tokens(index: DocumentIndex, ref: str) -> int:
-    return sum(read_cost(element_text(index, r)) for r in section_refs(index, ref))
+def estimate_section_tokens(index: DocumentIndex, ref: str) -> int:
+    return sum(read_cost(read_element_text(index, r)) for r in list_section_refs(index, ref))
 
 
-def _child_counts(index: DocumentIndex, headings: list[str]) -> dict[str, int]:
+def _count_children(index: DocumentIndex, headings: list[str]) -> dict[str, int]:
     """How many headings nest directly under each one — by the same rule the
     outline nests them (pop while the open heading is not shallower), so the
     count agrees with `children` even when docling skips a level."""
     counts: dict[str, int] = {}
-    open_headings: list[tuple[int, str]] = []
-    for ref in headings:
-        level = heading_level(index.by_ref[ref])
-        while open_headings and open_headings[-1][0] >= level:
-            open_headings.pop()
-        if open_headings:
-            parent = open_headings[-1][1]
+    nesting = nest_by_heading([index.by_ref[ref] for ref in headings], level_of=get_heading_level)
+    for step in nesting.steps:
+        if step.parent is not None:
+            parent = headings[step.parent]
             counts[parent] = counts.get(parent, 0) + 1
-        open_headings.append((level, ref))
     return counts
 
 
-def preamble_range(index: DocumentIndex) -> tuple[str, int, int] | None:
+def find_preamble_range(index: DocumentIndex) -> tuple[str, int, int] | None:
     """`(ref, start, end)` of the text before the first heading, or None.
 
     A contract names its parties before its first article, and a heading-only
@@ -177,27 +187,27 @@ def preamble_range(index: DocumentIndex) -> tuple[str, int, int] | None:
     read, budget and verify like any ref.
     """
     first = next(
-        (i for i, ref in enumerate(index.order) if is_heading(label_of(index.by_ref[ref]))),
+        (i for i, ref in enumerate(index.order) if is_heading(get_label(index.by_ref[ref]))),
         None,
     )
     if not first:
         return None
-    texts = [ref for ref in index.order[:first] if element_text(index, ref).strip()]
+    texts = [ref for ref in index.order[:first] if read_element_text(index, ref).strip()]
     if not texts:
         return None
-    ref = texts[0] if len(texts) == 1 else span_ref(texts[0], texts[-1])
+    ref = texts[0] if len(texts) == 1 else build_span_ref(texts[0], texts[-1])
     return ref, 0, first
 
 
-def _preamble_node(index: DocumentIndex, ref: str) -> OutlineNode:
+def _build_preamble_node(index: DocumentIndex, ref: str) -> OutlineNode:
     first = ref.split("..", 1)[0]
     return OutlineNode(
         ref=ref,
         uri="",
-        title=truncate_title(element_text(index, first)),
+        title=truncate_title(read_element_text(index, first)),
         kind="preamble",
         level=1,
         page=index.page_of.get(first),
-        est_tokens=section_est_tokens(index, ref),
+        est_tokens=estimate_section_tokens(index, ref),
         child_count=0,
     )

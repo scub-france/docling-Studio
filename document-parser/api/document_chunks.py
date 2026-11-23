@@ -4,8 +4,9 @@ Exposes the canonical doc-centric chunkset (CRUD + tree + rechunk + diff
 + push). Distinct from `/api/analyses/{id}/...` which operates on
 ephemeral analysis runs (StudioPage / OCR Debug).
 
-All routes mount under `/api/documents/{doc_id}/...`. The router
-delegates to `ChunkService` — no direct repo / persistence access.
+All routes mount under `/api/documents/{doc_id}/...`. The router delegates
+to `ChunkService`, `ChunkPushService` and `DocumentTreeService` — no direct
+repo / persistence access.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import NoReturn
 from fastapi import APIRouter, HTTPException, Query
 
 from api import deps  # noqa: TC001
+from api.errors import to_http_error
 from api.schemas import (
     AddChunkRequest,
     ChunkBboxResponse,
@@ -32,7 +34,7 @@ from api.schemas import (
     SplitChunkRequest,
     UpdateChunkRequest,
 )
-from services.chunk_service import (
+from services.chunk_errors import (
     ChunkServiceError,
 )
 
@@ -59,7 +61,7 @@ def _to_response(chunk) -> DocChunkResponse:
 
 
 def _raise_for(error: ChunkServiceError) -> NoReturn:
-    raise HTTPException(status_code=error.http_status, detail=str(error))
+    raise to_http_error(error)
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +161,8 @@ async def rechunk_document(
     body: DocRechunkRequest | None,
     service: deps.ChunkServiceDep,
 ) -> list[DocChunkResponse]:
-    """Re-run the chunker on the latest analysis JSON; replace canonical."""
+    """Re-run the chunker on the document's current analysis, with its saved
+    edits, and replace the canonical chunks."""
     options = body.chunking_options.model_dump() if body and body.chunking_options else None
     try:
         chunks = await service.rechunk_document(doc_id, options)
@@ -171,12 +174,13 @@ async def rechunk_document(
 @router.get("/{doc_id}/tree", response_model=list[DocTreeNodeResponse])
 async def get_tree(
     doc_id: str,
-    service: deps.ChunkServiceDep,
+    service: deps.DocumentTreeServiceDep,
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> list[DocTreeNodeResponse]:
-    """Outline of the document built from a requested or latest analysis.
+    """Outline of the document built from the requested analysis, or else from
+    its current analysis with its saved edits.
 
-    Returns `[]` if no analysis is available yet.
+    Returns `[]` if the document has no current analysis with a Docling document.
     """
     try:
         tree = await service.get_tree(doc_id, analysis_id)
@@ -188,7 +192,7 @@ async def get_tree(
 @router.get("/{doc_id}/diff", response_model=list[ChunkDiffResponse])
 async def diff_against_store(
     doc_id: str,
-    service: deps.ChunkServiceDep,
+    service: deps.ChunkPushServiceDep,
     store: str = Query(..., min_length=1),
 ) -> list[ChunkDiffResponse]:
     """Diff the canonical chunkset against the last push to `store`."""
@@ -203,7 +207,7 @@ async def diff_against_store(
 async def push_chunks(
     doc_id: str,
     body: PushChunksRequest,
-    service: deps.ChunkServiceDep,
+    service: deps.ChunkPushServiceDep,
 ) -> PushChunksResponse:
     """Push the canonical chunkset to a store and record a `ChunkPush`."""
     try:
@@ -219,7 +223,7 @@ async def push_chunks(
 @router.get("/{doc_id}/chunks/pushes", response_model=ChunkPushListResponse)
 async def list_chunk_pushes(
     doc_id: str,
-    service: deps.ChunkServiceDep,
+    service: deps.ChunkPushServiceDep,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> ChunkPushListResponse:

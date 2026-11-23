@@ -146,7 +146,7 @@ class TestCloseAll:
         await pool.close_all()
         a._client.close.assert_awaited_once()
         b._client.close.assert_awaited_once()
-        assert pool.keys() == []
+        assert pool.list_keys() == []
 
     async def test_close_all_is_idempotent(
         self, fake_async_opensearch: list[dict[str, Any]]
@@ -155,7 +155,7 @@ class TestCloseAll:
         await pool.get("http://x:9200")
         await pool.close_all()
         await pool.close_all()
-        assert pool.keys() == []
+        assert pool.list_keys() == []
 
     async def test_close_all_continues_when_one_client_fails(
         self, fake_async_opensearch: list[dict[str, Any]]
@@ -166,4 +166,4 @@ class TestCloseAll:
         a._client.close.side_effect = RuntimeError("network gone")
         await pool.close_all()
         b._client.close.assert_awaited_once()
-        assert pool.keys() == []
+        assert pool.list_keys() == []

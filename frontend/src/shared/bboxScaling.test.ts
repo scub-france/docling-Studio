@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeScale, bboxToRect, pointInRect, EMPTY_RECT } from './bboxScaling'
+import { computeScale, bboxToRect, isPointInRect, EMPTY_RECT } from './bboxScaling'
 
 // ---------------------------------------------------------------------------
 // computeScale
@@ -155,45 +155,45 @@ describe('bboxToRect', () => {
 })
 
 // ---------------------------------------------------------------------------
-// pointInRect
+// isPointInRect
 // ---------------------------------------------------------------------------
 
-describe('pointInRect', () => {
+describe('isPointInRect', () => {
   const rect = { x: 10, y: 20, w: 100, h: 60 }
 
   it('returns true for point inside', () => {
-    expect(pointInRect(50, 50, rect)).toBe(true)
+    expect(isPointInRect(50, 50, rect)).toBe(true)
   })
 
   it('returns true for point on edge', () => {
-    expect(pointInRect(10, 20, rect)).toBe(true) // top-left
-    expect(pointInRect(110, 80, rect)).toBe(true) // bottom-right
-    expect(pointInRect(10, 80, rect)).toBe(true) // bottom-left
-    expect(pointInRect(110, 20, rect)).toBe(true) // top-right
+    expect(isPointInRect(10, 20, rect)).toBe(true) // top-left
+    expect(isPointInRect(110, 80, rect)).toBe(true) // bottom-right
+    expect(isPointInRect(10, 80, rect)).toBe(true) // bottom-left
+    expect(isPointInRect(110, 20, rect)).toBe(true) // top-right
   })
 
   it('returns false for point outside', () => {
-    expect(pointInRect(5, 50, rect)).toBe(false) // left
-    expect(pointInRect(50, 15, rect)).toBe(false) // above
-    expect(pointInRect(115, 50, rect)).toBe(false) // right
-    expect(pointInRect(50, 85, rect)).toBe(false) // below
+    expect(isPointInRect(5, 50, rect)).toBe(false) // left
+    expect(isPointInRect(50, 15, rect)).toBe(false) // above
+    expect(isPointInRect(115, 50, rect)).toBe(false) // right
+    expect(isPointInRect(50, 85, rect)).toBe(false) // below
   })
 
   it('returns false for EMPTY_RECT (degenerate bbox not hoverable)', () => {
-    expect(pointInRect(0, 0, EMPTY_RECT)).toBe(true) // edge: (0,0) is on the boundary
-    expect(pointInRect(1, 1, { x: 0, y: 0, w: 0, h: 0 })).toBe(false)
+    expect(isPointInRect(0, 0, EMPTY_RECT)).toBe(true) // edge: (0,0) is on the boundary
+    expect(isPointInRect(1, 1, { x: 0, y: 0, w: 0, h: 0 })).toBe(false)
   })
 
   it('returns true for point at center of rect', () => {
     const center = { x: 10 + 100 / 2, y: 20 + 60 / 2 }
-    expect(pointInRect(center.x, center.y, rect)).toBe(true)
+    expect(isPointInRect(center.x, center.y, rect)).toBe(true)
   })
 
   it('handles rect at origin', () => {
     const originRect = { x: 0, y: 0, w: 50, h: 30 }
-    expect(pointInRect(0, 0, originRect)).toBe(true)
-    expect(pointInRect(25, 15, originRect)).toBe(true)
-    expect(pointInRect(-1, 0, originRect)).toBe(false)
+    expect(isPointInRect(0, 0, originRect)).toBe(true)
+    expect(isPointInRect(25, 15, originRect)).toBe(true)
+    expect(isPointInRect(-1, 0, originRect)).toBe(false)
   })
 })
 
@@ -218,13 +218,13 @@ describe('integration: bbox pipeline', () => {
     const cx = ((200 + 400) / 2) * scale.sx
     const cy = ((350 + 500) / 2) * scale.sy
 
-    expect(pointInRect(cx, cy, rect)).toBe(true)
+    expect(isPointInRect(cx, cy, rect)).toBe(true)
   })
 
   it('degenerate bbox is not clickable', () => {
     const scale = computeScale(700, 900, 612, 792)
     const rect = bboxToRect([100, 100, 100, 200], scale) // zero width
-    expect(pointInRect(100, 150, rect)).toBe(false)
+    expect(isPointInRect(100, 150, rect)).toBe(false)
   })
 
   it('two adjacent elements have correct non-overlapping rects', () => {
@@ -233,15 +233,15 @@ describe('integration: bbox pipeline', () => {
     const rect2 = bboxToRect([0, 50, 100, 100], scale)
 
     // Point between them (y=50) is on edge of both
-    expect(pointInRect(50, 50, rect1)).toBe(true)
-    expect(pointInRect(50, 50, rect2)).toBe(true)
+    expect(isPointInRect(50, 50, rect1)).toBe(true)
+    expect(isPointInRect(50, 50, rect2)).toBe(true)
 
     // Point clearly in first only
-    expect(pointInRect(50, 25, rect1)).toBe(true)
-    expect(pointInRect(50, 25, rect2)).toBe(false)
+    expect(isPointInRect(50, 25, rect1)).toBe(true)
+    expect(isPointInRect(50, 25, rect2)).toBe(false)
 
     // Point clearly in second only
-    expect(pointInRect(50, 75, rect1)).toBe(false)
-    expect(pointInRect(50, 75, rect2)).toBe(true)
+    expect(isPointInRect(50, 75, rect1)).toBe(false)
+    expect(isPointInRect(50, 75, rect2)).toBe(true)
   })
 })

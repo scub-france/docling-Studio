@@ -12,12 +12,14 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 
 from api.state import AppState, get_app_state, require
-from domain.ports import DocumentStoreLinkRepository, StoreRepository
+from domain.ports import CurrentAnalysisReader
 from services.analysis_edit_service import AnalysisEditService
 from services.analysis_service import AnalysisService
 from services.app_config_service import AppConfigService
+from services.chunk_push_service import ChunkPushService
 from services.chunk_service import ChunkService
 from services.document_service import DocumentService
+from services.document_tree_service import DocumentTreeService
 from services.export_service import ExportService
 from services.graph_service import GraphService
 from services.ingestion_service import IngestionService
@@ -37,6 +39,13 @@ def get_document_service(state: AppStateDep) -> DocumentService:
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 
 
+def get_current_analysis(state: AppStateDep) -> CurrentAnalysisReader:
+    return require(state.current_analysis, detail="Current analysis service not available")
+
+
+CurrentAnalysisDep = Annotated[CurrentAnalysisReader, Depends(get_current_analysis)]
+
+
 def get_preview_service(state: AppStateDep) -> PreviewService:
     return require(state.preview_service, detail="Preview service not available")
 
@@ -51,9 +60,14 @@ def get_analysis_service(state: AppStateDep) -> AnalysisService:
 AnalysisServiceDep = Annotated[AnalysisService, Depends(get_analysis_service)]
 
 
-def get_analysis_edit_service(state: AppStateDep) -> AnalysisEditService:
+def ensure_analysis_editor_enabled(state: AppState) -> None:
+    """Hide every editor surface while the analysis editor is switched off."""
     if not state.analysis_editor_enabled:
         raise HTTPException(status_code=404, detail="Analysis editor is disabled")
+
+
+def get_analysis_edit_service(state: AppStateDep) -> AnalysisEditService:
+    ensure_analysis_editor_enabled(state)
     return require(state.analysis_edit_service, detail="Analysis editor not available")
 
 
@@ -72,6 +86,20 @@ def get_chunk_service(state: AppStateDep) -> ChunkService:
 
 
 ChunkServiceDep = Annotated[ChunkService, Depends(get_chunk_service)]
+
+
+def get_chunk_push_service(state: AppStateDep) -> ChunkPushService:
+    return require(state.chunk_push_service, detail="Chunk push service not available")
+
+
+ChunkPushServiceDep = Annotated[ChunkPushService, Depends(get_chunk_push_service)]
+
+
+def get_document_tree_service(state: AppStateDep) -> DocumentTreeService:
+    return require(state.document_tree_service, detail="Document tree service not available")
+
+
+DocumentTreeServiceDep = Annotated[DocumentTreeService, Depends(get_document_tree_service)]
 
 
 def get_version_service(state: AppStateDep) -> VersionService:
@@ -103,24 +131,6 @@ def get_export_service(state: AppStateDep) -> ExportService:
 
 
 ExportServiceDep = Annotated[ExportService, Depends(get_export_service)]
-
-
-def get_store_repo(state: AppStateDep) -> StoreRepository:
-    return require(state.store_repo, detail="Store repository not available")
-
-
-StoreRepoDep = Annotated[StoreRepository, Depends(get_store_repo)]
-
-
-def get_document_store_link_repo(state: AppStateDep) -> DocumentStoreLinkRepository:
-    return require(
-        state.document_store_link_repo, detail="Document/store link repository not available"
-    )
-
-
-DocumentStoreLinkRepoDep = Annotated[
-    DocumentStoreLinkRepository, Depends(get_document_store_link_repo)
-]
 
 
 def get_reasoning_service(state: AppStateDep) -> ReasoningService:

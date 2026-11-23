@@ -4,17 +4,9 @@ pairs (#267).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from domain.models import DocumentVersion, DocumentVersionKind
 from persistence.database import get_connection
-
-
-def _parse_iso(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
+from persistence.iso_datetime import require_iso
 
 
 def _row_to_version(row) -> DocumentVersion:
@@ -27,7 +19,7 @@ def _row_to_version(row) -> DocumentVersion:
         chunks_source_result_hash=row["chunks_source_result_hash"],
         chunks_snapshot=row["chunks_snapshot"],
         summary=row["summary"] or "",
-        created_at=_parse_iso(row["created_at"]),
+        created_at=require_iso(row["created_at"]),
     )
 
 
@@ -76,14 +68,3 @@ class SqliteDocumentVersionRepository:
             )
             rows = await cur.fetchall()
             return [_row_to_version(r) for r in rows]
-
-    async def find_latest_for_document(self, document_id: str) -> DocumentVersion | None:
-        """Most recent version for the document, or None."""
-        async with get_connection() as conn:
-            cur = await conn.execute(
-                "SELECT * FROM document_versions WHERE document_id = ? "
-                "ORDER BY created_at DESC LIMIT 1",
-                (document_id,),
-            )
-            row = await cur.fetchone()
-            return _row_to_version(row) if row else None

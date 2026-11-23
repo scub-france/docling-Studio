@@ -36,9 +36,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, reactive, onBeforeUnmount } from 'vue'
-import { computeScale, bboxToRect, pointInRect } from '@/shared/bboxScaling'
+import { computeScale, bboxToRect, isPointInRect } from '@/shared/bboxScaling'
 import type { Page, PageElement, ChunkBbox } from '../../../shared/types'
 import { ELEMENT_COLORS } from '@/shared/elementColors'
+import { createCssTokenReader } from '@/shared/cssTokens'
 
 const props = withDefaults(
   defineProps<{
@@ -82,21 +83,14 @@ function countElements(type: string): number {
   return props.pageData.elements.filter((e: PageElement) => e.type === type).length
 }
 
-function draw(): void {
-  const canvas = canvasRef.value
-  const img = props.imageEl
-  if (!canvas) return
-  if (!img) {
-    canvas.width = 0
-    canvas.height = 0
-    hoveredElement.value = null
-    return
-  }
+type Scale = ReturnType<typeof computeScale>
 
-  if (!img.clientWidth || !img.clientHeight) return
-
-  // Retina support: scale the canvas backing store by devicePixelRatio
-  // so strokes render crisp on high-DPI screens.
+// Retina support: scale the canvas backing store by devicePixelRatio
+// so strokes render crisp on high-DPI screens.
+function prepareCanvas(
+  canvas: HTMLCanvasElement,
+  img: HTMLElement,
+): CanvasRenderingContext2D | null {
   const dpr = window.devicePixelRatio || 1
   canvas.width = img.clientWidth * dpr
   canvas.height = img.clientHeight * dpr
@@ -104,19 +98,13 @@ function draw(): void {
   canvas.style.height = img.clientHeight + 'px'
 
   const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  if (!ctx) return null
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, img.clientWidth, img.clientHeight)
+  return ctx
+}
 
-  if (!props.pageData) return
-
-  const scale = computeScale(
-    img.clientWidth,
-    img.clientHeight,
-    props.pageData.width,
-    props.pageData.height,
-  )
-
+function drawElementBoxes(ctx: CanvasRenderingContext2D, scale: Scale): void {
   const hasHighlight = props.highlightedIndex >= 0
   const hasChunkHighlight = props.highlightedBboxes.length > 0
 
@@ -135,24 +123,73 @@ function draw(): void {
     ctx.fillStyle = color + (isHighlighted ? '40' : dimmed ? '08' : '20')
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
   }
+}
 
-  // Draw chunk-highlighted bboxes on top with accent color
-  if (hasChunkHighlight) {
-    const CHUNK_COLOR = '#F59E0B'
-    for (const cb of props.highlightedBboxes) {
-      const rect = bboxToRect(cb.bbox, scale)
-      ctx.strokeStyle = CHUNK_COLOR
-      ctx.lineWidth = 3
-      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
-      ctx.fillStyle = CHUNK_COLOR + '30'
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
-    }
+// Draw chunk-highlighted bboxes on top with the --chunk-highlight token
+// (app/App.vue), read once per draw; the fill keeps the former 0x30 alpha.
+function drawChunkBoxes(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  scale: Scale,
+): void {
+  const chunkColor = createCssTokenReader(canvas)('--chunk-highlight')
+  for (const cb of props.highlightedBboxes) {
+    const rect = bboxToRect(cb.bbox, scale)
+    ctx.strokeStyle = chunkColor
+    ctx.lineWidth = 3
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+    ctx.fillStyle = chunkColor
+    ctx.globalAlpha = 0x30 / 255
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+    ctx.globalAlpha = 1
   }
+}
+
+function draw(): void {
+  const canvas = canvasRef.value
+  const img = props.imageEl
+  if (!canvas) return
+  if (!img) {
+    canvas.width = 0
+    canvas.height = 0
+    hoveredElement.value = null
+    return
+  }
+
+  if (!img.clientWidth || !img.clientHeight) return
+
+  const ctx = prepareCanvas(canvas, img)
+  if (!ctx) return
+
+  if (!props.pageData) return
+
+  const scale = computeScale(
+    img.clientWidth,
+    img.clientHeight,
+    props.pageData.width,
+    props.pageData.height,
+  )
+
+  drawElementBoxes(ctx, scale)
+  if (props.highlightedBboxes.length > 0) drawChunkBoxes(ctx, canvas, scale)
 }
 
 function onMouseLeave(): void {
   hoveredElement.value = null
   emit('highlight-element', -1)
+}
+
+function findElementAt(
+  mx: number,
+  my: number,
+  scale: Scale,
+): { found: PageElement | null; foundIdx: number } {
+  for (const el of visibleElements.value) {
+    if (isPointInRect(mx, my, bboxToRect(el.bbox, scale))) {
+      return { found: el, foundIdx: contentElements.value.indexOf(el) }
+    }
+  }
+  return { found: null, foundIdx: -1 }
 }
 
 function onMouseMove(e: MouseEvent): void {
@@ -171,15 +208,7 @@ function onMouseMove(e: MouseEvent): void {
     props.pageData.height,
   )
 
-  let found: PageElement | null = null
-  let foundIdx = -1
-  for (const el of visibleElements.value) {
-    if (pointInRect(mx, my, bboxToRect(el.bbox, scale))) {
-      found = el
-      foundIdx = contentElements.value.indexOf(el)
-      break
-    }
-  }
+  const { found, foundIdx } = findElementAt(mx, my, scale)
 
   hoveredElement.value = found
   emit('highlight-element', foundIdx)

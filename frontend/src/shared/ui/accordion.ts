@@ -35,7 +35,7 @@ export interface AccordionOptions {
   storage?: KeyValueStorage | null
 }
 
-function browserStorage(): KeyValueStorage | null {
+function getBrowserStorage(): KeyValueStorage | null {
   try {
     return window.localStorage
   } catch {
@@ -55,21 +55,35 @@ function readClosed(storage: KeyValueStorage | null, key: string): string[] | nu
   }
 }
 
-export function createAccordion(options: AccordionOptions): Accordion {
-  const storage = options.storage === undefined ? browserStorage() : options.storage
+function writeClosed(
+  storage: KeyValueStorage | null,
+  key: string,
+  closed: ReadonlySet<string>,
+): void {
+  try {
+    storage?.setItem(key, JSON.stringify([...closed]))
+  } catch {
+    // Storage full or blocked: the fold still applies for this visit.
+  }
+}
+
+function createClosedSet(options: AccordionOptions) {
+  const storage = options.storage === undefined ? getBrowserStorage() : options.storage
   const closed = ref<ReadonlySet<string>>(
     new Set(readClosed(storage, options.storageKey) ?? options.defaultClosed ?? []),
   )
-  const ids = ref<string[]>([])
 
   function setClosed(next: ReadonlySet<string>): void {
     closed.value = next
-    try {
-      storage?.setItem(options.storageKey, JSON.stringify([...next]))
-    } catch {
-      // Storage full or blocked: the fold still applies for this visit.
-    }
+    writeClosed(storage, options.storageKey, next)
   }
+
+  return { closed, setClosed }
+}
+
+export function createAccordion(options: AccordionOptions): Accordion {
+  const { closed, setClosed } = createClosedSet(options)
+  const ids = ref<string[]>([])
 
   const allClosed = computed(
     () => ids.value.length > 0 && ids.value.every((id) => closed.value.has(id)),

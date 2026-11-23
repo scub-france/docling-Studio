@@ -1,0 +1,1358 @@
+{
+ "write_document": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.begin_transaction"
+   },
+   {
+    "op": "tx.enter"
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id}) OPTIONAL MATCH (d)-[:HAS_ROOT|HAS_CHUNK*0..]->(n) DETACH DELETE d, n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (pv:Provenance {doc_id: $doc_id}) DETACH DELETE pv",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (e:Element {doc_id: $doc_id}) DETACH DELETE e",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) DETACH DELETE p",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "CREATE (d:Document { id: $doc_id, title: $title, source_uri: $source_uri, ingested_at: datetime($ingested_at), docling_version: $docling_version, stages_applied: ['tree'], last_tree_write: datetime($ingested_at), tenant_id: $tenant_id, document_json: $document_json })",
+    "params": {
+     "doc_id": "doc-1",
+     "title": "sample.pdf",
+     "source_uri": "",
+     "ingested_at": "2026-01-02T03:04:05+00:00",
+     "docling_version": "",
+     "tenant_id": "default",
+     "document_json": "{\"schema_name\": \"DoclingDocument\", \"name\": \"sample\", \"body\": {\"self_ref\": \"#/body\", \"children\": [{\"$ref\": \"#/texts/0\"}, {\"$ref\": \"#/texts/1\"}, {\"$ref\": \"#/tables/0\"}, {\"$ref\": \"#/pictures/0\"}, {\"$ref\": \"#/groups/1\"}, {\"$ref\": \"#/texts/8\"}]}, \"texts\": [{\"self_ref\": \"#/texts/0\", \"parent\": {\"$ref\": \"#/body\"}, \"label\": \"title\", \"text\": \"Annual report\", \"prov\": [{\"bbox\": {\"l\": 10, \"t\": 800, \"r\": 500, \"b\": 780, \"coord_origin\": \"BOTTOMLEFT\"}, \"page_no\": 1, \"charspan\": [0, 13]}]}, {\"self_ref\": \"#/texts/1\", \"parent\": {\"$ref\": \"#/body\"}, \"label\": \"section_header\", \"level\": 1, \"text\": \"Results\", \"children\": [{\"$ref\": \"#/texts/2\"}, {\"$ref\": \"#/groups/0\"}], \"prov\": [{\"bbox\": [10, 760, 300, 740], \"page_no\": 1, \"charspan\": [0, 7]}]}, {\"self_ref\": \"#/texts/2\", \"parent\": {\"$ref\": \"#/texts/1\"}, \"label\": \"paragraph\", \"text\": \"Revenue grew.\", \"prov\": [{\"bbox\": {\"l\": 10, \"t\": 700, \"r\": 500, \"b\": 600, \"coord_origin\": \"BOTTOMLEFT\"}, \"page_no\": 1, \"charspan\": [0, 8]}, {\"bbox\": {\"l\": 10, \"t\": 800, \"r\": 500, \"b\": 750, \"coord_origin\": \"BOTTOMLEFT\"}, \"page_no\": 2, \"charspan\": [8, 13]}]}, {\"self_ref\": \"#/texts/3\", \"parent\": {\"$ref\": \"#/groups/0\"}, \"label\": \"text\", \"text\": \"Bold run\", \"prov\": [{\"bbox\": {\"l\": 10, \"t\": 700, \"r\": 100, \"b\": 690, \"coord_origin\": \"BOTTOMLEFT\"}, \"page_no\": 2, \"charspan\": [0, 8]}]}, {\"self_ref\": \"#/texts/4\", \"parent\": {\"$ref\": \"#/groups/0\"}, \"label\": \"text\", \"text\": \"plain run\", \"prov\": [{\"bbox\": {\"l\": 100, \"t\": 700, \"r\": 200, \"b\": 690, \"coord_origin\": \"BOTTOMLEFT\"}, \"page_no\": 2, \"charspan\": [0, 9]}]}, {\"self_ref\": \"#/texts/5\", \"parent\": {\"$ref\": \"#/pictures/0\"}, \"label\": \"text\", \"text\": \"axis label\", \"prov\": [{\"bbox\": {\"l\": 300, \"t\": 400, \"r\": 320, \"b\": 390, \"coord_origin\": \"BOTTOMLEFT\"}, \"page_no\": 2}]}, {\"self_ref\": \"#/texts/6\", \"parent\": {\"$ref\": \"#/groups/1\"}, \"label\": \"list_item\", \"text\": \"First point\", \"prov\": [{\"bbox\": {\"l\": 10, \"t\": 300, \"r\": 200, \"b\": 290, \"coord_origin\": \"BOTTOMLEFT\"}}]}, {\"parent\": {\"$ref\": \"#/body\"}, \"label\": \"text\", \"text\": \"orphan without ref\"}, {\"self_ref\": \"#/texts/8\", \"parent\": {\"$ref\": \"#/body\"}, \"label\": \"checkbox_selected\", \"text\": \"\"}], \"tables\": [{\"self_ref\": \"#/tables/0\", \"parent\": {\"$ref\": \"#/body\"}, \"label\": \"table\", \"caption\": \"Table 1\", \"data\": {\"num_rows\": 1, \"num_cols\": 2, \"table_cells\": [{\"text\": \"a\"}, {\"text\": \"b\"}]}, \"prov\": [{\"bbox\": {\"l\": 10, \"t\": 600, \"r\": 500, \"b\": 450, \"coord_origin\": \"BOTTOMLEFT\"}, \"page_no\": 2}]}], \"pictures\": [{\"self_ref\": \"#/pictures/0\", \"parent\": {\"$ref\": \"#/body\"}, \"label\": \"picture\", \"children\": [{\"$ref\": \"#/texts/5\"}], \"prov\": [{\"bbox\": {\"l\": 250, \"t\": 420, \"r\": 450, \"b\": 350, \"coord_origin\": \"BOTTOMLEFT\"}, \"page_no\": 2}]}], \"groups\": [{\"self_ref\": \"#/groups/0\", \"parent\": {\"$ref\": \"#/texts/1\"}, \"label\": \"inline\", \"children\": [{\"$ref\": \"#/texts/3\"}, {\"$ref\": \"#/texts/4\"}]}, {\"self_ref\": \"#/groups/1\", \"parent\": {\"$ref\": \"#/body\"}, \"label\": \"list\", \"children\": [{\"$ref\": \"#/texts/6\"}]}], \"pages\": {\"1\": {\"size\": {\"width\": 595.0, \"height\": 842.0}, \"page_no\": 1}, \"2\": {\"size\": {\"width\": 595.0, \"height\": 842.0}, \"page_no\": 2}, \"cover\": {\"size\": {\"width\": 1, \"height\": 1}}}}"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $pages AS p CREATE (:Page {doc_id: p.doc_id, page_no: p.page_no, width: p.width, height: p.height})",
+    "params": {
+     "pages": [
+      {
+       "doc_id": "doc-1",
+       "page_no": 1,
+       "width": 595.0,
+       "height": 842.0
+      },
+      {
+       "doc_id": "doc-1",
+       "page_no": 2,
+       "width": 595.0,
+       "height": 842.0
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $batch AS e CREATE (n:Element:SectionHeader { doc_id: e.doc_id, self_ref: e.self_ref, docling_label: e.docling_label, text: e.text, level: e.level, caption: e.caption, cells_json: e.cells_json })",
+    "params": {
+     "batch": [
+      {
+       "specific_label": "SectionHeader",
+       "parent_ref": "#/body",
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/0",
+       "docling_label": "title",
+       "text": "Annual report"
+      },
+      {
+       "specific_label": "SectionHeader",
+       "parent_ref": "#/body",
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/1",
+       "docling_label": "section_header",
+       "text": "Results",
+       "level": 1
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $batch AS e CREATE (n:Element:Paragraph { doc_id: e.doc_id, self_ref: e.self_ref, docling_label: e.docling_label, text: e.text, level: e.level, caption: e.caption, cells_json: e.cells_json })",
+    "params": {
+     "batch": [
+      {
+       "specific_label": "Paragraph",
+       "parent_ref": "#/texts/1",
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/2",
+       "docling_label": "paragraph",
+       "text": "Revenue grew."
+      },
+      {
+       "specific_label": "Paragraph",
+       "parent_ref": "#/texts/1",
+       "doc_id": "doc-1",
+       "self_ref": "#/groups/0",
+       "docling_label": "inline",
+       "text": "Bold run plain run"
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $batch AS e CREATE (n:Element:ListItem { doc_id: e.doc_id, self_ref: e.self_ref, docling_label: e.docling_label, text: e.text, level: e.level, caption: e.caption, cells_json: e.cells_json })",
+    "params": {
+     "batch": [
+      {
+       "specific_label": "ListItem",
+       "parent_ref": "#/groups/1",
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/6",
+       "docling_label": "list_item",
+       "text": "First point"
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $batch AS e CREATE (n:Element:TextElement { doc_id: e.doc_id, self_ref: e.self_ref, docling_label: e.docling_label, text: e.text, level: e.level, caption: e.caption, cells_json: e.cells_json })",
+    "params": {
+     "batch": [
+      {
+       "specific_label": "TextElement",
+       "parent_ref": "#/body",
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/8",
+       "docling_label": "checkbox_selected",
+       "text": ""
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $batch AS e CREATE (n:Element:Table { doc_id: e.doc_id, self_ref: e.self_ref, docling_label: e.docling_label, text: e.text, level: e.level, caption: e.caption, cells_json: e.cells_json })",
+    "params": {
+     "batch": [
+      {
+       "specific_label": "Table",
+       "parent_ref": "#/body",
+       "doc_id": "doc-1",
+       "self_ref": "#/tables/0",
+       "docling_label": "table",
+       "text": "",
+       "caption": "Table 1",
+       "cells_json": "{\"num_rows\": 1, \"num_cols\": 2, \"table_cells\": [{\"text\": \"a\"}, {\"text\": \"b\"}]}"
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $batch AS e CREATE (n:Element:Figure { doc_id: e.doc_id, self_ref: e.self_ref, docling_label: e.docling_label, text: e.text, level: e.level, caption: e.caption, cells_json: e.cells_json })",
+    "params": {
+     "batch": [
+      {
+       "specific_label": "Figure",
+       "parent_ref": "#/body",
+       "doc_id": "doc-1",
+       "self_ref": "#/pictures/0",
+       "docling_label": "picture",
+       "text": ""
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $batch AS e CREATE (n:Element:List { doc_id: e.doc_id, self_ref: e.self_ref, docling_label: e.docling_label, text: e.text, level: e.level, caption: e.caption, cells_json: e.cells_json })",
+    "params": {
+     "batch": [
+      {
+       "specific_label": "List",
+       "parent_ref": "#/body",
+       "doc_id": "doc-1",
+       "self_ref": "#/groups/1",
+       "docling_label": "list",
+       "text": ""
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $rows AS r MATCH (p:Element {doc_id: r.doc_id, self_ref: r.parent_ref}) MATCH (c:Element {doc_id: r.doc_id, self_ref: r.child_ref}) MERGE (p)-[rel:PARENT_OF]->(c) SET rel.order = r.order",
+    "params": {
+     "rows": [
+      {
+       "doc_id": "doc-1",
+       "parent_ref": "#/texts/1",
+       "child_ref": "#/texts/2",
+       "order": 2
+      },
+      {
+       "doc_id": "doc-1",
+       "parent_ref": "#/groups/1",
+       "child_ref": "#/texts/6",
+       "order": 3
+      },
+      {
+       "doc_id": "doc-1",
+       "parent_ref": "#/texts/1",
+       "child_ref": "#/groups/0",
+       "order": 7
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $rows AS r MATCH (d:Document {id: r.doc_id}) MATCH (c:Element {doc_id: r.doc_id, self_ref: r.child_ref}) MERGE (d)-[:HAS_ROOT]->(c)",
+    "params": {
+     "rows": [
+      {
+       "doc_id": "doc-1",
+       "child_ref": "#/texts/0"
+      },
+      {
+       "doc_id": "doc-1",
+       "child_ref": "#/texts/1"
+      },
+      {
+       "doc_id": "doc-1",
+       "child_ref": "#/texts/8"
+      },
+      {
+       "doc_id": "doc-1",
+       "child_ref": "#/tables/0"
+      },
+      {
+       "doc_id": "doc-1",
+       "child_ref": "#/pictures/0"
+      },
+      {
+       "doc_id": "doc-1",
+       "child_ref": "#/groups/1"
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $rows AS r MATCH (e:Element {doc_id: r.doc_id, self_ref: r.self_ref}) CREATE (pv:Provenance { doc_id: r.doc_id, element_ref: r.self_ref, prov_order: r.order, page_no: r.page_no, bbox_l: r.bbox_l, bbox_t: r.bbox_t, bbox_r: r.bbox_r, bbox_b: r.bbox_b, coord_origin: r.coord_origin, charspan_start: r.charspan_start, charspan_end: r.charspan_end }) CREATE (e)-[:HAS_PROV {order: r.order}]->(pv)",
+    "params": {
+     "rows": [
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/0",
+       "order": 0,
+       "page_no": 1,
+       "bbox_l": 10.0,
+       "bbox_t": 800.0,
+       "bbox_r": 500.0,
+       "bbox_b": 780.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 0,
+       "charspan_end": 13
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/1",
+       "order": 0,
+       "page_no": 1,
+       "bbox_l": 10.0,
+       "bbox_t": 760.0,
+       "bbox_r": 300.0,
+       "bbox_b": 740.0,
+       "coord_origin": "TOPLEFT",
+       "charspan_start": 0,
+       "charspan_end": 7
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/2",
+       "order": 0,
+       "page_no": 1,
+       "bbox_l": 10.0,
+       "bbox_t": 700.0,
+       "bbox_r": 500.0,
+       "bbox_b": 600.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 0,
+       "charspan_end": 8
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/2",
+       "order": 1,
+       "page_no": 2,
+       "bbox_l": 10.0,
+       "bbox_t": 800.0,
+       "bbox_r": 500.0,
+       "bbox_b": 750.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 8,
+       "charspan_end": 13
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/6",
+       "order": 0,
+       "page_no": null,
+       "bbox_l": 10.0,
+       "bbox_t": 300.0,
+       "bbox_r": 200.0,
+       "bbox_b": 290.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": null,
+       "charspan_end": null
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/tables/0",
+       "order": 0,
+       "page_no": 2,
+       "bbox_l": 10.0,
+       "bbox_t": 600.0,
+       "bbox_r": 500.0,
+       "bbox_b": 450.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": null,
+       "charspan_end": null
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/pictures/0",
+       "order": 0,
+       "page_no": 2,
+       "bbox_l": 250.0,
+       "bbox_t": 420.0,
+       "bbox_r": 450.0,
+       "bbox_b": 350.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": null,
+       "charspan_end": null
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/groups/0",
+       "order": 0,
+       "page_no": 2,
+       "bbox_l": 10.0,
+       "bbox_t": 700.0,
+       "bbox_r": 100.0,
+       "bbox_b": 690.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 0,
+       "charspan_end": 8
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/groups/0",
+       "order": 1,
+       "page_no": 2,
+       "bbox_l": 100.0,
+       "bbox_t": 700.0,
+       "bbox_r": 200.0,
+       "bbox_b": 690.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 0,
+       "charspan_end": 9
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $rows AS r WITH r WHERE r.page_no IS NOT NULL MATCH (pv:Provenance { doc_id: r.doc_id, element_ref: r.self_ref, prov_order: r.order }) MATCH (p:Page {doc_id: r.doc_id, page_no: r.page_no}) MERGE (pv)-[:ON_PAGE]->(p)",
+    "params": {
+     "rows": [
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/0",
+       "order": 0,
+       "page_no": 1,
+       "bbox_l": 10.0,
+       "bbox_t": 800.0,
+       "bbox_r": 500.0,
+       "bbox_b": 780.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 0,
+       "charspan_end": 13
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/1",
+       "order": 0,
+       "page_no": 1,
+       "bbox_l": 10.0,
+       "bbox_t": 760.0,
+       "bbox_r": 300.0,
+       "bbox_b": 740.0,
+       "coord_origin": "TOPLEFT",
+       "charspan_start": 0,
+       "charspan_end": 7
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/2",
+       "order": 0,
+       "page_no": 1,
+       "bbox_l": 10.0,
+       "bbox_t": 700.0,
+       "bbox_r": 500.0,
+       "bbox_b": 600.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 0,
+       "charspan_end": 8
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/2",
+       "order": 1,
+       "page_no": 2,
+       "bbox_l": 10.0,
+       "bbox_t": 800.0,
+       "bbox_r": 500.0,
+       "bbox_b": 750.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 8,
+       "charspan_end": 13
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/6",
+       "order": 0,
+       "page_no": null,
+       "bbox_l": 10.0,
+       "bbox_t": 300.0,
+       "bbox_r": 200.0,
+       "bbox_b": 290.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": null,
+       "charspan_end": null
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/tables/0",
+       "order": 0,
+       "page_no": 2,
+       "bbox_l": 10.0,
+       "bbox_t": 600.0,
+       "bbox_r": 500.0,
+       "bbox_b": 450.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": null,
+       "charspan_end": null
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/pictures/0",
+       "order": 0,
+       "page_no": 2,
+       "bbox_l": 250.0,
+       "bbox_t": 420.0,
+       "bbox_r": 450.0,
+       "bbox_b": 350.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": null,
+       "charspan_end": null
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/groups/0",
+       "order": 0,
+       "page_no": 2,
+       "bbox_l": 10.0,
+       "bbox_t": 700.0,
+       "bbox_r": 100.0,
+       "bbox_b": 690.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 0,
+       "charspan_end": 8
+      },
+      {
+       "doc_id": "doc-1",
+       "self_ref": "#/groups/0",
+       "order": 1,
+       "page_no": 2,
+       "bbox_l": 100.0,
+       "bbox_t": 700.0,
+       "bbox_r": 200.0,
+       "bbox_b": 690.0,
+       "coord_origin": "BOTTOMLEFT",
+       "charspan_start": 0,
+       "charspan_end": 9
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $pairs AS p MATCH (a:Element {doc_id: p.doc_id, self_ref: p.a}) MATCH (b:Element {doc_id: p.doc_id, self_ref: p.b}) MERGE (a)-[:NEXT]->(b)",
+    "params": {
+     "pairs": [
+      {
+       "doc_id": "doc-1",
+       "a": "#/texts/0",
+       "b": "#/texts/1"
+      },
+      {
+       "doc_id": "doc-1",
+       "a": "#/texts/1",
+       "b": "#/texts/2"
+      },
+      {
+       "doc_id": "doc-1",
+       "a": "#/texts/2",
+       "b": "#/groups/0"
+      },
+      {
+       "doc_id": "doc-1",
+       "a": "#/groups/0",
+       "b": "#/tables/0"
+      },
+      {
+       "doc_id": "doc-1",
+       "a": "#/tables/0",
+       "b": "#/pictures/0"
+      },
+      {
+       "doc_id": "doc-1",
+       "a": "#/pictures/0",
+       "b": "#/groups/1"
+      },
+      {
+       "doc_id": "doc-1",
+       "a": "#/groups/1",
+       "b": "#/texts/6"
+      },
+      {
+       "doc_id": "doc-1",
+       "a": "#/texts/6",
+       "b": "#/texts/8"
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.commit"
+   },
+   {
+    "op": "tx.exit"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": {
+   "doc_id": "doc-1",
+   "elements_written": 9,
+   "pages_written": 2,
+   "provenances_written": 9
+  },
+  "logs": [
+   [
+    "infra.neo4j.tree_writer",
+    "INFO",
+    "Neo4j: wrote doc doc-1 (9 elements, 2 pages, 9 provenances)"
+   ]
+  ]
+ },
+ "write_document_defaults_empty_doc": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.begin_transaction"
+   },
+   {
+    "op": "tx.enter"
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id}) OPTIONAL MATCH (d)-[:HAS_ROOT|HAS_CHUNK*0..]->(n) DETACH DELETE d, n",
+    "params": {
+     "doc_id": "doc-2"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (pv:Provenance {doc_id: $doc_id}) DETACH DELETE pv",
+    "params": {
+     "doc_id": "doc-2"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (e:Element {doc_id: $doc_id}) DETACH DELETE e",
+    "params": {
+     "doc_id": "doc-2"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) DETACH DELETE p",
+    "params": {
+     "doc_id": "doc-2"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "CREATE (d:Document { id: $doc_id, title: $title, source_uri: $source_uri, ingested_at: datetime($ingested_at), docling_version: $docling_version, stages_applied: ['tree'], last_tree_write: datetime($ingested_at), tenant_id: $tenant_id, document_json: $document_json })",
+    "params": {
+     "doc_id": "doc-2",
+     "title": "empty.pdf",
+     "source_uri": "",
+     "ingested_at": "2026-01-02T03:04:05+00:00",
+     "docling_version": "",
+     "tenant_id": "default",
+     "document_json": "{}"
+    }
+   },
+   {
+    "op": "tx.commit"
+   },
+   {
+    "op": "tx.exit"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": {
+   "doc_id": "doc-2",
+   "elements_written": 0,
+   "pages_written": 0,
+   "provenances_written": 0
+  },
+  "logs": [
+   [
+    "infra.neo4j.tree_writer",
+    "INFO",
+    "Neo4j: wrote doc doc-2 (0 elements, 0 pages, 0 provenances)"
+   ]
+  ]
+ },
+ "write_chunks": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.begin_transaction"
+   },
+   {
+    "op": "tx.enter"
+   },
+   {
+    "op": "tx.run",
+    "query": "MERGE (d:Document {id: $doc_id})",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) DETACH DELETE c",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (c:Chunk {doc_id: $doc_id}) DETACH DELETE c",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id}) UNWIND $rows AS r CREATE (c:Chunk { id: r.id, doc_id: r.doc_id, text: r.text, chunk_index: r.chunk_index, token_count: r.token_count, embedding_ref: r.embedding_ref }) MERGE (d)-[:HAS_CHUNK]->(c) RETURN count(c) AS created",
+    "params": {
+     "doc_id": "doc-1",
+     "rows": [
+      {
+       "id": "doc-1::chunk::0",
+       "doc_id": "doc-1",
+       "text": "Annual report. Results.",
+       "chunk_index": 0,
+       "token_count": 5,
+       "embedding_ref": ""
+      },
+      {
+       "id": "doc-1::chunk::1",
+       "doc_id": "doc-1",
+       "text": "Revenue grew.",
+       "chunk_index": 1,
+       "token_count": 0,
+       "embedding_ref": ""
+      },
+      {
+       "id": "doc-1::chunk::2",
+       "doc_id": "doc-1",
+       "text": "",
+       "chunk_index": 2,
+       "token_count": 3,
+       "embedding_ref": ""
+      }
+     ]
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "tx.run",
+    "query": "UNWIND $rows AS r MATCH (c:Chunk {id: r.chunk_id}) MATCH (e:Element {doc_id: r.doc_id, self_ref: r.self_ref}) MERGE (c)-[:DERIVED_FROM]->(e)",
+    "params": {
+     "rows": [
+      {
+       "chunk_id": "doc-1::chunk::0",
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/0"
+      },
+      {
+       "chunk_id": "doc-1::chunk::0",
+       "doc_id": "doc-1",
+       "self_ref": "#/texts/1"
+      }
+     ]
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id}) SET d.stages_applied = [s IN coalesce(d.stages_applied, []) WHERE s <> 'chunks'] + ['chunks'], d.last_chunk_write = datetime()",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.commit"
+   },
+   {
+    "op": "tx.exit"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": {
+   "doc_id": "doc-1",
+   "chunks_written": 3,
+   "derived_from_edges": 2
+  },
+  "logs": [
+   [
+    "infra.neo4j.chunk_writer",
+    "INFO",
+    "Neo4j: wrote 3 chunks (2 DERIVED_FROM) for doc doc-1"
+   ]
+  ]
+ },
+ "write_chunks_count_mismatch": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.begin_transaction"
+   },
+   {
+    "op": "tx.enter"
+   },
+   {
+    "op": "tx.run",
+    "query": "MERGE (d:Document {id: $doc_id})",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) DETACH DELETE c",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (c:Chunk {doc_id: $doc_id}) DETACH DELETE c",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id}) UNWIND $rows AS r CREATE (c:Chunk { id: r.id, doc_id: r.doc_id, text: r.text, chunk_index: r.chunk_index, token_count: r.token_count, embedding_ref: r.embedding_ref }) MERGE (d)-[:HAS_CHUNK]->(c) RETURN count(c) AS created",
+    "params": {
+     "doc_id": "doc-1",
+     "rows": [
+      {
+       "id": "doc-1::chunk::0",
+       "doc_id": "doc-1",
+       "text": "Annual report. Results.",
+       "chunk_index": 0,
+       "token_count": 5,
+       "embedding_ref": ""
+      },
+      {
+       "id": "doc-1::chunk::1",
+       "doc_id": "doc-1",
+       "text": "Revenue grew.",
+       "chunk_index": 1,
+       "token_count": 0,
+       "embedding_ref": ""
+      },
+      {
+       "id": "doc-1::chunk::2",
+       "doc_id": "doc-1",
+       "text": "",
+       "chunk_index": 2,
+       "token_count": 3,
+       "embedding_ref": ""
+      }
+     ]
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "tx.exit"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": {
+   "raised": "Neo4jWriteError",
+   "message": "Neo4j write mismatch for doc doc-1: expected 3 chunks created, got 2. Likely cause: the Document node disappeared between the MERGE step and this CREATE — re-run after a tree-write or check for concurrent writers."
+  },
+  "logs": []
+ },
+ "write_chunks_empty": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.begin_transaction"
+   },
+   {
+    "op": "tx.enter"
+   },
+   {
+    "op": "tx.run",
+    "query": "MERGE (d:Document {id: $doc_id})",
+    "params": {
+     "doc_id": "doc-3"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) DETACH DELETE c",
+    "params": {
+     "doc_id": "doc-3"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (c:Chunk {doc_id: $doc_id}) DETACH DELETE c",
+    "params": {
+     "doc_id": "doc-3"
+    }
+   },
+   {
+    "op": "tx.run",
+    "query": "MATCH (d:Document {id: $doc_id}) SET d.stages_applied = [s IN coalesce(d.stages_applied, []) WHERE s <> 'chunks'] + ['chunks'], d.last_chunk_write = datetime()",
+    "params": {
+     "doc_id": "doc-3"
+    }
+   },
+   {
+    "op": "tx.commit"
+   },
+   {
+    "op": "tx.exit"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": {
+   "doc_id": "doc-3",
+   "chunks_written": 0,
+   "derived_from_edges": 0
+  },
+  "logs": [
+   [
+    "infra.neo4j.chunk_writer",
+    "INFO",
+    "Neo4j: wrote 0 chunks (0 DERIVED_FROM) for doc doc-3"
+   ]
+  ]
+ },
+ "fetch_graph": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) RETURN count(p) AS n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) RETURN count(d) AS n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) CALL { WITH d MATCH (e:Element {doc_id: d.id}) OPTIONAL MATCH (e)-[hp:HAS_PROV]->(pv:Provenance) WITH e, pv ORDER BY hp.order WITH e, collect( CASE WHEN pv IS NULL THEN NULL ELSE { order: pv.prov_order, page_no: pv.page_no, bbox_l: pv.bbox_l, bbox_t: pv.bbox_t, bbox_r: pv.bbox_r, bbox_b: pv.bbox_b, coord_origin: pv.coord_origin, charspan_start: pv.charspan_start, charspan_end: pv.charspan_end } END ) AS all_provs RETURN collect({element: e, provs: [p IN all_provs WHERE p IS NOT NULL]}) AS elements } CALL { WITH d MATCH (p:Page {doc_id: d.id}) RETURN collect(p) AS pages } CALL { WITH d MATCH (c:Chunk {doc_id: d.id}) RETURN collect(c) AS chunks } CALL { WITH d MATCH (pe:Element {doc_id: d.id})-[r:PARENT_OF]->(ce:Element) RETURN collect({from: pe.self_ref, to: ce.self_ref, order: r.order, type: 'PARENT_OF'}) AS parent_edges } CALL { WITH d MATCH (a:Element {doc_id: d.id})-[:NEXT]->(b:Element) RETURN collect({from: a.self_ref, to: b.self_ref, type: 'NEXT'}) AS next_edges } CALL { WITH d // ON_PAGE is stored on Provenance since v0.6; surface it at the Element // level (dedup'd per Element/Page pair) for the Cytoscape viz. MATCH (er:Element {doc_id: d.id})-[:HAS_PROV]->(:Provenance)-[:ON_PAGE]->(pr:Page) WITH DISTINCT er, pr RETURN collect({from: er.self_ref, to: pr.page_no, type: 'ON_PAGE'}) AS on_page_edges } CALL { WITH d MATCH (d)-[:HAS_ROOT]->(rr:Element) RETURN collect({from: d.id, to: rr.self_ref, type: 'HAS_ROOT'}) AS has_root_edges } CALL { WITH d MATCH (d)-[:HAS_CHUNK]->(rc:Chunk) RETURN collect({from: d.id, to: rc.id, type: 'HAS_CHUNK'}) AS has_chunk_edges } CALL { WITH d MATCH (cc:Chunk {doc_id: d.id})-[:DERIVED_FROM]->(ee:Element) RETURN collect({from: cc.id, to: ee.self_ref, type: 'DERIVED_FROM'}) AS derived_from_edges } RETURN d AS document, elements, pages, chunks, parent_edges, next_edges, on_page_edges, has_root_edges, has_chunk_edges, derived_from_edges",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": {
+   "doc_id": "doc-1",
+   "nodes": [
+    {
+     "id": "doc::doc-1",
+     "group": "document",
+     "doc_id": "doc-1",
+     "title": "sample.pdf",
+     "stages_applied": [
+      "tree",
+      "chunks"
+     ]
+    },
+    {
+     "id": "elem::#/texts/1",
+     "group": "element",
+     "docling_label": "section_header",
+     "self_ref": "#/texts/1",
+     "text": "Results",
+     "prov_page": 2,
+     "provs": [
+      {
+       "order": 0,
+       "page_no": 2,
+       "bbox_l": 1.0,
+       "bbox_t": 2.0,
+       "bbox_r": 3.0,
+       "bbox_b": 4.0
+      },
+      {
+       "order": 1,
+       "page_no": 3,
+       "bbox_l": 1.0,
+       "bbox_t": 2.0,
+       "bbox_r": 3.0,
+       "bbox_b": 4.0
+      }
+     ],
+     "level": 1,
+     "doc_id": "doc-1",
+     "label": "SectionHeader"
+    },
+    {
+     "id": "elem::#/texts/2",
+     "group": "element",
+     "docling_label": "paragraph",
+     "self_ref": "#/texts/2",
+     "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+     "prov_page": null,
+     "provs": [],
+     "level": null,
+     "doc_id": "doc-1",
+     "label": "Paragraph"
+    },
+    {
+     "id": "elem::#/texts/8",
+     "group": "element",
+     "docling_label": "checkbox_selected",
+     "self_ref": "#/texts/8",
+     "text": "",
+     "prov_page": null,
+     "provs": [],
+     "level": null,
+     "doc_id": "doc-1",
+     "label": "TextElement"
+    },
+    {
+     "id": "page::1",
+     "group": "page",
+     "page_no": 1,
+     "width": 595.0,
+     "height": 842.0,
+     "doc_id": "doc-1"
+    },
+    {
+     "id": "chunk::doc-1::chunk::0",
+     "group": "chunk",
+     "chunk_index": 0,
+     "text": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+     "token_count": 7
+    }
+   ],
+   "edges": [
+    {
+     "id": "PARENT_OF::elem::#/texts/1::elem::#/texts/2",
+     "source": "elem::#/texts/1",
+     "target": "elem::#/texts/2",
+     "type": "PARENT_OF",
+     "order": 0
+    },
+    {
+     "id": "NEXT::elem::#/texts/1::elem::#/texts/2",
+     "source": "elem::#/texts/1",
+     "target": "elem::#/texts/2",
+     "type": "NEXT",
+     "order": null
+    },
+    {
+     "id": "ON_PAGE::elem::#/texts/1::page::2",
+     "source": "elem::#/texts/1",
+     "target": "page::2",
+     "type": "ON_PAGE",
+     "order": null
+    },
+    {
+     "id": "HAS_ROOT::doc::doc-1::elem::#/texts/1",
+     "source": "doc::doc-1",
+     "target": "elem::#/texts/1",
+     "type": "HAS_ROOT",
+     "order": null
+    },
+    {
+     "id": "HAS_CHUNK::doc::doc-1::chunk::doc-1::chunk::0",
+     "source": "doc::doc-1",
+     "target": "chunk::doc-1::chunk::0",
+     "type": "HAS_CHUNK",
+     "order": null
+    },
+    {
+     "id": "DERIVED_FROM::chunk::doc-1::chunk::0::elem::#/texts/2",
+     "source": "chunk::doc-1::chunk::0",
+     "target": "elem::#/texts/2",
+     "type": "DERIVED_FROM",
+     "order": null
+    }
+   ],
+   "node_count": 6,
+   "edge_count": 6,
+   "truncated": false,
+   "page_count": 2
+  },
+  "logs": []
+ },
+ "fetch_graph_empty_record": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) RETURN count(p) AS n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) RETURN count(d) AS n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) CALL { WITH d MATCH (e:Element {doc_id: d.id}) OPTIONAL MATCH (e)-[hp:HAS_PROV]->(pv:Provenance) WITH e, pv ORDER BY hp.order WITH e, collect( CASE WHEN pv IS NULL THEN NULL ELSE { order: pv.prov_order, page_no: pv.page_no, bbox_l: pv.bbox_l, bbox_t: pv.bbox_t, bbox_r: pv.bbox_r, bbox_b: pv.bbox_b, coord_origin: pv.coord_origin, charspan_start: pv.charspan_start, charspan_end: pv.charspan_end } END ) AS all_provs RETURN collect({element: e, provs: [p IN all_provs WHERE p IS NOT NULL]}) AS elements } CALL { WITH d MATCH (p:Page {doc_id: d.id}) RETURN collect(p) AS pages } CALL { WITH d MATCH (c:Chunk {doc_id: d.id}) RETURN collect(c) AS chunks } CALL { WITH d MATCH (pe:Element {doc_id: d.id})-[r:PARENT_OF]->(ce:Element) RETURN collect({from: pe.self_ref, to: ce.self_ref, order: r.order, type: 'PARENT_OF'}) AS parent_edges } CALL { WITH d MATCH (a:Element {doc_id: d.id})-[:NEXT]->(b:Element) RETURN collect({from: a.self_ref, to: b.self_ref, type: 'NEXT'}) AS next_edges } CALL { WITH d // ON_PAGE is stored on Provenance since v0.6; surface it at the Element // level (dedup'd per Element/Page pair) for the Cytoscape viz. MATCH (er:Element {doc_id: d.id})-[:HAS_PROV]->(:Provenance)-[:ON_PAGE]->(pr:Page) WITH DISTINCT er, pr RETURN collect({from: er.self_ref, to: pr.page_no, type: 'ON_PAGE'}) AS on_page_edges } CALL { WITH d MATCH (d)-[:HAS_ROOT]->(rr:Element) RETURN collect({from: d.id, to: rr.self_ref, type: 'HAS_ROOT'}) AS has_root_edges } CALL { WITH d MATCH (d)-[:HAS_CHUNK]->(rc:Chunk) RETURN collect({from: d.id, to: rc.id, type: 'HAS_CHUNK'}) AS has_chunk_edges } CALL { WITH d MATCH (cc:Chunk {doc_id: d.id})-[:DERIVED_FROM]->(ee:Element) RETURN collect({from: cc.id, to: ee.self_ref, type: 'DERIVED_FROM'}) AS derived_from_edges } RETURN d AS document, elements, pages, chunks, parent_edges, next_edges, on_page_edges, has_root_edges, has_chunk_edges, derived_from_edges",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": {
+   "doc_id": "doc-1",
+   "nodes": [],
+   "edges": [],
+   "node_count": 0,
+   "edge_count": 0,
+   "truncated": false,
+   "page_count": 0
+  },
+  "logs": []
+ },
+ "fetch_graph_unknown_document": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) RETURN count(p) AS n",
+    "params": {
+     "doc_id": "nope"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) RETURN count(d) AS n",
+    "params": {
+     "doc_id": "nope"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": null,
+  "logs": []
+ },
+ "fetch_graph_no_page_count_row": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) RETURN count(p) AS n",
+    "params": {
+     "doc_id": "nope"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": null,
+  "logs": []
+ },
+ "fetch_graph_no_exists_row": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) RETURN count(p) AS n",
+    "params": {
+     "doc_id": "nope"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) RETURN count(d) AS n",
+    "params": {
+     "doc_id": "nope"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": null,
+  "logs": []
+ },
+ "fetch_graph_too_many_pages": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) RETURN count(p) AS n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) RETURN count(d) AS n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": {
+   "doc_id": "doc-1",
+   "nodes": [],
+   "edges": [],
+   "node_count": 0,
+   "edge_count": 0,
+   "truncated": true,
+   "page_count": 4
+  },
+  "logs": []
+ },
+ "fetch_graph_no_graph_row": {
+  "events": [
+   {
+    "op": "driver.session",
+    "database": "graphdb"
+   },
+   {
+    "op": "session.enter"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (p:Page {doc_id: $doc_id}) RETURN count(p) AS n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) RETURN count(d) AS n",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.run",
+    "query": "MATCH (d:Document {id: $doc_id}) CALL { WITH d MATCH (e:Element {doc_id: d.id}) OPTIONAL MATCH (e)-[hp:HAS_PROV]->(pv:Provenance) WITH e, pv ORDER BY hp.order WITH e, collect( CASE WHEN pv IS NULL THEN NULL ELSE { order: pv.prov_order, page_no: pv.page_no, bbox_l: pv.bbox_l, bbox_t: pv.bbox_t, bbox_r: pv.bbox_r, bbox_b: pv.bbox_b, coord_origin: pv.coord_origin, charspan_start: pv.charspan_start, charspan_end: pv.charspan_end } END ) AS all_provs RETURN collect({element: e, provs: [p IN all_provs WHERE p IS NOT NULL]}) AS elements } CALL { WITH d MATCH (p:Page {doc_id: d.id}) RETURN collect(p) AS pages } CALL { WITH d MATCH (c:Chunk {doc_id: d.id}) RETURN collect(c) AS chunks } CALL { WITH d MATCH (pe:Element {doc_id: d.id})-[r:PARENT_OF]->(ce:Element) RETURN collect({from: pe.self_ref, to: ce.self_ref, order: r.order, type: 'PARENT_OF'}) AS parent_edges } CALL { WITH d MATCH (a:Element {doc_id: d.id})-[:NEXT]->(b:Element) RETURN collect({from: a.self_ref, to: b.self_ref, type: 'NEXT'}) AS next_edges } CALL { WITH d // ON_PAGE is stored on Provenance since v0.6; surface it at the Element // level (dedup'd per Element/Page pair) for the Cytoscape viz. MATCH (er:Element {doc_id: d.id})-[:HAS_PROV]->(:Provenance)-[:ON_PAGE]->(pr:Page) WITH DISTINCT er, pr RETURN collect({from: er.self_ref, to: pr.page_no, type: 'ON_PAGE'}) AS on_page_edges } CALL { WITH d MATCH (d)-[:HAS_ROOT]->(rr:Element) RETURN collect({from: d.id, to: rr.self_ref, type: 'HAS_ROOT'}) AS has_root_edges } CALL { WITH d MATCH (d)-[:HAS_CHUNK]->(rc:Chunk) RETURN collect({from: d.id, to: rc.id, type: 'HAS_CHUNK'}) AS has_chunk_edges } CALL { WITH d MATCH (cc:Chunk {doc_id: d.id})-[:DERIVED_FROM]->(ee:Element) RETURN collect({from: cc.id, to: ee.self_ref, type: 'DERIVED_FROM'}) AS derived_from_edges } RETURN d AS document, elements, pages, chunks, parent_edges, next_edges, on_page_edges, has_root_edges, has_chunk_edges, derived_from_edges",
+    "params": {
+     "doc_id": "doc-1"
+    }
+   },
+   {
+    "op": "single"
+   },
+   {
+    "op": "session.exit"
+   }
+  ],
+  "result": null,
+  "logs": []
+ }
+}

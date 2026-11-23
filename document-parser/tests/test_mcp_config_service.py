@@ -221,7 +221,7 @@ class TestBootAndStatus:
 
     async def test_server_status_is_the_provider_s(self):
         service, _, _ = _service()
-        assert await service.server_status() == STATUS
+        assert await service.get_server_status() == STATUS
 
     async def test_stdio_resolves_the_same_precedence(self):
         repo = _FakeRepo({"max_rounds": "2"})
@@ -233,9 +233,18 @@ class TestWiring:
 
     def _parses(self):
         from bootstrap.factories import build_parse_loader
-        from tests.navigation_fixtures import FakeAnalysisRepository, FakeDocumentRepository
+        from services.current_analysis import CurrentAnalysisResolver
+        from tests.navigation_fixtures import (
+            FakeAnalysisRepository,
+            FakeAnalysisStateRepository,
+            FakeDocumentRepository,
+        )
 
-        return build_parse_loader(FakeDocumentRepository([]), FakeAnalysisRepository([]))
+        analyses = FakeAnalysisRepository([])
+        current = CurrentAnalysisResolver(
+            state_repo=FakeAnalysisStateRepository(), analysis_repo=analyses
+        )
+        return build_parse_loader(FakeDocumentRepository([]), analyses, current)
 
     def test_the_runtime_knobs_reach_every_budget(self):
         from bootstrap.factories import build_document_tools

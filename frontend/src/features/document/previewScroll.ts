@@ -14,7 +14,7 @@ interface ScrollState {
   clientHeight: number
 }
 
-export function mostVisiblePage(ratios: ReadonlyMap<number, number>): number | null {
+export function findMostVisiblePage(ratios: ReadonlyMap<number, number>): number | null {
   let bestPage: number | null = null
   let bestRatio = 0
   for (const [page, ratio] of ratios) {
@@ -35,7 +35,7 @@ export function isRectVisible(rect: ViewportRect, viewport: ViewportRect): boole
   )
 }
 
-export function centeredScrollPosition(
+export function computeCenteredScrollPosition(
   state: ScrollState,
   viewport: Pick<ViewportRect, 'top' | 'left'>,
   rect: Rect,
@@ -69,7 +69,7 @@ const POINTS_PER_INCH = 72
  * Returns `null` for a degenerate page — the caller then falls back to
  * sizing the card from the image, as before.
  */
-export function pageFrameGeometry(
+export function computePageFrameGeometry(
   page: { width: number; height: number },
   dpi: number,
 ): { aspectRatio: string; maxWidth: string } | null {
@@ -83,9 +83,9 @@ export function pageFrameGeometry(
 /**
  * Scroll offset that brings a page card to the top of the stage viewport.
  * Viewport-relative inputs, scroll-space output — same convention as
- * `centeredScrollPosition`.
+ * `computeCenteredScrollPosition`.
  */
-export function pageTopScrollPosition(
+export function computePageTopScrollPosition(
   scrollTop: number,
   viewportTop: number,
   cardTop: number,

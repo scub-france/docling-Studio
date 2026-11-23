@@ -7,30 +7,29 @@ import uuid
 from datetime import UTC, datetime
 
 from domain.analysis_editing import (
-    AnalysisEditConflictError,
+    STORED_SEQUENCE_CONFLICT,
     EditCommand,
     EditedAnalysisCache,
     EditStream,
     StoredEditCommand,
+    check_expected_sequence,
+    hash_command,
+    serialize_command_payload,
 )
 from persistence.database import get_connection
+from persistence.iso_datetime import require_iso
 
 
-def _dt(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
-def _stream(row) -> EditStream:
+def _to_stream(row) -> EditStream:
     return EditStream(
         analysis_id=row["analysis_id"],
         base_document_hash=row["base_document_hash"],
         engine_version=row["engine_version"],
-        created_at=_dt(row["created_at"]),
+        created_at=require_iso(row["created_at"]),
     )
 
 
-def _command(row) -> StoredEditCommand:
+def _to_stored_command(row) -> StoredEditCommand:
     return StoredEditCommand(
         id=row["id"],
         analysis_id=row["analysis_id"],
@@ -41,11 +40,11 @@ def _command(row) -> StoredEditCommand:
             command_version=row["command_version"],
         ),
         command_hash=row["command_hash"],
-        created_at=_dt(row["created_at"]),
+        created_at=require_iso(row["created_at"]),
     )
 
 
-def _cache(row) -> EditedAnalysisCache:
+def _to_cache(row) -> EditedAnalysisCache:
     return EditedAnalysisCache(
         analysis_id=row["analysis_id"],
         applied_through_sequence=row["applied_through_sequence"],
@@ -56,7 +55,7 @@ def _cache(row) -> EditedAnalysisCache:
         editor_model_json=row["editor_model_json"],
         command_stream_hash=row["command_stream_hash"],
         result_hash=row["result_hash"],
-        updated_at=_dt(row["updated_at"]),
+        updated_at=require_iso(row["updated_at"]),
     )
 
 
@@ -77,7 +76,7 @@ _CACHE_UPSERT = """INSERT INTO edited_analysis_cache
       updated_at=excluded.updated_at"""
 
 
-def _cache_values(cache: EditedAnalysisCache) -> tuple:
+def _to_cache_params(cache: EditedAnalysisCache) -> tuple:
     return (
         cache.analysis_id,
         cache.applied_through_sequence,
@@ -92,6 +91,53 @@ def _cache_values(cache: EditedAnalysisCache) -> tuple:
     )
 
 
+async def _read_chain_tip(db, analysis_id: str) -> tuple[int, str]:
+    """The last stored sequence and hash of a stream: (0, "") when it is empty."""
+    cursor = await db.execute(
+        """SELECT sequence, command_hash FROM analysis_edit_commands
+           WHERE analysis_id = ? ORDER BY sequence DESC LIMIT 1""",
+        (analysis_id,),
+    )
+    last = await cursor.fetchone()
+    actual_sequence = int(last["sequence"]) if last else 0
+    previous_hash = last["command_hash"] if last else ""
+    return actual_sequence, previous_hash
+
+
+def _chain_commands(
+    analysis_id: str,
+    commands: list[EditCommand],
+    actual_sequence: int,
+    previous_hash: str,
+) -> tuple[list[tuple], list[StoredEditCommand]]:
+    """Number and hash-chain `commands` after the tip: insert rows and stored records."""
+    saved: list[StoredEditCommand] = []
+    rows: list[tuple] = []
+    for offset, command in enumerate(commands, start=1):
+        sequence = actual_sequence + offset
+        command_hash = hash_command(previous_hash, sequence, command)
+        record_id = uuid.uuid4().hex
+        created = datetime.now(UTC)
+        rows.append(
+            (
+                record_id,
+                analysis_id,
+                sequence,
+                command.command_version,
+                command.command_type,
+                serialize_command_payload(command.payload),
+                previous_hash or None,
+                command_hash,
+                str(created),
+            )
+        )
+        saved.append(
+            StoredEditCommand(record_id, analysis_id, sequence, command, command_hash, created)
+        )
+        previous_hash = command_hash
+    return rows, saved
+
+
 class SqliteAnalysisEditRepository:
     """One transaction owns command sequencing and cache replacement."""
 
@@ -101,7 +147,7 @@ class SqliteAnalysisEditRepository:
                 "SELECT * FROM analysis_edit_streams WHERE analysis_id = ?", (analysis_id,)
             )
             row = await cursor.fetchone()
-            return _stream(row) if row else None
+            return _to_stream(row) if row else None
 
     async def create_stream(self, stream: EditStream) -> None:
         async with get_connection() as db:
@@ -125,7 +171,7 @@ class SqliteAnalysisEditRepository:
                    WHERE analysis_id = ? ORDER BY sequence""",
                 (analysis_id,),
             )
-            return [_command(row) for row in await cursor.fetchall()]
+            return [_to_stored_command(row) for row in await cursor.fetchall()]
 
     async def find_cache(self, analysis_id: str) -> EditedAnalysisCache | None:
         async with get_connection() as db:
@@ -133,7 +179,7 @@ class SqliteAnalysisEditRepository:
                 "SELECT * FROM edited_analysis_cache WHERE analysis_id = ?", (analysis_id,)
             )
             row = await cursor.fetchone()
-            return _cache(row) if row else None
+            return _to_cache(row) if row else None
 
     async def save_commands_and_cache(
         self,
@@ -149,71 +195,28 @@ class SqliteAnalysisEditRepository:
         async with get_connection() as db:
             try:
                 await db.execute("BEGIN IMMEDIATE")
-                cursor = await db.execute(
-                    """SELECT sequence, command_hash FROM analysis_edit_commands
-                       WHERE analysis_id = ? ORDER BY sequence DESC LIMIT 1""",
-                    (stream.analysis_id,),
+                actual_sequence, previous_hash = await _read_chain_tip(db, stream.analysis_id)
+                check_expected_sequence(
+                    expected_sequence, actual_sequence, STORED_SEQUENCE_CONFLICT
                 )
-                last = await cursor.fetchone()
-                actual_sequence = int(last["sequence"]) if last else 0
-                if actual_sequence != expected_sequence:
-                    raise AnalysisEditConflictError(
-                        f"Edit stream changed: expected sequence {expected_sequence}, "
-                        f"actual sequence {actual_sequence}"
-                    )
-                previous_hash = last["command_hash"] if last else ""
-                saved: list[StoredEditCommand] = []
-                for offset, command in enumerate(commands, start=1):
-                    sequence = actual_sequence + offset
-                    payload = json.dumps(command.payload, sort_keys=True, separators=(",", ":"))
-                    command_hash = _hash_command(
-                        previous_hash,
-                        sequence,
-                        command.command_type,
-                        command.command_version,
-                        payload,
-                    )
-                    record_id = uuid.uuid4().hex
-                    created = datetime.now(UTC)
-                    await db.execute(
-                        """INSERT INTO analysis_edit_commands
-                           (id, analysis_id, sequence, command_version, command_type,
-                            payload_json, previous_hash, command_hash, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            record_id,
-                            stream.analysis_id,
-                            sequence,
-                            command.command_version,
-                            command.command_type,
-                            payload,
-                            previous_hash or None,
-                            command_hash,
-                            str(created),
-                        ),
-                    )
-                    saved.append(
-                        StoredEditCommand(
-                            record_id, stream.analysis_id, sequence, command, command_hash, created
-                        )
-                    )
-                    previous_hash = command_hash
-
-                await db.execute(_CACHE_UPSERT, _cache_values(cache))
+                rows, saved = _chain_commands(
+                    stream.analysis_id, commands, actual_sequence, previous_hash
+                )
+                # One statement for the whole batch, still inside BEGIN IMMEDIATE.
+                await db.executemany(
+                    """INSERT INTO analysis_edit_commands
+                       (id, analysis_id, sequence, command_version, command_type,
+                        payload_json, previous_hash, command_hash, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rows,
+                )
+                await db.execute(_CACHE_UPSERT, _to_cache_params(cache))
+                await db.execute(
+                    "UPDATE analysis_edit_streams SET engine_version = ? WHERE analysis_id = ?",
+                    (stream.engine_version, stream.analysis_id),
+                )
                 await db.commit()
                 return saved
             except Exception:
                 await db.rollback()
                 raise
-
-    async def replace_cache(self, cache: EditedAnalysisCache) -> None:
-        async with get_connection() as db:
-            await db.execute(_CACHE_UPSERT, _cache_values(cache))
-            await db.commit()
-
-
-def _hash_command(previous: str, sequence: int, kind: str, version: int, payload: str) -> str:
-    import hashlib
-
-    raw = f"{previous}|{sequence}|{kind}|{version}|{payload}".encode()
-    return hashlib.sha256(raw).hexdigest()

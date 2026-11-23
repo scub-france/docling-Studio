@@ -12,7 +12,15 @@ import pytest
 from domain.models import AnalysisJob, AnalysisStatus, Document
 from domain.services import extract_html_body, merge_results
 from domain.value_objects import ConversionResult, PageDetail
-from services.analysis_service import AnalysisConfig, AnalysisService, _count_pdf_pages
+from infra.pdf_inspector import PdfiumInspector
+from services.analysis_service import (
+    AnalysisConfig,
+    AnalysisRun,
+    AnalysisService,
+    ImportDocumentNotFoundError,
+    InvalidDoclingDocumentError,
+    PageBatching,
+)
 
 
 def _make_service(**kwargs) -> AnalysisService:
@@ -173,6 +181,7 @@ class TestDoclingDocumentImport:
         analysis_repo.insert = AsyncMock(side_effect=insert)
         analysis_repo.find_by_id = AsyncMock(side_effect=lambda job_id: stored.get(job_id))
         analysis_repo.update_status = AsyncMock()
+        analysis_repo.complete_and_select = AsyncMock()
         document_repo = MagicMock()
         document_repo.find_by_id = AsyncMock(return_value=Document(id="d1", filename="source.pdf"))
         document_repo.update_page_count = AsyncMock()
@@ -216,9 +225,25 @@ class TestDoclingDocumentImport:
             docling_importer=importer,
         )
 
-        with pytest.raises(ValueError, match="Invalid Docling document"):
+        with pytest.raises(InvalidDoclingDocumentError, match="Invalid Docling document"):
             await service.import_docling_document("d1", {})
 
+        analysis_repo.insert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_import_rejects_a_missing_document(self):
+        analysis_repo = MagicMock()
+        analysis_repo.insert = AsyncMock()
+        document_repo = MagicMock()
+        document_repo.find_by_id = AsyncMock(return_value=None)
+        service = _make_service(
+            analysis_repo=analysis_repo, document_repo=document_repo, docling_importer=MagicMock()
+        )
+
+        with pytest.raises(ImportDocumentNotFoundError, match=r"^Document not found: d1$") as exc:
+            await service.import_docling_document("d1", {})
+
+        assert exc.value.http_status == 404
         analysis_repo.insert.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -240,7 +265,7 @@ class TestDoclingDocumentImport:
         importer.deserialize.side_effect = deserialize
         service = _make_service(document_repo=document_repo, docling_importer=importer)
 
-        with pytest.raises(ValueError, match="stop here"):
+        with pytest.raises(InvalidDoclingDocumentError, match="stop here"):
             await service.import_docling_document("d1", {})
 
         assert loop_seen_by_importer == [False]
@@ -250,7 +275,7 @@ class TestAnalysisServiceConcurrency:
     """Verify that the semaphore limits concurrent analysis jobs."""
 
     def test_semaphore_initialized_with_max_concurrent(self):
-        service = _make_service(max_concurrent=5)
+        service = _make_service(config=AnalysisConfig(max_concurrent=5))
         assert service._semaphore._value == 5
 
     def test_default_max_concurrent(self):
@@ -263,7 +288,7 @@ class TestAnalysisServiceConcurrency:
         call_order: list[str] = []
         blocker = asyncio.Event()
 
-        service = _make_service(max_concurrent=1)
+        service = _make_service(config=AnalysisConfig(max_concurrent=1))
 
         async def fake_inner(self, *args, **kwargs):
             call_order.append("start")
@@ -271,8 +296,8 @@ class TestAnalysisServiceConcurrency:
             call_order.append("end")
 
         with patch.object(AnalysisService, "_run_analysis_inner", fake_inner):
-            t1 = asyncio.create_task(service._run_analysis("j1", "/f", "f.pdf"))
-            t2 = asyncio.create_task(service._run_analysis("j2", "/f", "f.pdf"))
+            t1 = asyncio.create_task(service._run_analysis(AnalysisRun("j1", "/f", "f.pdf")))
+            t2 = asyncio.create_task(service._run_analysis(AnalysisRun("j2", "/f", "f.pdf")))
             await asyncio.sleep(0.05)
 
             # With max_concurrent=1, only one task should have started
@@ -292,7 +317,13 @@ class TestAnalysisServiceConcurrency:
 
 
 class TestCountPdfPages:
-    def test_valid_pdf(self, tmp_path):
+    """Page count for batching, through the real `PdfInspector` adapter."""
+
+    @staticmethod
+    async def _count(path: str) -> int:
+        return await _make_service(pdf_inspector=PdfiumInspector())._count_pages(path)
+
+    async def test_valid_pdf(self, tmp_path):
         """A real (minimal) PDF should return its page count."""
         import pypdfium2 as pdfium
 
@@ -302,23 +333,23 @@ class TestCountPdfPages:
         pdf.save(str(path))
         pdf.close()
 
-        assert _count_pdf_pages(str(path)) == 1
+        assert await self._count(str(path)) == 1
 
-    def test_non_pdf_file(self, tmp_path):
+    async def test_non_pdf_file(self, tmp_path):
         """A non-PDF file should return 0."""
         path = tmp_path / "test.docx"
         path.write_bytes(b"PK\x03\x04 not a pdf")
-        assert _count_pdf_pages(str(path)) == 0
+        assert await self._count(str(path)) == 0
 
-    def test_nonexistent_file(self):
+    async def test_nonexistent_file(self):
         """A nonexistent file should return 0."""
-        assert _count_pdf_pages("/no/such/file.pdf") == 0
+        assert await self._count("/no/such/file.pdf") == 0
 
-    def test_empty_file(self, tmp_path):
+    async def test_empty_file(self, tmp_path):
         """An empty file should return 0."""
         path = tmp_path / "empty.pdf"
         path.write_bytes(b"")
-        assert _count_pdf_pages(str(path)) == 0
+        assert await self._count(str(path)) == 0
 
 
 class TestExtractHtmlBody:
@@ -429,15 +460,14 @@ class TestBatchedConversion:
         service = _make_service(
             converter=converter,
             analysis_repo=mock_analysis_repo,
-            conversion_timeout=60,
+            config=AnalysisConfig(conversion_timeout=60),
         )
 
         result = await service._run_batched_conversion(
             "job-1",
             "/fake.pdf",
             MagicMock(),
-            total_pages=8,
-            batch_size=5,
+            PageBatching(total_pages=8, batch_size=5),
         )
 
         assert result is not None
@@ -475,7 +505,7 @@ class TestBatchedConversion:
         service = _make_service(
             converter=converter,
             analysis_repo=mock_analysis_repo,
-            conversion_timeout=60,
+            config=AnalysisConfig(conversion_timeout=60),
         )
 
         with pytest.raises(RuntimeError, match=r"Batch 2/2 \(pages 6-8\) failed: OOM"):
@@ -483,8 +513,7 @@ class TestBatchedConversion:
                 "job-fail",
                 "/fake.pdf",
                 MagicMock(),
-                total_pages=8,
-                batch_size=5,
+                PageBatching(total_pages=8, batch_size=5),
             )
 
     @pytest.mark.asyncio
@@ -540,38 +569,42 @@ class TestBatchedConversion:
 
         saved_jobs: list[AnalysisJob] = []
 
-        async def capture_update_status(job, *, select_analysis=False):
+        async def capture_update_status(job):
             saved_jobs.append(job)
-            if select_analysis:
-                assert job.status == AnalysisStatus.COMPLETED
+
+        async def capture_completion(job):
+            assert job.status == AnalysisStatus.COMPLETED
+            saved_jobs.append(job)
 
         mock_analysis_repo = MagicMock()
         mock_analysis_repo.find_by_id = AsyncMock(
             side_effect=[initial_job, batch_check_job, batch_check_job, refreshed_job]
         )
         mock_analysis_repo.update_status = AsyncMock(side_effect=capture_update_status)
+        mock_analysis_repo.complete_and_select = AsyncMock(side_effect=capture_completion)
         mock_analysis_repo.update_progress = AsyncMock()
 
         mock_document_repo = MagicMock()
         mock_document_repo.update_page_count = AsyncMock()
 
-        config = AnalysisConfig(default_table_mode="accurate", batch_page_size=5)
+        config = AnalysisConfig(
+            default_table_mode="accurate", batch_page_size=5, conversion_timeout=60
+        )
 
         service = AnalysisService(
             converter=converter,
             analysis_repo=mock_analysis_repo,
             document_repo=mock_document_repo,
-            conversion_timeout=60,
             config=config,
+            pdf_inspector=MagicMock(count_pages=MagicMock(return_value=8)),
         )
 
-        with patch("services.analysis_service._count_pdf_pages", return_value=8):
-            await service._run_analysis_inner("job-progress", "/fake.pdf", "fake.pdf")
+        await service._run_analysis_inner(AnalysisRun("job-progress", "/fake.pdf", "fake.pdf"))
 
-        # The last update_status call is the COMPLETED one
+        # The last write is the COMPLETED one, which also selects the analysis
         completed_job = saved_jobs[-1]
         assert completed_job.status == AnalysisStatus.COMPLETED
-        assert mock_analysis_repo.update_status.await_args.kwargs == {"select_analysis": True}
+        mock_analysis_repo.complete_and_select.assert_awaited_once()
         assert completed_job.progress_current == 8, (
             "progress_current must be preserved (was the bug: got None)"
         )
@@ -598,15 +631,14 @@ class TestBatchedConversion:
         service = _make_service(
             converter=converter,
             analysis_repo=mock_analysis_repo,
-            conversion_timeout=60,
+            config=AnalysisConfig(conversion_timeout=60),
         )
 
         result = await service._run_batched_conversion(
             "job-del",
             "/fake.pdf",
             MagicMock(),
-            total_pages=10,
-            batch_size=5,
+            PageBatching(total_pages=10, batch_size=5),
         )
 
         assert result is None
@@ -761,3 +793,11 @@ class TestFindAllSummaries:
 
         assert await service.find_all_summaries() == ["summary"]
         analysis_repo.find_all_summaries.assert_awaited_once()
+
+    async def test_reads_one_document_s_light_listing(self):
+        analysis_repo = MagicMock()
+        analysis_repo.find_summaries_by_document = AsyncMock(return_value=["summary"])
+        service = _make_service(analysis_repo=analysis_repo)
+
+        assert await service.find_summaries_by_document("doc-1") == ["summary"]
+        analysis_repo.find_summaries_by_document.assert_awaited_once_with("doc-1")

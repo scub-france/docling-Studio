@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from domain.parse_index import label_of
+from domain.parse_index import get_label
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -63,7 +63,7 @@ class PageRegion:
         gap = max(other.top - self.bottom, self.top - other.bottom)
         return gap <= _GAP
 
-    def merged(self, other: PageRegion) -> PageRegion:
+    def merge_with(self, other: PageRegion) -> PageRegion:
         return replace(
             self,
             left=min(self.left, other.left),
@@ -73,7 +73,7 @@ class PageRegion:
         )
 
 
-def regions_of(
+def collect_regions(
     index: DocumentIndex, refs: Iterable[str], *, limit: int = MAX_REGIONS
 ) -> list[PageRegion]:
     """The blocks `refs` cover, page by page, each page's in reading order.
@@ -85,10 +85,10 @@ def regions_of(
     """
     by_page: dict[int, list[PageRegion]] = {}
     for ref in refs:
-        if label_of(index.by_ref.get(ref) or {}) in _FURNITURE:
+        if get_label(index.by_ref.get(ref) or {}) in _FURNITURE:
             continue
         for box in index.boxes_of.get(ref, ()):
-            share = box.page_fraction()
+            share = box.to_page_fraction()
             if share is None or share[2] <= share[0] or share[3] <= share[1]:
                 continue
             _add(by_page.setdefault(box.page, []), PageRegion(box.page, *share))
@@ -118,4 +118,4 @@ def _add(blocks: list[PageRegion], region: PageRegion) -> None:
         if pair is None:
             return
         i, j = pair
-        blocks[i] = blocks[i].merged(blocks.pop(j))
+        blocks[i] = blocks[i].merge_with(blocks.pop(j))

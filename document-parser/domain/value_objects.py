@@ -147,20 +147,16 @@ class ChunkResult:
     doc_items: list[ChunkDocItem] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class IngestionSource:
+    """The document whose chunks are being indexed."""
+
+    doc_id: str
+    filename: str
+    binary_hash: str | None = None
+
+
 # --- Reasoning (live docling-agent runner) -----------------------------------
-
-
-class LLMProviderType(StrEnum):
-    """LLM backends the reasoning runner can talk to.
-
-    Today only OLLAMA is realizable: docling-agent v0.1.0 is hardwired to
-    Ollama via mellea's `setup_local_session`. Other variants are kept here
-    to make the abstraction visible and prepare future backends — adding one
-    requires either docling-agent upstream support (see
-    https://github.com/docling-project/docling-agent/issues/26) or a fork.
-    """
-
-    OLLAMA = "ollama"
 
 
 @dataclass(frozen=True)

@@ -20,15 +20,15 @@ from domain.app_config import LLMHostProbeResult
 
 logger = logging.getLogger(__name__)
 
-# Same endpoint the sync `OllamaProvider.health_check` uses — returns 200 with
-# the installed model list even on a fresh install.
+# Ollama's tags endpoint returns 200 with the installed model list even on a
+# fresh install, and loads no model.
 _TAGS_PATH = "/api/tags"
 _PROBE_TIMEOUT_SECONDS = 3.0
 
 _BLOCKED_TARGET_ERROR = "blocked target address (link-local/metadata/reserved)"
 
 
-def _resolved_target_is_blocked(host: str) -> bool:
+def _is_resolved_target_blocked(host: str) -> bool:
     """SSRF guard for the user-supplied probe target (MAJ-08a).
 
     The legitimate target — an Ollama daemon — lives on loopback or the LAN by
@@ -79,7 +79,7 @@ class OllamaProbe:
     async def probe(self, host: str) -> LLMHostProbeResult:
         # Resolve and screen the target BEFORE any outbound request so a
         # blocked host never produces network traffic (SSRF, MAJ-08a).
-        if _resolved_target_is_blocked(host):
+        if _is_resolved_target_blocked(host):
             logger.debug("Ollama probe blocked for %s: link-local/metadata/reserved", host)
             return LLMHostProbeResult(reachable=False, error=_BLOCKED_TARGET_ERROR)
         url = f"{host.rstrip('/')}{_TAGS_PATH}"

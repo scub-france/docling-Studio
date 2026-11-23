@@ -40,7 +40,7 @@ def document_repo():
 class TestStoreRepo:
     async def test_default_store_seeded_on_init(self, store_repo):
         """init_db() must seed exactly one `default` store on a fresh DB."""
-        default = await store_repo.get_default()
+        default = await store_repo.find_by_slug("default")
         assert default is not None
         assert default.slug == "default"
         assert default.is_default is True

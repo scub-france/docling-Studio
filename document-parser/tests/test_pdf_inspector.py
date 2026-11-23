@@ -1,0 +1,132 @@
+"""Tests for the `PdfInspector` adapter — page geometry read by path (#352, #398)."""
+
+from __future__ import annotations
+
+import threading
+from unittest.mock import patch
+
+import pypdfium2 as pdfium
+import pytest
+
+from infra.pdf_inspector import PdfiumInspector
+from infra.pdfium_lock import pdfium_lock
+from tests.test_document_service import pdf_with_pages
+
+
+class TestPageSizes:
+    def test_reads_the_size_of_every_page(self, tmp_path):
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792), (842, 595)))
+
+        pages = PdfiumInspector().read_page_sizes(str(pdf))
+
+        assert [(p.page_number, p.width, p.height) for p in pages] == [
+            (1, 612, 792),
+            (2, 842, 595),
+        ]
+        assert all(p.elements == [] for p in pages)
+
+    def test_opens_the_pdf_by_path_not_by_bytes(self, tmp_path):
+        """pdfium gets the path, so the PDF is never read whole into memory (#398)."""
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792)))
+
+        target = "infra.pdf_inspector.pdfium.PdfDocument"
+        with patch(target, wraps=pdfium.PdfDocument) as opened:
+            PdfiumInspector().read_page_sizes(str(pdf))
+
+        assert opened.call_args.args == (str(pdf),)
+
+    def test_raises_on_a_file_that_is_not_a_pdf(self, tmp_path):
+        broken = tmp_path / "broken.pdf"
+        broken.write_bytes(b"%PDF-not really")
+
+        with pytest.raises(pdfium.PdfiumError):
+            PdfiumInspector().read_page_sizes(str(broken))
+
+    def test_raises_file_not_found_on_a_missing_file(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            PdfiumInspector().read_page_sizes(str(tmp_path / "gone.pdf"))
+
+
+class TestPageCount:
+    def test_counts_the_pages(self, tmp_path):
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792), (612, 792), (612, 792)))
+
+        assert PdfiumInspector().count_pages(str(pdf)) == 3
+
+    def test_raises_on_a_file_that_is_not_a_pdf(self, tmp_path):
+        broken = tmp_path / "broken.pdf"
+        broken.write_bytes(b"%PDF-not really")
+
+        with pytest.raises(pdfium.PdfiumError):
+            PdfiumInspector().count_pages(str(broken))
+
+
+class TestPdfiumLock:
+    """pdfium is not thread-safe: every read holds the lock Docling shares."""
+
+    @pytest.mark.parametrize("read", ["read_page_sizes", "count_pages"])
+    def test_reads_hold_the_shared_lock(self, tmp_path, read):
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792)))
+        held: list[bool] = []
+        real_document = pdfium.PdfDocument
+
+        def opened(path):
+            held.append(pdfium_lock.locked())
+            return real_document(path)
+
+        with patch("infra.pdf_inspector.pdfium.PdfDocument", side_effect=opened):
+            getattr(PdfiumInspector(), read)(str(pdf))
+
+        assert held == [True]
+
+    def test_waits_while_another_thread_holds_the_lock(self, tmp_path):
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792)))
+        done = threading.Event()
+
+        def read():
+            PdfiumInspector().count_pages(str(pdf))
+            done.set()
+
+        with pdfium_lock:
+            worker = threading.Thread(target=read)
+            worker.start()
+            assert not done.wait(0.1)
+        worker.join(timeout=5)
+        assert done.is_set()
+
+
+class TestCountPagesInBytes:
+    """The upload's page count, read by poppler from the uploaded bytes."""
+
+    def test_returns_page_count(self):
+        with patch("infra.pdf_inspector.pdfinfo_from_bytes", return_value={"Pages": 42}):
+            assert PdfiumInspector().count_pages_in_bytes(b"pdf") == 42
+
+    def test_returns_none_on_error(self):
+        with patch(
+            "infra.pdf_inspector.pdfinfo_from_bytes",
+            side_effect=FileNotFoundError("poppler not found"),
+        ):
+            assert PdfiumInspector().count_pages_in_bytes(b"pdf") is None
+
+    def test_returns_none_on_an_unexpected_error(self):
+        with patch("infra.pdf_inspector.pdfinfo_from_bytes", side_effect=RuntimeError("boom")):
+            assert PdfiumInspector().count_pages_in_bytes(b"pdf") is None
+
+
+class TestPageSizesStayLight:
+    def test_reads_sizes_without_loading_any_page(self, tmp_path):
+        """A loaded page keeps the pdfium lock busy, which stalls a running conversion."""
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(pdf_with_pages((612, 792), (842, 595)))
+
+        with patch.object(pdfium.PdfDocument, "__getitem__") as load_page:
+            pages = PdfiumInspector().read_page_sizes(str(pdf))
+
+        load_page.assert_not_called()
+        assert [(p.width, p.height) for p in pages] == [(612, 792), (842, 595)]

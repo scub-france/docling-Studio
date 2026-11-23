@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_PAGE_INPUT_SIZE,
   clampPageInput,
-  pageInRenderWindow,
-  pageInputWidthCh,
+  isPageInRenderWindow,
+  computePageInputWidthCh,
 } from './PagePreviewWithOverlay.logic'
 
 describe('clampPageInput', () => {
@@ -42,44 +42,68 @@ describe('clampPageInput', () => {
   })
 })
 
-describe('pageInputWidthCh', () => {
+describe('computePageInputWidthCh', () => {
   it('floors at the default width for low-page documents', () => {
-    expect(pageInputWidthCh(1)).toBe(DEFAULT_PAGE_INPUT_SIZE)
-    expect(pageInputWidthCh(9)).toBe(DEFAULT_PAGE_INPUT_SIZE)
-    expect(pageInputWidthCh(999)).toBe(DEFAULT_PAGE_INPUT_SIZE)
-    expect(pageInputWidthCh(1000)).toBe(DEFAULT_PAGE_INPUT_SIZE)
+    expect(computePageInputWidthCh(1)).toBe(DEFAULT_PAGE_INPUT_SIZE)
+    expect(computePageInputWidthCh(9)).toBe(DEFAULT_PAGE_INPUT_SIZE)
+    expect(computePageInputWidthCh(999)).toBe(DEFAULT_PAGE_INPUT_SIZE)
+    expect(computePageInputWidthCh(1000)).toBe(DEFAULT_PAGE_INPUT_SIZE)
   })
 
   it('grows to fit the digit count past the default', () => {
-    expect(pageInputWidthCh(10000)).toBe(5)
-    expect(pageInputWidthCh(123456)).toBe(6)
+    expect(computePageInputWidthCh(10000)).toBe(5)
+    expect(computePageInputWidthCh(123456)).toBe(6)
   })
 })
 
-describe('pageInRenderWindow', () => {
+describe('isPageInRenderWindow', () => {
   it('requests only the foreground page until it has settled', () => {
     const mounted = Array.from({ length: 411 }, (_, index) => index + 1).filter((page) =>
-      pageInRenderWindow(page, 50, 'scroll', null, false, false),
+      isPageInRenderWindow(
+        page,
+        { currentPage: 50, viewMode: 'scroll', focusedPage: null, currentPageSettled: false },
+        false,
+      ),
     )
     expect(mounted).toEqual([50])
   })
 
   it('preloads two pages ahead after the foreground page settles', () => {
     const mounted = Array.from({ length: 411 }, (_, index) => index + 1).filter((page) =>
-      pageInRenderWindow(page, 50, 'scroll', null, true, false),
+      isPageInRenderWindow(
+        page,
+        { currentPage: 50, viewMode: 'scroll', focusedPage: null, currentPageSettled: true },
+        false,
+      ),
     )
     expect(mounted).toEqual([50, 51, 52])
   })
 
   it('keeps requested nearby pages while moving to a page still loading', () => {
     const mounted = Array.from({ length: 411 }, (_, index) => index + 1).filter((page) =>
-      pageInRenderWindow(page, 50, 'scroll', null, false, [49, 51, 52].includes(page)),
+      isPageInRenderWindow(
+        page,
+        { currentPage: 50, viewMode: 'scroll', focusedPage: null, currentPageSettled: false },
+        [49, 51, 52].includes(page),
+      ),
     )
     expect(mounted).toEqual([49, 50, 51, 52])
   })
 
   it('keeps a distant focused page mounted during a focus scroll', () => {
-    expect(pageInRenderWindow(300, 1, 'scroll', 300, false, false)).toBe(true)
-    expect(pageInRenderWindow(301, 1, 'scroll', 300, false, false)).toBe(false)
+    expect(
+      isPageInRenderWindow(
+        300,
+        { currentPage: 1, viewMode: 'scroll', focusedPage: 300, currentPageSettled: false },
+        false,
+      ),
+    ).toBe(true)
+    expect(
+      isPageInRenderWindow(
+        301,
+        { currentPage: 1, viewMode: 'scroll', focusedPage: 300, currentPageSettled: false },
+        false,
+      ),
+    ).toBe(false)
   })
 })

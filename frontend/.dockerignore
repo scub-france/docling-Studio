@@ -1,0 +1,14 @@
+# Docker build context for `frontend/Dockerfile` (context: frontend/).
+# The build stage runs `npm ci` itself: host modules must not be copied in,
+# they carry native binaries built for the host platform.
+node_modules/
+dist/
+.vite/
+coverage/
+*.log
+.DS_Store
+.env
+.env.*
+.claude/
+CLAUDE.md
+*.iml

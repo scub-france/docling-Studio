@@ -1,8 +1,9 @@
 """Resolving `(document, version)` to a navigable parse — once, and cached.
 
 Every document-agent use case starts the same way: find the document, pick
-the analysis the anchor pins (or the latest), and turn its stored JSON into
-an index. That sequence was duplicated inside each service and is the single
+the analysis the anchor pins (or the document's current one), and turn its
+stored JSON into an index. The stored JSON is the analysis's original result,
+never its saved edits: an anchor names an immutable parse. That sequence was duplicated inside each service and is the single
 reason they all needed the same three repositories; it lives here instead.
 
 The cache is what makes an anchor cheap to follow. A parse is immutable for a
@@ -26,7 +27,12 @@ from services.navigation_errors import DocumentNotFoundError, NoParseError
 if TYPE_CHECKING:
     from domain.models import Document
     from domain.parse_index import DocumentIndex
-    from domain.ports import AnalysisRepository, DocumentRepository, DocumentTreeReader
+    from domain.ports import (
+        AnalysisRepository,
+        CurrentAnalysisReader,
+        DocumentRepository,
+        DocumentTreeReader,
+    )
     from services.navigation_config import NavigationConfig
 
 logger = logging.getLogger(__name__)
@@ -47,56 +53,62 @@ class ParseLoader:
         *,
         document_repo: DocumentRepository,
         analysis_repo: AnalysisRepository,
+        current_analysis: CurrentAnalysisReader,
         tree_reader: DocumentTreeReader,
         config: NavigationConfig,
     ) -> None:
         self._documents = document_repo
         self._analyses = analysis_repo
+        self._current = current_analysis
         self._tree = tree_reader
         self._config = config
         # ref -> (index, source length). Ordered by recency of use.
         self._cache: OrderedDict[str, tuple[DocumentIndex, int]] = OrderedDict()
 
     @property
-    def analyses(self) -> AnalysisRepository:
-        """The analysis repository, for callers that need the *latest* parse
-        of a document rather than the one an anchor pins."""
-        return self._analyses
-
-    @property
     def documents(self) -> DocumentRepository:
         return self._documents
+
+    async def find_current_parse_ids(self, document_ids: list[str]) -> dict[str, str]:
+        """Each document's current analysis, when it has a parse, batched: for
+        callers that need the version a document reads by default rather than
+        the one an anchor pins.
+
+        Kept as a forward on purpose: its three callers already hold the loader,
+        which holds the resolver, so none of them needs it as a dependency."""
+        return await self._current.find_current_parse_ids(document_ids)
 
     async def load(self, document_id: str, version_id: str | None = None) -> LoadedParse:
         """Resolve a document and the parse to read it from.
 
-        `version_id` pins a specific analysis; omitting it takes the latest
-        completed one. A version that belongs to another document is refused
-        rather than silently ignored — an anchor that names the wrong parse is
-        a bug in the caller, not a fallback case.
+        `version_id` pins a specific analysis; omitting it takes the
+        document's current analysis (its active selection). A version that
+        belongs to another document is refused rather than silently ignored —
+        an anchor that names the wrong parse is a bug in the caller, not a
+        fallback case.
         """
         doc = await self._documents.find_by_id(document_id)
         if doc is None:
             raise DocumentNotFoundError(f"Document not found: {document_id}")
 
         if version_id:
-            if await self._analyses.parsed_document_id(version_id) != document_id:
+            if await self._analyses.find_parsed_document_id(version_id) != document_id:
                 raise NoParseError(
                     f"Version {version_id} is not a parse of document {document_id}.",
                     http_status=404,
                 )
         else:
-            version_id = (await self._analyses.latest_parsed_ids([document_id])).get(document_id)
+            version_id = (await self.find_current_parse_ids([document_id])).get(document_id)
             if version_id is None:
                 raise NoParseError(
                     f"Document {document_id} has no parsed content to navigate yet. "
                     "Run an analysis in Docling Studio first."
                 )
 
-        index = await self._index_for(version_id)
+        index = await self._load_index(version_id)
         return LoadedParse(document=doc, version_id=version_id, index=index)
 
-    async def _index_for(self, version_id: str) -> DocumentIndex:
+    async def _load_index(self, version_id: str) -> DocumentIndex:
         cached = self._cache.get(version_id)
         if cached is not None:
             self._cache.move_to_end(version_id)

@@ -54,10 +54,7 @@ class Neo4jGraphWriter:
         document_json: str,
     ) -> None:
         await _write_document(
-            self._driver,
-            doc_id=doc_id,
-            filename=filename,
-            document_json=document_json,
+            self._driver, doc_id=doc_id, filename=filename, document_json=document_json
         )
 
     async def write_chunks(self, *, doc_id: str, chunks_json: str) -> None:

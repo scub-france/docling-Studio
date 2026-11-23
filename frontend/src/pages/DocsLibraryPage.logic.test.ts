@@ -6,19 +6,19 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { keepListed, selectionState, toggleListed, toggleOne } from './DocsLibraryPage.logic'
+import { keepListed, getSelectionState, toggleListed, toggleOne } from './DocsLibraryPage.logic'
 
 const LISTED = ['d1', 'd2', 'd3']
 
-describe('selectionState', () => {
+describe('getSelectionState', () => {
   it('tells none, some or all of the listed documents apart', () => {
-    expect(selectionState(new Set(), LISTED)).toBe('none')
-    expect(selectionState(new Set(['d2']), LISTED)).toBe('some')
-    expect(selectionState(new Set(LISTED), LISTED)).toBe('all')
+    expect(getSelectionState(new Set(), LISTED)).toBe('none')
+    expect(getSelectionState(new Set(['d2']), LISTED)).toBe('some')
+    expect(getSelectionState(new Set(LISTED), LISTED)).toBe('all')
   })
 
   it('is none on an empty list', () => {
-    expect(selectionState(new Set(), [])).toBe('none')
+    expect(getSelectionState(new Set(), [])).toBe('none')
   })
 })
 

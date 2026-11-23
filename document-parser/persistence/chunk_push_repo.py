@@ -7,13 +7,7 @@ from datetime import UTC, datetime
 
 from domain.models import ChunkPush
 from persistence.database import get_connection
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if value is None or value == "":
-        return None
-    parsed = datetime.fromisoformat(value)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+from persistence.iso_datetime import parse_iso
 
 
 def _row_to_push(row) -> ChunkPush:
@@ -23,7 +17,7 @@ def _row_to_push(row) -> ChunkPush:
         store_id=row["store_id"],
         chunkset_hash=row["chunkset_hash"],
         chunk_ids=json.loads(row["chunk_ids"]) if row["chunk_ids"] else [],
-        pushed_at=_parse_iso(row["pushed_at"]) or datetime.now(UTC),
+        pushed_at=parse_iso(row["pushed_at"]) or datetime.now(UTC),
     )
 
 

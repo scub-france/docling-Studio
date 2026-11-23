@@ -1,7 +1,18 @@
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as api from './api'
-import { canMerge, coalesceCommands, mergeValidationMessage } from './commands'
+import {
+  findSavedRedoTarget,
+  findSavedUndoTarget,
+  queueCommand,
+  redoPending,
+  undoPending,
+  type CommandStacks,
+} from './commandStacks'
+import { canMerge, sortInReadingOrder, validateMerge } from './commands'
+import { toggleSelectedId, toggleSelectedIds } from './mergeSelection'
+import { buildPendingDraftKey, readPendingDraft, writePendingDraft } from './pendingDraft'
+import { PreviewScheduler } from './previewScheduler'
 import type {
   AnalysisEditCommand,
   AnalysisEditHistoryEntry,
@@ -9,7 +20,9 @@ import type {
   EditorElement,
   EditorTreeNode,
 } from './types'
-import { pagesFromAnalysis } from './types'
+import { parseAnalysisPages } from './types'
+
+const PREVIEW_DEBOUNCE_MS = 400
 
 export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const documentId = ref<string | null>(null)
@@ -28,26 +41,23 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   const error = ref<string | null>(null)
   const conflict = ref<string | null>(null)
   const previewError = ref<string | null>(null)
+  /** A save the server refused (not a 409): the pending edits stay on screen. */
+  const saveError = ref<string | null>(null)
   const historyError = ref<string | null>(null)
-  const abortController = ref<AbortController | null>(null)
-  let previewTimer: ReturnType<typeof setTimeout> | null = null
+  const previewScheduler = new PreviewScheduler(PREVIEW_DEBOUNCE_MS)
 
   const effective = computed(() => preview.value ?? saved.value)
   const elements = computed(() => effective.value?.model.elements ?? [])
   const tree = computed<EditorTreeNode[]>(() => effective.value?.tree ?? [])
-  const pages = computed(() => pagesFromAnalysis(effective.value?.result ?? null))
+  const pages = computed(() => parseAnalysisPages(effective.value?.result ?? null))
   const selectedElement = computed<EditorElement | null>(
     () => elements.value.find((element) => element.id === selectedElementId.value) ?? null,
   )
   const hasUnsavedChanges = computed(() => pendingCommands.value.length > 0)
   const recoveredPendingCount = computed(() => recoveredPendingCommands.value?.length ?? 0)
   const conflictDetails = computed(() => JSON.stringify(pendingCommands.value, null, 2))
-  const savedUndoTarget = computed(() =>
-    [...history.value].reverse().find((entry) => entry.active === true),
-  )
-  const savedRedoTarget = computed(() =>
-    [...history.value].reverse().find((entry) => entry.active === false),
-  )
+  const savedUndoTarget = computed(() => findSavedUndoTarget(history.value))
+  const savedRedoTarget = computed(() => findSavedRedoTarget(history.value))
   const canChangeSavedHistory = computed(
     () =>
       !saving.value &&
@@ -68,9 +78,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
       (redoCommands.value.length > 0 || (canChangeSavedHistory.value && !!savedRedoTarget.value)),
   )
   const mergeAllowed = computed(() => canMerge(elements.value, mergeSelection.value))
-  const mergeValidationError = computed(() =>
-    mergeValidationMessage(elements.value, mergeSelection.value),
-  )
+  const mergeValidationKey = computed(() => validateMerge(elements.value, mergeSelection.value))
 
   async function load(id: string, analysisId?: string): Promise<void> {
     documentId.value = id
@@ -78,6 +86,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     loading.value = true
     error.value = null
     historyError.value = null
+    saveError.value = null
     try {
       saved.value = await api.fetchAnalysisEditor(id, undefined, analysisId)
       baseAnalysisId.value = saved.value.model.baseAnalysisId
@@ -99,47 +108,49 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
 
   function queue(command: AnalysisEditCommand): void {
     if (saving.value) return
-    pendingCommands.value = coalesceCommands([...pendingCommands.value, command])
-    redoCommands.value = []
+    setCommandStacks(queueCommand(pendingCommands.value, command))
     conflict.value = null
     persistPendingCommands()
     previewError.value = null
-    if (previewTimer) clearTimeout(previewTimer)
-    previewTimer = setTimeout(() => void previewNow(), 400)
+    previewScheduler.debounce(() => void previewNow())
   }
 
   function refreshPreview(): void {
-    abortController.value?.abort()
+    previewScheduler.abort()
     preview.value = null
     previewError.value = null
-    if (previewTimer) clearTimeout(previewTimer)
+    previewScheduler.clearDebounce()
     if (pendingCommands.value.length) void previewNow()
+  }
+
+  function setCommandStacks(stacks: CommandStacks): void {
+    pendingCommands.value = stacks.pending
+    redoCommands.value = stacks.redo
+    saveError.value = null
   }
 
   async function undo(): Promise<void> {
     if (saving.value) return
-    const command = pendingCommands.value.at(-1)
-    if (!command) {
+    const stacks = undoPending({ pending: pendingCommands.value, redo: redoCommands.value })
+    if (!stacks) {
       if (canChangeSavedHistory.value && savedUndoTarget.value)
         await setSavedCommandActive(savedUndoTarget.value.sequence, false)
       return
     }
-    pendingCommands.value = pendingCommands.value.slice(0, -1)
-    redoCommands.value = [command, ...redoCommands.value]
+    setCommandStacks(stacks)
     persistPendingCommands()
     refreshPreview()
   }
 
   async function redo(): Promise<void> {
     if (saving.value) return
-    const command = redoCommands.value[0]
-    if (!command) {
+    const stacks = redoPending({ pending: pendingCommands.value, redo: redoCommands.value })
+    if (!stacks) {
       if (canChangeSavedHistory.value && savedRedoTarget.value)
         await setSavedCommandActive(savedRedoTarget.value.sequence, true)
       return
     }
-    redoCommands.value = redoCommands.value.slice(1)
-    pendingCommands.value = coalesceCommands([...pendingCommands.value, command])
+    setCommandStacks(stacks)
     persistPendingCommands()
     refreshPreview()
   }
@@ -165,9 +176,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   }
 
   function toggleMergeSelection(elementId: string): void {
-    mergeSelection.value = mergeSelection.value.includes(elementId)
-      ? mergeSelection.value.filter((id) => id !== elementId)
-      : [...mergeSelection.value, elementId]
+    mergeSelection.value = toggleSelectedId(mergeSelection.value, elementId)
   }
 
   function selectMergeSelection(elementId: string): void {
@@ -175,17 +184,17 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
   }
 
   function toggleMergeSelectionMany(elementIds: string[]): void {
-    if (!elementIds.length) return
-    const allSelected = elementIds.every((id) => mergeSelection.value.includes(id))
-    mergeSelection.value = allSelected
-      ? mergeSelection.value.filter((id) => !elementIds.includes(id))
-      : [...new Set([...mergeSelection.value, ...elementIds])]
+    mergeSelection.value = toggleSelectedIds(mergeSelection.value, elementIds)
   }
 
   function mergeSelected(separator = ' '): void {
     if (!mergeAllowed.value) return
-    const targetId = mergeSelection.value[0]
-    queue({ type: 'mergeText', elementIds: [...mergeSelection.value], separator })
+    const elementIds = sortInReadingOrder(
+      mergeSelection.value,
+      effective.value?.readingOrder ?? elements.value.map((element) => element.id),
+    )
+    const targetId = elementIds[0]
+    queue({ type: 'mergeText', elementIds, separator })
     selectedElementId.value = targetId
     mergeSelection.value = [targetId]
   }
@@ -201,9 +210,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
 
   async function previewNow(): Promise<void> {
     if (!documentId.value || !saved.value || pendingCommands.value.length === 0) return
-    abortController.value?.abort()
-    const controller = new AbortController()
-    abortController.value = controller
+    const controller = previewScheduler.begin()
     previewing.value = true
     previewError.value = null
     try {
@@ -216,20 +223,40 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
         controller.signal,
         baseAnalysisId.value ?? undefined,
       )
-      if (abortController.value === controller && !controller.signal.aborted) preview.value = result
+      if (previewScheduler.isCurrent(controller) && !controller.signal.aborted)
+        preview.value = result
     } catch (e) {
-      if (abortController.value === controller && (e as Error).name !== 'AbortError')
+      if (previewScheduler.isCurrent(controller) && (e as Error).name !== 'AbortError')
         previewError.value = (e as Error).message
     } finally {
-      if (abortController.value === controller) previewing.value = false
+      if (previewScheduler.isCurrent(controller)) previewing.value = false
     }
+  }
+
+  async function reloadHistory(id: string): Promise<void> {
+    history.value = await api.fetchAnalysisEditHistory(id, baseAnalysisId.value ?? undefined)
+  }
+
+  /** A 409 is a conflict with someone else's save; anything else lands in `target`. */
+  function recordEditFailure(e: unknown, fallback: string, target: Ref<string | null>): void {
+    const message = (e as Error).message || fallback
+    if (message.startsWith('409:')) conflict.value = message
+    else target.value = message
+  }
+
+  function resetPendingEdits(): void {
+    preview.value = null
+    pendingCommands.value = []
+    redoCommands.value = []
+    mergeSelection.value = []
+    persistPendingCommands()
   }
 
   async function save(): Promise<void> {
     if (!documentId.value || !saved.value || pendingCommands.value.length === 0) return
     saving.value = true
-    if (previewTimer) clearTimeout(previewTimer)
-    error.value = null
+    previewScheduler.clearDebounce()
+    saveError.value = null
     historyError.value = null
     conflict.value = null
     try {
@@ -247,19 +274,10 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
         baseAnalysisId.value ?? undefined,
       )
       saved.value = next
-      history.value = await api.fetchAnalysisEditHistory(
-        documentId.value,
-        baseAnalysisId.value ?? undefined,
-      )
-      preview.value = null
-      pendingCommands.value = []
-      redoCommands.value = []
-      mergeSelection.value = []
-      persistPendingCommands()
+      await reloadHistory(documentId.value)
+      resetPendingEdits()
     } catch (e) {
-      const message = (e as Error).message || 'Failed to save analysis edits'
-      if (message.startsWith('409:')) conflict.value = message
-      else error.value = message
+      recordEditFailure(e, 'Failed to save analysis edits', saveError)
     } finally {
       saving.value = false
     }
@@ -270,41 +288,38 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     saving.value = true
     historyError.value = null
     conflict.value = null
-    abortController.value?.abort()
+    previewScheduler.abort()
     preview.value = null
     try {
       const next = await api.setAnalysisEditActive(
         documentId.value,
-        sequence,
-        active,
-        saved.value.appliedThroughSequence,
+        { sequence, active, expectedAppliedThroughSequence: saved.value.appliedThroughSequence },
         baseAnalysisId.value ?? undefined,
       )
       saved.value = next
-      history.value = await api.fetchAnalysisEditHistory(
-        documentId.value,
-        baseAnalysisId.value ?? undefined,
-      )
+      await reloadHistory(documentId.value)
       mergeSelection.value = []
       if (!next.model.elements.some((element) => element.id === selectedElementId.value)) {
         selectedElementId.value =
           next.model.elements.find((element) => element.editable)?.id ?? null
       }
     } catch (e) {
-      const message = (e as Error).message || 'Failed to change saved edit history'
-      if (message.startsWith('409:')) conflict.value = message
-      else historyError.value = message
+      recordEditFailure(e, 'Failed to change saved edit history', historyError)
     } finally {
       saving.value = false
     }
   }
 
-  function discard(): void {
-    if (previewTimer) clearTimeout(previewTimer)
-    abortController.value?.abort()
-    abortController.value = null
+  /** Stop the debounced and in-flight preview, e.g. when the editor closes. */
+  function cancelPreview(): void {
+    previewScheduler.cancel()
     previewing.value = false
+  }
+
+  function discard(): void {
+    cancelPreview()
     previewError.value = null
+    saveError.value = null
     pendingCommands.value = []
     redoCommands.value = []
     preview.value = null
@@ -336,53 +351,19 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     discard()
   }
 
-  function pendingStorageKey(): string | null {
-    if (!documentId.value || !baseAnalysisId.value) return null
-    return `analysis-editor-pending:${documentId.value}:${baseAnalysisId.value}`
-  }
-
   function persistPendingCommands(): void {
-    const key = pendingStorageKey()
+    const key = buildPendingDraftKey(documentId.value, baseAnalysisId.value)
     if (!key) return
-    try {
-      if (!pendingCommands.value.length) {
-        window.sessionStorage.removeItem(key)
-        return
-      }
-      window.sessionStorage.setItem(
-        key,
-        JSON.stringify({
-          expectedAppliedThroughSequence: saved.value?.appliedThroughSequence ?? 0,
-          commands: pendingCommands.value,
-        }),
-      )
-    } catch {
-      // Browser storage can be unavailable in private or restricted contexts.
-    }
+    writePendingDraft(key, {
+      expectedAppliedThroughSequence: saved.value?.appliedThroughSequence ?? 0,
+      commands: pendingCommands.value,
+    })
   }
 
   function readRecoveredPendingCommands(): AnalysisEditCommand[] | null {
-    const key = pendingStorageKey()
+    const key = buildPendingDraftKey(documentId.value, baseAnalysisId.value)
     if (!key) return null
-    try {
-      const value = window.sessionStorage.getItem(key)
-      if (!value) return null
-      const draft = JSON.parse(value) as {
-        expectedAppliedThroughSequence?: unknown
-        commands?: unknown
-      }
-      if (
-        draft.expectedAppliedThroughSequence === saved.value?.appliedThroughSequence &&
-        Array.isArray(draft.commands) &&
-        draft.commands.length
-      ) {
-        return draft.commands as AnalysisEditCommand[]
-      }
-      window.sessionStorage.removeItem(key)
-    } catch {
-      // Ignore malformed and unavailable browser storage.
-    }
-    return null
+    return readPendingDraft(key, saved.value?.appliedThroughSequence)
   }
 
   return {
@@ -399,7 +380,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     selectedElementId,
     mergeSelection,
     mergeAllowed,
-    mergeValidationError,
+    mergeValidationKey,
     hasUnsavedChanges,
     recoveredPendingCount,
     canUndo,
@@ -412,6 +393,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     conflict,
     conflictDetails,
     previewError,
+    saveError,
     historyError,
     load,
     queueReplaceText,
@@ -428,6 +410,7 @@ export const useAnalysisEditorStore = defineStore('analysis-editor', () => {
     previewNow,
     save,
     setSavedCommandActive,
+    cancelPreview,
     discard,
     restoreRecoveredPending,
     discardRecoveredPending,

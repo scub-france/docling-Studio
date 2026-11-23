@@ -1,34 +1,33 @@
-"""Analysis editor API: load, preview, save, and rebuild."""
+"""Analysis editor API: load, preview, save, and history."""
 
 from __future__ import annotations
 
-import json
-from typing import NoReturn
+import asyncio
+from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from api import deps  # noqa: TC001
+from api.errors import to_http_error
 from api.schemas import (
     AnalysisEditHistoryActionRequest,
     AnalysisEditHistoryEntryResponse,
+    AnalysisEditorModelResponse,
     AnalysisEditorResponse,
     AnalysisEditRequest,
     AnalysisEditSaveResponse,
     AnalysisResponse,
+    EditorTreeNodeResponse,
 )
-from domain.analysis_editing import (
-    AnalysisEditConflictError,
-    AnalysisEditError,
-    AnalysisEditNotFoundError,
-    AnalysisEditUnavailableError,
-    EditCommand,
-    active_edit_commands,
-)
+from domain.analysis_editing import AnalysisEditError, CommandActivation, EditCommand
+
+if TYPE_CHECKING:
+    from domain.analysis_editing import EditorTreeNode
 
 router = APIRouter(prefix="/api/documents", tags=["analysis-editor"])
 
 
-def _analysis(job) -> AnalysisResponse:
+def _to_analysis_response(job) -> AnalysisResponse:
     return AnalysisResponse(
         id=job.id,
         document_id=job.document_id,
@@ -48,30 +47,36 @@ def _analysis(job) -> AnalysisResponse:
     )
 
 
-def _tree(node) -> dict:
-    return {
-        "elementId": node.element_id,
-        "type": node.type,
-        "label": node.label,
-        "children": [_tree(child) for child in node.children],
-    }
-
-
-def _response(snapshot) -> AnalysisEditorResponse:
-    model = json.loads(snapshot.projection.editor_model_json)
-    return AnalysisEditorResponse(
-        model=model,
-        tree=[_tree(node) for node in snapshot.projection.tree],
-        reading_order=[element.id for element in snapshot.projection.elements],
-        result=_analysis(snapshot.job),
-        applied_through_sequence=snapshot.applied_through_sequence,
-        chunks_stale=snapshot.chunks_stale,
-        warnings=list(snapshot.projection.warnings),
-        reference_changes=snapshot.projection.reference_changes,
+def _to_tree_node_response(node: EditorTreeNode) -> EditorTreeNodeResponse:
+    return EditorTreeNodeResponse(
+        element_id=node.element_id,
+        type=node.type,
+        label=node.label,
+        children=[_to_tree_node_response(child) for child in node.children],
     )
 
 
-def _history_entry(record, active: bool | None) -> AnalysisEditHistoryEntryResponse:
+async def _to_editor_response(snapshot) -> AnalysisEditorResponse:
+    """Built in a worker thread: one Pydantic object per element and tree node
+    is tens of thousands on a long document, too much for the event loop."""
+    return await asyncio.to_thread(_build_editor_response, snapshot)
+
+
+def _build_editor_response(snapshot) -> AnalysisEditorResponse:
+    return AnalysisEditorResponse(
+        # The projector writes this JSON on every projection, cached or not,
+        # so it always has the shape the model declares.
+        model=AnalysisEditorModelResponse.model_validate(snapshot.projection.read_editor_model()),
+        tree=[_to_tree_node_response(node) for node in snapshot.projection.tree],
+        reading_order=[element.id for element in snapshot.projection.elements],
+        result=_to_analysis_response(snapshot.job),
+        applied_through_sequence=snapshot.applied_through_sequence,
+        chunks_stale=snapshot.chunks_stale,
+    )
+
+
+def _to_history_entry(entry) -> AnalysisEditHistoryEntryResponse:
+    record = entry.record
     return AnalysisEditHistoryEntryResponse(
         id=record.id,
         sequence=record.sequence,
@@ -80,44 +85,20 @@ def _history_entry(record, active: bool | None) -> AnalysisEditHistoryEntryRespo
         payload=record.command.payload,
         command_hash=record.command_hash,
         created_at=str(record.created_at),
-        active=active,
+        active=entry.active,
     )
 
 
-def _commands(body: AnalysisEditRequest) -> list[EditCommand]:
-    commands: list[EditCommand] = []
-    for command in body.commands:
-        if command.type == "replaceText":
-            payload = {"elementId": command.element_id, "text": command.text}
-        elif command.type == "mergeText":
-            payload = {"elementIds": command.element_ids, "separator": command.separator}
-        elif command.type == "setHeadingLevel":
-            payload = {"elementId": command.element_id, "level": command.level}
-        elif command.type == "deleteElement":
-            payload = {"elementId": command.element_id}
-        elif command.type == "deleteElements":
-            payload = {"elementIds": command.element_ids}
-        else:
-            payload = {
-                "elementId": command.element_id,
-                "beforeElementId": command.before_element_id,
-                "targetElementId": command.target_element_id,
-                "placement": command.placement,
-            }
-        commands.append(EditCommand(command_type=command.type, payload=payload))
-    return commands
-
-
-def _raise(exc: Exception) -> NoReturn:
-    if isinstance(exc, AnalysisEditConflictError):
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if isinstance(exc, AnalysisEditNotFoundError):
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if isinstance(exc, AnalysisEditUnavailableError):
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if isinstance(exc, AnalysisEditError):
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    raise exc
+def _to_edit_commands(body: AnalysisEditRequest) -> list[EditCommand]:
+    """Each command's payload is its request fields, every key present (null
+    where unset); the model of each type is the only definition of its fields."""
+    return [
+        EditCommand(
+            command_type=command.type,
+            payload=command.model_dump(by_alias=True, exclude={"type"}),
+        )
+        for command in body.commands
+    ]
 
 
 @router.get("/{doc_id}/analysis-editor", response_model=AnalysisEditorResponse)
@@ -127,9 +108,9 @@ async def load_editor(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _response(await service.load_editor(doc_id, analysis_id))
-    except Exception as exc:
-        _raise(exc)
+        return await _to_editor_response(await service.load_editor(doc_id, analysis_id))
+    except AnalysisEditError as exc:
+        raise to_http_error(exc) from exc
 
 
 @router.post("/{doc_id}/analysis-edits/preview", response_model=AnalysisEditorResponse)
@@ -140,9 +121,11 @@ async def preview_edits(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _response(await service.preview(doc_id, _commands(body), analysis_id))
-    except Exception as exc:
-        _raise(exc)
+        return await _to_editor_response(
+            await service.preview(doc_id, _to_edit_commands(body), analysis_id)
+        )
+    except AnalysisEditError as exc:
+        raise to_http_error(exc) from exc
 
 
 @router.get(
@@ -155,11 +138,10 @@ async def edit_history(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> list[AnalysisEditHistoryEntryResponse]:
     try:
-        records = await service.history(doc_id, analysis_id)
-        _, states = active_edit_commands(records)
-        return [_history_entry(record, states.get(record.sequence)) for record in records]
-    except Exception as exc:
-        _raise(exc)
+        entries = await service.list_history_entries(doc_id, analysis_id)
+        return [_to_history_entry(entry) for entry in entries]
+    except AnalysisEditError as exc:
+        raise to_http_error(exc) from exc
 
 
 @router.patch("/{doc_id}/analysis-edits/history/{sequence}", response_model=AnalysisEditorResponse)
@@ -171,17 +153,16 @@ async def set_edit_active(
     analysis_id: str | None = Query(default=None, alias="analysisId"),
 ) -> AnalysisEditorResponse:
     try:
-        return _response(
+        return await _to_editor_response(
             await service.set_command_active(
                 doc_id,
-                sequence,
-                body.active,
+                CommandActivation(sequence, body.active),
                 body.expected_applied_through_sequence,
                 analysis_id,
             )
         )
-    except Exception as exc:
-        _raise(exc)
+    except AnalysisEditError as exc:
+        raise to_http_error(exc) from exc
 
 
 @router.post("/{doc_id}/analysis-edits", response_model=AnalysisEditSaveResponse)
@@ -194,27 +175,15 @@ async def save_edits(
     try:
         snapshot = await service.save(
             doc_id,
-            _commands(body),
+            _to_edit_commands(body),
             body.expected_applied_through_sequence,
             analysis_id,
         )
         return AnalysisEditSaveResponse(
-            result=_analysis(snapshot.job),
+            result=_to_analysis_response(snapshot.job),
             base_analysis_id=snapshot.base_analysis_id,
             applied_through_sequence=snapshot.applied_through_sequence,
             chunks_stale=snapshot.chunks_stale,
         )
-    except Exception as exc:
-        _raise(exc)
-
-
-@router.post("/{doc_id}/analysis-edits/rebuild", response_model=AnalysisEditorResponse)
-async def rebuild_edits(
-    doc_id: str,
-    service: deps.AnalysisEditServiceDep,
-    analysis_id: str | None = Query(default=None, alias="analysisId"),
-) -> AnalysisEditorResponse:
-    try:
-        return _response(await service.rebuild(doc_id, analysis_id))
-    except Exception as exc:
-        _raise(exc)
+    except AnalysisEditError as exc:
+        raise to_http_error(exc) from exc

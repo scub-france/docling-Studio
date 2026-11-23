@@ -15,8 +15,8 @@ from contextlib import asynccontextmanager
 import pytest
 from mcp import Client
 
-from mcp_adapter import build_mcp_server
 from mcp_adapter.apps import SOURCES_APP_URI
+from mcp_adapter.server import McpSurface, build_mcp_server
 from mcp_adapter.sources_view import SOURCES_APP_HTML
 from services.navigation_config import NavigationConfig
 from tests.navigation_fixtures import (
@@ -33,7 +33,7 @@ PREAVIS_SECTION_URI = anchor_uri("#/texts/3")
 
 @asynccontextmanager
 async def _client(tools, *, apps: bool = True):
-    server = build_mcp_server(lambda: tools, version="test", apps=apps)
+    server = build_mcp_server(lambda: tools, surface=McpSurface(version="test", apps=apps))
     async with Client(server) as client:
         yield client
 
@@ -211,7 +211,7 @@ class TestCard:
         from tests.navigation_fixtures import make_document
 
         class Reader:
-            def glyphs(self, storage_path, *, page):
+            def read_glyphs(self, storage_path, *, page):
                 text = "Le préavis est de trois mois à compter de la notification."
                 return [
                     Glyph(c, (0.12 + n * 0.01, 0.38, 0.13 + n * 0.01, 0.395))
@@ -264,12 +264,12 @@ class TestTemplate:
 
     def test_counts_and_boxes_render_as_numbers_only(self):
         # Interpolated unescaped, so every count goes through `num()` or
-        # `fr()`, and every box edge through `pct()`, each of which coerces
-        # before it formats.
+        # `decimal()`, and every box edge through `pct()`, each of which
+        # coerces before it formats.
         assert SOURCES_APP_HTML.count("Number.isFinite(number)") >= 3
         for marker in (
             "num(totals.tokens_read)",
-            "fr(totals.percent, 1)",
+            "decimal(totals.percent, 1)",
             "num(hop.ordinal)",
             "num(maxRounds)",
             "pct(l - padX)",
@@ -310,8 +310,10 @@ class TestTemplate:
 
     def test_two_tabs_the_sources_and_the_details(self):
         assert 'role="tablist"' in SOURCES_APP_HTML
-        assert 'tab("sources", "Sources")' in SOURCES_APP_HTML
-        assert 'tab("details", "Détails")' in SOURCES_APP_HTML
+        assert 'tab("sources", esc(L.sources))' in SOURCES_APP_HTML
+        assert 'tab("details", esc(L.details))' in SOURCES_APP_HTML
+        assert 'details: "Details"' in SOURCES_APP_HTML
+        assert 'details: "Détails"' in SOURCES_APP_HTML
 
     def test_the_quote_is_highlighted_line_by_line_on_its_page(self):
         """The lines the server found, multiplied over the ink; the passage's
@@ -358,10 +360,14 @@ class TestTemplate:
     def test_a_citation_says_verified_only_on_the_servers_word(self):
         assert 'new Set(["verified", "stale_version"])' in SOURCES_APP_HTML
         for label in (
+            "word for word · verified by the server",
+            "not found at this place",
+            "not verified",
+            'verified: "verified"',
             "mot pour mot · vérifiée par le serveur",
             "introuvable à cet endroit",
             "non vérifiée",
-            'return "vérifiée"',
+            'verified: "vérifiée"',
         ):
             assert label in SOURCES_APP_HTML, label
 
@@ -369,15 +375,28 @@ class TestTemplate:
         assert "totals.over_cap === true" in SOURCES_APP_HTML
         assert "plafond dépassé" in SOURCES_APP_HTML
         assert "Tours non utilisés" in SOURCES_APP_HTML
-        for label in ("<b>Pourquoi</b>", "Tours de lecture"):
+        assert "cap exceeded" in SOURCES_APP_HTML
+        assert "Unused rounds" in SOURCES_APP_HTML
+        assert "<b>${esc(L.why)}</b>" in SOURCES_APP_HTML
+        for label in ('why: "Why"', 'why: "Pourquoi"', "Reading rounds", "Tours de lecture"):
             assert label in SOURCES_APP_HTML, label
 
     def test_the_details_lead_with_the_share_of_the_document_read(self):
-        for marker in ("Document lu", "Tokens lus", 'class="segments"', "Ce que l\u2019agent a lu"):
+        for marker in (
+            "Document read",
+            "Tokens read",
+            "What the agent read",
+            "Document lu",
+            "Tokens lus",
+            'class="segments"',
+            "Ce que l\u2019agent a lu",
+        ):
             assert marker in SOURCES_APP_HTML, marker
         assert 'data-status="${esc(s.status)}"' in SOURCES_APP_HTML
 
     def test_it_says_on_the_card_that_a_why_is_the_agents_word(self):
+        assert "are the agent\u2019s words" in SOURCES_APP_HTML
+        assert "come from the server" in SOURCES_APP_HTML
         assert "sont les mots de l\u2019agent" in SOURCES_APP_HTML
         assert "viennent du serveur" in SOURCES_APP_HTML
 

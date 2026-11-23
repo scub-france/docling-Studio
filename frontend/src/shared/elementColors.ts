@@ -1,8 +1,7 @@
 /**
  * Single source of truth for OCR element type → swatch color.
  *
- * Consumed by `BboxCanvas`, `LayersBar`, and `ChunksPanel` (for the type
- * badge on chunk cards). The palette mirrors the legacy `BboxOverlay`
+ * Consumed by `BboxCanvas` and `LayersBar`. The palette mirrors the legacy `BboxOverlay`
  * mapping (Studio surface) so the same document looks consistent
  * across both surfaces.
  *
@@ -29,7 +28,7 @@ export const UNKNOWN_ELEMENT_COLOR = '#94A3B8'
  * Lookup helper — returns the palette color for `type`, falling back to
  * `UNKNOWN_ELEMENT_COLOR` so callers never have to handle `undefined`.
  */
-export function colorFor(type: string): string {
+export function getElementColor(type: string): string {
   return ELEMENT_COLORS[type] ?? UNKNOWN_ELEMENT_COLOR
 }
 

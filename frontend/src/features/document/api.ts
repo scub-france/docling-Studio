@@ -1,12 +1,4 @@
-import type {
-  Analysis,
-  DocChunk,
-  Document,
-  DocTreeNode,
-  DocumentVersion,
-  Page,
-} from '../../shared/types'
-import type { RechunkOptions } from '@/shared/types'
+import type { Document, DocTreeNode, Page } from '../../shared/types'
 import { apiFetch } from '@/shared/api/http'
 
 export function fetchDocuments(): Promise<Document[]> {
@@ -15,17 +7,6 @@ export function fetchDocuments(): Promise<Document[]> {
 
 export function fetchDocument(id: string): Promise<Document> {
   return apiFetch<Document>(`/api/documents/${id}`)
-}
-
-export async function fetchDocumentEditedAnalysisResult(
-  documentId: string,
-  analysisId: string,
-): Promise<Analysis> {
-  const query = `?analysisId=${encodeURIComponent(analysisId)}`
-  const response = await apiFetch<{ result: Analysis }>(
-    `/api/documents/${documentId}/analysis-editor${query}`,
-  )
-  return response.result
 }
 
 export async function uploadDocument(file: File): Promise<Document> {
@@ -76,30 +57,7 @@ export function getExportUrl(
   return `/api/documents/${id}/export?format=${format}${analysis}${editor}`
 }
 
-/** Rechunk the canonical chunkset. Backend runs synchronously and returns
- * the new chunks — there is no async job to poll. */
-export function rechunkDocument(id: string, options?: RechunkOptions): Promise<DocChunk[]> {
-  const body = options ? { chunkingOptions: options } : {}
-  return apiFetch<DocChunk[]>(`/api/documents/${id}/rechunk`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
 export function fetchDocumentTree(id: string, analysisId?: string): Promise<DocTreeNode[]> {
   const query = analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : ''
   return apiFetch<DocTreeNode[]>(`/api/documents/${id}/tree${query}`)
-}
-
-/** Workspace History timeline (#267) — frozen pairs newest-first. */
-export function fetchDocumentVersions(id: string): Promise<DocumentVersion[]> {
-  return apiFetch<DocumentVersion[]>(`/api/documents/${id}/versions`)
-}
-
-/** Restore a version — overwrites the live chunkset with the snapshot. */
-export function restoreDocumentVersion(docId: string, versionId: string): Promise<DocumentVersion> {
-  return apiFetch<DocumentVersion>(`/api/documents/${docId}/versions/${versionId}/restore`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  })
 }

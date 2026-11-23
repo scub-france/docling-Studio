@@ -9,19 +9,20 @@ conditionals. Split out of a single `bootstrap.py` to hold the project's
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from domain.app_config import ReasoningConfig
 from domain.mcp_config import McpRuntimeConfig
 from infra.docling_agent_reasoning import (
     DoclingAgentReasoningRunner,
-    deps_present,
-    deps_provenance,
+    describe_deps_provenance,
+    has_usable_deps,
 )
 from infra.llm.ollama_provider import OllamaProvider
 from infra.settings import settings
 from persistence.database import get_connection
 from services.analysis_service import AnalysisConfig, AnalysisService
-from services.chunk_service import ChunkService
 from services.citation_image_service import CitationImageService
 from services.citation_service import CitationService
 from services.document_service import DocumentConfig, DocumentService
@@ -32,6 +33,14 @@ from services.navigation_service import NavigationService
 from services.parse_loader import ParseLoader
 from services.source_service import SourceService
 from services.store_backend_resolver import StoreBackendResolver
+
+if TYPE_CHECKING:
+    from persistence.analysis_repo import SqliteAnalysisRepository
+    from persistence.chunk_repo import SqliteChunkRepository
+    from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
+    from persistence.document_repo import SqliteDocumentRepository
+    from persistence.document_store_link_repo import SqliteDocumentStoreLinkRepository
+    from persistence.store_repo import SqliteStoreRepository
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +79,7 @@ def build_chunker():
     return LocalChunker()
 
 
-def env_reasoning_config() -> ReasoningConfig:
+def build_env_reasoning_config() -> ReasoningConfig:
     """Bootstrap defaults for the runtime-configurable reasoning knobs (#317).
 
     Env vars seed the config; `app_settings` rows override them at runtime via
@@ -86,31 +95,31 @@ def env_reasoning_config() -> ReasoningConfig:
 
 def build_reasoning_runner(config: ReasoningConfig) -> DoclingAgentReasoningRunner | None:
     """Wire the reasoning runner for `config` if enabled and deps are
-    importable. Today only `LLM_PROVIDER_TYPE=ollama` is supported (cf. the
-    `LLMProvider` docstring); other values fall through to a logged warning +
-    None so the rest of the app boots cleanly.
+    importable. The runner talks to Ollama only; the deprecated
+    `LLM_PROVIDER_TYPE` set to anything else keeps Ask off, as before, with a
+    logged warning + None so the rest of the app boots cleanly (04-4.2).
     """
     if not config.enabled:
         return None
-    if not deps_present():
+    if not has_usable_deps():
         logger.warning(
             "Reasoning is enabled but the stack is unusable (%s) — runner "
             "disabled, /api/reasoning will 503. Expected docling-agent >= 0.6.0 + mellea; "
             "a bare `uvicorn` resolves against the ambient interpreter, not the project venv.",
-            deps_provenance(),
+            describe_deps_provenance(),
         )
         return None
     if settings.llm_provider_type != "ollama":
         logger.warning(
-            "Unsupported LLM_PROVIDER_TYPE=%s — reasoning runner disabled (only "
-            "'ollama' is realizable today, see "
-            "https://github.com/docling-project/docling-agent/issues/26)",
+            "Unsupported LLM_PROVIDER_TYPE=%s — reasoning runner disabled. The variable "
+            "is deprecated: reasoning runs on Ollama only; unset it to turn Ask back on "
+            "(see https://github.com/docling-project/docling-agent/issues/26)",
             settings.llm_provider_type,
         )
         return None
 
     provider = OllamaProvider(host=config.ollama_host, default_model_id=config.model_id)
-    logger.info("Reasoning runner enabled (%s)", deps_provenance())
+    logger.info("Reasoning runner enabled (%s)", describe_deps_provenance())
     return DoclingAgentReasoningRunner(provider=provider, max_iterations=config.max_iterations)
 
 
@@ -205,39 +214,53 @@ def build_analysis_service(document_repo, analysis_repo, graph_writer) -> Analys
         analysis_repo=analysis_repo,
         document_repo=document_repo,
         chunker=build_chunker(),
-        conversion_timeout=settings.conversion_timeout,
-        max_concurrent=settings.max_concurrent_analyses,
         config=AnalysisConfig(
             default_table_mode=settings.default_table_mode,
             batch_page_size=settings.batch_page_size,
+            conversion_timeout=settings.conversion_timeout,
+            max_concurrent=settings.max_concurrent_analyses,
         ),
         graph_writer=graph_writer,
         docling_importer=DoclingDocumentImporter(),
+        pdf_inspector=_build_pdf_inspector(),
     )
 
 
-def build_document_service(document_repo, analysis_repo) -> DocumentService:
+def build_document_file_store():
+    """The store of uploaded document files, rooted at the configured upload dir."""
+    from infra.document_file_store import LocalDocumentFileStore
+
+    return LocalDocumentFileStore(upload_dir=settings.upload_dir)
+
+
+@dataclass(frozen=True)
+class Repositories:
+    """The SQLite repositories, one instance of each, shared by every service."""
+
+    document_repo: SqliteDocumentRepository
+    document_analysis_repo: SqliteDocumentAnalysisRepository
+    analysis_repo: SqliteAnalysisRepository
+    store_repo: SqliteStoreRepository
+    link_repo: SqliteDocumentStoreLinkRepository
+    chunk_repo: SqliteChunkRepository
+
+
+def build_document_service(repos: Repositories, *, file_store) -> DocumentService:
     return DocumentService(
-        document_repo=document_repo,
-        analysis_repo=analysis_repo,
+        document_repo=repos.document_repo,
+        analysis_repo=repos.analysis_repo,
         config=DocumentConfig(
-            upload_dir=settings.upload_dir,
             max_file_size_mb=settings.max_file_size_mb,
             max_page_count=settings.max_page_count,
         ),
+        link_repo=repos.link_repo,
+        store_repo=repos.store_repo,
+        pdf_inspector=_build_pdf_inspector(),
+        file_store=file_store,
     )
 
 
-def build_chunk_service(**repos) -> ChunkService:
-    """Doc-centric chunks (#256) on top of the chunk and push repositories."""
-    return ChunkService(
-        tree_reader=_build_tree_reader(),
-        chunker=build_chunker(),
-        **repos,
-    )
-
-
-def env_mcp_config() -> McpRuntimeConfig:
+def build_env_mcp_config() -> McpRuntimeConfig:
     """Bootstrap defaults for the runtime-configurable MCP knobs (#364).
 
     Env vars seed the config; `app_settings` rows override them at runtime via
@@ -251,7 +274,7 @@ def env_mcp_config() -> McpRuntimeConfig:
     )
 
 
-def build_parse_loader(document_repo, analysis_repo) -> ParseLoader:
+def build_parse_loader(document_repo, analysis_repo, current_analysis) -> ParseLoader:
     """The parse index shared by the document-agent services.
 
     Built once and kept across runtime config changes (#364): it only reads
@@ -261,6 +284,7 @@ def build_parse_loader(document_repo, analysis_repo) -> ParseLoader:
     return ParseLoader(
         document_repo=document_repo,
         analysis_repo=analysis_repo,
+        current_analysis=current_analysis,
         tree_reader=_build_tree_reader(),
         config=NavigationConfig(),
     )
@@ -300,6 +324,12 @@ def _build_page_text():
     return PdfPageTextReader()
 
 
+def _build_pdf_inspector():
+    from infra.pdf_inspector import PdfiumInspector
+
+    return PdfiumInspector()
+
+
 def _build_rasterizer():
     from infra.page_raster import PdfPageRasterizer
 
@@ -330,15 +360,7 @@ def build_ingestion_service(graph_writer) -> IngestionService | None:
 
     from infra.embedding_client import EmbeddingClient
 
-    vector_store = None
-    if has_opensearch:
-        from infra.opensearch_store import OpenSearchStore
-
-        vector_store = OpenSearchStore(
-            settings.opensearch_url,
-            default_limit=settings.opensearch_default_limit,
-        )
-
+    vector_store = _build_vector_store()
     logger.info(
         "Ingestion enabled (embedding=%s, opensearch=%s, neo4j=%s)",
         settings.embedding_url,
@@ -351,3 +373,12 @@ def build_ingestion_service(graph_writer) -> IngestionService | None:
         IngestionConfig(embedding_dimension=settings.embedding_dimension),
         graph_writer=graph_writer,
     )
+
+
+def _build_vector_store():
+    """The OpenSearch store when `OPENSEARCH_URL` is set, else `None`."""
+    if not settings.opensearch_url:
+        return None
+    from infra.opensearch_store import OpenSearchStore
+
+    return OpenSearchStore(settings.opensearch_url)

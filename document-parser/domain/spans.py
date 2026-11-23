@@ -55,12 +55,12 @@ def is_span(ref: str) -> bool:
     return parse_span(ref) is not None
 
 
-def span_ref(start: str, end: str) -> str:
+def build_span_ref(start: str, end: str) -> str:
     """The canonical span ref for a pair of endpoints."""
     return f"{start}{SPAN_SEPARATOR}{end}"
 
 
-def span_start(ref: str) -> str:
+def get_span_start(ref: str) -> str:
     """The first endpoint of a span, or `ref` itself when it is not one.
 
     For everything that needs *a* single element to stand for the span — the
@@ -70,7 +70,7 @@ def span_start(ref: str) -> str:
     return span[0] if span else ref
 
 
-def span_members(index: DocumentIndex, start: str, end: str) -> list[str]:
+def list_span_members(index: DocumentIndex, start: str, end: str) -> list[str]:
     """The refs a span covers, in reading order.
 
     Empty when either endpoint is unknown to this parse — a span from another

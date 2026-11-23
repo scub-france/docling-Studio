@@ -151,12 +151,17 @@ Claude Desktop, over stdio, in `claude_desktop_config.json`:
 
 | Tool | Takes | Returns |
 |------|-------|---------|
-| `find_documents` | `query?` (filename substring), `limit?` | `document_id` and current `version_id` per document; `null` means not parsed yet. |
+| `find_documents` | `query?` (filename substring), `limit?` | `document_id` and the `version_id` the tools read by default: the document's active analysis. `null` when it has none with a Docling document, for example a document never analysed. |
 | `get_outline` | `document_id`, `version_id?`, `depth?` | The map: sections, or pages when the document has no headings. Each entry has a `ref` and `est_tokens`. |
 | `read_element` | `document_id`, `ref`, `version_id?`, `include?`, `max_tokens?`, `cursor?` | The text in `content`, one anchor per element in `citations[]`, and `span_uri` covering them all. |
 | `verify_citation` | `uri`, `quote` | Whether the quote is at the anchor, server-side. |
 | `show_citation` | `uri` | One passage highlighted on its page, when the reader asks to see it. Only with `MCP_CITATION_CARD=true`. Not part of the loop. |
 | `show_sources` | `question`, `read`, `cited` | Where the answer came from, as one card. See [Sources](#sources). |
+
+Without `version_id`, a tool reads the document's active analysis: the
+last one that completed (the versions API can make an older one active again).
+Every tool reads the parse as Docling produced it: changes saved
+in the [analysis editor](analysis-editor.md) are not visible to MCP.
 
 Every result also carries a `next_step`: what to do with it, when it applies.
 The text copy of each result is compact JSON, the same as its structured
@@ -213,7 +218,7 @@ says what the document says. Its `status` is one of:
 | Status | Meaning |
 |--------|---------|
 | `verified` | The quote is there. `citation` carries the precise anchor to cite (an element inside a section, or a span), its page and its `deep_link`. |
-| `stale_version` | The quote is there, but a newer parse exists. |
+| `stale_version` | The quote is there, but the anchor pins a parse other than the document's current one: an older one, or a newer one when an older analysis was made active again. A document with no current parse answers `verified`. |
 | `quote_drift` | The quote is not at the anchor. `actual_quote` holds what is. |
 | `unknown_ref` / `unknown_version` | No such element, or no such parse. |
 
@@ -326,7 +331,9 @@ model's context.
   `Origin` headers: it blocks a web page that tries to reach the server
   through the visitor's browser (DNS rebinding), not a client on the network
   that sets `Host: localhost:3000` itself. nginx passes the client's `Host`
-  through. Keep the published port off untrusted networks, or put an
+  through. A similar `Host` check exists for `/api` (no `Origin` check, loopback
+  always accepted), off unless `API_ALLOWED_HOSTS` is set (see
+  [Configuration](configuration.md#host-check-on-the-api)). Keep the published port off untrusted networks, or put an
   authenticating proxy in front. Set `MCP_ENABLED=false` where nobody needs
   it. A Hugging Face Space keeps it off unless `MCP_ENABLED=true` is set.
 - **Read-only.** No tool uploads, edits, re-analyses or stores anything.

@@ -25,23 +25,34 @@ class AnalysisStatus(enum.StrEnum):
     FAILED = "FAILED"
 
 
-def _utcnow() -> datetime:
+def get_utc_now() -> datetime:
+    """The current time, timezone-aware in UTC: every entity timestamp."""
     return datetime.now(UTC)
 
 
-def _new_id() -> str:
+def generate_id() -> str:
+    """A new entity id, the dashed UUID4 form (36 characters)."""
     return str(uuid.uuid4())
+
+
+def generate_compact_id() -> str:
+    """A new id in the 32-hex-character UUID4 form.
+
+    Kept apart from `generate_id`: document versions and the chunks a
+    version restore writes have always used this form.
+    """
+    return uuid.uuid4().hex
 
 
 @dataclass
 class Document:
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=generate_id)
     filename: str = ""
     content_type: str | None = None
     file_size: int | None = None
     page_count: int | None = None
     storage_path: str = ""
-    created_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=get_utc_now)
     lifecycle_state: DocumentLifecycleState = DocumentLifecycleState.UPLOADED
     lifecycle_state_at: datetime | None = None
 
@@ -63,7 +74,7 @@ class Document:
         """
         previous = self.lifecycle_state
         assert_transition(previous, target)
-        at = now or _utcnow()
+        at = now or get_utc_now()
         self.lifecycle_state = target
         self.lifecycle_state_at = at
         return DocumentLifecycleChanged(
@@ -75,21 +86,115 @@ class Document:
 
 
 @dataclass(frozen=True)
-class DocumentAnalysisSelection:
-    document_id: str
-    analysis_id: str
-
-
-@dataclass(frozen=True)
 class DocumentChunkSource:
+    """The analysis result a document's live chunks were generated from."""
+
     document_id: str
     analysis_id: str
     result_hash: str
 
 
+@dataclass(frozen=True)
+class DocumentAnalysisState:
+    """A document's analysis state: its active analysis and the source of its chunks.
+
+    Aggregate root of the document-level state (02-2.4.3), read as a whole
+    and written in two independent parts. The active analysis is the
+    document's current analysis (see `resolve_current_analysis_id`); the
+    chunk source is the analysis result the live chunks were generated from.
+    Each writer changes only the part it owns, with its own write: completing
+    an analysis or deleting the active one writes the selection, a rechunk
+    the chunk source, a restore both. So a rechunk never rewrites a selection
+    made meanwhile, and a completion never erases the chunk source.
+    """
+
+    document_id: str
+    active_analysis_id: str | None = None
+    chunk_source: DocumentChunkSource | None = None
+
+    def are_chunks_stale(self, analysis_id: str, result_hash: str, *, has_chunks: bool) -> bool:
+        """Whether the live chunks may not match the result `result_hash` of `analysis_id`.
+
+        Chunks with no recorded source (made before 0.7.4, #393) have an
+        unknown provenance: they count as stale so the user is invited to
+        regenerate them. No chunks means nothing can be stale.
+        """
+        if self.chunk_source is None:
+            return has_chunks
+        return (
+            self.chunk_source.analysis_id != analysis_id
+            or self.chunk_source.result_hash != result_hash
+        )
+
+    def resolve_selection_after_deleting(
+        self, analysis_id: str, latest_remaining_parsed_id: str | None
+    ) -> str | None:
+        """The active analysis once `analysis_id` is deleted.
+
+        Deleting another analysis keeps the selection. Deleting the active one
+        hands it to the latest remaining completed analysis with a Docling
+        document (the one the fallback rule would pick), or to none: Ask and
+        MCP must not lose their analysis while a usable one remains.
+        """
+        if self.active_analysis_id != analysis_id:
+            return self.active_analysis_id
+        return latest_remaining_parsed_id
+
+
+def resolve_current_analysis_id(
+    state: DocumentAnalysisState | None,
+    latest_parsed_analysis_id: str | None,
+) -> str | None:
+    """The document's current analysis: the one its state selects (02-2.3.1).
+
+    Every feature that reads "the document's analysis" without being told
+    which one reads this one. `state` is None only for a document with no
+    state row at all: one never analysed, whose fallback is None too, or a
+    row-less database the 0.7.3 upgrade did not reach. Only then does the
+    latest completed analysis with a Docling document stand in. A row whose
+    active analysis is NULL is a choice (a restored version without an
+    analysis, or the active analysis deleted with no completed analysis with
+    a Docling document left to take over): the document has no current one.
+    """
+    if state is not None:
+        return state.active_analysis_id
+    return latest_parsed_analysis_id
+
+
+def resolve_selection_after_restore(
+    state: DocumentAnalysisState | None,
+    version_analysis_id: str | None,
+    fallback_analysis_id: str | None,
+) -> str | None:
+    """The active analysis once a version is restored.
+
+    A version with an analysis selects it. A version without one clears the
+    selection of a document that has a state row; a document with no row
+    keeps `fallback_analysis_id` (the latest completed analysis with a
+    Docling document), so the row the restore creates does not hide the
+    analysis the fallback rule was giving behind a NULL selection.
+    """
+    if version_analysis_id is not None:
+        return version_analysis_id
+    if state is not None:
+        return None
+    return fallback_analysis_id
+
+
+@dataclass(frozen=True)
+class AnalysisOutput:
+    """What a completed conversion produces."""
+
+    markdown: str
+    html: str
+    pages_json: str
+    document_json: str | None = None
+    chunks_json: str | None = None
+
+
 @dataclass
 class AnalysisJob:
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=generate_id)
     document_id: str = ""
     status: AnalysisStatus = AnalysisStatus.PENDING
     content_markdown: str | None = None
@@ -102,36 +207,42 @@ class AnalysisJob:
     progress_total: int | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
-    created_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=get_utc_now)
 
     # Joined from document (not persisted separately)
     document_filename: str | None = None
+
+    def can_be_current(self) -> bool:
+        """Only a completed analysis can be a document's current (active) one."""
+        return self.status == AnalysisStatus.COMPLETED
+
+    def can_be_current_of(self, document_id: str) -> bool:
+        """Whether this analysis can be the current one of `document_id`."""
+        return self.document_id == document_id and self.can_be_current()
+
+    def has_docling_document(self) -> bool:
+        """A completed analysis that kept its Docling document: the one the
+        editor, the tree, chunking and the fallback current analysis need."""
+        return self.can_be_current() and bool(self.document_json)
 
     def mark_running(self) -> None:
         """Transition to RUNNING and record the start timestamp."""
         if self.status != AnalysisStatus.PENDING:
             raise ValueError(f"Cannot mark as RUNNING from {self.status} (expected PENDING)")
         self.status = AnalysisStatus.RUNNING
-        self.started_at = _utcnow()
+        self.started_at = get_utc_now()
 
-    def mark_completed(
-        self,
-        markdown: str,
-        html: str,
-        pages_json: str,
-        document_json: str | None = None,
-        chunks_json: str | None = None,
-    ) -> None:
+    def mark_completed(self, output: AnalysisOutput) -> None:
         """Transition to COMPLETED with conversion results."""
         if self.status != AnalysisStatus.RUNNING:
             raise ValueError(f"Cannot mark as COMPLETED from {self.status} (expected RUNNING)")
         self.status = AnalysisStatus.COMPLETED
-        self.content_markdown = markdown
-        self.content_html = html
-        self.pages_json = pages_json
-        self.document_json = document_json
-        self.chunks_json = chunks_json
-        self.completed_at = _utcnow()
+        self.content_markdown = output.markdown
+        self.content_html = output.html
+        self.pages_json = output.pages_json
+        self.document_json = output.document_json
+        self.chunks_json = output.chunks_json
+        self.completed_at = get_utc_now()
 
     def update_progress(self, current: int, total: int) -> None:
         """Update batch progress counters."""
@@ -148,7 +259,7 @@ class AnalysisJob:
             )
         self.status = AnalysisStatus.FAILED
         self.error_message = error
-        self.completed_at = _utcnow()
+        self.completed_at = get_utc_now()
 
 
 @dataclass
@@ -170,7 +281,7 @@ class Store:
     `docs/design/279-store-connection-credentials.md`.
     """
 
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=generate_id)
     name: str = ""
     slug: str = ""
     kind: StoreKind = StoreKind.OPENSEARCH
@@ -187,8 +298,8 @@ class Store:
     # `SqliteStoreRepository.get_connection_password`.
     has_connection_password: bool = False
     is_default: bool = False
-    created_at: datetime = field(default_factory=_utcnow)
-    updated_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=get_utc_now)
+    updated_at: datetime = field(default_factory=get_utc_now)
 
 
 @dataclass
@@ -201,7 +312,7 @@ class DocumentStoreLink:
     UNIQUE constraint at the persistence layer.
     """
 
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=generate_id)
     document_id: str = ""
     store_id: str = ""
     state: DocumentStoreLinkState = DocumentStoreLinkState.INGESTED
@@ -222,11 +333,6 @@ class DocumentStoreLink:
         self.chunkset_hash = hash_
         self.last_push_at = at
         self.last_run_id = run_id
-        self.error_message = None
-
-    def mark_stale(self) -> None:
-        """Mark the link as stale (source chunkset drifted from pushed)."""
-        self.state = DocumentStoreLinkState.STALE
         self.error_message = None
 
     def mark_failed(self, *, error: str) -> None:
@@ -250,7 +356,7 @@ class Chunk:
     row stays in the table until document deletion.
     """
 
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=generate_id)
     document_id: str = ""
     sequence: int = 0
     text: str = ""
@@ -259,9 +365,20 @@ class Chunk:
     bboxes: list[ChunkBbox] = field(default_factory=list)
     doc_items: list[ChunkDocItem] = field(default_factory=list)
     token_count: int | None = None
-    created_at: datetime = field(default_factory=_utcnow)
-    updated_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=get_utc_now)
+    updated_at: datetime = field(default_factory=get_utc_now)
     deleted_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ChunkReplacement:
+    """The new chunks of a document and the analysis state to write with them."""
+
+    document_id: str
+    chunks: list[Chunk]
+    at: datetime
+    chunk_source: DocumentChunkSource | None
+    active_analysis_id: str | None
 
 
 @dataclass(frozen=True)
@@ -303,7 +420,7 @@ class DocumentVersion:
     chunkset at version creation. Restore writes both back into live state.
     """
 
-    id: str = field(default_factory=_new_id)
+    id: str = field(default_factory=generate_id)
     document_id: str = ""
     kind: DocumentVersionKind = DocumentVersionKind.ANALYSIS
     analysis_id: str | None = None
@@ -311,4 +428,18 @@ class DocumentVersion:
     chunks_source_result_hash: str | None = None
     chunks_snapshot: str | None = None  # JSON-serialized list of chunk dicts
     summary: str = ""
-    created_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=get_utc_now)
+
+    @property
+    def chunk_source(self) -> DocumentChunkSource | None:
+        """The chunk source this version froze, or None.
+
+        A half-filled pair counts as none: a database upgraded from 0.7.3 has
+        no CHECK keeping the two columns together, and restoring must not fail
+        on such a row.
+        """
+        if self.chunks_source_analysis_id is None or self.chunks_source_result_hash is None:
+            return None
+        return DocumentChunkSource(
+            self.document_id, self.chunks_source_analysis_id, self.chunks_source_result_hash
+        )

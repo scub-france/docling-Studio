@@ -4,6 +4,8 @@ import hashlib
 import json
 import logging
 import sqlite3
+import threading
+from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -19,33 +21,39 @@ from docling_core.types.doc import (
     Size,
     TableData,
 )
-from fastapi import HTTPException
 
-from api.analysis_edits import _raise
+from api.errors import to_http_error
 from domain.analysis_editing import (
     AnalysisEditConflictError,
     AnalysisEditError,
     AnalysisEditNotFoundError,
     AnalysisEditUnavailableError,
+    CommandActivation,
     EditCommand,
-    active_edit_commands,
+    ProjectedAnalysis,
+    resolve_active_edit_commands,
 )
-from domain.models import (
-    AnalysisJob,
-    AnalysisStatus,
-    Document,
-    DocumentAnalysisSelection,
-    DocumentChunkSource,
-)
+from domain.models import AnalysisJob, AnalysisStatus, Document
+from infra.docling_analysis_engine import DoclingAnalysisEngine
 from infra.docling_editor import DoclingDocumentEditor
+from infra.docling_pages import extract_pages_detail
 from infra.docling_projector import DoclingAnalysisProjector
 from persistence import database
 from persistence.analysis_edit_repo import SqliteAnalysisEditRepository
 from persistence.analysis_repo import SqliteAnalysisRepository
 from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
 from persistence.document_repo import SqliteDocumentRepository
-from services.analysis_edit_service import AnalysisEditService
+from services.analysis_edit_service import ENGINE_VERSION, AnalysisEditService
+from services.current_analysis import CurrentAnalysisResolver
 from services.export_service import ExportFormat, ExportService
+from tests.analysis_state_helpers import set_chunk_source, set_selection
+
+
+def _current_analysis() -> CurrentAnalysisResolver:
+    return CurrentAnalysisResolver(
+        state_repo=SqliteDocumentAnalysisRepository(),
+        analysis_repo=SqliteAnalysisRepository(),
+    )
 
 
 def _document() -> tuple[str, str, str]:
@@ -127,6 +135,27 @@ def test_merge_moves_non_adjacent_items_before_merging():
         ],
     )
     assert result.document.export_to_markdown().startswith("First Third")
+
+
+def test_merge_keeps_reading_order_whatever_the_id_order():
+    """#392: ids sent in click order (second, then first) still merge as "First Second"."""
+    raw, first_ref, second_ref = _document()
+    result = DoclingDocumentEditor().apply(
+        raw,
+        base_analysis_id="base",
+        commands=[
+            EditCommand(
+                "mergeText",
+                {
+                    "elementIds": [f"base:{second_ref}", f"base:{first_ref}"],
+                    "separator": " ",
+                },
+            )
+        ],
+    )
+    assert result.document.export_to_markdown().startswith("First Second")
+    assert result.logical_ids[f"base:{first_ref}"] == first_ref
+    assert f"base:{second_ref}" not in result.logical_ids
 
 
 def test_merge_moves_text_from_another_parent_before_merging():
@@ -229,6 +258,55 @@ def test_delete_elements_prunes_selected_descendants():
     result.document.validate_tree(result.document.body, raise_on_error=True)
 
 
+def test_delete_elements_of_a_long_document_stays_linear():
+    """Deleting every element of 3,000 named once, repeated or nested: identity
+    sets, not pairwise checks (about 4 s here pairwise, a fraction of that now)."""
+    document = DoclingDocument(name="mass-delete")
+    refs = []
+    for index in range(300):
+        section = document.add_heading(text=f"[section {index}]", level=1)
+        refs.append(section.self_ref)
+        refs += [
+            document.add_text(
+                label=DocItemLabel.TEXT, text=f"[{index}.{n}]", parent=section
+            ).self_ref
+            for n in range(9)
+        ]
+    element_ids = [f"base:{ref}" for ref in refs + refs[:50]]
+
+    result = DoclingDocumentEditor().apply(
+        document.model_dump_json(),
+        base_analysis_id="base",
+        commands=[EditCommand("deleteElements", {"elementIds": element_ids})],
+    )
+
+    assert len(refs) == 3_000
+    assert not list(result.document.iterate_items())
+
+
+def test_merge_of_hundreds_of_texts_across_parents_keeps_reading_order():
+    document = DoclingDocument(name="mass-merge")
+    texts = []
+    for index in range(100):
+        texts.append(document.add_text(label=DocItemLabel.TEXT, text=f"a{index}"))
+        section = document.add_heading(text=f"[section {index}]", level=1)
+        texts.append(document.add_text(label=DocItemLabel.TEXT, text=f"b{index}", parent=section))
+    element_ids = [f"base:{text.self_ref}" for text in reversed(texts)]
+
+    result = DoclingDocumentEditor().apply(
+        document.model_dump_json(),
+        base_analysis_id="base",
+        commands=[EditCommand("mergeText", {"elementIds": element_ids, "separator": " "})],
+    )
+
+    merged = result.document.texts[0]
+    assert merged.text == " ".join(text.text for text in texts)
+    assert [item.text for item, _ in result.document.iterate_items()][:2] == [
+        merged.text,
+        "[section 0]",
+    ]
+
+
 def test_realistic_structure_reorders_without_moving_provenance():
     raw = _realistic_document()
     document = DoclingDocument.model_validate_json(raw)
@@ -245,7 +323,8 @@ def test_realistic_structure_reorders_without_moving_provenance():
                 "moveElement",
                 {
                     "elementId": f"base:{children[0].cref}",
-                    "beforeElementId": f"base:{children[-1].cref}",
+                    "targetElementId": f"base:{children[-1].cref}",
+                    "placement": "before",
                 },
             )
         ],
@@ -270,7 +349,8 @@ def test_move_moves_subtree_to_the_drop_target_parent():
                 "moveElement",
                 {
                     "elementId": f"base:{first.self_ref}",
-                    "beforeElementId": f"base:{nested.self_ref}",
+                    "targetElementId": f"base:{nested.self_ref}",
+                    "placement": "before",
                 },
             )
         ],
@@ -358,6 +438,30 @@ def test_projector_normalizes_bottom_left_bboxes_for_the_frontend():
     assert page["elements"][0]["bbox"] == [10.0, 20.0, 40.0, 40.0]
 
 
+def test_projector_pages_use_the_parser_element_types():
+    """#396: the workspace shows the projection by default, so its page elements
+    must carry the same types as a fresh conversion (a list item is "list")."""
+    document = DoclingDocument(name="types")
+    document.pages[1] = PageItem(page_no=1, size=Size(width=100, height=200))
+    prov = ProvenanceItem(
+        page_no=1,
+        bbox=BoundingBox(l=10, t=20, r=40, b=40, coord_origin=CoordOrigin.TOPLEFT),
+        charspan=(0, 4),
+    )
+    group = document.add_group(label=GroupLabel.LIST, name="items")
+    document.add_list_item(text="item", parent=group, prov=prov)
+    document.add_text(label=DocItemLabel.TEXT, text="body", prov=prov)
+    projected = DoclingAnalysisEngine().project(
+        document.model_dump_json(), base_analysis_id="types", commands=[]
+    )
+    expected, _ = extract_pages_detail(document)
+
+    page = json.loads(projected.pages_json)[0]
+
+    assert [element["type"] for element in page["elements"]] == ["list", "text"]
+    assert page["elements"] == [asdict(element) for element in expected[0].elements]
+
+
 def test_projector_renders_edited_text_without_overwriting_original_ocr_text():
     document = DoclingDocument(name="edited-export")
     item = document.add_text(label=DocItemLabel.TEXT, text="Original OCR text")
@@ -387,7 +491,10 @@ def test_projector_renders_edited_text_without_overwriting_original_ocr_text():
         ("replaceText", {"elementId": "first", "text": "Edited"}),
         ("setHeadingLevel", {"elementId": "heading", "level": 2}),
         ("mergeText", {"elementIds": ["first", "second"], "separator": " "}),
-        ("moveElement", {"elementId": "first", "beforeElementId": "nested"}),
+        (
+            "moveElement",
+            {"elementId": "first", "targetElementId": "nested", "placement": "before"},
+        ),
         ("deleteElement", {"elementId": "second"}),
         ("deleteElements", {"elementIds": ["first", "second"]}),
     ],
@@ -495,15 +602,14 @@ async def edit_service(tmp_path: Path, monkeypatch):
     )
     await analyses.insert(job)
     await analyses.update_status(job)
-    await analysis_state.select(DocumentAnalysisSelection(document.id, job.id))
+    await set_selection(document.id, job.id)
     service = AnalysisEditService(
         analysis_repo=analyses,
         document_repo=documents,
-        selection_repo=analysis_state,
-        chunk_source_repo=analysis_state,
+        analysis_state_repo=analysis_state,
+        current_analysis=CurrentAnalysisResolver(state_repo=analysis_state, analysis_repo=analyses),
         edit_repo=edits,
-        editor=DoclingDocumentEditor(),
-        projector=DoclingAnalysisProjector(),
+        engine=DoclingAnalysisEngine(),
     )
     return service, edits, analyses
 
@@ -525,7 +631,7 @@ async def test_save_persists_commands_and_rebuilds_edited_cache(edit_service):
     commands = await edits.list_commands(stream.analysis_id)
     assert len(commands) == 1
     assert commands[0].command.payload["text"] == "Edited"
-    rebuilt = await service.rebuild("doc-1")
+    rebuilt = await _load_replayed(service)
     assert rebuilt.job.document_json == saved.job.document_json
 
 
@@ -560,44 +666,188 @@ async def test_edit_stream_and_cache_belong_to_one_analysis(edit_service):
     assert await edits.list_commands("analysis-1") == []
 
 
+def _service_with_chunks(chunk_count: int, engine=None) -> AnalysisEditService:
+    """A service on the fixture database whose document has `chunk_count` live chunks."""
+    return AnalysisEditService(
+        analysis_repo=SqliteAnalysisRepository(),
+        document_repo=SqliteDocumentRepository(),
+        analysis_state_repo=SqliteDocumentAnalysisRepository(),
+        current_analysis=_current_analysis(),
+        edit_repo=SqliteAnalysisEditRepository(),
+        engine=engine or DoclingAnalysisEngine(),
+        chunk_repo=Mock(count_for_document=AsyncMock(return_value=chunk_count)),
+    )
+
+
+class _ThreadRecordingEngine:
+    """Delegate to the real engine and record the thread each call runs in."""
+
+    def __init__(self) -> None:
+        self.engine = DoclingAnalysisEngine()
+        self.threads: list[int] = []
+
+    def project(self, *args, **kwargs):
+        self.threads.append(threading.get_ident())
+        return self.engine.project(*args, **kwargs)
+
+    def project_serialized(self, *args, **kwargs):
+        self.threads.append(threading.get_ident())
+        return self.engine.project_serialized(*args, **kwargs)
+
+
 @pytest.mark.asyncio
-async def test_active_result_always_uses_saved_edits_for_selected_analysis(edit_service):
+async def test_engine_never_runs_on_the_event_loop_thread(edit_service):
+    """#394: replay and projection are CPU-bound, so they run in a worker thread."""
+    engine = _ThreadRecordingEngine()
+    service = _service_with_chunks(0, engine=engine)
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    command = EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})
+
+    await service.preview("doc-1", [command])
+    await service.save("doc-1", [command], 0)
+    await service.load_editor("doc-1")
+
+    assert len(engine.threads) >= 4
+    assert threading.get_ident() not in engine.threads
+
+
+@pytest.mark.asyncio
+async def test_working_result_id_names_its_base_analysis(edit_service):
+    """#395: two analyses of one document no longer share a working id."""
     service, _, _ = edit_service
-    state = SqliteDocumentAnalysisRepository()
+
+    snapshot = await service.load_editor("doc-1")
+
+    assert snapshot.job.id == "working:doc-1:analysis-1"
+
+
+@pytest.mark.asyncio
+async def test_corrupt_edited_cache_is_replayed_instead_of_failing(edit_service):
+    """#395: the cache is rebuildable, so an unreadable one falls back to the stream."""
+    service, edits, _ = edit_service
     initial = await service.load_editor("doc-1")
     text_id = next(element.id for element in initial.projection.elements if element.type == "text")
     await service.save(
         "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
     )
-    assert (await state.get_selection("doc-1")).analysis_id == "analysis-1"
-    assert "Edited" in (await service.active_result("doc-1")).job.content_markdown
+    assert await edits.find_cache("analysis-1") is not None
+    async with database.get_connection() as connection:
+        await connection.execute(
+            "UPDATE edited_analysis_cache SET document_json = ? WHERE analysis_id = ?",
+            ("{not json", "analysis-1"),
+        )
+        await connection.commit()
 
-    await state.select(DocumentAnalysisSelection("doc-1", "analysis-1"))
-    assert "Edited" in (await service.active_result("doc-1")).job.content_markdown
-    assert "Edited" in (await service.load_editor("doc-1")).job.content_markdown
+    reloaded = await _service_with_chunks(0).load_editor("doc-1")
 
-    await state.set_chunk_source(DocumentChunkSource("doc-1", "analysis-1", "0" * 64))
-    assert (await service.active_result("doc-1")).chunks_stale
-    edited_hash = hashlib.sha256(
-        (await service.active_result("doc-1")).job.document_json.encode("utf-8")
+    assert "Edited" in reloaded.job.content_markdown
+
+
+@pytest.mark.asyncio
+async def test_chunks_with_no_recorded_source_are_stale(edit_service):
+    """#393: chunks made before 0.7.4 have no source row, so their provenance is unknown."""
+    assert (await _service_with_chunks(3).load_editor("doc-1")).chunks_stale
+    assert not (await _service_with_chunks(0).load_editor("doc-1")).chunks_stale
+
+    service = _service_with_chunks(3)
+    current_hash = hashlib.sha256(
+        (await service.load_editor("doc-1")).job.document_json.encode("utf-8")
     ).hexdigest()
-    await state.set_chunk_source(DocumentChunkSource("doc-1", "analysis-1", edited_hash))
+    await set_chunk_source("doc-1", "analysis-1", current_hash)
     assert not (await service.load_editor("doc-1")).chunks_stale
 
-    await service.set_command_active("doc-1", 1, False, 1)
-    assert (await service.active_result("doc-1")).chunks_stale
-    await service.set_command_active("doc-1", 1, True, 2)
-    assert not (await service.active_result("doc-1")).chunks_stale
 
-    await state.clear_selection("doc-1")
+@pytest.mark.asyncio
+async def test_staleness_hashes_the_result_only_against_a_recorded_source(
+    edit_service, monkeypatch
+):
+    """Without a recorded chunk source there is no hash to compare: none is computed."""
+    hashed = []
+
+    def spy(document_json):
+        hashed.append(document_json)
+        return "0" * 64
+
+    monkeypatch.setattr("services.analysis_edit_service.hash_result", spy)
+    service = _service_with_chunks(3)
+
+    assert await service._has_stale_chunks("doc-1", "analysis-1", "{}")
+    assert hashed == []
+
+    await set_chunk_source("doc-1", "analysis-1", "0" * 64)
+    assert not await service._has_stale_chunks("doc-1", "analysis-1", "{}")
+    assert hashed == ["{}"]
+
+
+@pytest.mark.asyncio
+async def test_empty_save_returns_the_requested_analysis(edit_service):
+    """#393: an empty save answers for the analysis the client edits, not the active one."""
+    service, _, analyses = edit_service
+    other_doc = DoclingDocument(name="other")
+    other_doc.add_text(label=DocItemLabel.TEXT, text="Other analysis")
+    other = AnalysisJob(
+        id="analysis-2",
+        document_id="doc-1",
+        status=AnalysisStatus.COMPLETED,
+        content_markdown="Other analysis",
+        content_html="<p>Other analysis</p>",
+        pages_json="[]",
+        document_json=other_doc.model_dump_json(),
+    )
+    await analyses.insert(other)
+    await analyses.update_status(other)
+    await set_selection("doc-1", "analysis-1")
+
+    snapshot = await service.save("doc-1", [], 0, "analysis-2")
+
+    assert snapshot.base_analysis_id == "analysis-2"
+    assert "Other analysis" in snapshot.job.content_markdown
+
+
+@pytest.mark.asyncio
+async def test_active_result_always_uses_saved_edits_for_selected_analysis(edit_service):
+    service, _, _ = edit_service
+    states = SqliteDocumentAnalysisRepository()
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
+    )
+    assert (await states.find_state("doc-1")).active_analysis_id == "analysis-1"
+    assert "Edited" in (await service.load_current_edited("doc-1")).job.content_markdown
+
+    await set_selection("doc-1", "analysis-1")
+    assert "Edited" in (await service.load_current_edited("doc-1")).job.content_markdown
+    assert "Edited" in (await service.load_editor("doc-1")).job.content_markdown
+
+    await set_chunk_source("doc-1", "analysis-1", "0" * 64)
+    assert (await service.load_current_edited("doc-1")).chunks_stale
+    edited_hash = hashlib.sha256(
+        (await service.load_current_edited("doc-1")).job.document_json.encode("utf-8")
+    ).hexdigest()
+    await set_chunk_source("doc-1", "analysis-1", edited_hash)
+    assert not (await service.load_editor("doc-1")).chunks_stale
+
+    await service.set_command_active("doc-1", CommandActivation(1, False), 1)
+    assert (await service.load_current_edited("doc-1")).chunks_stale
+    await service.set_command_active("doc-1", CommandActivation(1, True), 2)
+    assert not (await service.load_current_edited("doc-1")).chunks_stale
+
+    await set_selection("doc-1", None)
     with pytest.raises(AnalysisEditUnavailableError, match="no active analysis"):
-        await service.active_result("doc-1")
+        await service.load_current_edited("doc-1")
 
 
 @pytest.mark.asyncio
 async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     service, edits, analyses = edit_service
-    exports = ExportService(SqliteDocumentRepository(), analyses, active_result_service=service)
+    exports = ExportService(
+        SqliteDocumentRepository(),
+        analyses,
+        active_result_service=service,
+        file_store=Mock(),
+    )
     initial = await service.load_editor("doc-1")
     ids = {element.text: element.id for element in initial.projection.elements if element.text}
     saved = await service.save(
@@ -610,17 +860,19 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     )
     assert "First edited" in saved.job.content_markdown
 
-    reverted = await service.set_command_active("doc-1", 1, False, expected_sequence=2)
+    reverted = await service.set_command_active(
+        "doc-1", CommandActivation(1, False), expected_sequence=2
+    )
     assert reverted.applied_through_sequence == 3
     assert "First edited" not in reverted.job.content_markdown
     assert "Second edited" in reverted.job.content_markdown
     assert (
-        await service.active_result("doc-1")
+        await service.load_current_edited("doc-1")
     ).job.content_markdown == reverted.job.content_markdown
     assert (await exports.export("doc-1", ExportFormat.MD)).content == reverted.job.content_markdown
     assert (await exports.export("doc-1", ExportFormat.JSON)).content == reverted.job.document_json
     assert (
-        await exports.export("doc-1", ExportFormat.MD, "analysis-1", edited=True)
+        await exports.export_edited("doc-1", ExportFormat.MD, "analysis-1")
     ).content == reverted.job.content_markdown
     assert (
         await exports.export("doc-1", ExportFormat.MD, "analysis-1")
@@ -629,14 +881,16 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
     stream = await edits.find_stream("analysis-1")
     assert stream is not None
     records = await edits.list_commands(stream.analysis_id)
-    commands, states = active_edit_commands(records)
+    commands, states = resolve_active_edit_commands(records)
     assert [command.payload["text"] for command in commands] == ["Second edited"]
     assert states == {1: False, 2: True}
     assert records[2].command.command_type == "setCommandActive"
     assert records[2].command.payload == {"targetSequence": 1, "active": False}
-    assert (await service.rebuild("doc-1")).job.document_json == reverted.job.document_json
+    assert (await _load_replayed(service)).job.document_json == reverted.job.document_json
 
-    reapplied = await service.set_command_active("doc-1", 1, True, expected_sequence=3)
+    reapplied = await service.set_command_active(
+        "doc-1", CommandActivation(1, True), expected_sequence=3
+    )
     assert reapplied.applied_through_sequence == 4
     assert "First edited" in reapplied.job.content_markdown
     assert "Second edited" in reapplied.job.content_markdown
@@ -644,9 +898,9 @@ async def test_saved_edits_can_be_reverted_reapplied_and_rebuilt(edit_service):
         await exports.export("doc-1", ExportFormat.MD)
     ).content == reapplied.job.content_markdown
     assert (
-        await exports.export("doc-1", ExportFormat.JSON, "analysis-1", edited=True)
+        await exports.export_edited("doc-1", ExportFormat.JSON, "analysis-1")
     ).content == reapplied.job.document_json
-    assert (await service.rebuild("doc-1")).job.document_json == reapplied.job.document_json
+    assert (await _load_replayed(service)).job.document_json == reapplied.job.document_json
     assert len(await edits.list_commands(stream.analysis_id)) == 4
 
 
@@ -659,9 +913,9 @@ async def test_saved_history_action_rejects_stale_and_invalid_targets(edit_servi
         "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Edited"})], 0
     )
     with pytest.raises(AnalysisEditConflictError):
-        await service.set_command_active("doc-1", 1, False, expected_sequence=0)
+        await service.set_command_active("doc-1", CommandActivation(1, False), expected_sequence=0)
     with pytest.raises(AnalysisEditError, match="does not exist"):
-        await service.set_command_active("doc-1", 99, False, expected_sequence=1)
+        await service.set_command_active("doc-1", CommandActivation(99, False), expected_sequence=1)
 
     stream = await edits.find_stream("analysis-1")
     assert stream is not None
@@ -687,7 +941,7 @@ async def test_reverting_an_edit_needed_by_a_later_edit_keeps_history_unchanged(
     )
 
     with pytest.raises(AnalysisEditError, match="Cannot revert edit #1"):
-        await service.set_command_active("doc-1", 1, False, expected_sequence=2)
+        await service.set_command_active("doc-1", CommandActivation(1, False), expected_sequence=2)
 
     stream = await edits.find_stream("analysis-1")
     assert stream is not None
@@ -751,10 +1005,20 @@ async def test_every_durable_command_saves_and_replays(edit_service, command_typ
     saved = await service.save(
         "doc-1", [EditCommand(command_type, command_payload)], expected_sequence=0
     )
-    rebuilt = await service.rebuild("doc-1")
+    rebuilt = await _load_replayed(service)
 
     assert saved.applied_through_sequence == rebuilt.applied_through_sequence == 1
     assert _projection_values(saved) == _projection_values(rebuilt)
+
+
+async def _load_replayed(service, document_id="doc-1", analysis_id="analysis-1"):
+    """The editor state replayed from the command stream, without the working copy."""
+    async with database.get_connection() as connection:
+        await connection.execute(
+            "DELETE FROM edited_analysis_cache WHERE analysis_id = ?", (analysis_id,)
+        )
+        await connection.commit()
+    return await service.load_editor(document_id)
 
 
 def _projection_values(snapshot):
@@ -765,7 +1029,6 @@ def _projection_values(snapshot):
         snapshot.job.pages_json,
         snapshot.projection.editor_model_json,
         snapshot.projection.tree,
-        snapshot.projection.reference_changes,
     )
 
 
@@ -804,6 +1067,55 @@ async def test_load_replays_saved_stream_when_edited_cache_is_missing(edit_servi
     reloaded = await service.load_editor("doc-1")
     assert reloaded.applied_through_sequence == saved.applied_through_sequence
     assert _projection_values(reloaded) == _projection_values(saved)
+
+
+@pytest.mark.asyncio
+async def test_load_replays_a_stream_saved_by_another_engine_version(edit_service, monkeypatch):
+    """A working copy projected by another engine version is not trusted."""
+    service, _edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    saved = await service.save(
+        "doc-1",
+        [EditCommand("replaceText", {"elementId": text_id, "text": "Replayed"})],
+        expected_sequence=0,
+    )
+    async with database.get_connection() as connection:
+        await connection.execute(
+            "UPDATE analysis_edit_streams SET engine_version = ? WHERE analysis_id = ?",
+            ("analysis-editor-0", "analysis-1"),
+        )
+        await connection.commit()
+    read_working_copy = AsyncMock()
+    monkeypatch.setattr(service, "_project_cache", read_working_copy)
+
+    reloaded = await service.load_editor("doc-1")
+
+    read_working_copy.assert_not_awaited()
+    assert _projection_values(reloaded) == _projection_values(saved)
+
+
+@pytest.mark.asyncio
+async def test_a_save_stamps_the_stream_with_the_current_engine_version(edit_service):
+    """After a save by this engine, the working copy is trusted again."""
+    service, edits, _ = edit_service
+    initial = await service.load_editor("doc-1")
+    text_id = next(element.id for element in initial.projection.elements if element.type == "text")
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "First"})], 0
+    )
+    async with database.get_connection() as connection:
+        await connection.execute(
+            "UPDATE analysis_edit_streams SET engine_version = ? WHERE analysis_id = ?",
+            ("analysis-editor-0", "analysis-1"),
+        )
+        await connection.commit()
+
+    await service.save(
+        "doc-1", [EditCommand("replaceText", {"elementId": text_id, "text": "Second"})], 1
+    )
+
+    assert (await edits.find_stream("analysis-1")).engine_version == ENGINE_VERSION
 
 
 @pytest.mark.parametrize(
@@ -967,6 +1279,18 @@ async def test_missing_document_or_analysis_is_not_found(edit_service):
     ],
 )
 def test_api_maps_edit_errors_to_http_status(error, status):
-    with pytest.raises(HTTPException) as raised:
-        _raise(error)
-    assert raised.value.status_code == status
+    assert to_http_error(error).status_code == status
+
+
+def test_projection_reads_its_editor_model():
+    projection = ProjectedAnalysis(
+        document_json="{}",
+        content_markdown="",
+        content_html="",
+        pages_json="[]",
+        editor_model_json='{"elements": [{"id": "e1"}]}',
+        tree=(),
+        elements=(),
+    )
+
+    assert projection.read_editor_model() == {"elements": [{"id": "e1"}]}

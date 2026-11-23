@@ -49,12 +49,12 @@ _TEXT_STEP = """
 5. Give the reader each verified quote with its `deep_link`, when there is one."""
 
 
-def _default_rounds() -> int:
+def _get_default_rounds() -> int:
     return MAX_ROUNDS
 
 
 def register_prompts(
-    server: MCPServer, *, apps: bool = True, rounds: Callable[[], int] = _default_rounds
+    server: MCPServer, *, apps: bool = True, rounds: Callable[[], int] = _get_default_rounds
 ) -> None:
     """Register `chunkless_rag`; `rounds` gives the cap to state at render time."""
 
@@ -67,7 +67,7 @@ def register_prompts(
             "server has verified."
         ),
     )
-    def chunkless_rag(
+    def render_chunkless_rag(
         document: Annotated[str, Field(description="Filename, or a fragment of one.")],
         question: Annotated[str, Field(description="What to answer from that document.")],
     ) -> str:

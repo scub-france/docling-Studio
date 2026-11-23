@@ -21,6 +21,7 @@ from services.reasoning_service import (
     ReasoningService,
     ReasoningUnavailableError,
 )
+from tests.analysis_state_helpers import set_selection
 
 
 class _FakeRunner:
@@ -41,11 +42,13 @@ class _FakeRunner:
         return self._result
 
 
-class _FakeAnalysisRepo:
+class _FakeCurrentAnalysis:
+    """The `CurrentAnalysisReader` port: `latest` stands for the current analysis."""
+
     def __init__(self, *, latest=None):
         self._latest = latest
 
-    async def find_latest_completed_by_document(self, document_id: str):
+    async def load_current_original(self, document_id: str):
         return self._latest
 
 
@@ -73,7 +76,7 @@ def _result(**overrides) -> ReasoningResult:
 def _service(*, runner, latest=None, default_model_id="default:7b") -> ReasoningService:
     return ReasoningService(
         runner=runner,
-        analysis_repo=_FakeAnalysisRepo(latest=latest),
+        current_analysis=_FakeCurrentAnalysis(latest=latest),
         default_model_id=default_model_id,
     )
 
@@ -174,4 +177,57 @@ async def test_parse_error_propagates():
     svc = _service(runner=runner, latest=latest)
 
     with pytest.raises(ReasoningParseError):
+        await svc.run("doc-1", "question")
+
+
+async def _seed_two_analyses(tmp_path, monkeypatch):
+    """A document analysed twice, on SQLite: `newer` completed last and is active."""
+    from domain.models import AnalysisJob, AnalysisOutput, Document
+    from persistence import database
+    from persistence.analysis_repo import SqliteAnalysisRepository
+    from persistence.document_analysis_repo import SqliteDocumentAnalysisRepository
+    from persistence.document_repo import SqliteDocumentRepository
+    from services.current_analysis import CurrentAnalysisResolver
+
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "ask.db"))
+    await database.init_db()
+    await SqliteDocumentRepository().insert(
+        Document(id="doc-1", filename="a.pdf", storage_path="/tmp/a.pdf")
+    )
+    analyses = SqliteAnalysisRepository()
+    for job_id in ("older", "newer"):
+        job = AnalysisJob(id=job_id, document_id="doc-1")
+        await analyses.insert(job)
+        job.mark_running()
+        job.mark_completed(
+            AnalysisOutput(
+                markdown=job_id, html="", pages_json="[]", document_json=f'{{"v": "{job_id}"}}'
+            )
+        )
+        await analyses.complete_and_select(job)
+    states = SqliteDocumentAnalysisRepository()
+    return states, CurrentAnalysisResolver(state_repo=states, analysis_repo=analyses)
+
+
+async def test_reads_the_active_analysis_not_the_latest(tmp_path, monkeypatch):
+    """02-2.3.1: after a restore of the older analysis, Ask reads it, as stored."""
+    _, current = await _seed_two_analyses(tmp_path, monkeypatch)
+    await set_selection("doc-1", "older")
+    runner = _FakeRunner(result=_result())
+    svc = ReasoningService(runner=runner, current_analysis=current, default_model_id="m")
+
+    await svc.run("doc-1", "question")
+
+    assert runner.calls[0]["document_json"] == '{"v": "older"}'
+
+
+async def test_404_when_the_document_was_left_without_an_active_analysis(tmp_path, monkeypatch):
+    """A cleared selection is a choice: Ask does not fall back to the latest analysis."""
+    _, current = await _seed_two_analyses(tmp_path, monkeypatch)
+    await set_selection("doc-1", None)
+    svc = ReasoningService(
+        runner=_FakeRunner(result=_result()), current_analysis=current, default_model_id="m"
+    )
+
+    with pytest.raises(ReasoningNoAnalysisError):
         await svc.run("doc-1", "question")

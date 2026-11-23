@@ -1,12 +1,29 @@
 """Tests for API schemas — camelCase serialization and validation."""
 
+from typing import get_args
+
 import pytest
 
 from api.schemas import (
+    AnalysisEditCommandRequest,
     AnalysisResponse,
     CreateAnalysisRequest,
+    DeleteElementEditRequest,
+    DeleteElementPayloadResponse,
+    DeleteElementsEditRequest,
+    DeleteElementsPayloadResponse,
     DocumentResponse,
+    EditCommandPayloadResponse,
+    MergeTextEditRequest,
+    MergeTextPayloadResponse,
+    MoveElementEditRequest,
+    MoveElementPayloadResponse,
     PipelineOptionsRequest,
+    ReplaceTextEditRequest,
+    ReplaceTextPayloadResponse,
+    SetCommandActivePayloadResponse,
+    SetHeadingLevelEditRequest,
+    SetHeadingLevelPayloadResponse,
     _to_camel,
 )
 
@@ -149,3 +166,34 @@ class TestCreateAnalysisRequest:
         assert req.documentId == "doc-42"
         assert req.pipelineOptions.do_ocr is False
         assert req.pipelineOptions.table_mode == "fast"
+
+
+# Each editor command's request model and the model its stored payload reads into.
+_PAYLOAD_TWINS = [
+    (ReplaceTextEditRequest, ReplaceTextPayloadResponse),
+    (MergeTextEditRequest, MergeTextPayloadResponse),
+    (SetHeadingLevelEditRequest, SetHeadingLevelPayloadResponse),
+    (MoveElementEditRequest, MoveElementPayloadResponse),
+    (DeleteElementEditRequest, DeleteElementPayloadResponse),
+    (DeleteElementsEditRequest, DeleteElementsPayloadResponse),
+]
+
+
+class TestStoredPayloadModels:
+    """Each stored payload model has its request's fields, minus `type`."""
+
+    @pytest.mark.parametrize(("request_model", "payload_model"), _PAYLOAD_TWINS)
+    def test_payload_mirrors_request(self, request_model, payload_model):
+        expected = {
+            name: info.alias for name, info in request_model.model_fields.items() if name != "type"
+        }
+        actual = {name: info.alias for name, info in payload_model.model_fields.items()}
+        assert actual == expected
+
+    def test_every_command_has_a_payload_twin(self):
+        requests = set(get_args(get_args(AnalysisEditCommandRequest)[0]))
+        assert {request for request, _ in _PAYLOAD_TWINS} == requests
+        assert set(get_args(EditCommandPayloadResponse)) == {
+            *(payload for _, payload in _PAYLOAD_TWINS),
+            SetCommandActivePayloadResponse,
+        }

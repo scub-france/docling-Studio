@@ -40,9 +40,9 @@ const { t } = useI18n()
   min-height: 32px;
   padding: 0 1rem;
   font-size: 0.875rem;
-  color: var(--color-text-muted, #9ca3af);
-  border-bottom: 1px solid var(--color-border, #1a1a1d);
-  background: var(--color-surface, #111113);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
 }
 
 .breadcrumb__list {
@@ -63,7 +63,7 @@ const { t } = useI18n()
 }
 
 .breadcrumb__link {
-  color: var(--color-text-muted, #9ca3af);
+  color: var(--text-secondary);
   text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
@@ -73,12 +73,12 @@ const { t } = useI18n()
 }
 
 .breadcrumb__link:hover {
-  color: var(--color-text, #f3f4f6);
+  color: var(--text);
   text-decoration: underline;
 }
 
 .breadcrumb__leaf {
-  color: var(--color-text, #f3f4f6);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -87,7 +87,7 @@ const { t } = useI18n()
 }
 
 .breadcrumb__sep {
-  color: var(--color-text-muted, #6b7280);
+  color: var(--text-muted);
   user-select: none;
 }
 </style>

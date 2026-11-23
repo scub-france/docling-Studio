@@ -29,13 +29,13 @@ export interface KindColor {
 }
 
 /** Base hex for a kind (badge text / bar). */
-export function kindBaseColor(kind: ReasoningStepKind): string {
+export function getKindBaseColor(kind: ReasoningStepKind): string {
   return ELEMENT_COLORS[KIND_TO_ELEMENT[kind]] ?? ELEMENT_COLORS.section_header
 }
 
 /** Full colour pair for a kind badge. */
-export function kindColor(kind: ReasoningStepKind): KindColor {
-  const base = kindBaseColor(kind)
+export function getKindColor(kind: ReasoningStepKind): KindColor {
+  const base = getKindBaseColor(kind)
   return {
     fg: base,
     bg: `color-mix(in srgb, ${base} 15%, transparent)`,

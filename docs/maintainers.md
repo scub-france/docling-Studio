@@ -20,8 +20,8 @@ flowchart LR
 
 1. **Audit.** Run the [quality audit](audit/master.md) on the release branch and fix what blocks.
 2. **Freeze.** On `release/x.y.z`, make one commit `chore(release): freeze [x.y.z]` that:
-    - renames `[Unreleased]` to `[x.y.z] - YYYY-MM-DD` in `CHANGELOG.md`,
-    - sets `version` in `frontend/package.json`.
+    - renames `[Unreleased]` to `[x.y.z] - YYYY-MM-DD` in `CHANGELOG.md` and opens an empty `[Unreleased]` section above it,
+    - sets `version` in `frontend/package.json` and in `frontend/package-lock.json` (two places).
 3. **Pull request.** Open `release/x.y.z` → `main`. The release gate runs and posts GO, GO CONDITIONAL or NO-GO as a comment. `main` needs one approval.
 4. **Merge** with **Rebase and merge**.
 5. **Tag** `main`:
@@ -51,21 +51,20 @@ flowchart LR
 
 ## What the release gate checks
 
-It runs on every pull request to `main` and posts a verdict: GO, GO CONDITIONAL (only the dependency audit or the audit script failed), or NO-GO.
+It runs on every pull request to `main` and posts a verdict: GO, GO CONDITIONAL (only the dependency audit failed), or NO-GO (any other check that did not succeed, a skipped one included). A cancelled run, for example one replaced by a newer push, posts none.
 
 | Check | What it runs |
 |-------|--------------|
 | Lint and type-check | Ruff, ESLint, vue-tsc |
 | Unit tests | pytest, Vitest |
-| Dependency audit | pip-audit, npm audit |
-| Audit script | `profiles/fastapi-vue/commands.sh` |
-| Docker build | Both images |
-| Smoke test | The remote image answers `/api/health` |
-| Image scan | Trivy. Critical findings block. |
+| Dependency audit | pip-audit (base, `local` and `reasoning` groups), npm audit |
+| Docker build | Both images, amd64. `local` is built with the reasoning stack, as published, but without baked models |
+| Smoke test | The remote image answers `/api/health`, and nginx sends the cache, security and gzip headers |
+| Image scan | Trivy on both images. Critical findings block. |
 | Image size | Compared with the previous release. Warning only. |
 | End-to-end | API (`@smoke`, `@regression`, `@e2e`) and UI (`@critical`) |
 
-Known gaps in the workflow today: the unit-test steps pipe into `tee` without `pipefail`, so they cannot fail; the audit script is not in the repository; the Python audit never reports anything as critical. Lint and tests are still enforced by the CI checks required on `main`.
+Known gaps in the workflow today: the Python audit never reports anything as critical (Trivy blocks critical Python packages in the images); the arm64 images are only built at release time. Lint and tests are still enforced by the CI checks required on `main`.
 
 ## Hotfix
 

@@ -22,7 +22,6 @@ class TestSettingsDefaults:
         assert s.paste_allowed_image_types == ["image/png", "image/jpeg", "image/webp"]
         assert s.batch_page_size == 0
         assert s.analysis_editor_enabled is True
-        assert s.opensearch_default_limit == 1000
         assert s.upload_dir == "./uploads"
         assert s.db_path == "./data/docling_studio.db"
         assert "http://localhost:3000" in s.cors_origins
@@ -118,12 +117,6 @@ class TestSettingsValidation:
 
         with pytest.raises(ValueError, match="lock_timeout must be > 0"):
             Settings(lock_timeout=0)
-
-    def test_zero_opensearch_default_limit_rejected(self):
-        import pytest
-
-        with pytest.raises(ValueError, match="opensearch_default_limit must be >= 1"):
-            Settings(opensearch_default_limit=0)
 
     def test_invalid_table_mode_rejected(self):
         import pytest
@@ -267,7 +260,6 @@ class TestSettingsFromEnv:
         monkeypatch.setenv("MAX_PAGE_COUNT", "20")
         monkeypatch.setenv("MAX_FILE_SIZE_MB", "100")
         monkeypatch.setenv("BATCH_PAGE_SIZE", "15")
-        monkeypatch.setenv("OPENSEARCH_DEFAULT_LIMIT", "500")
         monkeypatch.setenv("UPLOAD_DIR", "/data/uploads")
         monkeypatch.setenv("DB_PATH", "/data/test.db")
         monkeypatch.setenv("CORS_ORIGINS", "http://a.com, http://b.com")
@@ -286,7 +278,6 @@ class TestSettingsFromEnv:
         assert s.max_page_count == 20
         assert s.max_file_size_mb == 100
         assert s.batch_page_size == 15
-        assert s.opensearch_default_limit == 500
         assert s.upload_dir == "/data/uploads"
         assert s.db_path == "/data/test.db"
         assert s.cors_origins == ["http://a.com", "http://b.com"]

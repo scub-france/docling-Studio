@@ -96,7 +96,7 @@ class TestPoolKeying:
         pool = Neo4jDriverPool()
         await pool.get("bolt://a:7687", "u1", "p")
         await pool.get("bolt://b:7687", "u2", "p")
-        keys = set(pool.keys())
+        keys = set(pool.list_keys())
         assert keys == {("bolt://a:7687", "u1"), ("bolt://b:7687", "u2")}
 
 
@@ -161,7 +161,7 @@ class TestCloseAll:
         await pool.close_all()
         a.driver.close.assert_awaited_once()
         b.driver.close.assert_awaited_once()
-        assert pool.keys() == []
+        assert pool.list_keys() == []
 
     async def test_close_all_is_idempotent(
         self, fake_async_graph_database: list[dict[str, Any]]
@@ -171,7 +171,7 @@ class TestCloseAll:
         await pool.close_all()
         # Second call must be a no-op (no driver to close, no error).
         await pool.close_all()
-        assert pool.keys() == []
+        assert pool.list_keys() == []
 
     async def test_close_all_continues_when_one_driver_fails(
         self, fake_async_graph_database: list[dict[str, Any]]
@@ -184,4 +184,4 @@ class TestCloseAll:
         a.driver.close.side_effect = RuntimeError("network gone")
         await pool.close_all()
         b.driver.close.assert_awaited_once()
-        assert pool.keys() == []
+        assert pool.list_keys() == []

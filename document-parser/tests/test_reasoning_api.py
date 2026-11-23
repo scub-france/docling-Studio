@@ -3,7 +3,7 @@
 The API layer is decoupled from docling-agent / mellea / docling-core. Tests
 wire a real `ReasoningService` (so the full router → service → runner path and
 its status-code mapping are exercised) backed by a fake `ReasoningRunner` and
-a fake analysis repo, and assert the camelCase trace contract on the wire.
+a fake current-analysis reader, and assert the camelCase trace contract on the wire.
 
 Adapter behaviour (the actual docling-agent integration) is tested separately
 in `tests/test_docling_agent_reasoning.py`; the projection rules in
@@ -71,11 +71,13 @@ class _FakeRunner:
         return self._result
 
 
-class _FakeAnalysisRepo:
+class _FakeCurrentAnalysis:
+    """The `CurrentAnalysisReader` port: `latest` stands for the current analysis."""
+
     def __init__(self, *, latest=None):
         self._latest = latest
 
-    async def find_latest_completed_by_document(self, document_id: str):
+    async def load_current_original(self, document_id: str):
         return self._latest
 
 
@@ -94,7 +96,7 @@ def _make_client(
         app,
         reasoning_service=ReasoningService(
             runner=runner,
-            analysis_repo=_FakeAnalysisRepo(latest=latest),
+            current_analysis=_FakeCurrentAnalysis(latest=latest),
             default_model_id=default_model_id,
         ),
     )

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Sources</title>
@@ -199,7 +199,7 @@
   .verdict { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-3); }
   .verdict.bad { color: var(--bad); }
 
-  /* ---- Détails: the rounds and what the reading cost ------------------ */
+  /* ---- Details: the rounds and what the reading cost ------------------ */
 
   .details { padding: 12px 18px 18px; display: flex; flex-direction: column; gap: 20px; border-top: 1px solid var(--border); }
   .kicker { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
@@ -314,7 +314,7 @@
 </head>
 <body>
 <main>
-  <div class="fallback" id="root">En attente des sources…</div>
+  <div class="fallback" id="root">Waiting for sources…</div>
 </main>
 <script>
   "use strict";
@@ -339,11 +339,11 @@
       ? String(number).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
       : "—";
   };
-  // French figures for a French stage: 9,4.
-  const fr = (value, digits = 0) => {
+  // Figures in the reader's language: 9.4 in English, 9,4 in French.
+  const decimal = (value, digits = 0) => {
     const number = Number(value);
     return Number.isFinite(number)
-      ? number.toLocaleString("fr-FR", { maximumFractionDigits: digits })
+      ? number.toLocaleString(LOCALE === "fr" ? "fr-FR" : "en-US", { maximumFractionDigits: digits })
       : "—";
   };
   // A fraction of the page as a CSS percentage, clamped to the page.
@@ -358,6 +358,180 @@
   const list = (value) => (Array.isArray(value) ? value : []);
   const plural = (count, word) => (Number(count) === 1 ? word : `${word}s`);
   const isLink = (url) => /^https?:\/\//i.test(String(url || ""));
+
+  // ---- the card's own words -----------------------------------------------
+  // English by default; a browser set to French gets French. Only the card's
+  // labels are translated — quotes, titles and the agent's `why` stay as
+  // written. `page` and `section` read the same in both languages, so the
+  // nouns built from `totals.mode` stay out of the table.
+  const MESSAGES = {
+    en: {
+      waiting: "Waiting for sources…",
+      cardView: "Card view",
+      sources: "Sources",
+      details: "Details",
+      openIn: "Open in ",
+      noPages: "No page to show for these sources.",
+      notOpenedRun: (from, to) => `pages ${from}–${to}, not opened`,
+      documentPages: "Document pages",
+      seePage: (isPassage, page) => `Show ${isPassage ? "the cited passage" : "the section read"} on page ${page}`,
+      pageAlt: (isPassage, page) =>
+        `Page ${page}, ${isPassage ? "the cited passage highlighted" : "the section read outlined"}`,
+      loadingPage: (page) => `Loading page ${page}…`,
+      openQuote: "“",
+      closeQuote: "”",
+      noQuote: "Passage cited without a quote.",
+      noServerTools: "This host does not relay tool calls: no page preview.",
+      sectionRead: "section read",
+      verdict: {
+        verified: "word for word · verified by the server",
+        stale: "verified · on an earlier analysis",
+        missing: "not found at this place",
+        unchecked: "not verified",
+      },
+      shortVerdict: {
+        verified: "verified",
+        stale: "verified · earlier analysis",
+        missing: "not found",
+        unchecked: "not verified",
+      },
+      question: "Question",
+      documentRead: "Document read",
+      percent: (value) => `${value}%`,
+      ofTotal: (total) => `of ${total}`,
+      rounds: "Rounds",
+      capExceeded: "cap exceeded",
+      onePerRound: (noun) => `one ${noun} per round`,
+      tokensRead: "Tokens read",
+      ofTotalTokens: (total) => `of ${total} in total`,
+      quotes: "Citations",
+      verifiedWordForWord: "verified word for word",
+      unknownAnchors: (count) =>
+        `${count} ${plural(count, "anchor")} not found, not shown.`,
+      analysis: "analysis",
+      anchorsResolved: "dstudio:// anchors resolved by the server",
+      caveat:
+        "Pages, tokens and citations come from the server. The “why” and “found” are the agent’s words.",
+      read: () => "read",
+      coverage: "What the agent read of the document",
+      widthIsTokens: "width = tokens",
+      coverageLabel: (noun) =>
+        `The whole document, ${noun} by ${noun}, the ones the agent read in colour`,
+      start: "start",
+      end: "end",
+      readAndCited: "Read and cited",
+      readKey: "Read",
+      notOpened: "Not opened",
+      flagMissing: "not found",
+      flagCited: "cited",
+      flagRead: "read",
+      why: "Why",
+      found: "Found",
+      unusedRound: "Unused round",
+      unusedRounds: (count) => `Unused rounds: ${count}`,
+      readingRounds: "Reading rounds",
+      round: "Round",
+      page: "Page",
+      section: "Section",
+      pages: "Pages",
+      status: "Status",
+      cited: () => "cited",
+      noPreview: "no preview",
+      serverRefused: "the server refused",
+      noImage: "the response contained no image",
+      hostSilent: "the host did not answer",
+      callFailed: "call failed",
+      cancelled: "The call was cancelled.",
+      failed: (detail) => `The call failed: ${detail}`,
+      noDetail: "no detail",
+      noSources: "The result contains no source to show.",
+    },
+    fr: {
+      waiting: "En attente des sources…",
+      cardView: "Vue de la carte",
+      sources: "Sources",
+      details: "Détails",
+      openIn: "Ouvrir dans ",
+      noPages: "Aucune page à montrer pour ces sources.",
+      notOpenedRun: (from, to) => `pages ${from}–${to}, pas ouvertes`,
+      documentPages: "Pages du document",
+      seePage: (isPassage, page) => `Voir ${isPassage ? "le passage cité" : "la section lue"} en page ${page}`,
+      pageAlt: (isPassage, page) =>
+        `Page ${page}, ${isPassage ? "le passage cité surligné" : "la section lue encadrée"}`,
+      loadingPage: (page) => `Chargement de la page ${page}…`,
+      openQuote: "« ",
+      closeQuote: " »",
+      noQuote: "Passage cité sans citation transmise.",
+      noServerTools: "Cet hôte ne relaie pas les appels d’outils : pas d’aperçu de la page.",
+      sectionRead: "section lue",
+      verdict: {
+        verified: "mot pour mot · vérifiée par le serveur",
+        stale: "vérifiée · sur une analyse antérieure",
+        missing: "introuvable à cet endroit",
+        unchecked: "non vérifiée",
+      },
+      shortVerdict: {
+        verified: "vérifiée",
+        stale: "vérifiée · analyse antérieure",
+        missing: "introuvable",
+        unchecked: "non vérifiée",
+      },
+      question: "Question",
+      documentRead: "Document lu",
+      percent: (value) => `${value} %`,
+      ofTotal: (total) => `sur ${total}`,
+      rounds: "Tours",
+      capExceeded: "plafond dépassé",
+      onePerRound: (noun) => `une ${noun} par tour`,
+      tokensRead: "Tokens lus",
+      ofTotalTokens: (total) => `sur ${total} au total`,
+      quotes: "Citations",
+      verifiedWordForWord: "vérifiées mot pour mot",
+      unknownAnchors: (count) =>
+        `${count} ${plural(count, "ancre")} ${plural(count, "introuvable")}, non ${plural(count, "affichée")}.`,
+      analysis: "analyse",
+      anchorsResolved: "ancres dstudio:// résolues par le serveur",
+      caveat:
+        "Pages, tokens et citations viennent du serveur. Les « pourquoi » et « trouvé » sont les mots de l’agent.",
+      read: (count) => plural(count, "lue"),
+      coverage: "Ce que l’agent a lu du document",
+      widthIsTokens: "largeur = tokens",
+      coverageLabel: (noun) =>
+        `Le document entier, ${noun} par ${noun}, celles que l’agent a lues en couleur`,
+      start: "début",
+      end: "fin",
+      readAndCited: "Lue et citée",
+      readKey: "Lue",
+      notOpened: "Pas ouverte",
+      flagMissing: "introuvable",
+      flagCited: "cité",
+      flagRead: "lu",
+      why: "Pourquoi",
+      found: "Trouvé",
+      unusedRound: "Tour non utilisé",
+      unusedRounds: (count) => `Tours non utilisés : ${count}`,
+      readingRounds: "Tours de lecture",
+      round: "Tour",
+      page: "Page",
+      section: "Section",
+      pages: "Pages",
+      status: "Statut",
+      cited: (count) => plural(count, "cité"),
+      noPreview: "pas d’aperçu",
+      serverRefused: "le serveur a refusé",
+      noImage: "la réponse ne contenait pas d’image",
+      hostSilent: "l’hôte n’a pas répondu",
+      callFailed: "l’appel a échoué",
+      cancelled: "L’appel a été annulé.",
+      failed: (detail) => `L’appel a échoué : ${detail}`,
+      noDetail: "sans détail",
+      noSources: "Le résultat ne contient aucune source à montrer.",
+    },
+  };
+  // `fr`, `fr-FR`, `fr-CA`… read French; every other language reads English.
+  const LOCALE = String(navigator.language || "").toLowerCase().startsWith("fr") ? "fr" : "en";
+  const L = MESSAGES[LOCALE];
+  document.documentElement.lang = LOCALE;
 
   const ICON = {
     doc:
@@ -387,20 +561,17 @@
   const OK = new Set(["verified", "stale_version"]);
   const tone = (passage) =>
     OK.has(passage.status) ? "ok" : passage.status ? "bad" : "unchecked";
-  const verdict = (passage) => {
-    if (passage.status === "verified") return "mot pour mot · vérifiée par le serveur";
-    if (passage.status === "stale_version") return "vérifiée · sur une analyse antérieure";
-    if (passage.status) return "introuvable à cet endroit";
-    return "non vérifiée";
+  const verdictKey = (passage) => {
+    if (passage.status === "verified") return "verified";
+    if (passage.status === "stale_version") return "stale";
+    if (passage.status) return "missing";
+    return "unchecked";
   };
-  const shortVerdict = (passage) => {
-    if (passage.status === "verified") return "vérifiée";
-    if (passage.status === "stale_version") return "vérifiée · analyse antérieure";
-    if (passage.status) return "introuvable";
-    return "non vérifiée";
-  };
+  const verdict = (passage) => L.verdict[verdictKey(passage)];
+  const shortVerdict = (passage) => L.shortVerdict[verdictKey(passage)];
 
   const root = document.getElementById("root");
+  root.textContent = L.waiting;
   const state = { view: null, tab: "sources", item: 0 };
   // The loop's cap, set from each result rendered.
   let maxRounds = 0;
@@ -487,8 +658,8 @@
     const name = view.title || view.filename || view.document_id;
     return `<header class="head">
       <div class="doc">${ICON.doc}<span class="doc-title" title="${esc(view.filename)}">${esc(name)}</span></div>
-      <div class="switch" role="tablist" aria-label="Vue de la carte">${tab("sources", "Sources")}${tab("details", "Détails")}</div>
-      ${isLink(link) ? `<button type="button" class="studio" data-open="${esc(link)}"><span><span class="long">Ouvrir dans </span>Studio</span>${ICON.out}</button>` : ""}
+      <div class="switch" role="tablist" aria-label="${esc(L.cardView)}">${tab("sources", esc(L.sources))}${tab("details", esc(L.details))}</div>
+      ${isLink(link) ? `<button type="button" class="studio" data-open="${esc(link)}"><span><span class="long">${esc(L.openIn)}</span>Studio</span>${ICON.out}</button>` : ""}
     </header>`;
   }
 
@@ -506,7 +677,7 @@
   function sources(view) {
     const items = state.items;
     if (!items.length) {
-      return `<div class="foot"><span class="loc">Aucune page à montrer pour ces sources.</span></div>`;
+      return `<div class="foot"><span class="loc">${esc(L.noPages)}</span></div>`;
     }
     return `${strip(view, items)}
       <div class="frame"><div class="sheet" data-sheet>${sheetInner(view)}</div></div>
@@ -528,7 +699,7 @@
       if (!run) return;
       cells.push(
         fold && run > 1
-          ? `<span class="pg run" style="flex-grow: ${run}" title="pages ${num(end - run + 1)}–${num(end)}, pas ouvertes"></span>`
+          ? `<span class="pg run" style="flex-grow: ${run}" title="${esc(L.notOpenedRun(num(end - run + 1), num(end)))}"></span>`
           : '<span class="pg"></span>'.repeat(run)
       );
       run = 0;
@@ -545,7 +716,7 @@
       }
     }
     flush(last);
-    return `<div class="strip" aria-label="Pages du document">
+    return `<div class="strip" aria-label="${esc(L.documentPages)}">
       <span class="end">1</span>
       <div class="pages">${cells.join("")}</div>
       <span class="end">${num(last)}</span>
@@ -566,8 +737,8 @@
         return `<span class="mk${bad}" style="top: ${pct(top)}%; height: ${pct(height)}%"></span>`;
       })
       .join("");
-    const what = items[0].kind === "passage" ? "le passage cité" : "la section lue";
-    return `<button type="button" class="pick" data-pick="${page}" aria-pressed="${pressed}" aria-label="Voir ${what} en page ${num(page)}">
+    const label = L.seePage(items[0].kind === "passage", num(page));
+    return `<button type="button" class="pick" data-pick="${page}" aria-pressed="${pressed}" aria-label="${esc(label)}">
       <span class="thumb">${marks}</span><span class="pn">${num(page)}</span>
     </button>`;
   }
@@ -580,14 +751,14 @@
     const folio = `<span class="folio">p. ${num(item.page)}</span>`;
     if (image) {
       return `<div class="window"><div class="leaf" data-leaf>
-          <img alt="Page ${num(item.page)}, ${item.kind === "passage" ? "le passage cité surligné" : "la section lue encadrée"}" src="${esc(image.data_uri)}">
+          <img alt="${esc(L.pageAlt(item.kind === "passage", num(item.page)))}" src="${esc(image.data_uri)}">
           ${highlights(view, item)}
         </div></div>${folio}`;
     }
     if (noServerTools || (cached && cached.error && !cached.retriable)) {
       return textOnly(item, noServerTools ? "" : cached.error) + folio;
     }
-    const message = cached && cached.error ? cached.error : `Chargement de la page ${num(item.page)}…`;
+    const message = cached && cached.error ? cached.error : L.loadingPage(num(item.page));
     return `<span class="ph">${esc(message)}</span>${folio}`;
   }
 
@@ -629,10 +800,10 @@
     const text =
       item.kind === "passage"
         ? item.p.quote
-          ? `<span class="q">« <mark${tone(item.p) === "bad" ? ' class="bad"' : ""}>${esc(item.p.quote)}</mark> »</span>`
-          : '<span class="q">Passage cité sans citation transmise.</span>'
+          ? `<span class="q">${L.openQuote}<mark${tone(item.p) === "bad" ? ' class="bad"' : ""}>${esc(item.p.quote)}</mark>${L.closeQuote}</span>`
+          : `<span class="q">${esc(L.noQuote)}</span>`
         : `<span class="q">${esc(item.h.found || item.h.title)}</span>`;
-    const note = why || "Cet hôte ne relaie pas les appels d’outils : pas d’aperçu de la page.";
+    const note = why || L.noServerTools;
     return `<div class="textonly">${text}<small>${esc(note)}</small></div>`;
   }
 
@@ -647,7 +818,7 @@
     const count = items.length > 1 ? `<span class="count">${num(state.item + 1)} / ${num(items.length)}</span>` : "";
     let mark;
     if (item.kind === "hop") {
-      mark = `<span class="verdict">${ICON.dash}section lue</span>`;
+      mark = `<span class="verdict">${ICON.dash}${esc(L.sectionRead)}</span>`;
     } else {
       const look = tone(item.p);
       const icon = look === "ok" ? ICON.check : look === "bad" ? ICON.cross : ICON.dash;
@@ -705,7 +876,7 @@
     if (leaf) leaf.style.cssText = `left: ${px(g.x)}px; top: ${px(g.y)}px; width: ${px(g.scale)}px; height: ${px(g.tall)}px`;
   }
 
-  // ---- Détails ----------------------------------------------------------
+  // ---- Details ----------------------------------------------------------
 
   function details(view) {
     const totals = view.totals || {};
@@ -723,32 +894,32 @@
     const share = `${pct(Number(totals.percent) / 100)}%`;
     const unknown = list(view.unknown);
     return `<div class="details">
-      <div class="ask"><span class="kicker">Question</span><p class="question">${esc(view.question)}</p></div>
+      <div class="ask"><span class="kicker">${esc(L.question)}</span><p class="question">${esc(view.question)}</p></div>
       <div class="tiles">
-        <div class="tile"><span class="kicker">Document lu</span>
-          <span class="tile-value">${fr(totals.percent, 1)} %</span>
+        <div class="tile"><span class="kicker">${esc(L.documentRead)}</span>
+          <span class="tile-value">${L.percent(decimal(totals.percent, 1))}</span>
           <span class="meter"><span style="width: ${share}"></span></span>
-          <span class="tile-sub">${num(totals.sections_read)} ${plural(totals.sections_read, noun)} sur ${num(totals.sections_total)}</span></div>
-        <div class="tile"><span class="kicker">Tours</span>
+          <span class="tile-sub">${num(totals.sections_read)} ${plural(totals.sections_read, noun)} ${L.ofTotal(num(totals.sections_total))}</span></div>
+        <div class="tile"><span class="kicker">${esc(L.rounds)}</span>
           <span class="tile-value${over ? " over" : ""}">${num(rounds)} <small>/ ${num(maxRounds)}</small></span>
           <span class="pips">${roundPips}</span>
-          <span class="tile-sub${over ? " over" : ""}">${over ? "plafond dépassé" : `une ${noun} par tour`}</span></div>
-        <div class="tile"><span class="kicker">Tokens lus</span>
+          <span class="tile-sub${over ? " over" : ""}">${over ? L.capExceeded : L.onePerRound(noun)}</span></div>
+        <div class="tile"><span class="kicker">${esc(L.tokensRead)}</span>
           <span class="tile-value">${num(totals.tokens_read)}</span>
           <span class="meter"><span style="width: ${share}"></span></span>
-          <span class="tile-sub">sur ${num(totals.tokens_total)} au total</span></div>
-        <div class="tile"><span class="kicker">Citations</span>
+          <span class="tile-sub">${L.ofTotalTokens(num(totals.tokens_total))}</span></div>
+        <div class="tile"><span class="kicker">${esc(L.quotes)}</span>
           <span class="tile-value${passages.length && ok === passages.length ? " ok" : ""}">${num(ok)} <small>/ ${num(passages.length)}</small></span>
           <span class="pips">${quotePips || "<span></span>"}</span>
-          <span class="tile-sub">vérifiées mot pour mot</span></div>
+          <span class="tile-sub">${esc(L.verifiedWordForWord)}</span></div>
       </div>
       ${coverage(view, noun)}
       ${roundsTable(view, hops, totals, noun)}
       ${quotesList(view)}
-      ${unknown.length ? `<p class="tally">${num(unknown.length)} ${plural(unknown.length, "ancre")} ${plural(unknown.length, "introuvable")}, non ${plural(unknown.length, "affichée")}.</p>` : ""}
+      ${unknown.length ? `<p class="tally">${L.unknownAnchors(num(unknown.length))}</p>` : ""}
       <div class="meta">
-        <span class="mono">analyse ${esc(view.version_id)} · ancres dstudio:// résolues par le serveur</span>
-        <span class="caveat">Pages, tokens et citations viennent du serveur. Les « pourquoi » et « trouvé » sont les mots de l’agent.</span>
+        <span class="mono">${esc(L.analysis)} ${esc(view.version_id)} · ${esc(L.anchorsResolved)}</span>
+        <span class="caveat">${esc(L.caveat)}</span>
       </div>
     </div>`;
   }
@@ -768,7 +939,7 @@
       first < 0
         ? ""
         : `<span class="bracket" style="left: ${pct(before(first))}%; width: ${pct(before(last + 1) - before(first))}%"></span>
-           <span class="bracket-label" style="left: ${pct((before(first) + before(last + 1)) / 2)}%">${num(litCount)} ${plural(litCount, noun)} ${plural(litCount, "lue")}</span>`;
+           <span class="bracket-label" style="left: ${pct((before(first) + before(last + 1)) / 2)}%">${num(litCount)} ${plural(litCount, noun)} ${L.read(litCount)}</span>`;
     const segs = segments
       .map(
         (s) =>
@@ -777,14 +948,14 @@
       .join("");
     const count = pageCount(view);
     return `<div>
-      <div class="section-head"><span class="kicker">Ce que l’agent a lu du document</span>
-        <span class="mono">${num(segments.length)} ${plural(segments.length, noun)}${count ? ` · ${num(count)} ${plural(count, "page")}` : ""} · largeur = tokens</span></div>
+      <div class="section-head"><span class="kicker">${esc(L.coverage)}</span>
+        <span class="mono">${num(segments.length)} ${plural(segments.length, noun)}${count ? ` · ${num(count)} ${plural(count, "page")}` : ""} · ${esc(L.widthIsTokens)}</span></div>
       <div class="coverage">
-        <div class="segments" role="img" aria-label="Le document entier, ${noun} par ${noun}, celles que l’agent a lues en couleur">${segs}</div>
+        <div class="segments" role="img" aria-label="${esc(L.coverageLabel(noun))}">${segs}</div>
         ${bracket}
-        <span class="end-label">début</span><span class="end-label right">fin</span>
+        <span class="end-label">${esc(L.start)}</span><span class="end-label right">${esc(L.end)}</span>
       </div>
-      <div class="keys"><span><i class="cited"></i>Lue et citée</span><span><i class="read"></i>Lue</span><span><i></i>Pas ouverte</span></div>
+      <div class="keys"><span><i class="cited"></i>${esc(L.readAndCited)}</span><span><i class="read"></i>${esc(L.readKey)}</span><span><i></i>${esc(L.notOpened)}</span></div>
     </div>`;
   }
 
@@ -795,9 +966,9 @@
 
   function roundFlag(view, hop) {
     const quotes = quotesOf(view, hop);
-    if (quotes.some((p) => tone(p) === "bad")) return '<span class="flag bad">introuvable</span>';
-    if (quotes.some((p) => tone(p) === "ok")) return '<span class="flag ok">cité</span>';
-    return quotes.length ? '<span class="flag">cité</span>' : '<span class="flag">lu</span>';
+    if (quotes.some((p) => tone(p) === "bad")) return `<span class="flag bad">${esc(L.flagMissing)}</span>`;
+    if (quotes.some((p) => tone(p) === "ok")) return `<span class="flag ok">${esc(L.flagCited)}</span>`;
+    return `<span class="flag">${esc(quotes.length ? L.flagCited : L.flagRead)}</span>`;
   }
 
   function roundsTable(view, hops, totals, noun) {
@@ -808,8 +979,8 @@
           ${badge(hop)}
           <span class="what">
             <span class="t">${esc(hop.title)}</span>
-            ${hop.why ? `<span class="why"><b>Pourquoi</b> · ${esc(hop.why)}</span>` : ""}
-            ${hop.found ? `<span class="found"><b>Trouvé</b> · ${esc(hop.found)}</span>` : ""}
+            ${hop.why ? `<span class="why"><b>${esc(L.why)}</b> · ${esc(hop.why)}</span>` : ""}
+            ${hop.found ? `<span class="found"><b>${esc(L.found)}</b> · ${esc(hop.found)}</span>` : ""}
           </span>
           <span class="m">${pageSpan(pagesOf(hop))}</span>
           <span class="cost"><span class="track"><span style="width: ${pct((Number(hop.est_tokens) || 0) / widest)}%"></span></span><span class="m">${num(hop.est_tokens)}</span></span>
@@ -819,21 +990,21 @@
       .join("");
     const left = Math.max(0, maxRounds - hops.length);
     const unused = left
-      ? `<div class="tr unused"><span class="num ghost">${left === 1 ? num(hops.length + 1) : "+" + num(left)}</span><span class="what">${left === 1 ? "Tour non utilisé" : `Tours non utilisés : ${num(left)}`}</span><span></span><span class="cost"></span><span></span></div>`
+      ? `<div class="tr unused"><span class="num ghost">${left === 1 ? num(hops.length + 1) : "+" + num(left)}</span><span class="what">${left === 1 ? esc(L.unusedRound) : L.unusedRounds(num(left))}</span><span></span><span class="cost"></span><span></span></div>`
       : "";
     const allPages = [...new Set(hops.flatMap(pagesOf))].sort((a, b) => a - b);
     const cited = passagesOf(view).length;
     const over = totals.over_cap === true;
     return `<div>
-      <div class="section-head"><span class="kicker">Tours de lecture</span>
-        <span class="mono">${num(hops.length)} / ${num(maxRounds)}${over ? " · plafond dépassé" : ""}</span></div>
+      <div class="section-head"><span class="kicker">${esc(L.readingRounds)}</span>
+        <span class="mono">${num(hops.length)} / ${num(maxRounds)}${over ? ` · ${esc(L.capExceeded)}` : ""}</span></div>
       <div class="rounds">
-        <div class="tr th"><span>Tour</span><span>${noun === "page" ? "Page" : "Section"}</span><span>Pages</span><span class="cost">Tokens lus</span><span style="justify-self: end">Statut</span></div>
+        <div class="tr th"><span>${esc(L.round)}</span><span>${esc(noun === "page" ? L.page : L.section)}</span><span>${esc(L.pages)}</span><span class="cost">${esc(L.tokensRead)}</span><span style="justify-self: end">${esc(L.status)}</span></div>
         ${rows}${unused}
-        <div class="tr total"><span></span><span class="t">${num(totals.sections_read)} ${plural(totals.sections_read, noun)} ${plural(totals.sections_read, "lue")}</span>
+        <div class="tr total"><span></span><span class="t">${num(totals.sections_read)} ${plural(totals.sections_read, noun)} ${L.read(totals.sections_read)}</span>
           <span class="m">${pageSpan(allPages)}</span>
           <span class="cost"><span class="track" style="visibility: hidden"></span><span class="m">${num(totals.tokens_read)}</span></span>
-          <span class="m" style="justify-self: end">${num(cited)} ${plural(cited, "cité")}</span></div>
+          <span class="m" style="justify-self: end">${num(cited)} ${L.cited(cited)}</span></div>
       </div>
     </div>`;
   }
@@ -847,8 +1018,8 @@
         const passage = item.p;
         const look = tone(passage);
         const text = passage.quote
-          ? `<span class="q">« ${esc(passage.quote)} »</span>`
-          : '<span class="q none">Passage cité sans citation transmise.</span>';
+          ? `<span class="q">${L.openQuote}${esc(passage.quote)}${L.closeQuote}</span>`
+          : `<span class="q none">${esc(L.noQuote)}</span>`;
         const flag = `<span class="flag ${look === "unchecked" ? "" : look}">${esc(shortVerdict(passage))}</span>`;
         return `<button type="button" class="quote" data-item="${state.items.indexOf(item)}">
           ${text}${flag}
@@ -856,7 +1027,7 @@
         </button>`;
       })
       .join("");
-    return `<div><div class="section-head"><span class="kicker">Citations</span></div><div class="quotes">${rows}</div></div>`;
+    return `<div><div class="section-head"><span class="kicker">${esc(L.quotes)}</span></div><div class="quotes">${rows}</div></div>`;
   }
 
   // ---- interaction --------------------------------------------------------
@@ -948,7 +1119,7 @@
       // A sharper copy that failed keeps the one already there.
       if (!(cached && cached.image)) {
         pages.set(page, {
-          error: error.message || "pas d’aperçu",
+          error: error.message || L.noPreview,
           retriable: error.message === TIMEOUT_MESSAGE,
         });
       }
@@ -969,14 +1140,14 @@
       20000
     );
     if (result && (result.isError || result.is_error)) {
-      throw new Error(result?.content?.[0]?.text || "le serveur a refusé");
+      throw new Error(result?.content?.[0]?.text || L.serverRefused);
     }
     const image =
       result?.structuredContent ??
       result?.structured_content ??
       JSON.parse(result?.content?.[0]?.text ?? "{}");
     if (!image || !image.data_uri || !image.width || !image.height) {
-      throw new Error("la réponse ne contenait pas d’image");
+      throw new Error(L.noImage);
     }
     return image;
   }
@@ -995,7 +1166,7 @@
   let nextRequestId = 1;
   // Named so the page cache can tell a local timeout — worth retrying —
   // from an answer the server actually gave.
-  const TIMEOUT_MESSAGE = "l’hôte n’a pas répondu";
+  const TIMEOUT_MESSAGE = L.hostSilent;
 
   function call(method, params, timeoutMs = 8000) {
     return new Promise((resolve, reject) => {
@@ -1014,7 +1185,7 @@
     if (!entry) return false;
     pending.delete(data.id);
     clearTimeout(entry.timer);
-    if (data.error) entry.reject(new Error(data.error.message || "call failed"));
+    if (data.error) entry.reject(new Error(data.error.message || L.callFailed));
     else entry.resolve(data.result);
     return true;
   }
@@ -1162,17 +1333,17 @@
     // A refused or cancelled call has nothing to show: say so rather than
     // leave the card waiting.
     if (data?.method === "ui/notifications/tool-cancelled") {
-      showState("L’appel a été annulé.");
+      showState(L.cancelled);
       return;
     }
     if (data?.method === "ui/notifications/tool-result" && data.params?.isError) {
-      showState(`L’appel a échoué : ${data.params.content?.[0]?.text || "sans détail"}`);
+      showState(L.failed(data.params.content?.[0]?.text || L.noDetail));
       return;
     }
     const view = extract(data);
     if (view) render(view);
     else if (data?.method === "ui/notifications/tool-result") {
-      showState("Le résultat ne contient aucune source à montrer.");
+      showState(L.noSources);
     }
   });
 

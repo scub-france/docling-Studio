@@ -86,7 +86,7 @@ class ServeConverter:
         self._api_key = api_key
         self._timeout = timeout
 
-    def _headers(self) -> dict[str, str]:
+    def _build_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
         if self._api_key:
             headers["X-Api-Key"] = self._api_key
@@ -120,9 +120,7 @@ class ServeConverter:
 
         response = await self._post_convert_with_startup_retry(
             url=url,
-            filename=path.name,
-            content_type=content_type,
-            file_bytes=file_bytes,
+            upload=(path.name, file_bytes, content_type),
             form_data=form_data,
         )
 
@@ -142,13 +140,12 @@ class ServeConverter:
         self,
         *,
         url: str,
-        filename: str,
-        content_type: str,
-        file_bytes: bytes,
+        upload: tuple[str, bytes, str],
         form_data: dict[str, str | list[str]],
     ) -> httpx.Response:
         """POST the multipart upload, retrying on 404 to absorb docling-serve startup.
 
+        `upload` is the httpx file tuple: (filename, bytes, content type).
         See the module-level note on `_SERVE_STARTUP_RETRY_*` constants.
         """
         last_response: httpx.Response | None = None
@@ -156,9 +153,9 @@ class ServeConverter:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.post(
                     url,
-                    files={"files": (filename, file_bytes, content_type)},
+                    files={"files": upload},
                     data=form_data,
-                    headers=self._headers(),
+                    headers=self._build_headers(),
                 )
             last_response = response
             if response.status_code != 404:
@@ -172,32 +169,23 @@ class ServeConverter:
                     url,
                 )
                 return response
-            delay = _SERVE_STARTUP_RETRY_BASE_DELAY * (2 ** (attempt - 1))
-            logger.warning(
-                "Docling Serve returned 404 for %s (attempt %d/%d) — "
-                "likely startup race, retrying in %.0fs",
-                url,
-                attempt,
-                _SERVE_STARTUP_RETRY_ATTEMPTS,
-                delay,
-            )
-            await asyncio.sleep(delay)
+            await _wait_for_serve_startup(url, attempt)
         # Defensive — the loop always returns or sleeps, but mypy needs this.
         assert last_response is not None
         return last_response
 
-    async def health_check(self) -> bool:
-        """Check if Docling Serve is reachable."""
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    f"{self._base_url}/version",
-                    headers=self._headers(),
-                )
-                return resp.status_code == 200
-        except httpx.HTTPError:
-            logger.warning("Docling Serve health check failed at %s", self._base_url, exc_info=True)
-            return False
+
+async def _wait_for_serve_startup(url: str, attempt: int) -> None:
+    delay = _SERVE_STARTUP_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+    logger.warning(
+        "Docling Serve returned 404 for %s (attempt %d/%d) — "
+        "likely startup race, retrying in %.0fs",
+        url,
+        attempt,
+        _SERVE_STARTUP_RETRY_ATTEMPTS,
+        delay,
+    )
+    await asyncio.sleep(delay)
 
 
 def _build_form_data(
@@ -317,19 +305,19 @@ def _table_to_markdown(data: dict | None) -> str:
     if not grid or not grid[0]:
         return ""
 
-    def cell_text(cell: object) -> str:
+    def read_cell_text(cell: object) -> str:
         text = (cell.get("text", "") if isinstance(cell, dict) else "") or ""
         # Escape pipes (column delimiter) and flatten newlines (row delimiter).
         return text.replace("|", "\\|").replace("\n", " ").strip()
 
-    header = [cell_text(c) for c in grid[0]]
+    header = [read_cell_text(c) for c in grid[0]]
     cols = len(header)
     lines = [
         "| " + " | ".join(header) + " |",
         "| " + " | ".join(["---"] * cols) + " |",
     ]
     for row in grid[1:]:
-        cells = [cell_text(c) for c in row]
+        cells = [read_cell_text(c) for c in row]
         # Keep every row rectangular against the header width.
         cells = (cells + [""] * cols)[:cols]
         lines.append("| " + " | ".join(cells) + " |")
@@ -348,13 +336,7 @@ def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
     """
     label = item.get("label", "text")
     element_type = _LABEL_MAP.get(label, "text")
-    content = item.get("text", "") or ""
-    # Tables carry no `text` field — their content lives in a structured
-    # cell grid under `data.grid`. Rebuild a markdown table so the Parse
-    # view shows it instead of an empty "no text" panel. Local mode gets
-    # this for free via `TableItem.export_to_markdown()`.
-    if element_type == "table" and not content:
-        content = _table_to_markdown(item.get("data", {}))
+    content = _read_element_content(item, element_type)
     self_ref = item.get("self_ref", "") or ""
 
     for prov in item.get("prov", []):
@@ -378,6 +360,17 @@ def _add_element(item: dict, pages: dict[int, PageDetail]) -> None:
                 self_ref=self_ref,
             )
         )
+
+
+def _read_element_content(item: dict, element_type: str) -> str:
+    content = item.get("text", "") or ""
+    # Tables carry no `text` field — their content lives in a structured
+    # cell grid under `data.grid`. Rebuild a markdown table so the Parse
+    # view shows it instead of an empty "no text" panel. Local mode gets
+    # this for free via `TableItem.export_to_markdown()`.
+    if element_type == "table" and not content:
+        content = _table_to_markdown(item.get("data", {}))
+    return content
 
 
 def _extract_bbox(bbox_data: dict, page_height: float) -> list[float]:

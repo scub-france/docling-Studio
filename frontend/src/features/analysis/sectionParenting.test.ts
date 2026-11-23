@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GraphEdge, GraphNode } from './graphApi'
-import { computeSectionParents, explicitParentMap, mergeParentMaps } from './sectionParenting'
+import { computeSectionParents, buildExplicitParentMap, mergeParentMaps } from './sectionParenting'
 
 function el(selfRef: string, label: string): GraphNode {
   return {
@@ -109,10 +109,10 @@ describe('computeSectionParents', () => {
   })
 })
 
-describe('explicitParentMap + mergeParentMaps', () => {
+describe('buildExplicitParentMap + mergeParentMaps', () => {
   it('extracts explicit PARENT_OF into a child→parent map', () => {
     const edges = [parentEdge('#/groups/0', '#/texts/1')]
-    const m = explicitParentMap(edges)
+    const m = buildExplicitParentMap(edges)
     expect(m.get('elem::#/texts/1')).toBe('elem::#/groups/0')
   })
 

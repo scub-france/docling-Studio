@@ -116,6 +116,30 @@ The compose files do not pass the reasoning variables to the backend yet, so fin
 
 The **Ask** tab then shows up on result pages. What you save in Settings is stored in the app database and takes priority over the environment variables. **Reset to environment** removes it.
 
+## Upgrade
+
+Your documents and analyses live in the SQLite file that `DB_PATH` points to (`/app/data/docling_studio.db` in the images) and in the upload folder. A new version may change the database when it starts. To upgrade, stop the container, back up that file, then start the new image on the same volumes.
+
+With the volumes from [Keep your data](#keep-your-data), this copies the database to the current folder:
+
+```bash
+docker run --rm -v docling-data:/data -v "$PWD":/backup alpine cp /data/docling_studio.db /backup/
+```
+
+### From 0.7.3 to 0.7.4
+
+The first start of 0.7.4 upgrades a 0.7.3 database in place. Nothing needs to be analyzed again. The backend:
+
+- creates the tables the new version needs, among them those of the [analysis editor](analysis-editor.md);
+- adds two columns to `document_versions`;
+- gives each document with a completed analysis an active analysis: the latest completed one, preferring one that kept its Docling document.
+
+Each step is skipped when already done, so the next starts change nothing. The logs show a line starting with `Upgraded database:` for each column added and for the active analyses chosen. The 0.7.3 table `chunk_edits` stays in the file, unused.
+
+Going back to 0.7.3 on an upgraded database is not supported or tested. To go back, restore the backup you made before the upgrade. Work done in 0.7.4 since then, edits included, is lost.
+
+A database created before 0.6.1 is not upgraded: delete the file and start again.
+
 ## Next
 
 - [User guide](user-guide.md): the screens, step by step.

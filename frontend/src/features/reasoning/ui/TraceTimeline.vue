@@ -11,7 +11,7 @@
       </span>
       <div class="spacer" />
       <span v-if="trace && !running" class="trace-head-stats" data-e2e="trace-stats">
-        {{ t('trace.stats', { n: steps.length, dur: fmtDur(trace.totalDurationMs) }) }}
+        {{ t('trace.stats', { n: steps.length, dur: formatDuration(trace.totalDurationMs) }) }}
       </span>
     </div>
 
@@ -72,7 +72,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from '../../../shared/i18n'
-import { axisTicks, computeBars, fmtDur, hasTiming } from '../timeline.logic'
+import { computeAxisTicks, computeBars, formatDuration, hasTiming } from '../timeline.logic'
 import type { ReasoningTrace } from '../types'
 import TraceEmptyState from './TraceEmptyState.vue'
 import TraceRow from './TraceRow.vue'
@@ -91,7 +91,9 @@ const { t } = useI18n()
 const steps = computed(() => props.trace?.steps ?? [])
 const timed = computed(() => hasTiming(steps.value))
 const bars = computed(() => computeBars(steps.value))
-const ticks = computed(() => (timed.value ? axisTicks(steps.value) : [t('trace.axisStepOrder')]))
+const ticks = computed(() =>
+  timed.value ? computeAxisTicks(steps.value) : [t('trace.axisStepOrder')],
+)
 </script>
 
 <style scoped>

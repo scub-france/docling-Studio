@@ -83,13 +83,13 @@ Example: a 612 × 792 pt page shown at 700 × 906 px gives `sx ≈ sy ≈ 1.144`
 
 ## Step 3: draw (frontend)
 
-The Parse and Chunk tabs draw with `frontend/src/features/document/ui/BboxCanvas.vue`. `PagePreviewWithOverlay.vue` places one canvas over each page image. On each draw, `BboxCanvas`:
+The result page, the document page and the analysis editor draw with `frontend/src/features/document/ui/BboxCanvas.vue`. `PagePreviewWithOverlay.vue` places one canvas over each page image. On each draw, `BboxCanvas`:
 
 - sizes the canvas to the image's size on screen, in CSS pixels. It does not use `devicePixelRatio`, so lines can look slightly soft on high-density screens;
 - computes the scale, then draws one rectangle per visible element;
 - when elements are selected, dims the others and draws the selected ones last, with a thicker stroke and a dashed outline.
 
-It redraws when the image is resized, and when the page, the elements, the hidden layers, the selection or the labels setting change. Hover and click use `pointInRect()` to find the element under the pointer.
+It redraws when the image is resized, and when the page, the elements, the hidden layers, the selection or the labels setting change. Hover and click use `isPointInRect()` to find the element under the pointer.
 
 The older Studio page (`/studio`, behind `STUDIO_MODE_ENABLED`) draws with `frontend/src/features/analysis/ui/BboxOverlay.vue` instead, which scales its canvas by `devicePixelRatio`.
 

@@ -1,17 +1,30 @@
 """Tests for FastAPI API endpoints using TestClient."""
 
+import shutil
 from dataclasses import replace
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from domain.models import AnalysisJob, Document
+from domain.models import AnalysisJob, AnalysisOutput, Document
+from infra.document_file_store import LocalDocumentFileStore
+from infra.page_raster import PdfPageRasterizer
+from infra.pdf_inspector import PdfiumInspector
 from infra.preview_cache import PreviewCache
 from main import app
 from services.preview_service import PreviewService
 from tests.app_state import state_override
+
+
+def _preview_service(documents, tmp_path, *, rasterizer=None, cache=None) -> PreviewService:
+    return PreviewService(
+        documents=documents,
+        files=LocalDocumentFileStore(str(tmp_path / "uploads")),
+        rasterizer=rasterizer or PdfPageRasterizer(),
+        inspector=PdfiumInspector(),
+        cache=cache or PreviewCache(),
+    )
 
 
 @pytest.fixture
@@ -28,29 +41,24 @@ def mock_analysis_service(client):
 
 
 @pytest.fixture
-def mock_document_service(client):
+def mock_document_service(client, tmp_path):
     """Inject a mock DocumentService into app.state for the duration of the test."""
     mock_svc = MagicMock()
     mock_svc.max_file_size = 50 * 1024 * 1024
     mock_svc.max_file_size_mb = 50
-    mock_svc.resolve_storage_path.side_effect = lambda storage_path: Path(storage_path)
     with state_override(
         app,
         document_service=mock_svc,
-        preview_service=PreviewService(mock_svc, PreviewCache()),
+        preview_service=_preview_service(mock_svc, tmp_path),
+        current_analysis=MagicMock(find_current_analysis_id=AsyncMock(return_value=None)),
     ):
         yield mock_svc
 
 
-@pytest.fixture(autouse=True)
-def mock_document_related_repos(client):
-    """Provide the repos expected by document routes using shared deps."""
-    link_repo = MagicMock()
-    link_repo.find_for_document = AsyncMock(return_value=[])
-    store_repo = MagicMock()
-    store_repo.find_all = AsyncMock(return_value=[])
-    with state_override(app, document_store_link_repo=link_repo, store_repo=store_repo):
-        yield
+@pytest.fixture
+def mock_current_analysis(mock_document_service):
+    """The current-analysis rule the document route reads, from the same state."""
+    return app.state.container.current_analysis
 
 
 @pytest.fixture
@@ -58,6 +66,7 @@ def mock_export_service(client):
     """Inject a mock ExportService into app.state for export endpoint tests."""
     mock_svc = MagicMock()
     mock_svc.export = AsyncMock()
+    mock_svc.export_edited = AsyncMock()
     with state_override(app, export_service=mock_svc):
         yield mock_svc
 
@@ -152,14 +161,17 @@ class TestDocumentEndpoints:
         assert "createdAt" in data[0]
 
     def test_get_document(self, client, mock_document_service):
-        mock_document_service.find_by_id = AsyncMock(
-            return_value=Document(
-                id="d1",
-                filename="test.pdf",
-                content_type="application/pdf",
-                file_size=2048,
-                page_count=3,
-                storage_path="/tmp/test",
+        mock_document_service.find_with_store_links = AsyncMock(
+            return_value=(
+                Document(
+                    id="d1",
+                    filename="test.pdf",
+                    content_type="application/pdf",
+                    file_size=2048,
+                    page_count=3,
+                    storage_path="/tmp/test",
+                ),
+                [],
             )
         )
 
@@ -169,12 +181,64 @@ class TestDocumentEndpoints:
         assert data["id"] == "d1"
         assert data["fileSize"] == 2048
         assert data["pageCount"] == 3
+        assert data["storeLinks"] == []
+        assert data["currentAnalysisId"] is None
+
+    def test_get_document_names_its_current_analysis(
+        self, client, mock_document_service, mock_current_analysis
+    ):
+        mock_document_service.find_with_store_links = AsyncMock(
+            return_value=(Document(id="d1", filename="test.pdf", storage_path="/tmp/test"), [])
+        )
+        mock_current_analysis.find_current_analysis_id = AsyncMock(return_value="a-older")
+
+        resp = client.get("/api/documents/d1")
+
+        assert resp.json()["currentAnalysisId"] == "a-older"
+        mock_current_analysis.find_current_analysis_id.assert_awaited_once_with("d1")
+
+    def test_document_list_leaves_the_current_analysis_out(
+        self, client, mock_document_service, mock_current_analysis
+    ):
+        mock_document_service.find_all = AsyncMock(
+            return_value=[Document(id="d1", filename="test.pdf", storage_path="/tmp/test")]
+        )
+
+        resp = client.get("/api/documents")
+
+        assert resp.json()[0]["currentAnalysisId"] is None
+        mock_current_analysis.find_current_analysis_id.assert_not_awaited()
+
+    def test_get_document_maps_its_store_links(self, client, mock_document_service):
+        from datetime import datetime
+
+        from domain.value_objects import DocumentStoreLinkState
+        from services.document_service import DocumentStoreLinkView
+
+        pushed = datetime(2026, 11, 1, 12, 0, 0)
+        mock_document_service.find_with_store_links = AsyncMock(
+            return_value=(
+                Document(id="d1", filename="test.pdf", storage_path="/tmp/test"),
+                [
+                    DocumentStoreLinkView("legal-v1", DocumentStoreLinkState.INGESTED, pushed),
+                    DocumentStoreLinkView("rh", DocumentStoreLinkState.STALE, None),
+                ],
+            )
+        )
+
+        resp = client.get("/api/documents/d1")
+
+        assert resp.json()["storeLinks"] == [
+            {"store": "legal-v1", "state": "Ingested", "pushedAt": str(pushed)},
+            {"store": "rh", "state": "Stale", "pushedAt": None},
+        ]
 
     def test_get_document_not_found(self, client, mock_document_service):
-        mock_document_service.find_by_id = AsyncMock(return_value=None)
+        mock_document_service.find_with_store_links = AsyncMock(return_value=None)
 
         resp = client.get("/api/documents/missing")
         assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found"}
 
     def test_upload_document(self, client, mock_document_service):
         mock_document_service.upload = AsyncMock(
@@ -207,6 +271,46 @@ class TestDocumentEndpoints:
         )
         assert resp.status_code == 400
 
+    @pytest.mark.skipif(
+        shutil.which("pdfinfo") is None,
+        reason="poppler's pdfinfo is not installed",
+    )
+    def test_upload_counts_and_limits_pages_through_the_real_service(self, client, tmp_path):
+        """The upload route on a real `DocumentService` and the real inspector."""
+        from services.document_service import DocumentConfig, DocumentService
+        from tests.test_document_service import pdf_with_pages
+
+        service = DocumentService(
+            document_repo=AsyncMock(),
+            analysis_repo=AsyncMock(),
+            config=DocumentConfig(max_page_count=2),
+            link_repo=AsyncMock(),
+            store_repo=AsyncMock(),
+            pdf_inspector=PdfiumInspector(),
+            file_store=LocalDocumentFileStore(str(tmp_path)),
+        )
+        two = pdf_with_pages((612, 792), (612, 792))
+        three = pdf_with_pages((612, 792), (612, 792), (612, 792))
+
+        with state_override(app, document_service=service):
+            ok = client.post(
+                "/api/documents/upload", files={"file": ("two.pdf", two, "application/pdf")}
+            )
+            too_many = client.post(
+                "/api/documents/upload", files={"file": ("three.pdf", three, "application/pdf")}
+            )
+            not_pdf = client.post(
+                "/api/documents/upload", files={"file": ("x.pdf", b"hello", "application/pdf")}
+            )
+
+        assert ok.status_code == 200
+        assert ok.json()["pageCount"] == 2
+        assert too_many.status_code == 400
+        assert too_many.json() == {"detail": "Too many pages (3). Maximum allowed: 2"}
+        assert not_pdf.status_code == 400
+        assert not_pdf.json() == {"detail": "Invalid file: not a PDF document"}
+        assert len(list(tmp_path.iterdir())) == 1
+
     def test_upload_rejects_oversized_content_length(self, client, mock_document_service):
         """Endpoint returns 413 from the Content-Length pre-check, before the
         body is read and before the service is touched (#audit-09 MAJ-09a)."""
@@ -237,6 +341,18 @@ class TestDocumentEndpoints:
         assert resp.status_code == 400
         assert "out of range" in resp.json()["detail"]
 
+    def test_preview_missing_file(self, client, mock_document_service, tmp_path):
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(
+                id="d1", filename="gone.pdf", storage_path=str(tmp_path / "gone.pdf")
+            )
+        )
+
+        resp = client.get("/api/documents/d1/preview?page=1")
+
+        assert resp.status_code == 404
+        assert "not found on disk" in resp.json()["detail"]
+
     def test_preview_document_not_found(self, client, mock_document_service):
         mock_document_service.find_by_id = AsyncMock(return_value=None)
 
@@ -244,6 +360,20 @@ class TestDocumentEndpoints:
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Document not found"
+
+    def test_preview_page_poppler_does_not_render(self, client, mock_document_service, tmp_path):
+        pdf = tmp_path / "short.pdf"
+        pdf.write_bytes(b"%PDF-short")
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="short.pdf", storage_path=str(pdf))
+        )
+
+        with patch("infra.page_raster.convert_from_path", return_value=[]):
+            resp = client.get("/api/documents/d1/preview?page=7")
+
+        assert resp.status_code == 404
+        # The adapter's message names the file; the response does not.
+        assert resp.json()["detail"] == "Page 7 not found"
 
     def test_preview_reuses_raster_and_invalidates_when_pdf_changes(
         self, client, mock_document_service, tmp_path
@@ -254,10 +384,15 @@ class TestDocumentEndpoints:
             return_value=Document(id="d1", filename="preview.pdf", storage_path=str(pdf))
         )
 
-        with patch(
-            "services.preview_service.DocumentService.generate_preview",
-            return_value=b"rendered-png",
-        ) as render:
+        rasterizer = MagicMock()
+        rasterizer.render_page.return_value = b"rendered-png"
+        render = rasterizer.render_page
+        with state_override(
+            app,
+            preview_service=_preview_service(
+                mock_document_service, tmp_path, rasterizer=rasterizer
+            ),
+        ):
             first = client.get("/api/documents/d1/preview?page=1")
             second = client.get("/api/documents/d1/preview?page=1")
             different_dpi = client.get("/api/documents/d1/preview?page=1&dpi=200")
@@ -273,9 +408,10 @@ class TestDocumentEndpoints:
         assert first.headers["cache-control"] == "private, max-age=86400, immutable"
         assert webp.headers["content-type"] == "image/webp"
         assert render.call_count == 4
-        assert render.call_args_list[0].args[0] == b"%PDF-first"
-        assert render.call_args_list[2].kwargs["image_format"] == "WEBP"
-        assert render.call_args_list[-1].args[0] == b"%PDF-changed-and-longer"
+        # The renderer opens the PDF by path (#398): it never receives its bytes.
+        assert render.call_args_list[0].args[0] == str(pdf)
+        assert render.call_args_list[2].kwargs["fmt"] == "WEBP"
+        assert render.call_args_list[-1].args[0] == str(pdf)
 
     def test_preview_accepts_a_replacement_cache(self, client, mock_document_service, tmp_path):
         pdf = tmp_path / "preview.pdf"
@@ -286,9 +422,13 @@ class TestDocumentEndpoints:
         cache = MagicMock()
         cache.get.return_value = b"cached-preview"
 
-        with (
-            state_override(app, preview_service=PreviewService(mock_document_service, cache)),
-            patch("services.preview_service.DocumentService.generate_preview") as render,
+        rasterizer = MagicMock()
+        render = rasterizer.render_page
+        with state_override(
+            app,
+            preview_service=_preview_service(
+                mock_document_service, tmp_path, rasterizer=rasterizer, cache=cache
+            ),
         ):
             response = client.get("/api/documents/d1/preview?page=1")
 
@@ -318,7 +458,10 @@ class TestDocumentEndpoints:
     def test_page_sizes_unknown_document(self, client, mock_document_service):
         mock_document_service.find_by_id = AsyncMock(return_value=None)
 
-        assert client.get("/api/documents/nope/pages").status_code == 404
+        resp = client.get("/api/documents/nope/pages")
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Document not found"
 
     def test_page_sizes_missing_file(self, client, mock_document_service, tmp_path):
         mock_document_service.find_by_id = AsyncMock(
@@ -340,6 +483,26 @@ class TestDocumentEndpoints:
         )
 
         assert client.get("/api/documents/d1/pages").status_code == 422
+
+    def test_preview_unrenderable_pdf(self, client, mock_document_service, tmp_path):
+        pdf = tmp_path / "broken.pdf"
+        pdf.write_bytes(b"%PDF-broken")
+        mock_document_service.find_by_id = AsyncMock(
+            return_value=Document(id="d1", filename="broken.pdf", storage_path=str(pdf))
+        )
+
+        with patch("infra.page_raster.convert_from_path", side_effect=RuntimeError("poppler")):
+            resp = client.get("/api/documents/d1/preview?page=1")
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "Failed to generate preview"
+
+    @pytest.mark.parametrize("route", ["preview", "pages"])
+    def test_a_failed_document_lookup_is_a_server_error(self, client, mock_document_service, route):
+        """Only reading the PDF answers 422: a database error is a 500."""
+        mock_document_service.find_by_id = AsyncMock(side_effect=RuntimeError("database"))
+
+        assert client.get(f"/api/documents/d1/{route}").status_code == 500
 
     def test_delete_document(self, client, mock_document_service):
         mock_document_service.delete = AsyncMock(return_value=True)
@@ -409,35 +572,45 @@ class TestDocumentEndpoints:
         resp = client.get(f"/api/documents/d1/export?{query}")
 
         assert resp.status_code == 200
-        mock_export_service.export.assert_awaited_once_with(
-            "d1", ExportFormat.MD, analysis_id, edited=False
-        )
+        mock_export_service.export.assert_awaited_once_with("d1", ExportFormat.MD, analysis_id)
+        mock_export_service.export_edited.assert_not_awaited()
 
     def test_export_document_supports_editor_result_when_enabled(self, client, mock_export_service):
         from services.export_service import ExportFormat
 
-        mock_export_service.export.return_value.file_path = None
-        mock_export_service.export.return_value.content = "# Edited"
-        mock_export_service.export.return_value.media_type = "text/markdown"
-        mock_export_service.export.return_value.filename = "report.md"
+        mock_export_service.export_edited.return_value.file_path = None
+        mock_export_service.export_edited.return_value.content = "# Edited"
+        mock_export_service.export_edited.return_value.media_type = "text/markdown"
+        mock_export_service.export_edited.return_value.filename = "report.md"
 
         resp = client.get("/api/documents/d1/export?format=md&analysisId=a1&edited=true")
 
         assert resp.status_code == 200
-        mock_export_service.export.assert_awaited_once_with(
-            "d1", ExportFormat.MD, "a1", edited=True
-        )
+        assert resp.text == "# Edited"
+        mock_export_service.export_edited.assert_awaited_once_with("d1", ExportFormat.MD, "a1")
+        mock_export_service.export.assert_not_awaited()
 
     def test_editor_export_is_flagged(self, client, mock_export_service):
         with state_override(app, analysis_editor_enabled=False):
             resp = client.get("/api/documents/d1/export?format=md&analysisId=a1&edited=true")
 
         assert resp.status_code == 404
+        assert resp.json() == {"detail": "Analysis editor is disabled"}
         mock_export_service.export.assert_not_awaited()
+        mock_export_service.export_edited.assert_not_awaited()
 
     def test_export_document_unsupported_format_returns_422(self, client, mock_export_service):
         resp = client.get("/api/documents/d1/export?format=docx")
         assert resp.status_code == 422
+
+    def test_editor_export_validates_the_format_before_the_flag(self, client, mock_export_service):
+        # The flag is checked in the route body, so FastAPI's 422 on an invalid
+        # `format` comes before the "editor disabled" 404 (api/documents.py).
+        with state_override(app, analysis_editor_enabled=False):
+            resp = client.get("/api/documents/d1/export?format=docx&edited=true")
+
+        assert resp.status_code == 422
+        mock_export_service.export_edited.assert_not_awaited()
 
     def test_export_document_no_analysis_returns_404(self, client, mock_export_service):
         from services.export_service import ExportNotFoundError
@@ -505,6 +678,21 @@ class TestAnalysisEndpoints:
         assert "contentMarkdown" not in summary
         assert "pagesJson" not in summary
         mock_analysis_service.find_all_summaries.assert_awaited_once()
+
+    def test_list_analysis_summaries_of_one_document(self, client, mock_analysis_service):
+        # 12 INFO — the library counts a document's analyses from light rows.
+        mock_analysis_service.find_all_summaries = AsyncMock(return_value=[])
+        mock_analysis_service.find_summaries_by_document = AsyncMock(
+            return_value=[AnalysisJob(id="j1", document_id="d1", document_filename="test.pdf")]
+        )
+
+        resp = client.get("/api/analyses/summaries?documentId=d1")
+
+        assert resp.status_code == 200
+        assert [summary["id"] for summary in resp.json()] == ["j1"]
+        assert "contentMarkdown" not in resp.json()[0]
+        mock_analysis_service.find_summaries_by_document.assert_awaited_once_with("d1")
+        mock_analysis_service.find_all_summaries.assert_not_awaited()
 
     def test_list_analyses_filtered_by_document(self, client, mock_analysis_service):
         mock_analysis_service.find_all = AsyncMock(return_value=[])
@@ -639,7 +827,7 @@ class TestAnalysisEndpoints:
     def test_import_analysis(self, client, mock_analysis_service):
         job = AnalysisJob(id="j-import", document_id="d1", document_filename="test.pdf")
         job.mark_running()
-        job.mark_completed("# Imported", "<p>Imported</p>", "[]", "{}")
+        job.mark_completed(AnalysisOutput("# Imported", "<p>Imported</p>", "[]", "{}"))
         mock_analysis_service.import_docling_document = AsyncMock(return_value=job)
         payload = {"documentId": "d1", "document": {"schema_name": "DoclingDocument"}}
 
@@ -659,13 +847,42 @@ class TestAnalysisEndpoints:
         assert resp.json() == {"detail": "documentId is required"}
 
     def test_import_analysis_rejects_missing_document(self, client, mock_analysis_service):
+        from services.analysis_service import ImportDocumentNotFoundError
+
         mock_analysis_service.import_docling_document = AsyncMock(
-            side_effect=ValueError("Document not found: missing")
+            side_effect=ImportDocumentNotFoundError("Document not found: missing")
         )
 
         resp = client.post("/api/analyses/import", json={"documentId": "missing", "document": {}})
 
         assert resp.status_code == 404
+        assert resp.json() == {"detail": "Document not found: missing"}
+
+    def test_import_analysis_rejects_an_invalid_docling_document(
+        self, client, mock_analysis_service
+    ):
+        from services.analysis_service import InvalidDoclingDocumentError
+
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=InvalidDoclingDocumentError("Invalid Docling document: bad payload")
+        )
+
+        resp = client.post("/api/analyses/import", json={"documentId": "d1", "document": {}})
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Invalid Docling document: bad payload"}
+
+    def test_import_analysis_answers_400_for_any_other_rejection(
+        self, client, mock_analysis_service
+    ):
+        mock_analysis_service.import_docling_document = AsyncMock(
+            side_effect=ValueError("Analysis not found: j1")
+        )
+
+        resp = client.post("/api/analyses/import", json={"documentId": "d1", "document": {}})
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Analysis not found: j1"}
 
     def test_delete_analysis(self, client, mock_analysis_service):
         mock_analysis_service.delete = AsyncMock(return_value=True)

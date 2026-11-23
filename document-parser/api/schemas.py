@@ -10,8 +10,16 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    field_validator,
+)
 
+from domain.analysis_editing import CommandType
 from domain.app_config import (
     MAX_ITERATIONS_MAX,
     MAX_ITERATIONS_MIN,
@@ -116,6 +124,10 @@ class DocumentResponse(_CamelModel):
     # `GET /api/documents/{id}`; the list endpoint omits it to keep
     # the listing payload light (callers that need it can drill in).
     store_links: list[DocStoreLinkResponse] | None = None
+    # 0.7.4 (02-2.3.1) — the analysis the document workspace, the editor,
+    # chunking, exports, Ask and the MCP tools read by default (its active
+    # selection). Only on `GET /api/documents/{id}`; None when it has none.
+    current_analysis_id: str | None = None
 
 
 class PageSizeResponse(_CamelModel):
@@ -144,40 +156,56 @@ class AnalysisResponse(_CamelModel):
     created_at: str | datetime
 
 
+# Editor request bounds (08 MIN). Far above any real document, low enough that
+# one request cannot make the replay engine chew on megabytes of junk.
+# An element id is "<analysis id>:#/texts/<n>", about 60 characters.
+MAX_ELEMENT_ID_LENGTH = 1_000
+# A text element is a paragraph, a heading or a merge of a few of them; a
+# million characters is a 300-page book in one element.
+MAX_ELEMENT_TEXT_LENGTH = 1_000_000
+# A merge separator is a space or a line break.
+MAX_SEPARATOR_LENGTH = 1_000
+# A 1,000-page document has some tens of thousands of elements.
+MAX_ELEMENT_IDS = 100_000
+# The commands a user makes between two saves.
+MAX_EDIT_COMMANDS = 10_000
+
+ElementId = Annotated[str, Field(max_length=MAX_ELEMENT_ID_LENGTH)]
+
+
 class ReplaceTextEditRequest(_CamelModel):
     type: Literal["replaceText"]
-    element_id: str
-    text: str
+    element_id: ElementId
+    text: str = Field(max_length=MAX_ELEMENT_TEXT_LENGTH)
 
 
 class MergeTextEditRequest(_CamelModel):
     type: Literal["mergeText"]
-    element_ids: list[str]
-    separator: str = " "
+    element_ids: list[ElementId] = Field(max_length=MAX_ELEMENT_IDS)
+    separator: str = Field(default=" ", max_length=MAX_SEPARATOR_LENGTH)
 
 
 class SetHeadingLevelEditRequest(_CamelModel):
     type: Literal["setHeadingLevel"]
-    element_id: str
+    element_id: ElementId
     level: int
 
 
 class MoveElementEditRequest(_CamelModel):
     type: Literal["moveElement"]
-    element_id: str
-    before_element_id: str | None = None
-    target_element_id: str | None = None
-    placement: Literal["before", "after", "inside"] | None = None
+    element_id: ElementId
+    target_element_id: ElementId
+    placement: Literal["before", "after", "inside"]
 
 
 class DeleteElementEditRequest(_CamelModel):
     type: Literal["deleteElement"]
-    element_id: str
+    element_id: ElementId
 
 
 class DeleteElementsEditRequest(_CamelModel):
     type: Literal["deleteElements"]
-    element_ids: list[str]
+    element_ids: list[ElementId] = Field(max_length=MAX_ELEMENT_IDS)
 
 
 AnalysisEditCommandRequest = Annotated[
@@ -192,19 +220,79 @@ AnalysisEditCommandRequest = Annotated[
 
 
 class AnalysisEditRequest(_CamelModel):
-    commands: list[AnalysisEditCommandRequest] = Field(default_factory=list)
+    commands: list[AnalysisEditCommandRequest] = Field(
+        default_factory=list, max_length=MAX_EDIT_COMMANDS
+    )
     expected_applied_through_sequence: int = 0
 
 
+# The editor responses forbid unknown keys: the model is decoded from the JSON
+# `infra/docling_projector.py` writes, and a key it adds without this contract
+# must fail the API tests rather than vanish from the response.
+
+
+class EditorProvenanceResponse(_CamelModel):
+    """Where an element sits: a page and a [left, top, right, bottom] box."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    page: int
+    bbox: tuple[float, float, float, float]
+
+
+class EditorElementResponse(_CamelModel):
+    """One element of the editor model, as the projector emits it.
+
+    Every key is always emitted; the nullable ones carry null, not absence.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    self_ref: str
+    parent_id: str | None
+    type: str
+    # None for groups and pictures; a table's text is its Markdown.
+    text: str | None
+    heading_level: int | None
+    children: list[str]
+    provenance: list[EditorProvenanceResponse]
+    editable: bool
+    supported_operations: list[CommandType]
+    non_editable_reason: str | None
+
+
+class AnalysisEditorModelResponse(_CamelModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_analysis_id: str
+    elements: list[EditorElementResponse]
+
+
+class EditorTreeNodeResponse(_CamelModel):
+    """A node of the editor outline: body items nested under their headings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    element_id: str
+    type: str
+    label: str
+    children: list[EditorTreeNodeResponse]
+
+
+# Forward-ref resolution (children references the same class).
+EditorTreeNodeResponse.model_rebuild()
+
+
 class AnalysisEditorResponse(_CamelModel):
-    model: dict
-    tree: list[dict]
+    model_config = ConfigDict(extra="forbid")
+
+    model: AnalysisEditorModelResponse
+    tree: list[EditorTreeNodeResponse]
     reading_order: list[str] = Field(default_factory=list)
     result: AnalysisResponse
     applied_through_sequence: int
     chunks_stale: bool
-    warnings: list[str] = Field(default_factory=list)
-    reference_changes: dict[str, str] = Field(default_factory=dict)
 
 
 class AnalysisEditSaveResponse(_CamelModel):
@@ -219,12 +307,72 @@ class AnalysisEditHistoryActionRequest(_CamelModel):
     expected_applied_through_sequence: int
 
 
+# A stored command's payload: the fields of its request model, without `type`
+# and without the bounds: what was stored must read back whatever the request
+# limits become.
+# Payloads are written with every key (`_to_edit_commands`, the history
+# toggle); with unknown keys forbidden, each one matches exactly one model.
+# tests/test_schemas.py keeps each one in step with its request.
+
+
+class _StoredPayload(_CamelModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReplaceTextPayloadResponse(_StoredPayload):
+    element_id: str
+    text: str
+
+
+class MergeTextPayloadResponse(_StoredPayload):
+    element_ids: list[str]
+    separator: str
+
+
+class SetHeadingLevelPayloadResponse(_StoredPayload):
+    element_id: str
+    level: int
+
+
+class MoveElementPayloadResponse(_StoredPayload):
+    element_id: str
+    target_element_id: str
+    placement: Literal["before", "after", "inside"]
+
+
+class DeleteElementPayloadResponse(_StoredPayload):
+    element_id: str
+
+
+class DeleteElementsPayloadResponse(_StoredPayload):
+    element_ids: list[str]
+
+
+class SetCommandActivePayloadResponse(_StoredPayload):
+    """A revert (`active: false`) or reapply of the saved edit `targetSequence`."""
+
+    target_sequence: int
+    active: bool
+
+
+# A plain union: the payload carries no `type` key to discriminate on.
+EditCommandPayloadResponse = (
+    ReplaceTextPayloadResponse
+    | MergeTextPayloadResponse
+    | SetHeadingLevelPayloadResponse
+    | MoveElementPayloadResponse
+    | DeleteElementPayloadResponse
+    | DeleteElementsPayloadResponse
+    | SetCommandActivePayloadResponse
+)
+
+
 class AnalysisEditHistoryEntryResponse(_CamelModel):
     id: str
     sequence: int
     command_version: int
     command_type: str
-    payload: dict
+    payload: EditCommandPayloadResponse
     command_hash: str
     created_at: str | datetime
     active: bool | None = None

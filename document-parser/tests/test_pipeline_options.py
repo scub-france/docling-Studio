@@ -323,6 +323,12 @@ class TestConvertDocumentRouting:
 # ---------------------------------------------------------------------------
 
 
+def _close_and_stub_task(coro):
+    """Stand-in for `asyncio.create_task`: drop the background run without leaking it."""
+    coro.close()
+    return MagicMock()
+
+
 class TestServiceForwardsPipelineOptions:
     """Verify analysis_service.create and _run_analysis forward pipeline options."""
 
@@ -333,8 +339,12 @@ class TestServiceForwardsPipelineOptions:
         mock_analysis_repo.find_by_id = AsyncMock()
         mock_analysis_repo.insert = AsyncMock()
         mock_analysis_repo.update_status = AsyncMock()
+        mock_analysis_repo.complete_and_select = AsyncMock()
         mock_document_repo = MagicMock()
-        mock_document_repo.find_by_id = AsyncMock()
+        # None, not a bare AsyncMock: the lifecycle transition calls the sync
+        # `Document.transition_to`, which on an AsyncMock child would return a
+        # coroutine nobody awaits.
+        mock_document_repo.find_by_id = AsyncMock(return_value=None)
         mock_document_repo.update_page_count = AsyncMock()
         return AnalysisService(
             converter=converter,
@@ -362,7 +372,9 @@ class TestServiceForwardsPipelineOptions:
 
         opts = {"do_ocr": False, "table_mode": "fast"}
 
-        with patch("services.analysis_service.asyncio.create_task") as mock_task:
+        with patch(
+            "services.analysis_service.asyncio.create_task", side_effect=_close_and_stub_task
+        ) as mock_task:
             await svc.create("d1", pipeline_options=opts)
             mock_task.assert_called_once()
 
@@ -372,7 +384,9 @@ class TestServiceForwardsPipelineOptions:
         svc = self._make_service(mock_converter)
         svc._document_repo.find_by_id = AsyncMock(return_value=mock_doc)
 
-        with patch("services.analysis_service.asyncio.create_task") as mock_task:
+        with patch(
+            "services.analysis_service.asyncio.create_task", side_effect=_close_and_stub_task
+        ) as mock_task:
             await svc.create("d1")
             mock_task.assert_called_once()
 
@@ -403,7 +417,9 @@ class TestServiceForwardsPipelineOptions:
             "images_scale": 2.0,
         }
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", opts)
+        from services.analysis_service import AnalysisRun
+
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", opts))
 
         mock_converter.convert.assert_called_once()
         call_args = mock_converter.convert.call_args
@@ -430,7 +446,9 @@ class TestServiceForwardsPipelineOptions:
         svc = self._make_service(mock_converter)
         svc._analysis_repo.find_by_id = AsyncMock(return_value=mock_job)
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", None)
+        from services.analysis_service import AnalysisRun
+
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", None))
 
         mock_converter.convert.assert_called_once()
         call_args = mock_converter.convert.call_args
@@ -445,7 +463,9 @@ class TestServiceForwardsPipelineOptions:
         svc = self._make_service(mock_converter)
         svc._analysis_repo.find_by_id = AsyncMock(return_value=mock_job)
 
-        await svc._run_analysis("j1", "/tmp/test.pdf", "test.pdf", {"do_ocr": False})
+        from services.analysis_service import AnalysisRun
+
+        await svc._run_analysis(AnalysisRun("j1", "/tmp/test.pdf", "test.pdf", {"do_ocr": False}))
 
         # Should have called update_status twice: RUNNING then FAILED
         assert svc._analysis_repo.update_status.call_count == 2

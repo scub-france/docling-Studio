@@ -69,10 +69,6 @@ def neutralise(text: str) -> str:
     return _DELIMITER_RE.sub(r"<\\/\1", text or "")
 
 
-def _neutralise_all(values: list[str]) -> list[str]:
-    return [neutralise(value) for value in values]
-
-
 @dataclass(frozen=True)
 class DocumentRow:
     """One document. `version_id` is None when nothing has been parsed yet —

@@ -129,17 +129,50 @@ function focusPreviousItem() {
   focusItem((index - 1 + downloadOptions.length) % downloadOptions.length)
 }
 
+function alertDownloadFailure(status: number, format: ExportFormat) {
+  if (status === 404 && format === 'json') {
+    window.alert(t('docs.downloadJsonUnavailable'))
+  } else {
+    window.alert(t('docs.downloadFailed', { format: t(formatLabelKey(format)) }))
+  }
+}
+
+function resolveFilename(disposition: string | null, fallback: string): string {
+  let filename = fallback
+  if (disposition?.includes('attachment')) {
+    const utf8FilenameRegex = /filename\*=utf-8''([^;\n]+)/i
+    const utf8Match = utf8FilenameRegex.exec(disposition)
+    if (utf8Match?.[1]) {
+      filename = decodeURIComponent(utf8Match[1])
+    } else {
+      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
+      const matches = filenameRegex.exec(disposition)
+      if (matches?.[1]) {
+        filename = matches[1].replace(/['"]/g, '')
+      }
+    }
+  }
+  return filename
+}
+
+function clickDownloadLink(downloadUrl: string, filename: string) {
+  const a = document.createElement('a')
+  a.style.display = 'none'
+  a.href = downloadUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  window.URL.revokeObjectURL(downloadUrl)
+  document.body.removeChild(a)
+}
+
 async function downloadFormat(format: ExportFormat) {
   try {
     const url = getExportUrl(props.docId, format, props.analysisId, props.edited)
     const response = await fetch(url)
 
     if (!response.ok) {
-      if (response.status === 404 && format === 'json') {
-        window.alert(t('docs.downloadJsonUnavailable'))
-      } else {
-        window.alert(t('docs.downloadFailed', { format: t(formatLabelKey(format)) }))
-      }
+      alertDownloadFailure(response.status, format)
       close()
       return
     }
@@ -147,30 +180,10 @@ async function downloadFormat(format: ExportFormat) {
     const blob = await response.blob()
     const downloadUrl = window.URL.createObjectURL(blob)
 
-    let filename = `${props.docId}.${format}`
     const disposition = response.headers.get('content-disposition')
-    if (disposition?.includes('attachment')) {
-      const utf8FilenameRegex = /filename\*=utf-8''([^;\n]+)/i
-      const utf8Match = utf8FilenameRegex.exec(disposition)
-      if (utf8Match?.[1]) {
-        filename = decodeURIComponent(utf8Match[1])
-      } else {
-        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
-        const matches = filenameRegex.exec(disposition)
-        if (matches?.[1]) {
-          filename = matches[1].replace(/['"]/g, '')
-        }
-      }
-    }
+    const filename = resolveFilename(disposition, `${props.docId}.${format}`)
 
-    const a = document.createElement('a')
-    a.style.display = 'none'
-    a.href = downloadUrl
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    window.URL.revokeObjectURL(downloadUrl)
-    document.body.removeChild(a)
+    clickDownloadLink(downloadUrl, filename)
     close()
   } catch (err) {
     console.error('Download error:', err)
@@ -261,7 +274,7 @@ onUnmounted(() => {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-lg);
   min-width: 140px;
   z-index: 50;
   display: flex;

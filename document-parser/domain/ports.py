@@ -15,7 +15,9 @@ if TYPE_CHECKING:
     from domain.analysis_editing import (
         EditCommand,
         EditedAnalysisCache,
+        EditorSnapshot,
         EditStream,
+        ProjectedAnalysis,
         StoredEditCommand,
     )
     from domain.app_config import LLMHostProbeResult
@@ -23,10 +25,11 @@ if TYPE_CHECKING:
         AnalysisJob,
         Chunk,
         ChunkPush,
+        ChunkReplacement,
         Document,
-        DocumentAnalysisSelection,
-        DocumentChunkSource,
+        DocumentAnalysisState,
         DocumentStoreLink,
+        DocumentVersion,
         Store,
     )
     from domain.navigation import RasterCrop
@@ -38,7 +41,7 @@ if TYPE_CHECKING:
         ConversionResult,
         DocumentLifecycleState,
         GraphPayload,
-        LLMProviderType,
+        PageDetail,
         ReasoningResult,
     )
     from domain.vector_schema import IndexedChunk, SearchResult
@@ -96,12 +99,6 @@ class DoclingDocumentImporter(Protocol):
     def deserialize(self, document: dict[str, Any]) -> ConversionResult: ...
 
 
-class DocumentMerger(Protocol):
-    """Merge conversion results while preserving canonical structure."""
-
-    def merge(self, results: list[ConversionResult]) -> ConversionResult: ...
-
-
 class DocumentChunker(Protocol):
     """Port for document chunking.
 
@@ -126,6 +123,8 @@ class DocumentRepository(Protocol):
 
     async def find_by_id(self, doc_id: str) -> Document | None: ...
 
+    async def find_by_ids(self, doc_ids: list[str]) -> dict[str, Document]: ...
+
     async def update_page_count(self, doc_id: str, page_count: int) -> None: ...
 
     async def update_lifecycle(
@@ -136,6 +135,46 @@ class DocumentRepository(Protocol):
     ) -> None: ...
 
     async def delete(self, doc_id: str) -> bool: ...
+
+
+@runtime_checkable
+class DocumentFileStore(Protocol):
+    """Port for the files uploaded documents are stored in.
+
+    A `storage_path` is the string a `Document` persists. Every method blocks
+    on the filesystem: callers decide which calls leave the event loop.
+    """
+
+    def save(self, file_name: str, content: bytes) -> str:
+        """Write `content` as `file_name` in the upload directory, creating the
+        directory if needed, and return the absolute path it was stored at."""
+        ...
+
+    def discard(self, storage_path: str) -> None:
+        """Remove a file `save` just returned, while the upload that wrote it
+        is still running. Raises `OSError` when it cannot."""
+        ...
+
+    def delete(self, storage_path: str) -> None:
+        """Remove a stored document's file, but only when it lies inside the
+        upload directory. Logs every refusal or failure; never raises."""
+        ...
+
+    def has_file(self, storage_path: str) -> bool:
+        """Whether `storage_path` is an existing regular file."""
+        ...
+
+    def resolve(self, storage_path: str) -> str:
+        """The path to read a stored document from: `storage_path` when the
+        file exists, else the file of the same name in the upload directory
+        when that one exists (a Docker path read on the host), else
+        `storage_path` unchanged."""
+        ...
+
+    def read_fingerprint(self, storage_path: str) -> tuple[int, int]:
+        """The file's size in bytes and modification time in nanoseconds.
+        Raises `FileNotFoundError` when the file is missing."""
+        ...
 
 
 # Source path, byte size, modification time, page, DPI, and image format.
@@ -150,26 +189,52 @@ class PreviewImageCache(Protocol):
     def put(self, key: PreviewImageKey, image: bytes) -> None: ...
 
 
-class AnalysisSelectionRepository(Protocol):
-    async def get_selection(self, document_id: str) -> DocumentAnalysisSelection | None: ...
+class DocumentAnalysisStateRepository(Protocol):
+    """Reads the `DocumentAnalysisState` aggregate (02-2.4.3).
 
-    async def select(self, selection: DocumentAnalysisSelection) -> None: ...
+    Its two parts are written by the writers that change them, in their own
+    transaction: `AnalysisRepository.complete_and_select` and
+    `AnalysisRepository.delete` (selection), `ChunkRepository.replace_and_select`
+    (chunk source and selection, on restore) and
+    `ChunkRepository.replace_keeping_selection` (chunk source, on rechunk).
+    """
 
-    async def clear_selection(self, document_id: str) -> None: ...
+    async def find_state(self, document_id: str) -> DocumentAnalysisState | None:
+        """The document's state, or None when it has no state row at all."""
+        ...
+
+    async def find_states(self, document_ids: list[str]) -> dict[str, DocumentAnalysisState]:
+        """The states of the documents that have a row, in one query."""
+        ...
 
 
-class ChunkSourceRepository(Protocol):
-    async def get_chunk_source(self, document_id: str) -> DocumentChunkSource | None: ...
+class CurrentAnalysisReader(Protocol):
+    """Which analysis is a document's current one (02-2.3.1).
 
-    async def set_chunk_source(self, source: DocumentChunkSource) -> None: ...
+    One rule, `domain.models.resolve_current_analysis_id`, for every reader
+    that picks an analysis without being told which. Implemented by
+    `services.current_analysis.CurrentAnalysisResolver`.
+    """
 
-    async def clear_chunk_source(self, document_id: str) -> None: ...
+    async def find_current_analysis_id(self, document_id: str) -> str | None: ...
+
+    async def find_current_parse_ids(self, document_ids: list[str]) -> dict[str, str]:
+        """Each document's current analysis when it has a parse, in a fixed
+        number of queries whatever the count."""
+        ...
+
+    async def load_current_original(self, document_id: str) -> AnalysisJob | None:
+        """The current analysis as stored: the original result, without edits.
+
+        `ActiveAnalysisResultReader.load_current_edited` reads the same
+        analysis with its saved edits."""
+        ...
 
 
 class StoreRepository(Protocol):
     """Port for `Store` persistence (introduced by #203)."""
 
-    async def insert(self, store: Store) -> None: ...
+    async def insert(self, store: Store, *, password: str | None = None) -> None: ...
 
     async def find_all(self) -> list[Store]: ...
 
@@ -177,7 +242,18 @@ class StoreRepository(Protocol):
 
     async def find_by_id(self, store_id: str) -> Store | None: ...
 
-    async def get_default(self) -> Store | None: ...
+    async def find_by_name(self, name: str) -> Store | None: ...
+
+    async def update(self, store: Store) -> None: ...
+
+    async def clear_default_except(self, store_id: str) -> None: ...
+
+    async def delete(self, store_id: str) -> bool: ...
+
+    # Plaintext secret: never log or serialise it.
+    async def get_connection_password(self, store_id: str) -> str | None: ...
+
+    async def set_connection_password(self, store_id: str, plaintext: str | None) -> bool: ...
 
 
 class DocumentStoreLinkRepository(Protocol):
@@ -190,6 +266,8 @@ class DocumentStoreLinkRepository(Protocol):
     async def find_for_document(self, document_id: str) -> list[DocumentStoreLink]: ...
 
     async def find_for_store(self, store_id: str) -> list[DocumentStoreLink]: ...
+
+    async def count_by_store(self) -> dict[str, int]: ...
 
     async def find_one(self, document_id: str, store_id: str) -> DocumentStoreLink | None: ...
 
@@ -206,6 +284,52 @@ class ChunkRepository(Protocol):
     async def update(self, chunk: Chunk) -> None: ...
 
     async def soft_delete(self, chunk_id: str, *, at: datetime) -> bool: ...
+
+    async def soft_delete_many(self, chunk_ids: list[str], *, at: datetime) -> int: ...
+
+    async def replace_and_select(self, replacement: ChunkReplacement) -> int:
+        """Soft-delete the live chunks, insert `replacement.chunks` and write the
+        document's analysis state, in one transaction. Returns how many chunks
+        were soft-deleted. Used by a restore.
+
+        `replacement.chunk_source` is recorded as given (None forgets it).
+        `replacement.active_analysis_id` becomes the active analysis (None
+        clears an existing selection).
+
+        Raises:
+            ValueError: `replacement.chunk_source` belongs to another document.
+            AnalysisNotSelectableError: the analysis to select is gone or
+                belongs to another document; nothing is written.
+        """
+        ...
+
+    async def replace_keeping_selection(self, replacement: ChunkReplacement) -> int:
+        """Soft-delete the live chunks, insert `replacement.chunks` and record
+        `replacement.chunk_source`, in one transaction, keeping the document's
+        selection. Returns how many chunks were soft-deleted. Used by a rechunk.
+
+        `replacement.chunk_source` is recorded as given (None forgets it). A
+        rechunk never changes an existing selection: an analysis that became
+        active while the chunker ran stays active, and the new chunks report
+        stale against it. `replacement.active_analysis_id`, the chunked
+        analysis, only goes into a state row this write creates, so a document
+        without one keeps the analysis the fallback rule gave it.
+
+        Raises:
+            ValueError: `replacement.chunk_source` belongs to another document.
+            AnalysisNotSelectableError: the analysis to select is gone or
+                belongs to another document; nothing is written.
+        """
+        ...
+
+    async def shift_sequences(
+        self,
+        document_id: str,
+        *,
+        from_sequence: int,
+        at: datetime,
+        by: int = 1,
+    ) -> int: ...
 
     async def find_for_document(
         self,
@@ -228,6 +352,26 @@ class ChunkPushRepository(Protocol):
 
     async def find_latest(self, document_id: str, store_id: str) -> ChunkPush | None: ...
 
+    async def find_for_document(
+        self,
+        document_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[ChunkPush]: ...
+
+    async def count_for_document(self, document_id: str) -> int: ...
+
+
+class DocumentVersionRepository(Protocol):
+    """Port for frozen (analysis, chunks) document versions (#267)."""
+
+    async def insert(self, version: DocumentVersion) -> None: ...
+
+    async def find_by_id(self, version_id: str) -> DocumentVersion | None: ...
+
+    async def find_for_document(self, document_id: str) -> list[DocumentVersion]: ...
+
 
 class AnalysisRepository(Protocol):
     """Port for analysis job persistence."""
@@ -240,27 +384,43 @@ class AnalysisRepository(Protocol):
         """Like `find_all`, without the content: to follow statuses (#354)."""
         ...
 
+    async def find_summaries_by_document(self, document_id: str) -> list[AnalysisJob]:
+        """Every analysis of one document, without the content and uncapped."""
+        ...
+
     async def find_by_id(self, job_id: str) -> AnalysisJob | None: ...
 
-    async def find_latest_completed(self, document_id: str) -> AnalysisJob | None: ...
-
-    async def find_latest_completed_by_document(self, document_id: str) -> AnalysisJob | None: ...
+    async def find_by_document(
+        self, document_id: str, *, limit: int = 200, offset: int = 0
+    ) -> list[AnalysisJob]: ...
 
     # The parse lookups below read ids and one column, never whole rows: a
     # row carries the docling JSON, the HTML and the markdown.
-    async def latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]: ...
+    async def find_latest_parsed_ids(self, document_ids: list[str]) -> dict[str, str]:
+        """Only the fallback of `resolve_current_analysis_id`: read it through
+        `CurrentAnalysisReader`, never to pick a document's analysis."""
+        ...
 
-    async def parsed_document_id(self, job_id: str) -> str | None: ...
+    async def find_parsed_document_id(self, job_id: str) -> str | None: ...
+
+    async def find_parsed_ids(self, job_ids: list[str]) -> set[str]: ...
 
     async def parse_json(self, job_id: str) -> str | None: ...
 
-    async def update_status(self, job: AnalysisJob, *, select_analysis: bool = False) -> None: ...
+    async def update_status(self, job: AnalysisJob) -> None: ...
+
+    async def complete_and_select(self, job: AnalysisJob) -> None:
+        """Persist a completed analysis and make it the active one, atomically."""
+        ...
 
     async def update_progress(self, job_id: str, current: int, total: int) -> None: ...
 
     async def update_chunks(self, job_id: str, chunks_json: str) -> bool: ...
 
-    async def delete(self, job_id: str) -> bool: ...
+    async def delete(self, job_id: str) -> bool:
+        """Delete an analysis; when it was the active one, select the latest
+        remaining completed analysis with a Docling document, atomically."""
+        ...
 
     async def delete_by_document(self, document_id: str) -> int: ...
 
@@ -281,9 +441,61 @@ class AnalysisEditRepository(Protocol):
         commands: list[EditCommand],
         expected_sequence: int,
         cache: EditedAnalysisCache,
-    ) -> list[StoredEditCommand]: ...
+    ) -> list[StoredEditCommand]:
+        """Append `commands` and replace the working copy, in one transaction.
 
-    async def replace_cache(self, cache: EditedAnalysisCache) -> None: ...
+        The stream is stamped with `stream.engine_version`, the engine that
+        projected this working copy.
+        """
+        ...
+
+
+class ActiveAnalysisResultReader(Protocol):
+    """Read the analysis result downstream features use, edits included.
+
+    Implemented by the analysis editor service; chunking and export depend on
+    this read side only.
+    """
+
+    async def load_current_edited(self, document_id: str) -> EditorSnapshot:
+        """The document's current analysis with its saved edits.
+
+        `CurrentAnalysisReader.load_current_original` reads the same analysis
+        without them."""
+        ...
+
+    async def load_editor(
+        self, document_id: str, analysis_id: str | None = None
+    ) -> EditorSnapshot: ...
+
+
+class AnalysisDocumentEngine(Protocol):
+    """Apply editor commands to a canonical document and project the result (#394).
+
+    The engine owns the document model (Docling): services only exchange the
+    serialized base document, commands and `ProjectedAnalysis`. Both methods
+    are CPU-bound and synchronous; callers run them in a worker thread.
+    """
+
+    def project(
+        self,
+        document_json: str,
+        *,
+        base_analysis_id: str,
+        commands: list[EditCommand],
+    ) -> ProjectedAnalysis:
+        """Replay `commands` on the base document and project the edited result."""
+        ...
+
+    def project_serialized(
+        self,
+        document_json: str,
+        *,
+        base_analysis_id: str,
+        editor_model_json: str,
+    ) -> ProjectedAnalysis:
+        """Project an already edited working copy without replaying commands."""
+        ...
 
 
 @runtime_checkable
@@ -333,14 +545,15 @@ class VectorStore(Protocol):
         """
         ...
 
-    async def get_chunks(
+    async def search_fulltext(
         self,
         index_name: str,
-        doc_id: str,
+        query_text: str,
         *,
-        limit: int = 1000,
+        k: int = 10,
+        doc_id: str | None = None,
     ) -> list[SearchResult]:
-        """Retrieve all indexed chunks for a given document, ordered by chunk_index."""
+        """Full-text search on the chunk content, optionally within one document."""
         ...
 
     async def delete_document(self, index_name: str, doc_id: str) -> int:
@@ -351,6 +564,36 @@ class VectorStore(Protocol):
         """Cheap reachability probe — True if the backing store responds.
         Used by health checks; should not throw."""
         ...
+
+
+class VectorStorePool(Protocol):
+    """Per-connection cache of vector store clients, keyed by `(url, username)` (#279)."""
+
+    async def get(
+        self,
+        url: str,
+        *,
+        username: str | None = None,
+        password: str | None = None,
+        verify_certs: bool = False,
+    ) -> VectorStore: ...
+
+
+class GraphDriverPool(Protocol):
+    """Per-connection cache of graph store drivers, keyed by `(uri, user)` (#279).
+
+    The driver stays opaque to services: it is handed straight to an injected
+    `GraphWriter` factory.
+    """
+
+    async def get(
+        self,
+        uri: str,
+        user: str,
+        password: str,
+        *,
+        database: str = "neo4j",
+    ) -> Any: ...
 
 
 class AppSettingsRepository(Protocol):
@@ -389,35 +632,22 @@ class LLMHostProbe(Protocol):
 
 @runtime_checkable
 class LLMProvider(Protocol):
-    """Connection-level abstraction over an LLM backend.
+    """Connection to the LLM host the reasoning runner talks to.
 
-    A provider carries the host/base-URL, the default model identifier, and a
-    type tag that adapters can dispatch on. The reasoning runner consumes a
-    provider — it doesn't construct one — so the runner stays decoupled from
-    Ollama-vs-OpenAI-vs-WatsonX wiring.
+    A provider carries the host/base-URL and the default model identifier.
+    The reasoning runner consumes a provider — it doesn't construct one.
 
-    Today only `OllamaProvider` (in `infra/llm/`) is implemented because
-    docling-agent v0.1.0 is hardwired to Ollama via mellea's
-    `setup_local_session`. Adding a non-Ollama provider requires either
-    docling-agent upstream support or a fork (track
-    https://github.com/docling-project/docling-agent/issues/26 + provider
-    abstraction work upstream).
+    Only Ollama exists (`OllamaProvider` in `infra/llm/`): docling-agent is
+    hardwired to it through mellea, so there is no backend type to dispatch
+    on (04-4.2). A second backend needs docling-agent upstream support first
+    (https://github.com/docling-project/docling-agent/issues/26).
     """
-
-    @property
-    def type(self) -> LLMProviderType: ...
 
     @property
     def host(self) -> str: ...
 
     @property
     def default_model_id(self) -> str: ...
-
-    def health_check(self) -> bool:
-        """Lightweight reachability probe. Returns True if the provider looks
-        usable. Implementations should be cheap (no model load, no inference).
-        """
-        ...
 
 
 @runtime_checkable
@@ -450,7 +680,9 @@ class DocumentTreeReader(Protocol):
         """
         ...
 
-    def dfs_order(self, doc_data: dict[str, Any], skip_refs: set[str] | None = None) -> list[str]:
+    def list_dfs_order(
+        self, doc_data: dict[str, Any], skip_refs: set[str] | None = None
+    ) -> list[str]:
         """Return `self_ref`s in reading order (DFS pre-order from body),
         omitting `skip_refs`."""
         ...
@@ -475,8 +707,10 @@ class PageRasterizer(Protocol):
     decides what to ask for.
     """
 
-    def render_page(self, storage_path: str, *, page: int, dpi: int) -> bytes:
-        """Return `page` of the document at `storage_path` as PNG bytes."""
+    def render_page(self, storage_path: str, *, page: int, dpi: int, fmt: str = "PNG") -> bytes:
+        """Return `page` of the document at `storage_path` as `fmt` bytes:
+        `"PNG"`, or `"WEBP"` encoded losslessly. Raises `FileNotFoundError`
+        when the file is missing, `ValueError` when the page does not exist."""
         ...
 
     def crop(
@@ -492,6 +726,25 @@ class PageRasterizer(Protocol):
 
 
 @runtime_checkable
+class PdfInspector(Protocol):
+    """Port for reading a stored PDF's page geometry, without rendering it."""
+
+    def read_page_sizes(self, storage_path: str) -> list[PageDetail]:
+        """Size of each page, in points, without elements. Raises
+        `FileNotFoundError` when the file is missing."""
+        ...
+
+    def count_pages(self, storage_path: str) -> int:
+        """Number of pages. Raises when the file is not a readable PDF."""
+        ...
+
+    def count_pages_in_bytes(self, content: bytes) -> int | None:
+        """Number of pages of an uploaded PDF still in memory, or None when
+        it cannot be read (damaged, locked, no PDF tool). Never raises."""
+        ...
+
+
+@runtime_checkable
 class PageTextReader(Protocol):
     """Port for reading a stored PDF's text layer, character by character.
 
@@ -499,7 +752,7 @@ class PageTextReader(Protocol):
     while finding a quote among them is domain logic (`domain.quote_marks`).
     """
 
-    def glyphs(self, storage_path: str, *, page: int) -> list[Glyph]:
+    def read_glyphs(self, storage_path: str, *, page: int) -> list[Glyph]:
         """Every character of `page`, in the text layer's order, each with its
         box as fractions of the page from the top-left corner. Empty for a
         page it cannot place characters on (a rotated page, a scan)."""

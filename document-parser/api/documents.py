@@ -2,29 +2,39 @@
 
 from __future__ import annotations
 
-import asyncio
-import logging
 from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
-from api import deps  # noqa: TC001
+from api import deps
+from api.errors import to_http_error
 from api.schemas import DocStoreLinkResponse, DocumentResponse, PageSizeResponse
-from services.document_service import DocumentService
-from services.export_service import ExportFormat, ExportNotFoundError, build_content_disposition
-from services.preview_service import PreviewDocumentNotFoundError, PreviewPageOutOfRangeError
+from services.errors import ServiceError
+from services.export_service import ExportFormat, build_content_disposition
 
 if TYPE_CHECKING:
-    from domain.ports import DocumentStoreLinkRepository, StoreRepository
+    from services.document_service import DocumentStoreLinkView
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 _READ_CHUNK_SIZE = 64 * 1024  # 64 KB
 
 
-def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) -> DocumentResponse:
+def _to_store_link_response(link: DocumentStoreLinkView) -> DocStoreLinkResponse:
+    return DocStoreLinkResponse(
+        store=link.store,
+        state=link.state.value,
+        pushed_at=str(link.last_push_at) if link.last_push_at else None,
+    )
+
+
+def _to_response(
+    doc,
+    *,
+    store_links: list[DocStoreLinkResponse] | None = None,
+    current_analysis_id: str | None = None,
+) -> DocumentResponse:
     return DocumentResponse(
         id=doc.id,
         filename=doc.filename,
@@ -35,36 +45,8 @@ def _to_response(doc, *, store_links: list[DocStoreLinkResponse] | None = None) 
         lifecycle_state=doc.lifecycle_state.value,
         lifecycle_state_at=(str(doc.lifecycle_state_at) if doc.lifecycle_state_at else None),
         store_links=store_links,
+        current_analysis_id=current_analysis_id,
     )
-
-
-async def _fetch_store_links(
-    doc_id: str,
-    link_repo: DocumentStoreLinkRepository,
-    store_repo: StoreRepository,
-) -> list[DocStoreLinkResponse]:
-    """Build the per-store link payload for a single document (#283 fix).
-
-    Joins `document_store_links` with `stores` so the frontend gets the
-    store slug (its stable identity) on each link, not the opaque
-    store_id. Returns an empty list when no links exist — the frontend
-    treats absent vs empty the same.
-    """
-    links = await link_repo.find_for_document(doc_id)
-    if not links:
-        return []
-    # Resolve store_id → slug in one shot. `find_all()` is fine here —
-    # store rows are O(1-10) in practice.
-    stores = await store_repo.find_all()
-    slug_by_id = {s.id: s.slug for s in stores}
-    return [
-        DocStoreLinkResponse(
-            store=slug_by_id.get(link.store_id, link.store_id),
-            state=link.state.value,
-            pushed_at=str(link.last_push_at) if link.last_push_at else None,
-        )
-        for link in links
-    ]
 
 
 @router.post("/upload", response_model=DocumentResponse, status_code=200)
@@ -110,17 +92,19 @@ async def list_documents(service: deps.DocumentServiceDep) -> list[DocumentRespo
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
 async def get_document(
-    doc_id: str,
-    service: deps.DocumentServiceDep,
-    link_repo: deps.DocumentStoreLinkRepoDep,
-    store_repo: deps.StoreRepoDep,
+    doc_id: str, service: deps.DocumentServiceDep, current: deps.CurrentAnalysisDep
 ) -> DocumentResponse:
-    """Get a single document, joined with its per-store ingestion links."""
-    doc = await service.find_by_id(doc_id)
-    if not doc:
+    """Get a single document, joined with its per-store ingestion links and
+    the id of its current analysis."""
+    found = await service.find_with_store_links(doc_id)
+    if found is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    store_links = await _fetch_store_links(doc_id, link_repo, store_repo)
-    return _to_response(doc, store_links=store_links)
+    doc, links = found
+    return _to_response(
+        doc,
+        store_links=[_to_store_link_response(link) for link in links],
+        current_analysis_id=await current.find_current_analysis_id(doc_id),
+    )
 
 
 @router.delete("/{doc_id}", status_code=204, response_model=None)
@@ -145,12 +129,21 @@ async def export_document(
     edited: bool = Query(False, description="Export the saved analysis editor result"),
 ) -> Response:
     """Export the document in the specified format."""
-    if edited and not state.analysis_editor_enabled:
-        raise HTTPException(status_code=404, detail="Analysis editor is disabled")
+    # Hiding the editor is HTTP exposure, not export work: the flag is the
+    # `AppState` one every editor route reads through `deps`, so it stays
+    # here rather than becoming a flag argument of `ExportService`. Gated in
+    # the body, not by a dependency: a dependency would answer 404 before
+    # FastAPI rejects an invalid `format` with its 422.
+    if edited:
+        deps.ensure_analysis_editor_enabled(state)
     try:
-        export = await service.export(doc_id, format, analysis_id, edited=edited)
-    except ExportNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        export = (
+            await service.export_edited(doc_id, format, analysis_id)
+            if edited
+            else await service.export(doc_id, format, analysis_id)
+        )
+    except ServiceError as exc:
+        raise to_http_error(exc) from exc
 
     if export.file_path is not None:
         return FileResponse(
@@ -177,45 +170,23 @@ async def preview(
     """Generate a PNG or WebP preview of a specific PDF page."""
     try:
         image_bytes = await service.get_preview(doc_id, page=page, dpi=dpi, image_format=format)
-        return Response(
-            content=image_bytes,
-            media_type=f"image/{format}",
-            headers={"Cache-Control": "private, max-age=86400, immutable"},
-        )
-    except PreviewDocumentNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Document not found") from exc
-    except PreviewPageOutOfRangeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
-    except OSError as exc:
-        logger.exception("I/O error generating preview for %s", doc_id)
-        raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
-    except Exception as exc:
-        logger.exception("Unexpected error generating preview for %s", doc_id)
-        raise HTTPException(status_code=422, detail="Failed to generate preview") from exc
+    except ServiceError as exc:
+        raise to_http_error(exc) from exc
+    return Response(
+        content=image_bytes,
+        media_type=f"image/{format}",
+        headers={"Cache-Control": "private, max-age=86400, immutable"},
+    )
 
 
 @router.get("/{doc_id}/pages", response_model=list[PageSizeResponse])
-async def page_sizes(doc_id: str, service: deps.DocumentServiceDep) -> list[PageSizeResponse]:
+async def page_sizes(doc_id: str, service: deps.PreviewServiceDep) -> list[PageSizeResponse]:
     """Size of each page of the PDF, so the preview can lay out its pages
     before any analysis (#352)."""
-    doc = await service.find_by_id(doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
     try:
-        file_content = await asyncio.to_thread(
-            service.resolve_storage_path(doc.storage_path).read_bytes
-        )
-        pages = await asyncio.to_thread(DocumentService.page_sizes, file_content)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="PDF file not found on disk") from exc
-    except Exception as exc:
-        logger.exception("Could not read the page sizes of %s", doc_id)
-        raise HTTPException(status_code=422, detail="Failed to read PDF file") from exc
+        pages = await service.read_page_sizes(doc_id)
+    except ServiceError as exc:
+        raise to_http_error(exc) from exc
     return [
         PageSizeResponse(page_number=p.page_number, width=p.width, height=p.height) for p in pages
     ]
